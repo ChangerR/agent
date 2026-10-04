@@ -1,0 +1,20 @@
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-5",
+  "permissionMode": "ask",
+  "dangerForceAsk": true,
+  "permissions": {
+    "allow": ["bash(npm test *)"],
+    "ask": [],
+    "deny": ["bash(git push *)"]
+  },
+  "maxTurns": 50,
+  "compactThreshold": 120000,
+  "cache": {
+    "enabled": true,
+    "ttl": "5m",
+    "escalateAfterMs": 0
+  },
+  "mcpConfig": "./mcp.json",
+  "plugins": []
+}

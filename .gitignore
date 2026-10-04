@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.agentlab/
+agent.config.json
+mcp.json
+*.log
