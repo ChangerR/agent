@@ -9,6 +9,7 @@
  */
 import { complete, type Provider } from '../provider.js';
 import type { Message } from '../protocol/types.js';
+import type { EventBus } from '../events.js';
 
 /** 启发式 token 估算：英文 ~4 字符/token，中文 ~1.5 字符/token，取保守值 3 */
 export function estimateTokens(messages: readonly Message[]): number {
@@ -45,9 +46,29 @@ export class ContextManager {
    * 压缩消息历史：前一半 → 摘要，后一半原样保留。
    * 返回新历史；若消息太少则原样返回。
    */
-  async compact(messages: Message[], provider: Provider | null, signal: AbortSignal, model = ''): Promise<Message[]> {
+  async compact(messages: Message[], provider: Provider | null, signal: AbortSignal, model = '', events?: EventBus): Promise<Message[]> {
     if (messages.length < 8) return messages;
-    const cut = Math.floor(messages.length / 2);
+    let cut = Math.floor(messages.length / 2);
+    const calls = new Map<string, number>();
+    const spans: Array<{ start: number; end: number }> = [];
+    messages.forEach((message, index) => {
+      if (typeof message.content === 'string') return;
+      for (const block of message.content) {
+        if (block.type === 'tool_use') calls.set(block.id, index);
+        if (block.type === 'tool_result') {
+          const start = calls.get(block.toolUseId);
+          if (start !== undefined) {
+            spans.push({ start, end: index });
+            calls.delete(block.toolUseId);
+          }
+        }
+      }
+    });
+    // 切点退到完整工具交换之前，多个结果消息与未完成的调用都不能被拆开。
+    for (const start of calls.values()) spans.push({ start, end: messages.length });
+    let crossing: { start: number; end: number } | undefined;
+    while ((crossing = spans.find((span) => span.start < cut && span.end >= cut))) cut = crossing.start;
+    if (cut === 0) return messages;
     const old = messages.slice(0, cut);
     const recent = messages.slice(cut);
 
@@ -63,9 +84,11 @@ export class ContextManager {
             tools: [],
           },
           signal,
+          events ? { events, purpose: 'compact' } : undefined,
         );
         summary = text;
-      } catch {
+      } catch (error) {
+        if (signal.aborted) throw error;
         summary = `[截断的早期对话，共 ${old.length} 条消息]`;
       }
     } else {

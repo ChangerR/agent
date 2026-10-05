@@ -65,8 +65,12 @@ describe('LLM 审批员', () => {
       ],
     });
     const asks: AgentEvent[] = [];
+    const purposes: string[] = [];
     events.on('permission_request', (e) => asks.push(e));
-    await loop.run('写文件');
+    events.on('model_request', (e) => purposes.push(e.purpose));
+    const result = await loop.run('写文件');
+    expect(purposes).toEqual(['agent', 'judge', 'agent']);
+    expect(result.usage).toMatchObject({ inputTokens: 30, outputTokens: 30 });
     expect(asks).toHaveLength(0); // 没有询问用户
     expect(await readFile(join(tmp, 'x.txt'), 'utf-8')).toBe('hi'); // 工具确实执行了
     expect(judgeProvider.requests[0].model).toBe('judge-model'); // 用的是小模型

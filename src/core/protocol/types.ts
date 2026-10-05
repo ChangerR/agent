@@ -104,8 +104,8 @@ export type StreamEvent =
   | { type: 'redacted_thinking'; data: string }
   | { type: 'tool_use_start'; id: string; name: string }
   /** input 为 JSON 字符串片段（与 Anthropic input_json_delta 对齐） */
-  | { type: 'tool_use_delta'; input: string }
-  | { type: 'tool_use_stop' }
+  | { type: 'tool_use_delta'; id?: string; input: string }
+  | { type: 'tool_use_stop'; id?: string }
   | { type: 'message_stop'; stopReason: StopReason }
   | ({ type: 'usage' } & Partial<TokenUsage>);
 
@@ -141,12 +141,14 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
   const blocks: ContentBlock[] = [];
   let stopReason: StopReason = 'end_turn';
   const usage = emptyUsage();
+  // 工具可交错输出，按 id 保留独立缓冲区；无 id 的旧事件仍关联最近开始的调用。
+  const tools = new Map<string, { block: ToolUseBlock; json: string }>();
+  let activeToolId: string | undefined;
 
   // 当前正在累积的 block 状态
   let current:
     | { kind: 'text'; text: string }
     | { kind: 'thinking'; text: string; signature: string }
-    | { kind: 'tool_use'; id: string; name: string; json: string }
     | null = null;
 
   const flush = () => {
@@ -159,16 +161,19 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
         thinking: current.text,
         ...(current.signature ? { signature: current.signature } : {}),
       });
-    } else if (current.kind === 'tool_use') {
-      let input: unknown = {};
-      try {
-        input = current.json ? JSON.parse(current.json) : {};
-      } catch {
-        input = { __raw: current.json };
-      }
-      blocks.push({ type: 'tool_use', id: current.id, name: current.name, input });
     }
     current = null;
+  };
+  const finishTool = (id: string) => {
+    const tool = tools.get(id);
+    if (!tool) throw new Error(`Unknown streamed tool: ${id}`);
+    try {
+      tool.block.input = tool.json ? JSON.parse(tool.json) : {};
+    } catch {
+      throw new Error(`Invalid JSON for streamed tool: ${id}`);
+    }
+    tools.delete(id);
+    if (activeToolId === id) activeToolId = undefined;
   };
 
   for await (const ev of events) {
@@ -202,13 +207,22 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
         break;
       case 'tool_use_start':
         flush();
-        current = { kind: 'tool_use', id: ev.id, name: ev.name, json: '' };
+        if (tools.has(ev.id)) throw new Error(`Duplicate streamed tool: ${ev.id}`);
+        const block: ToolUseBlock = { type: 'tool_use', id: ev.id, name: ev.name, input: {} };
+        blocks.push(block);
+        tools.set(ev.id, { block, json: '' });
+        activeToolId = ev.id;
         break;
-      case 'tool_use_delta':
-        if (current?.kind === 'tool_use') current.json += ev.input;
+      case 'tool_use_delta': {
+        const id = ev.id ?? activeToolId;
+        const tool = id === undefined ? undefined : tools.get(id);
+        if (!tool) throw new Error('Tool delta without a matching start');
+        tool.json += ev.input;
         break;
+      }
       case 'tool_use_stop':
         flush();
+        if (ev.id ?? activeToolId) finishTool((ev.id ?? activeToolId)!);
         break;
       case 'message_stop':
         stopReason = ev.stopReason;
@@ -219,5 +233,6 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
     }
   }
   flush();
+  for (const id of [...tools.keys()]) finishTool(id);
   return { message: { role: 'assistant', content: blocks }, stopReason, usage };
 }

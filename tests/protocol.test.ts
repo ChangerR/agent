@@ -78,6 +78,34 @@ describe('Anthropic 消息转换', () => {
 });
 
 describe('OpenAI 消息转换', () => {
+  it('两个工具的参数交错到达，各自保留完整 JSON 与开始顺序', async () => {
+    const translator = new OpenAIStreamTranslator();
+    const chunks = [
+      { choices: [{ delta: { tool_calls: [
+        { index: 0, id: 'a', function: { name: 'read_file', arguments: '{"path":' } },
+        { index: 1, id: 'b', function: { name: 'read_file', arguments: '{"path":' } },
+      ] }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [
+        { index: 1, function: { arguments: '"b"}' } },
+        { index: 0, function: { arguments: '"a"}' } },
+      ] }, finish_reason: null }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ];
+    const { message } = await collectStreamAsync(toAsync(chunks.flatMap((chunk) => translator.translate(chunk as never))));
+    expect(message.content).toEqual([
+      { type: 'tool_use', id: 'a', name: 'read_file', input: { path: 'a' } },
+      { type: 'tool_use', id: 'b', name: 'read_file', input: { path: 'b' } },
+    ]);
+  });
+
+  it('畸形工具参数不能作为正常输入交给执行层', async () => {
+    await expect(collectStreamAsync(toAsync<StreamEvent>([
+      { type: 'tool_use_start', id: 'bad', name: 'write_file' },
+      { type: 'tool_use_delta', id: 'bad', input: '{"path":' },
+      { type: 'tool_use_stop', id: 'bad' },
+    ]))).rejects.toThrow('Invalid JSON');
+  });
+
   it('tool_result 拆成独立 tool 消息', () => {
     const messages: Message[] = [
       {

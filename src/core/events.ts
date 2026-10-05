@@ -6,6 +6,7 @@
  */
 import { EventEmitter } from 'node:events';
 import type { AssistantMessage, TokenUsage, ToolResult, ToolUseBlock } from './protocol/types.js';
+import type { ChatRequest } from './provider.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
@@ -20,7 +21,11 @@ export type UserDecision =
   | { allow: true; remember?: 'session' | 'project' }
   | { allow: false; feedback?: string };
 
+export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
+
 export type AgentEvent =
+  | { type: 'model_request'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; provider: string; request: ChatRequest }
+  | { type: 'model_usage'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; usage: TokenUsage }
   | { type: 'text_delta'; text: string }
   | { type: 'thinking_delta'; text: string }
   | { type: 'assistant_message'; message: AssistantMessage }
@@ -29,11 +34,13 @@ export type AgentEvent =
   | {
       type: 'permission_request';
       request: PermissionRequest;
+      /** 请求所属轮次的取消信号，订阅者可用它释放审批界面。 */
+      signal: AbortSignal;
       resolve: (decision: UserDecision) => void;
     }
   | { type: 'turn_end'; stopReason: string; usage: TokenUsage }
   | { type: 'notice'; text: string }
-  | { type: 'loop_end'; reason: 'completed' | 'max_turns' | 'aborted' }
+  | { type: 'loop_end'; reason: LoopEndReason; turns?: number; usage?: TokenUsage; error?: string }
   | { type: 'compacted'; beforeMessages: number; afterMessages: number }
   | { type: 'error'; error: Error };
 
@@ -52,6 +59,8 @@ export class EventBus {
   }
 
   emit(event: AgentEvent): void {
+    // Node 的 error 事件在没有订阅者时会抛异常；headless 使用不应依赖 UI 兜底。
+    if (event.type === 'error' && this.emitter.listenerCount('error') === 0) return;
     this.emitter.emit(event.type, event);
   }
 }

@@ -14,7 +14,7 @@
 - **MCP**：stdio + streamable-http，工具以 `mcp__server__tool` 桥接
 - **Skill**：渐进式披露（清单进 system prompt，全文按需 `use_skill` 加载）
 - **上下文压缩**：超阈值自动摘要老消息
-- **[pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui) TUI**：差分渲染、Markdown 流式输出、权限确认弹层、slash 命令补全、状态栏
+- **[pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui) TUI**：消息区独立滚动、固定输入框、Markdown 流式输出、工具结果合并与折叠、权限确认弹层、slash 命令补全、阶段与耗时提示
 
 ## 快速开始
 
@@ -43,7 +43,11 @@ OpenAI 兼容端点示例（`agent.config.json`）：
 
 ## TUI 命令
 
-`/help` `/model`（不带参数弹出选择器）`/mode`（同上）`/think off|low|medium|high`（思考等级）`/permissions` `/skills` `/tools` `/exit`，Esc 中断当前轮，Ctrl+C 中断/退出。
+`/help` `/model`（不带参数弹出选择器）`/mode`（同上）`/think off|low|medium|high`（思考等级）`/permissions` `/skills` `/tools` `/exit`。
+
+默认使用全屏视口：消息区可以独立滚动，底部保留输入框与状态。思考内容和长工具输出默认收起，`/details` 展开或收起，`/stats` 查看 token、缓存命中率与日志路径。运行中发送的消息会排队，`/queue` 查看数量，`/queue clear` 清空。Esc 中断当前轮并清空排队；审批弹层中 Esc 只拒绝当前操作，Ctrl+C 中断整轮并关闭审批；空闲时 Ctrl+C 退出。
+
+如果希望沿用终端原生滚动历史，可使用 `AGENTLAB_SCREEN=main pnpm dev`。画面残留时可输入 `/redraw`，或用 `AGENTLAB_FULL_REDRAW=1 pnpm dev` 启用全量重绘。
 
 思考等级的映射：Anthropic → `thinking.budget_tokens`（low 2048 / medium 8192 / high 32768，`max_tokens` 自动抬到 budget 之上）；OpenAI 系 → `reasoning_effort`。配置默认值用 `agent.config.json` 的 `thinking` 字段。
 
@@ -92,11 +96,31 @@ export default {
 
 `agent.config.json` 里加 `"plugins": ["plugins/my-plugin/index.ts"]`。完整示例：[plugins/example/index.ts](plugins/example/index.ts)。
 
+有连接或后台任务的插件可在 `register()` 返回清理函数（支持 async），agent 退出时会按注册逆序等待清理。
+
+## 程序化运行与研究记录
+
+```ts
+import { createAgent } from './src/index.js';
+
+const agent = await createAgent(process.cwd());
+// 无交互界面的脚本也要处理审批事件；此例拒绝所有需要人工确认的操作。
+agent.events.on('permission_request', ({ resolve }) => resolve({ allow: false }));
+try {
+  const result = await agent.loop.run('读取 README.md 并概括项目');
+  console.log(result.reason, result.turns, result.usage);
+} finally {
+  await agent.dispose();
+}
+```
+
+`reason` 区分正常结束、轮数上限、输出截断、中断和错误；正常结束不等于任务评测通过。每个会话的 `.agentlab/logs/*.jsonl` 记录请求快照和用量，`model_request` / `model_usage` 用 `requestId` 关联，`purpose` 区分主模型（`agent`）、压缩（`compact`）与审批（`judge`）。累计用量包含辅助调用，便于比较运行成本。请求记录包含对话和工具参数。
+
 ## 开发
 
 ```bash
 pnpm dev          # tsx 直接跑 TUI
-pnpm test         # vitest（39 个测试，含 FakeProvider 全链路与真实 MCP 桥接）
+pnpm test         # vitest（含 FakeProvider 全链路、内存终端交互与真实 MCP 桥接）
 pnpm typecheck
 pnpm build        # tsup → dist/
 ```

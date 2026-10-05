@@ -22,19 +22,21 @@
  * 用户拒绝工具调用时，反馈同样以 tool_result(isError) 回填给模型 ——
  * 模型据此调整后续行为，这是"人在回路"的标准实现方式。
  */
-import type { EventBus, UserDecision } from './events.js';
+import type { EventBus, LoopEndReason, UserDecision } from './events.js';
 import type { HookRunner } from './hooks.js';
 import type { PermissionEngine } from './permission/engine.js';
 import type { AutoJudge } from './permission/judge.js';
 import { mergeJudgeDecision } from './permission/judge.js';
 import type { CachePolicy, CacheTtl, Provider, ThinkingLevel } from './provider.js';
-import { collectStreamAsync } from './protocol/types.js';
+import { observedStream } from './provider.js';
+import { collectStreamAsync, emptyUsage } from './protocol/types.js';
 import type {
   Message,
   ToolDefinition,
   ToolResult,
   ToolResultBlock,
   ToolUseBlock,
+  TokenUsage,
 } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
 import { estimateTokens, type ContextManager } from './context/manager.js';
@@ -71,6 +73,14 @@ export interface AgentLoopOptions {
   cache?: { enabled: boolean; ttl: CacheTtl; escalateAfterMs?: number };
 }
 
+/** completed 表示循环正常结束；任务是否完成由外部评测器判断。 */
+export interface AgentRunResult {
+  reason: LoopEndReason;
+  turns: number;
+  usage: TokenUsage;
+  error?: string;
+}
+
 export class AgentLoop {
   private messages: Message[] = [];
   private abort: AbortController | null = null;
@@ -80,8 +90,14 @@ export class AgentLoop {
   private lastRequestMessageCount = 0;
   /** 上一批工具（含权限等待）耗时，超过 escalateAfterMs 时把 ttl 升到 1 小时 */
   private lastToolBatchMs = 0;
+  private readonly configuredThreshold: number;
+  private readonly configuredMaxTokens?: number;
+  private disposed = false;
+  private idle: Promise<void> = Promise.resolve();
 
   constructor(private opts: AgentLoopOptions) {
+    this.configuredThreshold = opts.context.threshold;
+    this.configuredMaxTokens = opts.maxTokens;
     this.applyModelInfo(opts.model);
   }
 
@@ -109,34 +125,49 @@ export class AgentLoop {
   /** 按模型规格联动 maxTokens 与压缩阈值 */
   private applyModelInfo(model: string): void {
     const info = this.opts.modelInfo?.(model);
-    if (!info) return;
-    this.opts.maxTokens = info.maxOutputTokens;
-    const windowThreshold = Math.floor(info.contextWindow * 0.8);
-    if (windowThreshold < this.opts.context.threshold) {
-      this.opts.context.setThreshold(windowThreshold);
-    }
+    this.opts.maxTokens = info?.maxOutputTokens ?? this.configuredMaxTokens;
+    this.opts.context.setThreshold(info
+      ? Math.min(this.configuredThreshold, Math.floor(info.contextWindow * 0.8))
+      : this.configuredThreshold);
   }
 
   abort_current(): void {
     this.abort?.abort();
   }
 
-  async run(userInput: string): Promise<void> {
+  async dispose(): Promise<void> {
+    this.disposed = true;
+    this.abort_current();
+    await this.idle;
+  }
+
+  async run(userInput: string): Promise<AgentRunResult> {
+    if (this.disposed) throw new Error('AgentLoop is disposed');
+    if (this.abort) throw new Error('AgentLoop is already running');
     const { events, hooks, provider, tools, context } = this.opts;
     this.abort = new AbortController();
     const signal = this.abort.signal;
+    let release!: () => void;
+    this.idle = new Promise<void>((resolve) => { release = resolve; });
+    let turns = 0;
+    const totalUsage = emptyUsage();
+    const stopUsage = events.on('model_usage', ({ usage }) => {
+      for (const key of Object.keys(totalUsage) as Array<keyof TokenUsage>) totalUsage[key] += usage[key];
+    });
+    const finish = (reason: LoopEndReason, error?: string): AgentRunResult => {
+      events.emit({ type: 'loop_end', reason, turns, usage: { ...totalUsage }, ...(error ? { error } : {}) });
+      return { reason, turns, usage: totalUsage, ...(error ? { error } : {}) };
+    };
 
     try {
       await hooks.notify('UserPromptSubmit', { input: userInput });
       this.messages.push({ role: 'user', content: userInput });
       await this.maybeCompact(signal);
 
-      let turns = 0;
       while (turns < this.opts.maxTurns) {
         turns++;
         if (signal.aborted) {
-          events.emit({ type: 'loop_end', reason: 'aborted' });
-          return;
+          return finish('aborted');
         }
 
         // 工具轮次中间只在快撑破窗口时才压缩，并接受这次缓存失效
@@ -145,18 +176,19 @@ export class AgentLoop {
         }
 
         // --- 调用模型，流式产出 ---
-        this.toolsSnapshot ??= tools.definitions();
-        const stream = provider.stream(
+        this.toolsSnapshot ??= structuredClone(tools.definitions());
+        const stream = observedStream(provider,
           {
             model: this.opts.model,
             system: this.opts.systemPrompt,
-            messages: this.messages,
-            tools: this.toolsSnapshot,
+            messages: structuredClone(this.messages),
+            tools: structuredClone(this.toolsSnapshot),
             maxTokens: this.opts.maxTokens,
             thinking: this.opts.thinking,
             cache: this.buildCachePolicy(),
           },
           signal,
+          { events, purpose: 'agent' },
         );
         this.lastRequestMessageCount = this.messages.length;
 
@@ -166,11 +198,11 @@ export class AgentLoop {
         this.messages.push(message);
         events.emit({ type: 'assistant_message', message });
         events.emit({ type: 'turn_end', stopReason, usage });
+        await hooks.notify('TurnEnd', { turn: turns, message: structuredClone(message), stopReason, usage: { ...usage } });
 
         const toolUses = message.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
         if (toolUses.length === 0 || stopReason !== 'tool_use') {
-          events.emit({ type: 'loop_end', reason: 'completed' });
-          return;
+          return finish(signal.aborted ? 'aborted' : stopReason === 'max_tokens' ? 'max_tokens' : 'completed');
         }
 
         // --- 执行工具，回填结果 ---
@@ -178,17 +210,20 @@ export class AgentLoop {
         const results = await this.executeTools(toolUses, signal);
         this.lastToolBatchMs = Date.now() - toolStarted;
         this.messages.push({ role: 'user', content: results });
+        signal.throwIfAborted();
       }
-      events.emit({ type: 'loop_end', reason: 'max_turns' });
+      return finish('max_turns');
     } catch (err) {
       if (signal.aborted) {
-        events.emit({ type: 'loop_end', reason: 'aborted' });
+        return finish('aborted');
       } else {
         events.emit({ type: 'error', error: err instanceof Error ? err : new Error(String(err)) });
-        events.emit({ type: 'loop_end', reason: 'completed' });
+        return finish('error', err instanceof Error ? err.message : String(err));
       }
     } finally {
       this.abort = null;
+      stopUsage();
+      release();
     }
   }
 
@@ -197,7 +232,7 @@ export class AgentLoop {
     const { events, provider, context } = this.opts;
     if (!context.shouldCompact(this.messages)) return;
     const before = this.messages.length;
-    const next = await context.compact(this.messages, provider, signal, this.opts.model);
+    const next = await context.compact(this.messages, provider, signal, this.opts.model, events);
     if (next === this.messages) return;
     if (emergency) {
       events.emit({
@@ -270,6 +305,8 @@ export class AgentLoop {
       return { type: 'tool_result', toolUseId: toolUse.id, content, isError: true };
     };
 
+    if (signal.aborted) return fail('Tool cancelled');
+
     if (!tool) return fail(`Unknown tool: ${toolUse.name}`);
     let input = (toolUse.input ?? {}) as Record<string, unknown>;
 
@@ -277,6 +314,7 @@ export class AgentLoop {
     const hookResult = await hooks.runPreToolUse({ toolName: tool.name, input });
     if (hookResult.veto) return fail(`Vetoed by PreToolUse hook: ${hookResult.veto}`);
     if (hookResult.input) input = hookResult.input;
+    if (signal.aborted) return fail('Tool cancelled');
 
     // 权限决策管线
     let decision = permission.check(tool, input);
@@ -284,7 +322,7 @@ export class AgentLoop {
     // auto 模式 + LLM 审批员：管线判定为 ask（模式默认值）时，让小模型兜底判断
     if (decision.kind === 'ask' && decision.source === 'mode' && this.opts.autoJudge && permission.mode === 'auto') {
       events.emit({ type: 'notice', text: `LLM 审批员审核中: ${tool.name}…` });
-      const verdict = await this.opts.autoJudge.review(tool, input, signal);
+      const verdict = await this.opts.autoJudge.review(tool, input, signal, events);
       decision = mergeJudgeDecision(decision, verdict);
       permission.recordDecision(tool, input, decision);
       if (decision.kind === 'allow') {
@@ -296,7 +334,17 @@ export class AgentLoop {
 
     if (decision.kind === 'ask') {
       const analysis = tool.analyzeInput?.(input);
+      if (signal.aborted) return fail('Tool cancelled');
       const userDecision = await new Promise<UserDecision>((resolve) => {
+        let settled = false;
+        const finish = (value: UserDecision) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener('abort', cancel);
+          resolve(value);
+        };
+        const cancel = () => finish({ allow: false, feedback: 'Tool cancelled' });
+        signal.addEventListener('abort', cancel, { once: true });
         events.emit({
           type: 'permission_request',
           request: {
@@ -305,9 +353,11 @@ export class AgentLoop {
             summary: analysis?.summary ?? tool.name,
             reason: decision.reason,
           },
-          resolve,
+          signal,
+          resolve: finish,
         });
       });
+      if (signal.aborted) return fail('Tool cancelled');
       if (!userDecision.allow) {
         return fail(`User denied this action.${userDecision.feedback ? ` Feedback: ${userDecision.feedback}` : ''}`);
       }
@@ -325,6 +375,7 @@ export class AgentLoop {
     }
 
     // 执行
+    if (signal.aborted) return fail('Tool cancelled');
     events.emit({ type: 'tool_call', toolUse: { ...toolUse, input } });
     let result: ToolResult;
     try {

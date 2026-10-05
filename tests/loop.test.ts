@@ -1,7 +1,7 @@
 /**
  * Agent loop 端到端测试：FakeProvider 脚本化驱动全链路。
  */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -85,6 +85,118 @@ function textOf(log: AgentEvent[]): string {
 }
 
 describe('AgentLoop', () => {
+  it('每次模型响应触发一次 TurnEnd；请求快照不会随后续对话改变', async () => {
+    await writeFile(join(tmp, 'x'), 'data');
+    const hooks = new HookRunner();
+    const turns: Array<{ turn: number; stopReason: string }> = [];
+    hooks.register('TurnEnd', (payload) => turns.push(payload));
+    const { loop, provider } = makeLoop({ hooks, script: [
+      toolUseResponse([{ id: 't', name: 'read_file', input: { path: 'x' } }]),
+      textResponse('done'), textResponse('next'),
+    ] });
+    const result = await loop.run('read');
+    const firstRequest = structuredClone(provider.requests[0]);
+    await loop.run('next');
+    expect(turns.map((t) => [t.turn, t.stopReason])).toEqual([[1, 'tool_use'], [2, 'end_turn'], [1, 'end_turn']]);
+    expect(result).toMatchObject({ reason: 'completed', turns: 2, usage: { inputTokens: 20, outputTokens: 20 } });
+    expect(provider.requests[0]).toEqual(firstRequest);
+    expect(provider.requests[0].messages).toHaveLength(1);
+  });
+
+  it('没有 UI 和错误订阅者时，失败仍返回明确终态并且只结束一次', async () => {
+    const { loop, events } = makeLoop({ script: [() => { throw new Error('offline failure'); }] });
+    const ends: unknown[] = [];
+    events.on('loop_end', (event) => ends.push(event));
+    const result = await loop.run('fail');
+    expect(result).toMatchObject({ reason: 'error', error: 'offline failure' });
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ reason: 'error' });
+  });
+
+  it('输出截断不会标为完成，dispose 后拒绝新的轮次', async () => {
+    const { loop } = makeLoop({ script: [[
+      { type: 'message_start' }, { type: 'text_delta', text: 'partial' },
+      { type: 'message_stop', stopReason: 'max_tokens' },
+    ]] });
+    expect((await loop.run('long')).reason).toBe('max_tokens');
+    await loop.dispose();
+    await expect(loop.run('again')).rejects.toThrow('disposed');
+  });
+
+  it('审批等待可以中断，过期的允许回调不会执行或记住操作', async () => {
+    const events = new EventBus();
+    const { loop, permission, tools } = makeLoop({
+      events,
+      mode: 'ask',
+      script: [toolUseResponse([{ id: 'cancelled', name: 'write_file', input: { path: 'cancelled.txt', content: 'no' } }])],
+    });
+    let lateResolve: ((d: import('../src/core/events.js').UserDecision) => void) | undefined;
+    events.on('permission_request', (e) => {
+      lateResolve = e.resolve;
+      loop.abort_current();
+      expect(e.signal.aborted).toBe(true);
+    });
+    const log = collect(events);
+    await loop.run('write');
+    lateResolve?.({ allow: true, remember: 'session' });
+    expect(log.at(-1)).toMatchObject({ type: 'loop_end', reason: 'aborted' });
+    expect(log.some((e) => e.type === 'tool_call')).toBe(false);
+    await expect(access(join(tmp, 'cancelled.txt'))).rejects.toThrow();
+    expect(permission.check(tools.get('write_file')!, { path: 'cancelled.txt' }).kind).toBe('ask');
+  });
+
+  it('并行审批全部可取消，loop 不会继续等待其他请求', async () => {
+    const events = new EventBus();
+    const { loop } = makeLoop({
+      events, mode: 'ask',
+      script: [toolUseResponse([
+        { id: 'a', name: 'read_file', input: { path: 'a' } },
+        { id: 'b', name: 'read_file', input: { path: 'b' } },
+      ])],
+    });
+    let requests = 0;
+    events.on('permission_request', () => { if (++requests === 2) loop.abort_current(); });
+    const log = collect(events);
+    await loop.run('read');
+    expect(requests).toBe(2);
+    expect(log.at(-1)).toMatchObject({ type: 'loop_end', reason: 'aborted' });
+    expect(log.filter((e) => e.type === 'tool_call')).toHaveLength(0);
+  });
+
+  it('运行中拒绝重入，保留当前轮次的取消控制器', async () => {
+    const events = new EventBus();
+    const { loop } = makeLoop({
+      events, mode: 'ask',
+      script: [toolUseResponse([{ id: 'a', name: 'read_file', input: { path: 'a' } }])],
+    });
+    let entered!: () => void;
+    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    events.on('permission_request', entered);
+    const first = loop.run('first');
+    await waiting;
+    await expect(loop.run('second')).rejects.toThrow('already running');
+    loop.abort_current();
+    await first;
+  });
+
+  it('dispose 中断审批并等待结果回填，清理后不能再运行', async () => {
+    const { loop, events } = makeLoop({ mode: 'ask', script: [
+      toolUseResponse([{ id: 'pending', name: 'write_file', input: { path: 'x', content: 'no' } }]),
+    ] });
+    let entered!: () => void;
+    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    events.on('permission_request', entered);
+    const run = loop.run('write');
+    await waiting;
+    await loop.dispose();
+    expect((await run).reason).toBe('aborted');
+    expect(loop.getMessages().at(-1)?.content).toMatchObject([
+      { type: 'tool_result', toolUseId: 'pending', isError: true },
+    ]);
+    await expect(access(join(tmp, 'x'))).rejects.toThrow();
+    await expect(loop.run('next')).rejects.toThrow('disposed');
+  });
+
   it('纯文本对话一轮结束', async () => {
     const { loop, events } = makeLoop({ script: [textResponse('你好，世界')] });
     const log = collect(events);
@@ -262,16 +374,16 @@ describe('AgentLoop', () => {
 
     context.setThreshold(1);
     const before = provider.requests.length;
-    await loop.run('next');
+    const result = await loop.run('next');
+    expect(result.usage).toMatchObject({ inputTokens: 20, outputTokens: 20 });
     expect(compactAt).toEqual([before + 1]);
     const summary = provider.requests[before];
     expect(summary.system).toContain('压缩器');
     expect(summary.cache).toBeUndefined();
     const agentReq = provider.requests[before + 1];
-    // 读断点已清掉，只剩本轮末尾那一条。请求对象和 loop 共用 messages 数组，
-    // 回复追加之后长度会 +1，所以断点落在倒数第二条（当时的最后一条用户消息）上。
-    expect(agentReq.cache?.messageBreakpoints).toEqual([agentReq.messages.length - 2]);
-    expect(agentReq.messages[agentReq.messages.length - 2]?.role).toBe('user');
+    // 请求保存调用时的独立快照，读断点落在本次请求的最后一条消息上。
+    expect(agentReq.cache?.messageBreakpoints).toEqual([agentReq.messages.length - 1]);
+    expect(agentReq.messages.at(-1)?.role).toBe('user');
     expect(JSON.stringify(loop.getMessages()[0]?.content)).toContain('早期对话摘要');
   });
 

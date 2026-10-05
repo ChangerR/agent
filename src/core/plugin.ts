@@ -19,11 +19,31 @@ export interface PluginContext {
 
 export interface Plugin {
   name: string;
-  register(ctx: PluginContext): void | Promise<void>;
+  /** 可返回异步清理函数；按注册的逆序释放资源。 */
+  register(ctx: PluginContext): void | PluginDisposer | Promise<void | PluginDisposer>;
 }
 
-export async function loadPlugins(plugins: Plugin[], ctx: PluginContext): Promise<void> {
-  for (const plugin of plugins) {
-    await plugin.register(ctx);
+export type PluginDisposer = () => void | Promise<void>;
+
+export async function loadPlugins(plugins: Plugin[], ctx: PluginContext): Promise<() => Promise<void>> {
+  const disposers: PluginDisposer[] = [];
+  let disposal: Promise<void> | undefined;
+  const dispose = () => disposal ??= (async () => {
+    const errors: unknown[] = [];
+    for (const cleanup of disposers.reverse()) {
+      try { await cleanup(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, 'Plugin cleanup failed');
+  })();
+  try {
+    for (const plugin of plugins) {
+      const cleanup = await plugin.register(ctx);
+      if (cleanup) disposers.push(cleanup);
+    }
+  } catch (error) {
+    try { await dispose(); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Plugin initialization and cleanup failed'); }
+    throw error;
   }
+  return dispose;
 }

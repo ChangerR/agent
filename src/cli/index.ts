@@ -6,4 +6,4 @@ const cwd = process.cwd();
 
 const agent = await createAgent(cwd);
 
-startTui(agent);
+if (!startTui(agent)) await agent.dispose();

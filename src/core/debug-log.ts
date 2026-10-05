@@ -10,6 +10,8 @@ import { dirname } from 'node:path';
 import type { AgentEvent, EventBus } from './events.js';
 
 const EVENT_TYPES: AgentEvent['type'][] = [
+  'model_request',
+  'model_usage',
   'text_delta',
   'thinking_delta',
   'assistant_message',

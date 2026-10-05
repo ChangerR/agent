@@ -3,12 +3,27 @@
  * 验证 connect → listTools → 桥接 → callTool 全链路。
  */
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { McpClientManager } from '../src/mcp/plugin.js';
 
 const serverEntry = join(__dirname, '..', 'examples', 'mcp-server.ts');
 
 describe('MCP 桥接', () => {
+  it('工具调用传递轮次取消信号，已取消的调用不发往服务端', async () => {
+    const controller = new AbortController();
+    const callTool = vi.fn((_params, _schema, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+    }));
+    const client = { listTools: async () => ({ tools: [{ name: 'slow', inputSchema: { type: 'object' } }] }), callTool } as unknown as Client;
+    const [tool] = await new McpClientManager().bridgeTools('test', client);
+    const pending = tool.execute({}, { cwd: process.cwd(), signal: controller.signal });
+    expect(callTool.mock.calls[0][2].signal).toBe(controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toThrow('cancelled');
+    await expect(tool.execute({}, { cwd: process.cwd(), signal: controller.signal })).rejects.toThrow();
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
   it('连接 stdio server 并调用工具', { timeout: 60_000 }, async () => {
     const manager = new McpClientManager();
     try {
@@ -26,6 +41,8 @@ describe('MCP 桥接', () => {
       const result = await add.execute({ a: 2, b: 40 }, { cwd: process.cwd(), signal: new AbortController().signal });
       expect(result.content).toBe('42');
     } finally {
+      await manager.closeAll();
+      expect(manager.serverNames()).toEqual([]);
       await manager.closeAll();
     }
   });

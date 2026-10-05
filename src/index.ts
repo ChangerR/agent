@@ -40,6 +40,8 @@ export interface Agent {
   knownModels: Array<{ name: string; info?: ModelInfo }>;
   /** 本会话的调试日志文件（JSONL） */
   logPath: string;
+  /** 中断并等待当前轮次结束，再释放插件资源；重复调用返回同一个清理任务。 */
+  dispose(): Promise<void>;
 }
 
 /** provider 插件：两个参考实现 + 离线演示用 fake，走同一个 Plugin 接口 */
@@ -124,60 +126,70 @@ export async function createAgent(cwd: string): Promise<Agent> {
     const mod = (await import(pathToFileURL(resolve(cwd, entry)).href)) as { default: Plugin };
     plugins.push(mod.default);
   }
-  await loadPlugins(plugins, ctx);
+  const disposePlugins = await loadPlugins(plugins, ctx);
+  try {
+    const permission = new PermissionEngine({
+      mode: config.permissionMode,
+      rules: config.permissions,
+      dangerForceAsk: config.dangerForceAsk,
+    });
 
-  const permission = new PermissionEngine({
-    mode: config.permissionMode,
-    rules: config.permissions,
-    dangerForceAsk: config.dangerForceAsk,
-  });
+    // auto 模式可选的 LLM 审批员（复用主 provider，换个便宜快速的模型）
+    const autoJudge = config.judgeModel
+      ? new AutoJudge(providers.get(config.provider), config.judgeModel)
+      : undefined;
 
-  // auto 模式可选的 LLM 审批员（复用主 provider，换个便宜快速的模型）
-  const autoJudge = config.judgeModel
-    ? new AutoJudge(providers.get(config.provider), config.judgeModel)
-    : undefined;
+    const systemPrompt = buildSystemPrompt({
+      cwd,
+      tools,
+      skills: skillLoader.list().map((s) => ({ name: s.name, description: s.description })),
+    });
 
-  const systemPrompt = buildSystemPrompt({
-    cwd,
-    tools,
-    skills: skillLoader.list().map((s) => ({ name: s.name, description: s.description })),
-  });
+    // 模型规格：models.json 覆盖内置 MODEL_PRESETS
+    const userModels = loadModelsFile(join(cwd, config.modelsFile));
+    const modelInfo = (model: string): ModelInfo | undefined => userModels[model] ?? MODEL_PRESETS[model];
+    const knownModels = [...new Set([...Object.keys(MODEL_PRESETS), ...Object.keys(userModels), config.model])].map(
+      (name) => ({ name, info: modelInfo(name) }),
+    );
 
-  // 模型规格：models.json 覆盖内置 MODEL_PRESETS
-  const userModels = loadModelsFile(join(cwd, config.modelsFile));
-  const modelInfo = (model: string): ModelInfo | undefined => userModels[model] ?? MODEL_PRESETS[model];
-  const knownModels = [...new Set([...Object.keys(MODEL_PRESETS), ...Object.keys(userModels), config.model])].map(
-    (name) => ({ name, info: modelInfo(name) }),
-  );
+    const loop = new AgentLoop({
+      provider: providers.get(config.provider),
+      model: config.model,
+      tools,
+      permission,
+      hooks: hookRunner,
+      events,
+      context: new ContextManager({ compactThreshold: config.compactThreshold }),
+      systemPrompt,
+      maxTurns: config.maxTurns,
+      cwd,
+      modelInfo,
+      autoJudge,
+      thinking: config.thinking,
+      cache: config.cache,
+    });
 
-  const loop = new AgentLoop({
-    provider: providers.get(config.provider),
-    model: config.model,
-    tools,
-    permission,
-    hooks: hookRunner,
-    events,
-    context: new ContextManager({ compactThreshold: config.compactThreshold }),
-    systemPrompt,
-    maxTurns: config.maxTurns,
-    cwd,
-    modelInfo,
-    autoJudge,
-    thinking: config.thinking,
-    cache: config.cache,
-  });
-
-  return { loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath };
+    let disposal: Promise<void> | undefined;
+    const dispose = () => disposal ??= (async () => {
+      try { await loop.dispose(); }
+      finally { await disposePlugins(); }
+    })();
+    return { loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath, dispose };
+  } catch (error) {
+    try { await disposePlugins(); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Agent initialization and cleanup failed'); }
+    throw error;
+  }
 }
 
 // 公共 API 导出（供测试与外部插件使用）
 export * from './core/protocol/types.js';
-export { EventBus, type AgentEvent, type UserDecision, type PermissionRequest } from './core/events.js';
+export { EventBus, type AgentEvent, type LoopEndReason, type UserDecision, type PermissionRequest } from './core/events.js';
 export { HookRunner } from './core/hooks.js';
-export { AgentLoop, type AgentLoopOptions } from './core/loop.js';
+export { AgentLoop, type AgentLoopOptions, type AgentRunResult } from './core/loop.js';
 export { PermissionEngine, parseRule, matchRule, type Decision } from './core/permission/engine.js';
 export { AutoJudge, mergeJudgeDecision, type JudgeVerdict } from './core/permission/judge.js';
-export { loadPlugins, type Plugin, type PluginContext } from './core/plugin.js';
+export { loadPlugins, type Plugin, type PluginContext, type PluginDisposer } from './core/plugin.js';
 export { ProviderRegistry, ToolRegistry, type Tool, type ToolContext, type ToolRisk } from './core/registry.js';
 export { complete, type ChatRequest, type Provider, type ThinkingLevel, type CachePolicy, type CacheTtl } from './core/provider.js';
 export { ContextManager, estimateTokens } from './core/context/manager.js';

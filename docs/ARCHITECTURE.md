@@ -29,7 +29,7 @@
 为什么需要它？如果 loop 直接用 Anthropic 的消息格式，换成 OpenAI 就要重写一切。协议层定义了厂商中立的三种类型：
 
 - **`Message`**：持久化的对话历史。AssistantMessage 的内容是 content blocks（`text | thinking | tool_use`），工具结果以 `tool_result` block 包在 user 消息里回填 —— 这是 Anthropic 的建模方式，OpenAI 侧由 adapter 转译。
-- **`StreamEvent`**：流式增量。关键设计是把 tool_use 的输入建模为 **JSON 字符串增量**（`tool_use_delta.input`），与 Anthropic 的 `input_json_delta` 对齐；OpenAI 的 arguments 分片也能自然映射。
+- **`StreamEvent`**：流式增量。关键设计是把 tool_use 的输入建模为 **JSON 字符串增量**（`tool_use_delta.input`），与 Anthropic 的 `input_json_delta` 对齐；OpenAI 的 arguments 分片也能自然映射。交错的工具增量和结束事件带 `id`，聚合器按 ID 独立缓存参数；不带 ID 的旧事件仍支持顺序工具流。参数不是合法 JSON 时直接报错，不会把错误参数交给工具执行。
 - **`collectStreamAsync`**：把增量流聚合成完整消息的状态机，是"流式 → 结构化"的通用归约器，loop 和测试共用。
 
 **学习要点**：读 `tests/protocol.test.ts`，看同一个规范化消息如何被翻译成两家厂商格式，以及 OpenAI 分片 tool_calls 如何被重新聚合。
@@ -77,7 +77,7 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 1. `UserPromptSubmit` 钩子 → 用户消息入历史
 2. 检查是否需要压缩上下文（超阈值 → 总结老消息）
 3. `provider.stream()`，边收边把 text/thinking 增量转发成 UI 事件
-4. 聚合成 AssistantMessage 入历史，发 `turn_end`（带 token 用量）
+4. 聚合成 AssistantMessage 入历史，发 `turn_end`（带 token 用量），通知 `TurnEnd` 钩子
 5. 没有 tool_use → `loop_end`，结束
 6. 有 tool_use → 逐个（连续的只读工具并行）：
    - `PreToolUse` 钩子：可改写参数、可 veto
@@ -91,6 +91,10 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 - **用户拒绝也是 tool_result**（`isError: true`）。模型看到"用户拒绝了 + 理由"，会自己调整策略 —— 人在回路不是异常分支，只是另一种工具结果。
 - **中断**用 AbortController 贯穿：loop 检查 signal，bash 工具 kill 子进程，provider 的 HTTP 请求也被 abort。
 - **并行策略**：连续的可并行工具（只读）组成一个 batch 用 `Promise.all` 执行，写/执行类串行 —— 与 Claude Code 的行为一致。
+
+`run()` 返回 `AgentRunResult`：`reason` 区分 `completed / max_turns / max_tokens / aborted / error`，同时提供模型轮数、累计用量和错误信息。`completed` 只代表循环正常结束，研究中的任务成功率应由外部评测器判断。没有 UI 或 `error` 事件订阅者时，模型失败也能返回 `error` 终态。
+
+每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `.agentlab/logs/*.jsonl`。
 
 ## 5. 权限引擎 `src/core/permission/engine.ts`（重点）
 
@@ -126,6 +130,8 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 四个钩子点：`PreToolUse`（在权限管线第 0 步，可改写/否决）、`PostToolUse`、`UserPromptSubmit`、`TurnEnd`。插件通过 `ctx.hooks.register()` 挂载。示例见 `plugins/example/index.ts`。
 
+`TurnEnd` 在每次成功聚合模型响应后、执行该响应的工具之前触发，载荷为 `{ turn, message, stopReason, usage }`；`turn` 在每次 `run()` 内从 1 开始。一条用户任务可能触发多次 `TurnEnd`，整次运行结束应观察 `loop_end` 或等待 `run()`。
+
 ## 7. MCP `src/mcp/`
 
 - `mcp.json` 声明 server（stdio 或 streamable-http）
@@ -133,6 +139,8 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 - 每个远端工具桥接为本地 Tool，命名 `mcp__<server>__<tool>`
 
 桥接之后，MCP 工具与内置工具完全同构：同样的权限规则、同样的事件、同样的回填路径。这展示了插件架构的威力 —— loop 不需要知道 MCP 的存在。
+
+MCP 调用传入当前轮次的 `AbortSignal`；连接失败会关闭已创建的 transport。MCP 插件返回异步清理函数，由 `agent.dispose()` 等待关闭客户端，不依赖进程 `exit` 回调执行异步清理。
 
 验证：`tests/mcp.test.ts` 会真实拉起 `examples/mcp-server.ts`（stdio），调用 `mcp__demo__add` 并断言结果。
 
@@ -149,7 +157,7 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 ## 9. 上下文管理 `src/core/context/`
 
 - `estimateTokens`：~3 字符/token 的启发式估算
-- 超阈值 → 把最早一半消息交给 LLM 总结成摘要块，替换原消息；LLM 不可用时降级为硬截断占位
+- 超阈值 → 从历史中点寻找切点，若切点拆开 `tool_use` 与对应 `tool_result`，退到整个工具交换之前；包括分多条消息返回结果和尚未完成的调用。没有安全切点时保留原历史。旧消息交给 LLM 总结，LLM 不可用时降级为截断占位；取消时传播中断，不替换历史
 - `buildSystemPrompt`：环境信息 + 工具清单 + skill 清单 + 项目 AGENTS.md
 
 **模型规格注册表**（`models.json` + 内置 `MODEL_PRESETS`）：每个模型可声明 `contextWindow` 与 `maxOutputTokens`。`loop.setModel()` 时自动联动：压缩阈值压到 `min(配置值, contextWindow × 80%)`，请求的 `maxTokens` 用模型的输出上限。未知模型回退到全局配置值。
@@ -157,17 +165,27 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 ## 10. 插件 API 与装配 `src/core/plugin.ts` + `src/index.ts`
 
 ```ts
-interface Plugin { name: string; register(ctx: PluginContext): void | Promise<void> }
+type PluginDisposer = () => void | Promise<void>;
+interface Plugin {
+  name: string;
+  register(ctx: PluginContext): void | PluginDisposer | Promise<void | PluginDisposer>;
+}
 // PluginContext: { providers, tools, hooks, config }
 ```
 
 `createAgent()` 的装配顺序即架构分层：providers → 内置工具 → skills → MCP → `config.plugins` 里的外部插件（动态 import ESM 模块，默认导出 Plugin）。
 
+`register()` 可返回资源清理函数，按注册顺序的逆序执行；某个清理失败仍继续释放其余资源。插件加载或后续装配失败时自动回滚已注册插件的资源。`agent.dispose()` 中断并等待当前 `run()` 完成，再等待插件清理，重复调用复用同一个清理任务；程序化使用时应在 `finally` 中调用它。插件在自身 `register()` 返回前失败，需要自行释放本次尚未交付的资源。
+
 **想验证插件机制？** 在 `agent.config.json` 加 `"plugins": ["plugins/example/index.ts"]`，启动后 `/tools` 能看到 `current_time`。
 
 ## 11. TUI `src/cli/`
 
-[pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui) 实现（命令式组件模型 + 差分渲染，无 React）。整个入口只做两件事：订阅 EventBus 渲染、把用户输入交给 `loop.run()`。权限询问用 `SelectList` overlay 弹层，助手输出用 `Markdown` 组件流式渲染，输入框是带 slash 命令补全的 `Editor`。换成 Web 前端只需要重写这一层。
+[pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui) 实现（命令式组件模型 + 差分渲染，无 React）。入口订阅 EventBus、管理展示状态，并把输入交给 `loop.run()`，不参与模型或权限决策。默认使用 `TuiAltScreen + VStack + ScrollView`：历史消息独立滚动，状态与 `Editor` 输入框固定在底部。`AGENTLAB_SCREEN=main` 切回终端原生滚动历史。
+
+`src/cli/messages.ts` 负责流式块和工具消息：60ms 合并增量，切换正文/思考前刷新旧块，收到完整消息后校准内容；工具结果按 `toolUseId` 更新对应组件，思考与长输出默认折叠。`src/cli/turn-queue.ts` 在上一轮 `run()` 的 Promise 完全结束后才发送下一条输入，不能在 `loop_end` 回调中重入，因为旧轮次的清理尚未结束。
+
+审批使用 `SelectList` 弹层，并行请求由 UI 排队逐个展示。`permission_request` 携带所属轮次的 `AbortSignal`：core 中断时结束审批等待，UI 同步关闭弹层；过期的允许回调不会执行工具或添加规则。`startTui()` 支持注入 `Terminal` 并返回停止函数，`tests/cli.test.ts` 用内存终端验证真实渲染、按键与尺寸变化，不依赖真实模型或交互终端。换成 Web 前端仍只需要重写这一层。
 
 ## 12. 建议的阅读顺序
 

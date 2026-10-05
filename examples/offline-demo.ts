@@ -18,4 +18,5 @@ agent.events.on('permission_request', (e) => {
 });
 agent.events.on('loop_end', (e) => console.log(`\n[loop_end] ${e.reason}`));
 
-await agent.loop.run('帮我读一下 demo.txt');
+try { await agent.loop.run('帮我读一下 demo.txt'); }
+finally { await agent.dispose(); }

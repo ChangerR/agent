@@ -15,25 +15,32 @@ import {
   Container,
   Editor,
   Key,
-  Markdown,
   matchesKey,
   ProcessTerminal,
+  ScrollView,
   SelectList,
   Spacer,
   Text,
+  TruncatedText,
+  TuiAltScreen,
   TuiMainScreen,
+  VStack,
+  isViewportTUI,
   type Component,
   type EditorTheme,
   type MarkdownTheme,
   type OverlayHandle,
   type SelectListTheme,
   type TUI,
+  type Terminal,
 } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
 import type { PermissionRequest, UserDecision } from '../core/events.js';
 import type { ThinkingLevel } from '../core/provider.js';
 import { emptyUsage, type TokenUsage } from '../core/protocol/types.js';
 import type { Agent } from '../index.js';
+import { StreamMessages, ToolMessage } from './messages.js';
+import { TurnQueue } from './turn-queue.js';
 
 // ---------------------------------------------------------------------------
 // 主题
@@ -76,15 +83,17 @@ const HELP = `命令（不带参数弹出选择器）：
   /permissions           查看权限决策日志
   /skills                列出可用 skill
   /tools                 列出已注册工具
+  /details               展开/收起工具输出和思考内容
+  /stats                 查看 token、缓存和日志信息
+  /queue clear           清空待发送消息
   /redraw                强制全屏重绘（画面残留时用）
   /help                  显示帮助
   /exit                  退出
-其他输入直接作为对话发送。Esc 中断当前轮，Ctrl+C 中断/退出。
+其他输入直接作为对话发送。Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
+消息区独立滚动，底部保留输入框。AGENTLAB_SCREEN=main 可使用终端原生滚动历史。
 调试：会话事件全量记录在 .agentlab/logs/session-*.jsonl
 画面异常时：先试 /redraw；仍异常可设 AGENTLAB_FULL_REDRAW=1 后重启（关闭差分渲染）。
 缓存命中率 = cache 读取 / (cache 读取 + 未命中输入)。分母为 0 时显示为 -。`;
-
-const RENDER_THROTTLE_MS = 60;
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -103,8 +112,8 @@ function cacheHitRate(usage: TokenUsage): string {
 // 主入口
 // ---------------------------------------------------------------------------
 
-export function startTui(agent: Agent): void {
-  if (!process.stdin.isTTY) {
+export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: () => void } = {}): { stop: () => void } | undefined {
+  if (!options.terminal && !process.stdin.isTTY) {
     // 非 TTY 环境（管道/CI）：打印装配信息后退出，便于 smoke 测试
     console.log('AgentLab（非 TTY 环境，仅展示装配信息）');
     console.log(`providers: ${agent.providers.list().map((p) => p.name).join(', ')}`);
@@ -113,8 +122,10 @@ export function startTui(agent: Agent): void {
     return;
   }
 
-  const terminal = new ProcessTerminal();
-  const tui: TUI = new TuiMainScreen(terminal);
+  const terminal = options.terminal ?? new ProcessTerminal();
+  const tui: TUI = process.env.AGENTLAB_SCREEN === 'main'
+    ? new TuiMainScreen(terminal)
+    : new TuiAltScreen(terminal, true, undefined, { scrollToEndIndicator: () => ' 回到底部 ' });
 
   // 保守渲染模式：把 TUI 的 requestRender 本身包一层（编辑器内部的按键/补全渲染
   // 也会走这里），全部强制为全量重绘。差分渲染在某些终端（如 Termius）里
@@ -129,11 +140,21 @@ export function startTui(agent: Agent): void {
   let mode: string = agent.config.permissionMode;
   let thinking: ThinkingLevel = agent.config.thinking;
   let usage: TokenUsage = emptyUsage();
-  let running = false;
-  const queue: string[] = [];
+  let phase = '就绪';
+  let expanded = false;
+  let startedAt = 0;
+  let stopped = false;
+  const toolMessages = new Map<string, ToolMessage>();
+  const unsubscribe: Array<() => void> = [];
+  const transcript = new Container();
+  const scroll = new ScrollView(transcript, { follow: 'end', primary: true });
 
-  // --- 固定布局：消息流在上，状态栏与编辑器固定在下 ---
-  const status = new Text('', 1, 0);
+  // --- 消息区拥有独立视口，状态与输入不参与历史滚动 ---
+  let statusText = '';
+  const status: Component = {
+    invalidate() {},
+    render: (width) => new TruncatedText(statusText, 1, 0).render(width),
+  };
   const editor = new Editor(tui, editorTheme, { paddingX: 1 });
   editor.setAutocompleteProvider(
     new CombinedAutocompleteProvider(
@@ -145,6 +166,9 @@ export function startTui(agent: Agent): void {
         { name: 'redraw', description: '强制全屏重绘' },
         { name: 'skills', description: '列出 skill' },
         { name: 'tools', description: '列出工具' },
+        { name: 'details', description: '展开/收起工具输出和思考' },
+        { name: 'stats', description: 'token、缓存和日志' },
+        { name: 'queue', description: '/queue clear 清空排队' },
         { name: 'help', description: '帮助' },
         { name: 'exit', description: '退出' },
       ],
@@ -153,27 +177,64 @@ export function startTui(agent: Agent): void {
   );
 
   // 注意：fullRedraw 模式下 requestRender 已被包装为强制全量，这里无需判断
-  const render = () => tui.requestRender();
+  const render = () => { if (!stopped) tui.requestRender(); };
 
   const updateStatus = () => {
-    status.setText(
-      chalk.dim(
-        `model: ${model} · mode: ${mode} · think: ${thinking} · tokens: ${fmtTokens(usage.inputTokens)}↑ ${fmtTokens(usage.outputTokens)}↓ · cache ${fmtTokens(usage.cacheReadTokens)}读/${fmtTokens(usage.cacheWriteTokens)}写 (${cacheHitRate(usage)})${running ? ' · 运行中…' : ''}`,
-      ),
-    );
-    status.invalidate();
+    const elapsed = turns.running ? ` · ${Math.floor((Date.now() - startedAt) / 1000)}s` : '';
+    statusText = `${turns.running ? chalk.cyan(phase) : chalk.dim('就绪')}${elapsed}${turns.size ? ` · 排队 ${turns.size}` : ''} · ${chalk.dim(`${model} · ${mode} · ${thinking}`)}`;
     render();
   };
+  const setPhase = (next: string) => {
+    if (phase === next) return;
+    phase = next;
+    updateStatus();
+  };
 
-  /** 消息组件插入到状态栏之前（children 尾部两个位置留给 status/editor） */
   const addMessage = (comp: Component) => {
-    tui.children.splice(tui.children.length - 2, 0, comp);
-    tui.invalidate();
+    transcript.addChild(comp);
     render();
   };
 
   const say = (text: string) => addMessage(new Text(chalk.yellow(text), 1, 0));
   const err = (text: string) => addMessage(new Text(chalk.red(text), 1, 0));
+  const streams = new StreamMessages(markdownTheme, () => expanded, addMessage, render);
+  const turns = new TurnQueue(async (text) => {
+    startedAt = Date.now();
+    phase = '等待模型响应';
+    addMessage(new Spacer(1));
+    addMessage(new Text(chalk.bold(`❯ ${text}`), 1, 0));
+    scroll.scrollToEnd();
+    updateStatus();
+    await agent.loop.run(text);
+  }, updateStatus, (error) => err(error instanceof Error ? error.message : String(error)));
+  const statusTimer = setInterval(() => { if (turns.running) updateStatus(); }, 1000);
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    turns.clear();
+    agent.loop.abort_current();
+    streams.finish();
+    clearInterval(statusTimer);
+    unsubscribe.forEach((off) => off());
+    tui.stop();
+  };
+  const exit = () => {
+    stop();
+    void agent.dispose().then(() => {
+      if (options.onExit) options.onExit();
+      else process.exit(0);
+    }).catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
+  };
+  const interrupt = () => {
+    const count = turns.clear();
+    phase = '正在中断';
+    agent.loop.abort_current();
+    if (count) say(`已取消 ${count} 条排队消息`);
+    updateStatus();
+  };
 
   // --- 通用选择器弹层 ---
   function showPicker(
@@ -184,7 +245,8 @@ export function startTui(agent: Agent): void {
     const panel = new Container();
     panel.addChild(new Text(chalk.bold.yellow(title), 1, 0));
     const list = new SelectList(items, Math.min(items.length, 10), selectTheme);
-    const handle = tui.showOverlay(panel, { anchor: 'bottom-center', width: '70%' });
+    panel.addChild(list);
+    const handle = tui.showOverlay(panel, { anchor: 'bottom-center', width: '90%', maxHeight: '80%' });
     const close = () => {
       handle.hide();
       tui.setFocus(editor);
@@ -195,21 +257,19 @@ export function startTui(agent: Agent): void {
       onPick(item.value);
     };
     list.onCancel = () => close();
-    panel.addChild(list);
     tui.setFocus(list);
     return handle;
   }
 
   // --- 权限请求弹层 ---
-  function showPermissionOverlay(request: PermissionRequest, resolve: (d: UserDecision) => void): void {
+  function showPermissionOverlay(request: PermissionRequest, resolve: (d: UserDecision) => void, signal: AbortSignal, next: () => void): void {
     const panel = new Container();
     panel.addChild(new Text(chalk.bold.yellow('权限请求'), 1, 0));
     panel.addChild(new Text(request.summary, 1, 0));
     panel.addChild(new Text(chalk.dim(request.reason), 1, 0));
     const options: Array<{ label: string; decision: UserDecision }> = [
       { label: '允许一次', decision: { allow: true } },
-      { label: '本次会话始终允许', decision: { allow: true, remember: 'session' } },
-      { label: '本项目始终允许', decision: { allow: true, remember: 'project' } },
+      { label: '本次会话记住此操作', decision: { allow: true, remember: 'session' } },
       { label: '拒绝', decision: { allow: false } },
     ];
     const list = new SelectList(
@@ -217,100 +277,62 @@ export function startTui(agent: Agent): void {
       options.length,
       selectTheme,
     );
-    const handle = tui.showOverlay(panel, { anchor: 'center', width: '60%' });
+    panel.addChild(list);
+    panel.addChild(new Text(chalk.dim('Enter 确认 · Esc 拒绝 · Ctrl+C 中断当前轮'), 1, 0));
+    const handle = tui.showOverlay(panel, { anchor: 'center', width: '90%', maxHeight: '90%' });
+    let settled = false;
     const done = (decision: UserDecision) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', cancel);
       handle.hide();
       resolve(decision);
       tui.setFocus(editor);
       render();
+      next();
     };
+    const cancel = () => done({ allow: false });
+    signal.addEventListener('abort', cancel, { once: true });
     list.onSelect = (item) => done(options[Number(item.value)].decision);
     list.onCancel = () => done({ allow: false });
-    panel.addChild(list);
     tui.setFocus(list);
   }
 
-  // --- 流式渲染（节流：Markdown 重排有成本，按 ~60ms 合并 delta） ---
-  let currentText: { comp: Markdown; buf: string } | null = null;
-  let currentThinking: { comp: Text; buf: string } | null = null;
-  let pendingFlush = false;
-  let lastFlushAt = 0;
-
-  const flushStreams = () => {
-    flushPending();
-    currentText = null;
-    currentThinking = null;
-  };
-
-  const flushPending = () => {
-    if (!pendingFlush) return;
-    pendingFlush = false;
-    lastFlushAt = Date.now();
-    if (currentText) {
-      currentText.comp.setText(currentText.buf);
-      currentText.comp.invalidate();
-    }
-    if (currentThinking) {
-      currentThinking.comp.setText(chalk.gray.italic(currentThinking.buf));
-      currentThinking.comp.invalidate();
-    }
-    render();
-  };
-
-  const scheduleFlush = () => {
-    if (pendingFlush) return;
-    const elapsed = Date.now() - lastFlushAt;
-    if (elapsed >= RENDER_THROTTLE_MS) {
-      flushPendingNow();
-    } else {
-      pendingFlush = true;
-      setTimeout(flushPending, RENDER_THROTTLE_MS - elapsed);
-    }
-  };
-
-  const flushPendingNow = () => {
-    pendingFlush = true;
-    flushPending();
-  };
-
-  const appendText = (delta: string) => {
-    currentThinking = null;
-    if (!currentText) {
-      currentText = { comp: new Markdown('', 1, 0, markdownTheme), buf: '' };
-      addMessage(currentText.comp);
-    }
-    currentText.buf += delta;
-    scheduleFlush();
-  };
-
-  const appendThinking = (delta: string) => {
-    currentText = null;
-    if (!currentThinking) {
-      currentThinking = { comp: new Text('', 1, 0), buf: '' };
-      addMessage(currentThinking.comp);
-    }
-    currentThinking.buf += delta;
-    scheduleFlush();
-  };
-
   // --- 事件订阅 ---
-  agent.events.on('text_delta', (e) => appendText(e.text));
-  agent.events.on('thinking_delta', (e) => appendThinking(e.text));
-  agent.events.on('assistant_message', () => flushStreams());
-  agent.events.on('tool_call', (e) => {
-    flushStreams();
+  unsubscribe.push(agent.events.on('text_delta', (e) => {
+    setPhase('正在回复');
+    streams.append('text', e.text);
+  }));
+  unsubscribe.push(agent.events.on('thinking_delta', (e) => {
+    setPhase('正在思考');
+    streams.append('thinking', e.text);
+  }));
+  unsubscribe.push(agent.events.on('assistant_message', (e) => streams.finish(e.message)));
+  unsubscribe.push(agent.events.on('tool_call', (e) => {
+    streams.finish();
     const tool = agent.tools.get(e.toolUse.name);
     const summary = tool?.analyzeInput?.(e.toolUse.input as Record<string, unknown>).summary ?? e.toolUse.name;
-    addMessage(new Text(chalk.magenta(`⏺ ${summary}`), 1, 0));
-  });
-  agent.events.on('tool_result', (e) => {
-    const preview = e.result.content.split('\n').slice(0, 5).join('\n    ').slice(0, 500);
-    addMessage(new Text((e.result.isError ? chalk.red : chalk.gray)(`  ⎿ ${preview}`), 1, 0));
-  });
-  agent.events.on('notice', (e) => say(e.text));
-  agent.events.on('compacted', (e) => say(`上下文已压缩：${e.beforeMessages} → ${e.afterMessages} 条消息`));
-  agent.events.on('error', (e) => err(e.error.message));
-  agent.events.on('turn_end', (e) => {
+    const comp = new ToolMessage(summary, () => expanded);
+    toolMessages.set(e.toolUse.id, comp);
+    phase = `执行工具 · ${e.toolUse.name}`;
+    addMessage(comp);
+    updateStatus();
+  }));
+  unsubscribe.push(agent.events.on('tool_result', (e) => {
+    let comp = toolMessages.get(e.toolUseId);
+    if (!comp) {
+      comp = new ToolMessage(e.name, () => expanded);
+      addMessage(comp);
+    }
+    comp.finish(e.result);
+    toolMessages.delete(e.toolUseId);
+    phase = toolMessages.size ? `执行工具 · ${toolMessages.size} 个任务` : '等待模型响应';
+    updateStatus();
+  }));
+  unsubscribe.push(agent.events.on('notice', (e) => say(e.text)));
+  unsubscribe.push(agent.events.on('compacted', (e) => say(`上下文已压缩：${e.beforeMessages} → ${e.afterMessages} 条消息`)));
+  unsubscribe.push(agent.events.on('error', (e) => err(e.error.message)));
+  unsubscribe.push(agent.events.on('model_usage', (e) => {
     usage = {
       inputTokens: usage.inputTokens + e.usage.inputTokens,
       outputTokens: usage.outputTokens + e.usage.outputTokens,
@@ -318,36 +340,55 @@ export function startTui(agent: Agent): void {
       cacheWriteTokens: usage.cacheWriteTokens + e.usage.cacheWriteTokens,
     };
     updateStatus();
-  });
-  agent.events.on('loop_end', (e) => {
-    flushStreams();
-    addMessage(new Text(chalk.dim(`— 本轮结束 · ${e.reason} —`), 1, 0));
+  }));
+  unsubscribe.push(agent.events.on('loop_end', (e) => {
+    streams.finish();
+    if (e.reason === 'aborted') say('本轮已中断');
+    if (e.reason === 'max_turns') say('已达到轮次上限，可继续输入');
+    if (e.reason === 'max_tokens') say('回复达到输出上限，内容可能不完整');
     addMessage(new Spacer(1));
-    running = false;
+    toolMessages.clear();
+  }));
+  // 并行只读工具可能同时询问；审批逐个显示，避免弹层争抢焦点。
+  type Approval = Extract<import('../core/events.js').AgentEvent, { type: 'permission_request' }>;
+  const approvals: Approval[] = [];
+  let approving = false;
+  const nextApproval = () => {
+    approving = false;
+    if (stopped) return;
+    while (approvals.length) {
+      const approval = approvals.shift()!;
+      if (approval.signal.aborted) continue;
+      approving = true;
+      phase = '等待审批';
+      updateStatus();
+      showPermissionOverlay(approval.request, approval.resolve, approval.signal, nextApproval);
+      return;
+    }
+    phase = '等待执行工具';
     updateStatus();
-    const next = queue.shift();
-    if (next !== undefined) void runTurn(next);
-  });
-  agent.events.on('permission_request', (e) => showPermissionOverlay(e.request, e.resolve));
+  };
+  unsubscribe.push(agent.events.on('permission_request', (e) => {
+    approvals.push(e);
+    if (!approving) nextApproval();
+  }));
 
   // --- 全局按键：Esc 中断当前轮；Ctrl+C 中断/退出 ---
-  tui.addInputListener((data) => {
-    if (matchesKey(data, Key.escape) && running && !tui.hasOverlay()) {
-      agent.loop.abort_current();
-      say('已中断');
+  unsubscribe.push(tui.addInputListener((data) => {
+    if (matchesKey(data, Key.escape) && turns.running && !tui.hasOverlay()) {
+      interrupt();
       return { consume: true };
     }
     if (matchesKey(data, Key.ctrl('c'))) {
-      if (running) {
-        agent.loop.abort_current();
+      if (turns.running) {
+        interrupt();
       } else {
-        tui.stop();
-        process.exit(0);
+        exit();
       }
       return { consume: true };
     }
     return undefined;
-  });
+  }));
 
   // --- 命令 ---
   const setModel = (name: string) => {
@@ -381,14 +422,26 @@ export function startTui(agent: Agent): void {
     const arg = rest.join(' ');
     switch (name) {
       case 'exit':
-        tui.stop();
-        process.exit(0);
+        exit();
+        return;
       case 'help':
         say(HELP);
         return;
       case 'redraw':
         tui.requestRender(true);
         say('已强制全屏重绘');
+        return;
+      case 'details':
+        expanded = !expanded;
+        transcript.invalidate();
+        say(expanded ? '已展开工具输出和思考内容' : '已收起工具输出和思考内容');
+        return;
+      case 'stats':
+        say(`tokens: ${fmtTokens(usage.inputTokens)} 输入 / ${fmtTokens(usage.outputTokens)} 输出\ncache: ${fmtTokens(usage.cacheReadTokens)} 读 / ${fmtTokens(usage.cacheWriteTokens)} 写 · 命中率 ${cacheHitRate(usage)}\n会话日志: ${agent.logPath}`);
+        return;
+      case 'queue':
+        if (arg === 'clear') say(`已取消 ${turns.clear()} 条排队消息`);
+        else say(`待发送 ${turns.size} 条消息，/queue clear 清空`);
         return;
       case 'model': {
         if (arg) {
@@ -470,18 +523,6 @@ export function startTui(agent: Agent): void {
   };
 
   // --- 输入 ---
-  const runTurn = async (text: string) => {
-    running = true;
-    updateStatus();
-    try {
-      await agent.loop.run(text);
-    } catch (e) {
-      err(e instanceof Error ? e.message : String(e));
-      running = false;
-      updateStatus();
-    }
-  };
-
   editor.onSubmit = (text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -491,23 +532,28 @@ export function startTui(agent: Agent): void {
       handleCommand(trimmed);
       return;
     }
-    addMessage(new Spacer(1));
-    addMessage(new Text(chalk.blue.bold(`❯ ${trimmed}`), 1, 0));
-    if (running) {
-      queue.push(trimmed);
+    if (turns.running) {
       say(`已排队（当前轮结束后发送）：${trimmed.slice(0, 60)}${trimmed.length > 60 ? '…' : ''}`);
-    } else {
-      void runTurn(trimmed);
     }
+    turns.submit(trimmed);
   };
 
   // --- 启动 ---
-  tui.addChild(new Text(chalk.bold.cyan('AgentLab') + chalk.dim(' — 教学版插件式 agent · pi-tui · /help 查看命令'), 1, 1));
-  tui.addChild(new Text(chalk.dim(`会话日志: ${agent.logPath}`), 1, 0));
-  tui.addChild(new Spacer(1));
-  tui.addChild(status);
-  tui.addChild(editor);
+  transcript.addChild(new Text(chalk.bold('AgentLab') + chalk.dim(' · /help 查看命令'), 1, 1));
+  const hints = new TruncatedText(chalk.dim('Enter 发送 · Esc 中断 · /details 展开输出 · /stats 统计'), 1, 0);
+  if (isViewportTUI(tui)) {
+    tui.setLayoutRoot(new VStack([
+      { component: scroll, basis: 0, grow: 1, minSize: 1 },
+      { component: new VStack([status, editor, hints]), basis: 'auto', shrink: 1, minSize: 3 },
+    ]));
+  } else {
+    tui.addChild(transcript);
+    tui.addChild(status);
+    tui.addChild(editor);
+    tui.addChild(hints);
+  }
   updateStatus();
   tui.setFocus(editor);
   tui.start();
+  return { stop };
 }

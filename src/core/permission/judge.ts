@@ -13,6 +13,7 @@
 import { complete, type Provider } from '../provider.js';
 import type { Tool } from '../registry.js';
 import type { Decision } from './engine.js';
+import type { EventBus } from '../events.js';
 
 const JUDGE_PROMPT = `你是 coding agent 的权限审批员。用户已开启 auto 模式，授权你放行"明显安全"的操作。
 
@@ -33,7 +34,7 @@ export class AutoJudge {
     private model: string,
   ) {}
 
-  async review(tool: Tool, input: Record<string, unknown>, signal: AbortSignal): Promise<JudgeVerdict> {
+  async review(tool: Tool, input: Record<string, unknown>, signal: AbortSignal, events?: EventBus): Promise<JudgeVerdict> {
     try {
       const { text } = await complete(
         this.provider,
@@ -50,6 +51,7 @@ export class AutoJudge {
           maxTokens: 256,
         },
         signal,
+        events ? { events, purpose: 'judge' } : undefined,
       );
       const m = /\{[\s\S]*\}/.exec(text);
       const parsed = JSON.parse(m?.[0] ?? '{}') as Partial<JudgeVerdict>;

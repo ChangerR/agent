@@ -30,6 +30,20 @@ function makeLoop(modelInfo?: (model: string) => { contextWindow: number; maxOut
 }
 
 describe('模型规格联动', () => {
+  it('小窗口切回大窗口恢复配置上限，切未知模型恢复默认输出预算', async () => {
+    const { loop, context, provider } = makeLoop((model) => model === 'small'
+      ? { contextWindow: 1000, maxOutputTokens: 128 }
+      : model === 'big' ? { contextWindow: 200_000, maxOutputTokens: 512 } : undefined);
+    loop.setModel('small');
+    expect(context.threshold).toBe(800);
+    loop.setModel('big');
+    expect(context.threshold).toBe(120_000);
+    loop.setModel('unknown');
+    expect(context.threshold).toBe(120_000);
+    await loop.run('hi');
+    expect(provider.requests[0].maxTokens).toBeUndefined();
+  });
+
   it('未知模型：阈值保持配置值', async () => {
     const { loop, context, provider } = makeLoop(() => undefined);
     loop.setModel('some-new-model');

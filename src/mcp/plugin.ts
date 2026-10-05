@@ -21,6 +21,7 @@ interface ConnectedServer {
 
 export class McpClientManager {
   private servers: ConnectedServer[] = [];
+  private closing?: Promise<void>;
 
   async connect(name: string, config: McpServerConfig): Promise<Client> {
     const client = new Client({ name: 'agentlab', version: '0.1.0' });
@@ -32,7 +33,8 @@ export class McpClientManager {
         env: { ...process.env, ...config.env } as Record<string, string>,
         stderr: 'pipe',
       });
-      await client.connect(transport);
+      try { await client.connect(transport); }
+      catch (error) { await transport.close(); throw error; }
       this.servers.push({
         name,
         client,
@@ -44,7 +46,8 @@ export class McpClientManager {
       const transport = new StreamableHTTPClientTransport(new URL(config.url), {
         requestInit: config.headers ? { headers: config.headers } : undefined,
       });
-      await client.connect(transport);
+      try { await client.connect(transport); }
+      catch (error) { await transport.close(); throw error; }
       this.servers.push({
         name,
         client,
@@ -70,8 +73,9 @@ export class McpClientManager {
           patternTarget: JSON.stringify(input).slice(0, 200),
           summary: `mcp:${serverName}.${t.name}(${JSON.stringify(input).slice(0, 80)})`,
         }),
-        execute: async (input) => {
-          const result = await client.callTool({ name: t.name, arguments: input });
+        execute: async (input, ctx) => {
+          ctx.signal.throwIfAborted();
+          const result = await client.callTool({ name: t.name, arguments: input }, undefined, { signal: ctx.signal });
           const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
           const text = content.map((c) => (c.type === 'text' ? (c.text ?? '') : JSON.stringify(c))).join('\n');
           return { content: text || '(no content)', isError: Boolean(result.isError) };
@@ -80,9 +84,23 @@ export class McpClientManager {
     );
   }
 
-  async closeAll(): Promise<void> {
-    await Promise.allSettled(this.servers.map((s) => s.close()));
+  async disconnect(client: Client): Promise<void> {
+    this.servers = this.servers.filter((server) => server.client !== client);
+    await client.close();
+  }
+
+  closeAll(): Promise<void> {
+    if (this.closing) return this.closing;
+    const servers = this.servers;
     this.servers = [];
+    this.closing = (async () => {
+      try {
+        const results = await Promise.allSettled(servers.map((s) => s.close()));
+        const errors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => r.reason);
+        if (errors.length) throw new AggregateError(errors, 'MCP cleanup failed');
+      } finally { this.closing = undefined; }
+    })();
+    return this.closing;
   }
 
   serverNames(): string[] {
@@ -101,16 +119,20 @@ export function mcpPlugin(configPath: string): Plugin {
       const config = loadMcpConfig(configPath);
       const manager = new McpClientManager();
       for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+        let client: Client | undefined;
         try {
-          const client = await manager.connect(name, serverConfig);
+          client = await manager.connect(name, serverConfig);
           const tools = await manager.bridgeTools(name, client);
           for (const tool of tools) ctx.tools.register(tool);
         } catch (err) {
+          if (client) {
+            try { await manager.disconnect(client); }
+            catch (cleanupError) { console.error(`[mcp] server "${name}" 清理失败: ${String(cleanupError)}`); }
+          }
           console.error(`[mcp] server "${name}" 连接失败: ${err instanceof Error ? err.message : err}`);
         }
       }
-      // 进程退出时清理子进程
-      process.on('exit', () => void manager.closeAll());
+      return () => manager.closeAll();
     },
   };
 }

@@ -52,7 +52,7 @@ export class FakeProvider implements Provider {
   constructor(private script: ScriptedResponse[]) {}
 
   async *stream(req: ChatRequest, _signal: AbortSignal): AsyncIterable<StreamEvent> {
-    this.requests.push(req);
+    this.requests.push(structuredClone(req));
     let step = this.script[this.cursor];
     // 函数型剧本由请求驱动、天然可复用：耗尽后复用最后一个函数，便于演示/长对话测试
     if (!step) {

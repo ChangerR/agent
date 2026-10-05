@@ -76,8 +76,7 @@ export function toOpenAITools(tools: ToolDefinition[]): ChatCompletionTool[] {
 // ---------------------------------------------------------------------------
 
 export class OpenAIStreamTranslator {
-  private openToolIndex = new Map<number, boolean>();
-  private sawToolCalls = false;
+  private openToolIndex = new Map<number, string>();
 
   translate(chunk: ChatCompletionChunk): StreamEvent[] {
     const out: StreamEvent[] = [];
@@ -109,7 +108,6 @@ export class OpenAIStreamTranslator {
     if (delta.content) out.push({ type: 'text_delta', text: delta.content });
 
     for (const tc of delta.tool_calls ?? []) {
-      this.sawToolCalls = true;
       if (!this.openToolIndex.has(tc.index)) {
         // 新 tool_call 开始：首个分片带 id 和 name
         out.push({
@@ -117,16 +115,16 @@ export class OpenAIStreamTranslator {
           id: tc.id ?? `call_${tc.index}`,
           name: tc.function?.name ?? 'unknown',
         });
-        this.openToolIndex.set(tc.index, true);
-        if (tc.function?.arguments) out.push({ type: 'tool_use_delta', input: tc.function.arguments });
+        this.openToolIndex.set(tc.index, tc.id ?? `call_${tc.index}`);
+        if (tc.function?.arguments) out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index), input: tc.function.arguments });
       } else if (tc.function?.arguments) {
-        out.push({ type: 'tool_use_delta', input: tc.function.arguments });
+        out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index), input: tc.function.arguments });
       }
     }
 
     if (choice.finish_reason) {
       for (const idx of this.openToolIndex.keys()) {
-        out.push({ type: 'tool_use_stop' });
+        out.push({ type: 'tool_use_stop', id: this.openToolIndex.get(idx) });
         this.openToolIndex.delete(idx);
       }
       out.push({
