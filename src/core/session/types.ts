@@ -14,6 +14,8 @@ export interface SessionFile {
   schemaVersion: typeof SESSION_SCHEMA_VERSION;
   id: string;
   title: string;
+  /** 最后观察到的版本；旧 v1 缺省为 0，每次保存/删除递增。 */
+  revision?: number;
   createdAt: string;
   updatedAt: string;
   cwd: string;
