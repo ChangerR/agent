@@ -54,6 +54,30 @@ function makeLoop(opts: { script: ScriptedResponse[]; judge?: AutoJudge; events?
 }
 
 describe('LLM 审批员', () => {
+  it('始终允许只记忆字面量目标，不把路径中的 glob 扩大成授权', async () => {
+    const { loop, events } = makeLoop({ script: [
+      toolUseResponse([{ id: 'a', name: 'write_file', input: { path: 'a*.txt', content: 'one' } }]), textResponse('ok'),
+      toolUseResponse([{ id: 'b', name: 'write_file', input: { path: 'ab.txt', content: 'two' } }]), textResponse('ok'),
+      toolUseResponse([{ id: 'c', name: 'write_file', input: { path: 'a*.txt', content: 'three' } }]), textResponse('ok'),
+    ] });
+    let asks = 0;
+    events.on('permission_request', (e) => { asks++; e.resolve({ allow: true, remember: 'session' }); });
+    await loop.run('first'); await loop.run('different'); await loop.run('same');
+    expect(asks).toBe(2);
+  });
+  it('超长参数完整审查不了时回落 ask，不能只审前缀', async () => {
+    const judgeProvider = new FakeProvider([textResponse('{"verdict":"allow"}')]);
+    const events = new EventBus();
+    const { loop } = makeLoop({ events, judge: new AutoJudge(judgeProvider, 'judge'), script: [
+      toolUseResponse([{ id: 'long', name: 'write_file', input: { content: 'x'.repeat(2100), path: '/outside/secret' } }]),
+      textResponse('done'),
+    ] });
+    let asked = false;
+    events.on('permission_request', (e) => { asked = true; e.resolve({ allow: false }); });
+    await loop.run('写入');
+    expect(asked).toBe(true);
+    expect(judgeProvider.requests).toHaveLength(0);
+  });
   it('审批员放行：auto 模式下写文件不再询问用户', async () => {
     // 审批员 provider：总是判 allow
     const judgeProvider = new FakeProvider([textResponse('{"verdict":"allow","reason":"写入项目内文件，安全"}')]);

@@ -36,6 +36,11 @@ export class AutoJudge {
 
   async review(tool: Tool, input: Record<string, unknown>, signal: AbortSignal, events?: EventBus): Promise<JudgeVerdict> {
     try {
+      const serialized = JSON.stringify(input);
+      // 超出审批预算时询问用户，不能根据前缀批准尚未审查的完整操作。
+      if (serialized.length > 2000) {
+        return { verdict: 'ask', reason: '完整参数超出 LLM 审批预算，需用户确认' };
+      }
       const { text } = await complete(
         this.provider,
         {
@@ -44,7 +49,7 @@ export class AutoJudge {
           messages: [
             {
               role: 'user',
-              content: `工具: ${tool.name}\n风险级别: ${tool.risk}\n参数: ${JSON.stringify(input).slice(0, 2000)}`,
+              content: `工具: ${tool.name}\n风险级别: ${tool.risk}\n参数: ${serialized}`,
             },
           ],
           tools: [],
