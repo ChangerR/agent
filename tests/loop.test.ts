@@ -385,6 +385,7 @@ describe('AgentLoop', () => {
     expect(agentReq.cache?.messageBreakpoints).toEqual([agentReq.messages.length - 1]);
     expect(agentReq.messages.at(-1)?.role).toBe('user');
     expect(JSON.stringify(loop.getMessages()[0]?.content)).toContain('早期对话摘要');
+    expect(loop.getMessages()[1]).toMatchObject({ role: 'assistant' });
   });
 
   it('同一次 run 里，体积超过阈值但未到 1.5 倍时不在工具轮次中间压缩', async () => {
