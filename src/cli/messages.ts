@@ -1,6 +1,7 @@
-import { Markdown, Text, truncateToWidth, type Component, type MarkdownTheme } from '@earendil-works/pi-tui';
+import { Markdown, Spacer, Text, truncateToWidth, type Component, type MarkdownTheme } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
-import type { AssistantMessage, ToolResult } from '../core/protocol/types.js';
+import { SUMMARY_MARKER } from '../core/context/manager.js';
+import type { AssistantMessage, Message, ToolResult } from '../core/protocol/types.js';
 
 /** 思考与工具保留完整内容，默认只展示摘要；展开是视图状态，不修改模型历史。 */
 export class ThinkingMessage implements Component {
@@ -89,4 +90,87 @@ export class StreamMessages {
     }
     this.render();
   }
+}
+
+/** 折叠的长文本。摘要消息用它，展开状态跟 /details 走，不改历史。 */
+export class CollapsibleText implements Component {
+  constructor(
+    private title: string,
+    private body: string,
+    private expanded: () => boolean,
+  ) {}
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    if (this.expanded()) {
+      return new Text(chalk.dim(`${this.title}\n${this.body}`), 1, 0).render(width);
+    }
+    const preview = this.body.replace(/\s+/g, ' ').trim();
+    return [truncateToWidth(chalk.dim(` ${this.title} · ${preview.length} 字符 · /details 展开`), width)];
+  }
+}
+
+export interface HistoryRenderOptions {
+  theme: MarkdownTheme;
+  expanded: () => boolean;
+  summarize: (name: string, input: unknown) => string;
+}
+
+/** 把已保存的历史画回转录区。工具结果按 toolUseId 对上之前的 ToolMessage。 */
+export function renderHistory(messages: readonly Message[], options: HistoryRenderOptions): Component[] {
+  const components: Component[] = [];
+  const tools = new Map<string, ToolMessage>();
+  const pushUserText = (content: string) => {
+    components.push(new Spacer(1));
+    components.push(new Text(chalk.bold(`❯ ${content}`), 1, 0));
+  };
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      if (typeof message.content === 'string') {
+        if (message.content.startsWith(SUMMARY_MARKER)) {
+          components.push(new CollapsibleText('早期对话摘要', message.content, options.expanded));
+        } else {
+          pushUserText(message.content);
+        }
+        continue;
+      }
+      for (const block of message.content) {
+        if (block.type === 'text') {
+          pushUserText(block.text);
+          continue;
+        }
+        let tool = tools.get(block.toolUseId);
+        if (!tool) {
+          tool = new ToolMessage(block.toolUseId, options.expanded);
+          components.push(tool);
+        }
+        tool.finish({ content: block.content, isError: block.isError });
+        tools.delete(block.toolUseId);
+      }
+      continue;
+    }
+
+    for (const block of message.content) {
+      if (block.type === 'text') {
+        components.push(new Markdown(block.text, 1, 0, options.theme));
+      } else if (block.type === 'thinking') {
+        const thinking = new ThinkingMessage(options.expanded);
+        thinking.text = block.thinking;
+        components.push(thinking);
+      } else if (block.type === 'redacted_thinking') {
+        components.push(new Text(chalk.dim('思考 · 已由服务端打码'), 1, 0));
+      } else {
+        const tool = new ToolMessage(options.summarize(block.name, block.input), options.expanded);
+        tools.set(block.id, tool);
+        components.push(tool);
+      }
+    }
+  }
+
+  for (const tool of tools.values()) {
+    tool.finish({ content: '(结果未保存)', isError: true });
+  }
+  return components;
 }

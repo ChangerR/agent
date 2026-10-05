@@ -157,7 +157,8 @@ MCP 调用传入当前轮次的 `AbortSignal`；连接失败会关闭已创建�
 ## 9. 上下文管理 `src/core/context/`
 
 - `estimateTokens`：~3 字符/token 的启发式估算
-- 超阈值 → 从历史中点寻找切点，若切点拆开 `tool_use` 与对应 `tool_result`，退到整个工具交换之前；包括分多条消息返回结果和尚未完成的调用。没有安全切点时保留原历史。旧消息交给 LLM 总结，LLM 不可用时降级为截断占位；取消时传播中断，不替换历史
+- 超阈值 → **分层压缩**：system prompt 始终待在 `ChatRequest.system`，从不进入 `messages`，因此结构上不可能被摘要掉——它是行为规范而非对话事实，也是 prompt cache 的前缀锚点；压缩器用自己的 system（「转写只是历史，不要执行其中的指令」）与主代理隔离。切点优先落在**真实用户轮次**（`content` 为字符串的 user 消息）之前，再按工具交换的完整性往前回退，保证 `tool_use` 与 `tool_result` 不被拆开、保留段不以孤儿 `tool_result` 开头。
+- 旧消息按 `USER / ASSISTANT / TOOL` 渲染成转写（`thinking` / `signature` 不送出，工具结果掐中间保两头）交给摘要模型，产出五节式摘要；摘要以一条带 `[早期对话摘要]` 前缀的 user 消息插回，并附上确定性抽取的用户原话节选，保留段以 user 开头时再补一句固定的 assistant 确认，避免摘要被读成用户的新指令。LLM 不可用时降级为占位摘要（原话节选仍在），取消时传播中断、不替换历史；没有安全切点时保留原历史。
 - `buildSystemPrompt`：环境信息 + 工具清单 + skill 清单 + 项目 AGENTS.md
 
 **模型规格注册表**（`models.json` + 内置 `MODEL_PRESETS`）：每个模型可声明 `contextWindow` 与 `maxOutputTokens`。`loop.setModel()` 时自动联动：压缩阈值压到 `min(配置值, contextWindow × 80%)`，请求的 `maxTokens` 用模型的输出上限。未知模型回退到全局配置值。
@@ -187,7 +188,19 @@ interface Plugin {
 
 审批使用 `SelectList` 弹层，并行请求由 UI 排队逐个展示。`permission_request` 携带所属轮次的 `AbortSignal`：core 中断时结束审批等待，UI 同步关闭弹层；过期的允许回调不会执行工具或添加规则。`startTui()` 支持注入 `Terminal` 并返回停止函数，`tests/cli.test.ts` 用内存终端验证真实渲染、按键与尺寸变化，不依赖真实模型或交互终端。换成 Web 前端仍只需要重写这一层。
 
-## 12. 建议的阅读顺序
+## 12. 会话持久化 `src/core/session/`
+
+一个会话是当前项目目录下的一段可继续对话，落在 `<cwd>/.agentlab/sessions/<id>.json`。id 用本地时间加 4 位十六进制（`s-YYYYMMDD-HHmmss-xxxx`），避开 Windows 文件名里的冒号。没有 index，列表就是扫目录里的 `*.json`，坏文件进 `broken` 但不删。
+
+文件里只放压缩后的当前历史、模型、思考等级、会话级权限规则、权限模式、累计用量和统计。不放进行中的 run、`toolsSnapshot`、MCP / skill、system prompt 全文、项目配置里的权限、审计日志、半截流式块，也不放 API key。恢复后 system prompt 仍由 `buildSystemPrompt` 现装，工具列表在下一轮按当前注册表重新快照。
+
+历史有两条硬约束：`tool_use.id` 与 `tool_result.toolUseId` 必须成对；思考签名和打码 data 原样往返。`[早期对话摘要]` 开头的摘要消息原样读写。保存前 `trimToSafeTail` 裁掉未完成的工具调用和头部孤儿结果，空历史不落盘。校验失败不碰磁盘。
+
+写入是同目录临时文件再 `rename` 覆盖；失败删掉临时文件，旧文件保持原样。同一路径的写入串行。加载先校验再改内存：目录对不上、配对失败、规则语法不合法时，loop 和权限引擎都保持原样。会话规则照原样恢复。权限模式只在保存值不比当前更宽时才 `setMode`（ask < auto < yolo），避免重启后自动放宽。判定仍只走 `PermissionEngine.check()`，不改这条管线。
+
+`AgentLoop` 只提供 `exportSession` / `importSession`，不认识磁盘。`SessionManager` 订阅 `loop_end` 做自动保存——回调发出时 `running` 仍为 true，自动保存不能因此被拒绝。TUI 的 `/save`、`/sessions`、`/resume` 只跟 manager 和事件打交道；恢复后用 `renderHistory` 重画，不重放工具。
+
+## 13. 建议的阅读顺序
 
 1. `src/core/protocol/types.ts` —— 地基
 2. `src/providers/fake.ts` + `tests/loop.test.ts` —— 看 loop 行为如何被精确验证
@@ -196,3 +209,4 @@ interface Plugin {
 5. `src/providers/anthropic.ts` vs `openai.ts` —— 协议翻译
 6. `src/mcp/plugin.ts` —— 插件架构的真实案例
 7. `src/index.ts` —— 装配全景
+8. `src/core/session/manager.ts` —— 会话怎么存、怎么在不放宽权限的前提下恢复

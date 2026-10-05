@@ -39,7 +39,7 @@ import type { PermissionRequest, UserDecision } from '../core/events.js';
 import type { ThinkingLevel } from '../core/provider.js';
 import { emptyUsage, type TokenUsage } from '../core/protocol/types.js';
 import type { Agent } from '../index.js';
-import { StreamMessages, ToolMessage } from './messages.js';
+import { renderHistory, StreamMessages, ToolMessage } from './messages.js';
 import { TurnQueue } from './turn-queue.js';
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,38 @@ const HELP = `命令（不带参数弹出选择器）：
 消息区独立滚动，底部保留输入框。AGENTLAB_SCREEN=main 可使用终端原生滚动历史。
 调试：会话事件全量记录在 .agentlab/logs/session-*.jsonl
 画面异常时：先试 /redraw；仍异常可设 AGENTLAB_FULL_REDRAW=1 后重启（关闭差分渲染）。
-缓存命中率 = cache 读取 / (cache 读取 + 未命中输入)。分母为 0 时显示为 -。`;
+缓存命中率 = cache 读取 / (cache 读取 + 未命中输入)。分母为 0 时显示为 -。
+  /save                  保存当前会话
+  /sessions              列出已保存会话（/sessions rm <id> 删除）
+  /resume [id]           恢复会话（无参数弹出选择器，latest 为最近一次）`;
+
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return iso;
+  const delta = Date.now() - then;
+  if (delta < 10_000) return '刚刚';
+  const sec = Math.floor(delta / 1000);
+  if (sec < 60) return `${sec} 秒前`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour} 小时前`;
+  const day = Math.floor(hour / 24);
+  if (day < 30) return `${day} 天前`;
+  return formatUpdated(iso);
+}
+
+function formatUpdated(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function summarizeToolCall(tools: Agent['tools'], name: string, input: unknown): string {
+  const record = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  return tools.get(name)?.analyzeInput?.(record).summary ?? name;
+}
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -112,7 +143,10 @@ function cacheHitRate(usage: TokenUsage): string {
 // 主入口
 // ---------------------------------------------------------------------------
 
-export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: () => void } = {}): { stop: () => void } | undefined {
+export function startTui(
+  agent: Agent,
+  options: { terminal?: Terminal; onExit?: () => void; resume?: string } = {},
+): { stop: () => void } | undefined {
   if (!options.terminal && !process.stdin.isTTY) {
     // 非 TTY 环境（管道/CI）：打印装配信息后退出，便于 smoke 测试
     console.log('AgentLab（非 TTY 环境，仅展示装配信息）');
@@ -147,6 +181,7 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
   const toolMessages = new Map<string, ToolMessage>();
   const unsubscribe: Array<() => void> = [];
   const transcript = new Container();
+  const header = new Text(chalk.bold('AgentLab') + chalk.dim(' · /help 查看命令'), 1, 1);
   const scroll = new ScrollView(transcript, { follow: 'end', primary: true });
 
   // --- 消息区拥有独立视口，状态与输入不参与历史滚动 ---
@@ -168,6 +203,9 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
         { name: 'tools', description: '列出工具' },
         { name: 'details', description: '展开/收起工具输出和思考' },
         { name: 'stats', description: 'token、缓存和日志' },
+        { name: 'save', description: '保存当前会话' },
+        { name: 'sessions', description: '列出会话，rm 删除' },
+        { name: 'resume', description: '恢复会话' },
         { name: 'queue', description: '/queue clear 清空排队' },
         { name: 'help', description: '帮助' },
         { name: 'exit', description: '退出' },
@@ -310,8 +348,7 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
   unsubscribe.push(agent.events.on('assistant_message', (e) => streams.finish(e.message)));
   unsubscribe.push(agent.events.on('tool_call', (e) => {
     streams.finish();
-    const tool = agent.tools.get(e.toolUse.name);
-    const summary = tool?.analyzeInput?.(e.toolUse.input as Record<string, unknown>).summary ?? e.toolUse.name;
+    const summary = summarizeToolCall(agent.tools, e.toolUse.name, e.toolUse.input);
     const comp = new ToolMessage(summary, () => expanded);
     toolMessages.set(e.toolUse.id, comp);
     phase = `执行工具 · ${e.toolUse.name}`;
@@ -349,6 +386,9 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
     addMessage(new Spacer(1));
     toolMessages.clear();
   }));
+  unsubscribe.push(agent.events.on('session_saved', (e) => {
+    if (e.trimmed > 0) say(`尾部 ${e.trimmed} 条未完成的工具调用未写入`);
+  }));
   // 并行只读工具可能同时询问；审批逐个显示，避免弹层争抢焦点。
   type Approval = Extract<import('../core/events.js').AgentEvent, { type: 'permission_request' }>;
   const approvals: Approval[] = [];
@@ -371,6 +411,35 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
   unsubscribe.push(agent.events.on('permission_request', (e) => {
     approvals.push(e);
     if (!approving) nextApproval();
+  }));
+  unsubscribe.push(agent.events.on('session_restored', (e) => {
+    streams.finish();
+    toolMessages.clear();
+    approvals.length = 0;
+    approving = false;
+    transcript.clear();
+    transcript.addChild(header);
+    for (const comp of renderHistory(e.messages, {
+      theme: markdownTheme,
+      expanded: () => expanded,
+      summarize: (name, input) => summarizeToolCall(agent.tools, name, input),
+    })) {
+      transcript.addChild(comp);
+    }
+    transcript.addChild(new Spacer(1));
+    model = e.model;
+    thinking = e.thinking;
+    mode = agent.permission.mode;
+    usage = {
+      inputTokens: e.usage.inputTokens,
+      outputTokens: e.usage.outputTokens,
+      cacheReadTokens: e.usage.cacheReadTokens,
+      cacheWriteTokens: e.usage.cacheWriteTokens,
+    };
+    say(`已恢复会话 ${e.id}（${e.title}）`);
+    transcript.invalidate();
+    scroll.scrollToEnd();
+    updateStatus();
   }));
 
   // --- 全局按键：Esc 中断当前轮；Ctrl+C 中断/退出 ---
@@ -415,6 +484,10 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
     thinking = level as ThinkingLevel;
     say(`思考等级切换为 ${level}`);
     updateStatus();
+  };
+
+  const runAsync = (task: () => Promise<void>) => {
+    void task().catch((error) => err(error instanceof Error ? error.message : String(error)));
   };
 
   const handleCommand = (cmd: string) => {
@@ -517,6 +590,74 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
       case 'tools':
         say(agent.tools.list().map((t) => `${t.name} [${t.risk}]`).join('\n'));
         return;
+      case 'save':
+        runAsync(async () => {
+          const saved = await agent.session.save();
+          if (!saved) {
+            say('当前会话还没有内容，未保存');
+            return;
+          }
+          const trimmed = saved.trimmed > 0 ? `（尾部 ${saved.trimmed} 条未完成的工具调用未写入）` : '';
+          say(`已保存会话 ${saved.id}（${saved.messageCount} 条消息）→ ${saved.path}${trimmed}`);
+        });
+        return;
+      case 'sessions':
+        runAsync(async () => {
+          if (arg.startsWith('rm')) {
+            const id = arg.slice(2).trim();
+            if (!id) {
+              err('用法: /sessions rm <id>');
+              return;
+            }
+            const removed = await agent.session.delete(id);
+            if (!removed) {
+              err(`会话 ${id} 不存在`);
+              return;
+            }
+            say(`已删除会话 ${id}`);
+            if (id === agent.session.id) say('当前会话已从磁盘删除，下一次保存会重建');
+            return;
+          }
+          if (arg) {
+            err('用法: /sessions 或 /sessions rm <id>');
+            return;
+          }
+          const listing = await agent.session.list();
+          if (listing.sessions.length === 0 && listing.broken.length === 0) {
+            say('(本项目还没有已保存的会话)');
+          } else {
+            for (const item of listing.sessions) {
+              const mark = item.id === agent.session.id ? ' ✓' : '';
+              say(`${item.id}${mark} · ${item.title} · ${relativeTime(item.updatedAt)} · ${item.messageCount} 条`);
+            }
+          }
+          for (const item of listing.broken) err(`[坏文件] ${item.id}: ${item.error.message}`);
+        });
+        return;
+      case 'resume':
+        runAsync(async () => {
+          if (arg) {
+            await agent.session.resume(arg);
+            return;
+          }
+          const listing = await agent.session.list();
+          if (listing.sessions.length === 0) {
+            say('(本项目还没有已保存的会话)');
+            return;
+          }
+          showPicker(
+            '恢复会话',
+            listing.sessions.map((item) => ({
+              value: item.id,
+              label: item.title,
+              description: `${item.id} · ${formatUpdated(item.updatedAt)} · ${item.messageCount} 条`,
+            })),
+            (value) => {
+              void agent.session.resume(value).catch((error) => err(error instanceof Error ? error.message : String(error)));
+            },
+          );
+        });
+        return;
       default:
         err(`未知命令: /${name}，输入 /help 查看帮助`);
     }
@@ -539,7 +680,7 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
   };
 
   // --- 启动 ---
-  transcript.addChild(new Text(chalk.bold('AgentLab') + chalk.dim(' · /help 查看命令'), 1, 1));
+  transcript.addChild(header);
   const hints = new TruncatedText(chalk.dim('Enter 发送 · Esc 中断 · /details 展开输出 · /stats 统计'), 1, 0);
   if (isViewportTUI(tui)) {
     tui.setLayoutRoot(new VStack([
@@ -555,5 +696,8 @@ export function startTui(agent: Agent, options: { terminal?: Terminal; onExit?: 
   updateStatus();
   tui.setFocus(editor);
   tui.start();
+  if (options.resume) {
+    void agent.session.resume(options.resume).catch((error) => err(error instanceof Error ? error.message : String(error)));
+  }
   return { stop };
 }

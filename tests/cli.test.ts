@@ -4,9 +4,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TuiAltScreen, stripTerminalSequences, visibleWidth, type Component, type MarkdownTheme, type Terminal } from '@earendil-works/pi-tui';
 import { startTui } from '../src/cli/app.js';
-import { StreamMessages, ToolMessage } from '../src/cli/messages.js';
+import { renderHistory, StreamMessages, ToolMessage } from '../src/cli/messages.js';
 import { TurnQueue } from '../src/cli/turn-queue.js';
+import { SUMMARY_MARKER } from '../src/core/context/manager.js';
+import type { Message } from '../src/core/protocol/types.js';
+import { saveSession } from '../src/core/session/store.js';
 import { createAgent } from '../src/index.js';
+import { FakeProvider } from '../src/providers/fake.js';
 
 const identity = (s: string) => s;
 const theme: MarkdownTheme = {
@@ -157,6 +161,127 @@ describe('真实 TUI 离线交互', () => {
     } finally {
       session?.stop();
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('帮助里能看到 /save 和 /sessions', async () => {
+    vi.stubEnv('AGENTLAB_SCREEN', 'alt');
+    const dir = await mkdtemp(join(tmpdir(), 'agentlab-cli-'));
+    let session: ReturnType<typeof startTui>;
+    try {
+      await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake' }));
+      const agent = await createAgent(dir);
+      const terminal = new MemoryTerminal();
+      session = startTui(agent, { terminal, onExit: vi.fn() });
+      terminal.input?.('/help');
+      terminal.input?.('\r');
+      await vi.waitFor(() => expect(stripTerminalSequences(terminal.output)).toContain('/save'));
+      expect(stripTerminalSequences(terminal.output)).toContain('/sessions');
+    } finally {
+      session?.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('startTui resume 重绘历史、底栏模型和标题，下一轮请求带上旧历史', async () => {
+    vi.stubEnv('AGENTLAB_SCREEN', 'alt');
+    let renderer: TuiAltScreen | undefined;
+    const originalStart = TuiAltScreen.prototype.start;
+    vi.spyOn(TuiAltScreen.prototype, 'start').mockImplementation(function (this: TuiAltScreen) {
+      renderer = this;
+      originalStart.call(this);
+    });
+    const dir = await mkdtemp(join(tmpdir(), 'agentlab-cli-'));
+    let session: ReturnType<typeof startTui>;
+    try {
+      await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'ask' }));
+      const messages = [
+        { role: 'user', content: `${SUMMARY_MARKER}\n这里是很早的讨论，不应该整段铺开。` },
+        { role: 'user', content: '请读取笔记' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: '我去读一下。' },
+            { type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'note.txt' } },
+          ],
+        },
+        { role: 'user', content: [{ type: 'tool_result', toolUseId: 'tool-1', content: '笔记正文-UNIQUE' }] },
+        { role: 'assistant', content: [{ type: 'text', text: '笔记已经看到了。' }] },
+      ] as Message[];
+      await saveSession({
+        schemaVersion: 1,
+        id: 'resumecli01',
+        title: '笔记',
+        createdAt: '2026-10-05T01:02:03.000Z',
+        updatedAt: '2026-10-05T01:02:03.000Z',
+        cwd: dir,
+        model: 'gpt-4o',
+        thinking: 'high',
+        permissionMode: 'ask',
+        sessionRules: { allow: [], ask: [], deny: [] },
+        usage: { inputTokens: 4, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stats: { messages: messages.length, estimatedTokens: 20, runs: 2 },
+        messages,
+      });
+      const agent = await createAgent(dir);
+      const provider = agent.providers.get('fake');
+      expect(provider).toBeInstanceOf(FakeProvider);
+      const terminal = new MemoryTerminal();
+      session = startTui(agent, { terminal, onExit: vi.fn(), resume: 'resumecli01' });
+      const screen = () => renderer!.getScreenLines().map(stripTerminalSequences);
+      await vi.waitFor(() => expect(screen().join('\n')).toContain('请读取笔记'));
+      const shown = screen().join('\n');
+      expect(shown).toContain('AgentLab');
+      expect(shown).toContain('早期对话摘要');
+      expect(shown).toContain('笔记正文-UNIQUE');
+      expect(shown).not.toContain('不应该整段铺开');
+      expect(screen().slice(-8).join('\n')).toContain('gpt-4o');
+      terminal.input?.('接着说');
+      terminal.input?.('\r');
+      await vi.waitFor(() => expect((provider as FakeProvider).requests.length).toBeGreaterThan(0));
+      const request = (provider as FakeProvider).requests.at(-1)!;
+      expect(request.messages.some((message) => message.role === 'user' && message.content === '请读取笔记')).toBe(true);
+      expect(request.messages.at(-1)).toMatchObject({ role: 'user', content: '接着说' });
+      expect(request.tools.length).toBeGreaterThan(0);
+    } finally {
+      session?.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('renderHistory', () => {
+  it('窄屏下每一行都不超出可见宽度', () => {
+    const long = '很长的一行内容'.repeat(30);
+    const messages = [
+      { role: 'user', content: `${SUMMARY_MARKER}\n${long}` },
+      { role: 'user', content: long },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: long },
+          { type: 'redacted_thinking', data: 'x' },
+          { type: 'text', text: long },
+          { type: 'tool_use', id: 't', name: 'read_file', input: { path: long } },
+        ],
+      },
+      { role: 'user', content: [{ type: 'tool_result', toolUseId: 't', content: long }] },
+    ] as Message[];
+    const components = renderHistory(messages, {
+      theme,
+      expanded: () => false,
+      summarize: (name, input) => `${name} ${JSON.stringify(input)}`,
+    });
+    for (const comp of components) {
+      for (const line of comp.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+    }
+    const expanded = renderHistory(messages, {
+      theme,
+      expanded: () => true,
+      summarize: (name) => name,
+    });
+    for (const comp of expanded) {
+      for (const line of comp.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
     }
   });
 });

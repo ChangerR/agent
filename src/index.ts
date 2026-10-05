@@ -24,12 +24,14 @@ import { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } fr
 import { OpenAIProvider } from './providers/openai.js';
 import { SkillLoader } from './skills/loader.js';
 import { skillPlugin } from './skills/plugin.js';
+import { SessionManager } from './core/session/manager.js';
 import { builtinTools } from './tools/index.js';
 
 export interface Agent {
   loop: AgentLoop;
   events: EventBus;
   permission: PermissionEngine;
+  session: SessionManager;
   config: AgentConfig;
   tools: ToolRegistry;
   providers: ProviderRegistry;
@@ -88,7 +90,7 @@ function demoScript(): ScriptedResponse {
   };
 }
 
-export async function createAgent(cwd: string): Promise<Agent> {
+export async function createAgent(cwd: string, options?: { autoSaveSessions?: boolean }): Promise<Agent> {
   // 加载 <cwd>/.env 到环境变量（Node 20.12+ 原生支持，无需 dotenv）
   try {
     process.loadEnvFile(join(cwd, '.env'));
@@ -169,12 +171,32 @@ export async function createAgent(cwd: string): Promise<Agent> {
       cache: config.cache,
     });
 
+    const session = new SessionManager({
+      cwd,
+      loop,
+      permission,
+      events,
+      autoSave: options?.autoSaveSessions ?? true,
+    });
+    const detachSession = session.attach();
+
     let disposal: Promise<void> | undefined;
     const dispose = () => disposal ??= (async () => {
-      try { await loop.dispose(); }
-      finally { await disposePlugins(); }
+      try {
+        await loop.dispose();
+      } finally {
+        try {
+          await session.flush();
+        } finally {
+          try {
+            detachSession();
+          } finally {
+            await disposePlugins();
+          }
+        }
+      }
     })();
-    return { loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath, dispose };
+    return { loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath, session, dispose };
   } catch (error) {
     try { await disposePlugins(); }
     catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Agent initialization and cleanup failed'); }
@@ -186,8 +208,8 @@ export async function createAgent(cwd: string): Promise<Agent> {
 export * from './core/protocol/types.js';
 export { EventBus, type AgentEvent, type LoopEndReason, type UserDecision, type PermissionRequest } from './core/events.js';
 export { HookRunner } from './core/hooks.js';
-export { AgentLoop, type AgentLoopOptions, type AgentRunResult } from './core/loop.js';
-export { PermissionEngine, parseRule, matchRule, type Decision } from './core/permission/engine.js';
+export { AgentLoop, type AgentLoopOptions, type AgentRunResult, type SessionSnapshot } from './core/loop.js';
+export { PermissionEngine, parseRule, matchRule, type Decision, type SessionRules } from './core/permission/engine.js';
 export { AutoJudge, mergeJudgeDecision, type JudgeVerdict } from './core/permission/judge.js';
 export { loadPlugins, type Plugin, type PluginContext, type PluginDisposer } from './core/plugin.js';
 export { ProviderRegistry, ToolRegistry, type Tool, type ToolContext, type ToolRisk } from './core/registry.js';
@@ -204,3 +226,32 @@ export { SkillLoader, parseFrontmatter } from './skills/loader.js';
 export { skillPlugin } from './skills/plugin.js';
 export { McpClientManager, mcpPlugin } from './mcp/plugin.js';
 export { loadMcpConfig } from './mcp/config.js';
+export { SessionError, type SessionErrorCode } from './core/session/errors.js';
+export {
+  SESSION_SCHEMA_VERSION,
+  type SessionFile,
+  type SessionSummary,
+  type SessionListing,
+  type BrokenSession,
+} from './core/session/types.js';
+export {
+  sessionsDir,
+  sessionPath,
+  newSessionId,
+  isValidSessionId,
+  saveSession,
+  loadSession,
+  listSessions,
+  deleteSession,
+  latestSessionId,
+} from './core/session/store.js';
+export {
+  findUnpairedToolUse,
+  findOrphanToolResults,
+  trimToSafeTail,
+  assertSafeHistory,
+  makeTitle,
+  type TrimResult,
+} from './core/session/history.js';
+export { writeFileAtomic, enqueueWrite, flushWrites } from './core/session/atomic.js';
+export { SessionManager, type SessionManagerOptions, type SessionSaveResult } from './core/session/manager.js';
