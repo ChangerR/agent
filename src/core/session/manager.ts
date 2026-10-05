@@ -18,7 +18,7 @@ import {
   listSessions,
   loadSession,
   newSessionId,
-  saveSession,
+  saveSessionVersioned,
   sessionPath,
 } from './store.js';
 import {
@@ -56,6 +56,9 @@ export class SessionManager {
   private usage: TokenUsage = emptyUsage();
   private runs = 0;
   private writePath?: string;
+  private revisions = new Map<string, number>();
+  private tails = new Map<string, Promise<unknown>>();
+  private recreate = new Set<string>();
   private pending = new Set<Promise<unknown>>();
   private failures = new Map<string, unknown>();
 
@@ -138,6 +141,7 @@ export class SessionManager {
       resolved = latest;
     }
 
+    await this.tails.get(resolved)?.catch(() => undefined);
     const file = await loadSession(this.opts.cwd, resolved);
     if (canonicalCwd(file.cwd) !== canonicalCwd(this.opts.cwd)) {
       throw new SessionError(
@@ -188,6 +192,8 @@ export class SessionManager {
         text: `会话文件记录的 id 是 ${file.id}，与文件名 ${resolved} 不一致，已按文件名接管。`,
       });
     }
+    this.revisions.set(resolved, file.revision ?? 0);
+    this.recreate.delete(resolved);
     this.idValue = resolved;
     this.createdAtValue = file.createdAt;
     this.titleValue = file.title;
@@ -212,7 +218,13 @@ export class SessionManager {
   }
 
   delete(id: string): Promise<boolean> {
-    return deleteSession(this.opts.cwd, id);
+    const previous = this.tails.get(id) ?? Promise.resolve();
+    const deleting = previous.catch(() => undefined).then(() => deleteSession(this.opts.cwd, id)).then((deleted) => {
+      if (deleted) this.recreate.add(id);
+      return deleted;
+    });
+    this.track(id, deleting);
+    return deleting;
   }
 
   latest(): Promise<string | undefined> {
@@ -246,8 +258,17 @@ export class SessionManager {
       messages: snapshot.messages,
     };
     this.writePath = sessionPath(cwd, file.id);
-    const pending = saveSession(file).then(
-      (path) => {
+    // 捕获调用时是否已明确删除成功；删除前排队的旧保存不能获得重建权。
+    const recreate = this.recreate.has(file.id);
+    const previous = this.tails.get(file.id) ?? Promise.resolve();
+    const saving = previous.catch(() => undefined).then(() => {
+      file.revision = this.revisions.get(file.id) ?? 0;
+      return saveSessionVersioned(file, { recreate });
+    });
+    const pending = saving.then(
+      ({ path, revision }) => {
+        this.revisions.set(file.id, revision);
+        this.recreate.delete(file.id);
         this.failures.delete(file.id);
         // 返回摘要只读取本次写入的快照；await 期间可能已经恢复了另一会话。
         const summary: SessionSaveResult = {
@@ -264,9 +285,17 @@ export class SessionManager {
         throw error;
       },
     );
-    this.pending.add(pending);
-    void pending.finally(() => this.pending.delete(pending)).catch(() => undefined);
+    this.track(file.id, pending);
     return pending;
+  }
+
+  private track(id: string, pending: Promise<unknown>): void {
+    this.tails.set(id, pending);
+    this.pending.add(pending);
+    void pending.finally(() => {
+      this.pending.delete(pending);
+      if (this.tails.get(id) === pending) this.tails.delete(id);
+    }).catch(() => undefined);
   }
 
   private addUsage(usage: TokenUsage): void {

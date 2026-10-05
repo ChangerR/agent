@@ -235,6 +235,8 @@ export {
   newSessionId,
   isValidSessionId,
   saveSession,
+  saveSessionVersioned,
+  type SaveSessionOptions,
   loadSession,
   listSessions,
   deleteSession,

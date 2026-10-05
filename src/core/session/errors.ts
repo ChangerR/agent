@@ -11,6 +11,7 @@ export type SessionErrorCode =
   | 'invariant'
   | 'cwd_mismatch'
   | 'provider_mismatch'
+  | 'conflict'
   | 'io'
   | 'busy';
 
