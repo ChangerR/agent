@@ -104,6 +104,7 @@ export class AgentLoop {
   private readonly configuredMaxTokens?: number;
   private disposed = false;
   private idle: Promise<void> = Promise.resolve();
+  private completionTasks = new Set<() => Promise<void>>();
 
   constructor(private opts: AgentLoopOptions) {
     this.configuredThreshold = opts.context.threshold;
@@ -179,6 +180,12 @@ export class AgentLoop {
 
   abort_current(): void {
     this.abort?.abort();
+  }
+
+  /** 轮次完成前等待持久化等任务；失败传给 run 调用方，仍保证释放运行状态。 */
+  onRunSettled(task: () => Promise<void>): () => void {
+    this.completionTasks.add(task);
+    return () => { this.completionTasks.delete(task); };
   }
 
   async dispose(): Promise<void> {
@@ -267,9 +274,15 @@ export class AgentLoop {
         return finish('error', err instanceof Error ? err.message : String(err));
       }
     } finally {
-      this.abort = null;
-      stopUsage();
-      release();
+      try {
+        const settled = await Promise.allSettled([...this.completionTasks].map((task) => task()));
+        const errors = settled.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => item.reason);
+        if (errors.length) throw new AggregateError(errors, '轮次完成后的保存失败');
+      } finally {
+        this.abort = null;
+        stopUsage();
+        release();
+      }
     }
   }
 
