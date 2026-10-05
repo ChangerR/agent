@@ -37,6 +37,8 @@ export interface SessionManagerOptions {
   permission: PermissionEngine;
   events: EventBus;
   autoSave?: boolean;
+  /** 当前 provider endpoint 的非敏感指纹，由装配层提供。 */
+  endpointKey?: string;
   now?: () => Date;
   makeId?: () => string;
 }
@@ -99,7 +101,7 @@ export class SessionManager {
     await flushWrites(this.writePath);
   }
 
-  async resume(id: string): Promise<SessionSummary> {
+  async resume(id: string, options: { allowLegacyProvider?: boolean } = {}): Promise<SessionSummary> {
     if (this.opts.loop.running) {
       throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
     }
@@ -118,6 +120,16 @@ export class SessionManager {
         `这个会话属于目录 ${file.cwd}，当前目录是 ${this.opts.cwd}。会话与项目目录绑定，不能跨项目恢复。`,
         { path: sessionPath(this.opts.cwd, resolved) },
       );
+    }
+    const provider = this.opts.loop.providerName;
+    const endpointKey = this.opts.endpointKey ?? 'default';
+    if (!file.provider || !file.endpointKey) {
+      if (!options.allowLegacyProvider) {
+        throw new SessionError('provider_mismatch', '旧会话缺少 provider / endpoint 身份，不能自动确认兼容性。确认当前配置后使用 /resume <id> --legacy 或 --allow-legacy-session 显式迁移。');
+      }
+      this.opts.events.emit({ type: 'notice', text: '按显式选择将旧会话迁移到当前 provider / endpoint；请先确认模型与历史兼容。下次保存会记录当前身份。' });
+    } else if (file.provider !== provider || file.endpointKey !== endpointKey) {
+      throw new SessionError('provider_mismatch', '保存的 provider / endpoint 与当前配置不同。请切换回原配置后恢复；未修改当前会话。');
     }
     assertSafeHistory(file.messages);
     const rules = normalizeRules(file.sessionRules);
@@ -195,6 +207,8 @@ export class SessionManager {
       updatedAt,
       cwd,
       model: snapshot.model,
+      provider: this.opts.loop.providerName,
+      endpointKey: this.opts.endpointKey ?? 'default',
       thinking: snapshot.thinking,
       permissionMode: this.opts.permission.mode,
       sessionRules: this.opts.permission.getSessionRules(),

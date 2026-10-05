@@ -21,6 +21,16 @@ afterEach(async () => {
 });
 
 describe('createAgent', () => {
+  it('保存 endpoint 指纹，不保存 URL 中的凭证或配置密钥', async () => {
+    await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake', baseURL: 'https://user:secret@example.test/v1?token=private' }));
+    agent = await createAgent(tmp);
+    await agent.loop.run('hello');
+    await agent.session.flush();
+    const file = await agent.session.save();
+    const text = await readFile(file!.path, 'utf8');
+    expect(JSON.parse(text)).toMatchObject({ provider: 'fake', endpointKey: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    for (const value of ['secret', 'private', 'example.test', 'apiKey']) expect(text).not.toContain(value);
+  });
   it('装配全部内置能力：providers / tools / 权限引擎 / loop', async () => {
     agent = await createAgent(tmp);
     expect(agent.providers.list().map((p) => p.name).sort()).toEqual(['anthropic', 'fake', 'openai']);

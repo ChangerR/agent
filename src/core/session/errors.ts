@@ -10,6 +10,7 @@ export type SessionErrorCode =
   | 'invalid_schema'
   | 'invariant'
   | 'cwd_mismatch'
+  | 'provider_mismatch'
   | 'io'
   | 'busy';
 

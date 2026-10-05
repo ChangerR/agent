@@ -48,6 +48,7 @@ const UserBlockSchema = z.union([TextBlockSchema, ToolResultBlockSchema]);
 export const MessageSchema = z.union([
   z.object({
     role: z.literal('user'),
+    source: z.literal('summary').optional(),
     content: z.union([z.string(), z.array(UserBlockSchema)]),
   }).passthrough(),
   z.object({
@@ -84,6 +85,8 @@ export const SessionMetaSchema = z.object({
 
 export const SessionFileSchema = SessionMetaSchema.extend({
   schemaVersion: z.literal(1),
+  provider: z.string().min(1).optional(),
+  endpointKey: z.string().min(1).optional(),
   thinking: z.enum(['off', 'low', 'medium', 'high']),
   permissionMode: z.enum(['ask', 'auto', 'yolo']),
   sessionRules: SessionRulesSchema,
