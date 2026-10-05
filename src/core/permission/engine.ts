@@ -65,20 +65,20 @@ export interface AuditEntry {
   at: number;
 }
 
-interface RuleSet {
+export interface SessionRules {
   allow: string[];
   ask: string[];
   deny: string[];
 }
 
 export class PermissionEngine {
-  private sessionRules: RuleSet = { allow: [], ask: [], deny: [] };
+  private sessionRules: SessionRules = { allow: [], ask: [], deny: [] };
   private auditLog: AuditEntry[] = [];
 
   constructor(
     private options: {
       mode: PermissionMode;
-      rules: RuleSet; // 项目级 + 全局级（已由 config 合并）
+      rules: SessionRules; // 项目级 + 全局级（已由 config 合并）
       dangerForceAsk?: boolean;
     },
   ) {}
@@ -91,9 +91,39 @@ export class PermissionEngine {
     this.options.mode = mode;
   }
 
-  /** 用户选择"本次会话始终允许/拒绝"时调用 —— 会话级规则排在最前 */
-  addSessionRule(kind: 'allow' | 'deny', rule: string): void {
+  /** 用户选择"本次会话始终允许/询问/拒绝"时调用 —— 会话级规则排在最前 */
+  addSessionRule(kind: 'allow' | 'ask' | 'deny', rule: string): void {
     this.sessionRules[kind].push(rule);
+  }
+
+  /** 深拷贝。调用方改返回值不会影响引擎。 */
+  getSessionRules(): SessionRules {
+    return {
+      allow: [...this.sessionRules.allow],
+      ask: [...this.sessionRules.ask],
+      deny: [...this.sessionRules.deny],
+    };
+  }
+
+  clearSessionRules(): void {
+    this.sessionRules = { allow: [], ask: [], deny: [] };
+  }
+
+  /**
+   * 先解析全部规则，再清空并按 allow → ask → deny 重放。
+   * 任何一条不合法都保持原样，一条都不写。
+   */
+  setSessionRules(rules: Partial<SessionRules>): void {
+    const next: SessionRules = {
+      allow: [...(rules.allow ?? [])],
+      ask: [...(rules.ask ?? [])],
+      deny: [...(rules.deny ?? [])],
+    };
+    for (const rule of [...next.allow, ...next.ask, ...next.deny]) parseRule(rule);
+    this.sessionRules = { allow: [], ask: [], deny: [] };
+    for (const rule of next.allow) this.sessionRules.allow.push(rule);
+    for (const rule of next.ask) this.sessionRules.ask.push(rule);
+    for (const rule of next.deny) this.sessionRules.deny.push(rule);
   }
 
   getAuditLog(): readonly AuditEntry[] {

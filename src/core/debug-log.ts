@@ -23,6 +23,8 @@ const EVENT_TYPES: AgentEvent['type'][] = [
   'loop_end',
   'compacted',
   'error',
+  'session_saved',
+  'session_restored',
 ];
 
 export function attachDebugLogger(events: EventBus, path: string): string {
@@ -31,9 +33,10 @@ export function attachDebugLogger(events: EventBus, path: string): string {
 
   const write = (event: AgentEvent) => {
     // permission_request 带 resolve 函数，不能直接序列化
-    const safe =
-      event.type === 'permission_request'
-        ? { type: event.type, request: event.request }
+    const safe = event.type === 'permission_request'
+      ? { type: event.type, request: event.request }
+      : event.type === 'session_restored'
+        ? { type: event.type, id: event.id, title: event.title, messageCount: event.messages.length }
         : event;
     try {
       appendFileSync(path, `${JSON.stringify({ at: new Date().toISOString(), ...safe })}\n`);

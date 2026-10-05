@@ -5,8 +5,8 @@
  * 这是 core 与 cli 解耦的关键机制。
  */
 import { EventEmitter } from 'node:events';
-import type { AssistantMessage, TokenUsage, ToolResult, ToolUseBlock } from './protocol/types.js';
-import type { ChatRequest } from './provider.js';
+import type { AssistantMessage, Message, TokenUsage, ToolResult, ToolUseBlock } from './protocol/types.js';
+import type { ChatRequest, ThinkingLevel } from './provider.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
@@ -42,7 +42,9 @@ export type AgentEvent =
   | { type: 'notice'; text: string }
   | { type: 'loop_end'; reason: LoopEndReason; turns?: number; usage?: TokenUsage; error?: string }
   | { type: 'compacted'; beforeMessages: number; afterMessages: number }
-  | { type: 'error'; error: Error };
+  | { type: 'error'; error: Error }
+  | { type: 'session_saved'; id: string; path: string; trimmed: number }
+  | { type: 'session_restored'; id: string; title: string; model: string; thinking: ThinkingLevel; usage: TokenUsage; messages: readonly Message[] };
 
 type Handler<E> = (event: E) => void;
 

@@ -40,6 +40,8 @@ import type {
 } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
 import { estimateTokens, type ContextManager } from './context/manager.js';
+import { SessionError } from './session/errors.js';
+import { assertSafeHistory, trimToSafeTail } from './session/history.js';
 
 export interface AgentLoopOptions {
   provider: Provider;
@@ -71,6 +73,14 @@ export interface AgentLoopOptions {
    * enabled: false 时请求不带 cache 策略。
    */
   cache?: { enabled: boolean; ttl: CacheTtl; escalateAfterMs?: number };
+}
+
+/** 给会话层的内存快照。trimmed 是裁掉的尾部条数，messages 已是副本。 */
+export interface SessionSnapshot {
+  messages: Message[];
+  model: string;
+  thinking: ThinkingLevel;
+  trimmed: number;
 }
 
 /** completed 表示循环正常结束；任务是否完成由外部评测器判断。 */
@@ -120,6 +130,38 @@ export class AgentLoop {
 
   setThinking(level: ThinkingLevel): void {
     this.opts.thinking = level;
+  }
+
+  /** 当前有没有还没结束的 run。loop_end 发出时 abort 尚未清空，这里仍为 true。 */
+  get running(): boolean {
+    return this.abort !== null;
+  }
+
+  /** 裁掉不安全的尾部再克隆。不改 this.messages，也不发事件。 */
+  exportSession(): SessionSnapshot {
+    const trimmed = trimToSafeTail(this.messages);
+    return {
+      messages: structuredClone(trimmed.messages),
+      model: this.model,
+      thinking: this.thinking,
+      trimmed: trimmed.dropped,
+    };
+  }
+
+  /**
+   * 用一份已校验的历史替换内存状态，准备下一轮重新快照工具。
+   * 不发事件、不重放工具、不调用 provider。
+   */
+  importSession(snapshot: { messages: readonly Message[]; model?: string; thinking?: ThinkingLevel }): void {
+    if (this.disposed) throw new SessionError('busy', 'AgentLoop 已释放');
+    if (this.abort) throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
+    assertSafeHistory(snapshot.messages);
+    this.messages = structuredClone(snapshot.messages) as Message[];
+    this.toolsSnapshot = null;
+    this.lastRequestMessageCount = 0;
+    this.lastToolBatchMs = 0;
+    if (snapshot.model !== undefined) this.setModel(snapshot.model);
+    if (snapshot.thinking !== undefined) this.setThinking(snapshot.thinking);
   }
 
   /** 按模型规格联动 maxTokens 与压缩阈值 */
