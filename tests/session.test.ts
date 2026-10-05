@@ -16,7 +16,7 @@ import { MODEL_PRESETS } from '../src/core/config.js';
 import type { Message } from '../src/core/protocol/types.js';
 import type { ChatRequest } from '../src/core/provider.js';
 import { ProviderRegistry, ToolRegistry } from '../src/core/registry.js';
-import { makeTitle, trimToSafeTail } from '../src/core/session/history.js';
+import { assertSafeHistory, findOrphanToolResults, makeTitle, trimToSafeTail } from '../src/core/session/history.js';
 import { SessionManager } from '../src/core/session/manager.js';
 import {
   deleteSession,
@@ -60,6 +60,8 @@ function buildFile(cwd: string, patch: Partial<SessionFile> = {}): SessionFile {
     updatedAt: '2026-10-05T01:02:03.000Z',
     cwd: resolve(cwd),
     model: 'fake',
+    provider: 'fake',
+    endpointKey: 'default',
     thinking: 'off',
     permissionMode: 'ask',
     sessionRules: { allow: [], ask: [], deny: [] },
@@ -126,7 +128,7 @@ function makeHarness(opts: {
 }
 
 const roundTripMessages = [
-  { role: 'user', content: `${SUMMARY_MARKER}\n早期内容保持原样` },
+  { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n早期内容保持原样` },
   {
     role: 'assistant',
     content: [
@@ -255,6 +257,48 @@ describe('会话文件', () => {
 });
 
 describe('恢复边界', () => {
+  it('provider / endpoint 不一致拒绝恢复且不改状态，旧 v1 只能显式迁移', async () => {
+    const { loop, permission, manager } = makeHarness({ autoSave: false });
+    loop.importSession({ messages: [{ role: 'user', content: 'current' }] });
+    const before = loop.exportSession();
+    for (const patch of [{ provider: 'other' }, { endpointKey: 'different' }]) {
+      await saveSession(buildFile(tmp, { id: 'identity', ...patch }));
+      await expect(manager.resume('identity')).rejects.toMatchObject({ code: 'provider_mismatch' });
+      expect(loop.exportSession()).toEqual(before);
+      expect(permission.getSessionRules()).toEqual({ allow: [], ask: [], deny: [] });
+    }
+    await saveSession(buildFile(tmp, { id: 'legacy', provider: undefined, endpointKey: undefined }));
+    await expect(manager.resume('legacy')).rejects.toMatchObject({ code: 'provider_mismatch' });
+    await manager.resume('legacy', { allowLegacyProvider: true });
+    await manager.save();
+    expect(await loadSession(tmp, 'legacy')).toMatchObject({ provider: 'fake', endpointKey: 'default' });
+  });
+
+  it('历史按顺序一对一校验，重复、逆序或跨正文配对均拒绝', async () => {
+    const use: Message = { role: 'assistant', content: [{ type: 'tool_use', id: 'x', name: 'read_file', input: {} }] };
+    const result: Message = { role: 'user', content: [{ type: 'tool_result', toolUseId: 'x', content: 'ok' }] };
+    const invalid: Message[][] = [
+      [result, use], [use, result, result], [{ ...use, content: [...use.content, ...use.content] }, result], [use, { ...use, content: [...use.content, ...use.content] }, result],
+      [use, { role: 'user', content: 'interrupted' }, result],
+      [use, { role: 'assistant', content: [{ type: 'text', text: 'interrupted' }] }, result],
+      [use, result, use],
+    ];
+    for (const messages of invalid) {
+      expect(() => assertSafeHistory(messages)).toThrow(/配对/);
+      await fs.mkdir(sessionsDir(tmp), { recursive: true });
+      await fs.writeFile(sessionPath(tmp, 'invalid-order'), JSON.stringify(buildFile(tmp, { id: 'invalid-order', messages })));
+      await expect(loadSession(tmp, 'invalid-order')).rejects.toMatchObject({ code: 'invariant' });
+    }
+    expect(findOrphanToolResults([result, use])).toEqual([{ index: 0, id: 'x' }]);
+    expect(findOrphanToolResults([use, result, result])).toEqual([{ index: 2, id: 'x' }]);
+    const multi: Message = { role: 'assistant', content: [
+      { type: 'tool_use', id: 'a', name: 'read_file', input: {} },
+      { type: 'tool_use', id: 'b', name: 'read_file', input: {} },
+    ] };
+    expect(() => assertSafeHistory([multi, { role: 'user', content: [
+      { type: 'tool_result', toolUseId: 'b', content: 'b' }, { type: 'tool_result', toolUseId: 'a', content: 'a' },
+    ] }])).not.toThrow();
+  });
   it('cwd 不一致时拒绝，且不改 loop 与会话规则', async () => {
     const { loop, permission, manager } = makeHarness({ autoSave: false });
     loop.importSession({ messages: [{ role: 'user', content: '留在内存里' }] });
@@ -501,10 +545,11 @@ describe('权限与标题', () => {
     expect(titled.endsWith('…')).toBe(true);
     expect(titled.includes('\uD83D') && !titled.includes('😀')).toBe(false);
     expect(makeTitle([
-      { role: 'user', content: `${SUMMARY_MARKER} 旧摘要` },
+      { role: 'user', source: 'summary', content: `${SUMMARY_MARKER} 旧摘要` },
       { role: 'user', content: '真正的标题' },
     ])).toBe('真正的标题');
     expect(makeTitle([{ role: 'user', content: '   \n' }])).toBe('(未命名会话)');
+    expect(makeTitle([{ role: 'user', content: `${SUMMARY_MARKER} 用户原文` }])).toBe(`${SUMMARY_MARKER} 用户原文`);
     expect(makeTitle([])).toBe('(未命名会话)');
     expect(makeTitle([{ role: 'user', content: [{ type: 'text', text: '从块里来' }] }])).toBe('从块里来');
   });

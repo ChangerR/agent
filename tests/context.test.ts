@@ -26,6 +26,14 @@ const boundarySample = (): Message[] => [
 const signal = () => new AbortController().signal;
 
 describe('上下文压缩边界', () => {
+  it('摘要前缀的真实用户原文仍按 USER、引语及轮次边界处理', () => {
+    const real = user(`${SUMMARY_MARKER} 请保持此原文`);
+    expect(renderTranscript([real])).toContain('USER:');
+    expect(collectUserQuotes([real])).toEqual([real.content]);
+    const messages = boundarySample();
+    messages[7] = real;
+    expect(findCompactCut(messages)).toBe(7);
+  });
   it('切点吸附到真实用户轮次之前，保留段以 user 开头时补一条确认', async () => {
     const messages = boundarySample();
     const provider = new FakeProvider([textResponse('summary')]);
@@ -180,7 +188,7 @@ describe('上下文压缩边界', () => {
   });
 
   it('再次压缩时把上一次摘要标成 SUMMARY，不当成用户发言', () => {
-    const previous = user(`${SUMMARY_MARKER}\n旧摘要正文UNIQUE`);
+    const previous: Message = { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n旧摘要正文UNIQUE` };
     expect(renderTranscript([previous])).toContain('SUMMARY:');
     expect(renderTranscript([previous])).not.toContain('USER:');
     expect(collectUserQuotes([previous, user('real ask')])).toEqual(['real ask']);

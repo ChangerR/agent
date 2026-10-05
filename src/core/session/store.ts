@@ -72,7 +72,9 @@ export async function loadSession(cwd: string, id: string): Promise<SessionFile>
   if (!parsed.success) {
     throw new SessionError('invalid_schema', formatInvalidSchema(path, parsed.error), { path });
   }
-  return hydrate(raw as SessionFile);
+  const file = hydrate(raw as SessionFile);
+  assertSafeHistory(file.messages);
+  return file;
 }
 
 export async function listSessions(cwd: string): Promise<SessionListing> {

@@ -4,6 +4,7 @@
  * 加载顺序即架构分层：
  *   providers → builtin tools → skills → MCP → 外部插件
  */
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig, loadModelsFile, MODEL_PRESETS, type AgentConfig, type ModelInfo } from './core/config.js';
@@ -177,6 +178,7 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
       permission,
       events,
       autoSave: options?.autoSaveSessions ?? true,
+      endpointKey: config.baseURL ? createHash('sha256').update(config.baseURL).digest('hex') : 'default',
     });
     const detachSession = session.attach();
 

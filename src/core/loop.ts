@@ -115,6 +115,10 @@ export class AgentLoop {
     return this.messages;
   }
 
+  get providerName(): string {
+    return this.opts.provider.name;
+  }
+
   get model(): string {
     return this.opts.model;
   }

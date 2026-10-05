@@ -196,7 +196,7 @@ describe('真实 TUI 离线交互', () => {
     try {
       await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'ask' }));
       const messages = [
-        { role: 'user', content: `${SUMMARY_MARKER}\n这里是很早的讨论，不应该整段铺开。` },
+        { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n这里是很早的讨论，不应该整段铺开。` },
         { role: 'user', content: '请读取笔记' },
         {
           role: 'assistant',
@@ -216,6 +216,8 @@ describe('真实 TUI 离线交互', () => {
         updatedAt: '2026-10-05T01:02:03.000Z',
         cwd: dir,
         model: 'gpt-4o',
+        provider: 'fake',
+        endpointKey: 'default',
         thinking: 'high',
         permissionMode: 'ask',
         sessionRules: { allow: [], ask: [], deny: [] },
@@ -254,7 +256,7 @@ describe('renderHistory', () => {
   it('窄屏下每一行都不超出可见宽度', () => {
     const long = '很长的一行内容'.repeat(30);
     const messages = [
-      { role: 'user', content: `${SUMMARY_MARKER}\n${long}` },
+      { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n${long}` },
       { role: 'user', content: long },
       {
         role: 'assistant',
