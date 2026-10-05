@@ -216,3 +216,5 @@ interface Plugin {
 会话恢复需要保存的 provider 名与 endpoint 指纹匹配当前配置，检查通过前不替换内存。会话不保存 endpoint 原文或 API 凭证。旧 v1 会话缺少身份时默认拒绝；确认当前配置兼容后，可通过 `/resume <id> --legacy`、启动参数 `--resume <id> --allow-legacy-session` 或 `session.resume(id, { allowLegacyProvider: true })` 显式迁移，下次保存写入当前身份。
 
 自动摘要使用 user 消息的 `source: "summary"` 标记；前缀只用于展示。无标记的历史按原始用户消息处理（不猜测旧摘要来源）。工具历史必须按调用后结果的顺序一对一配对，在结果完整前不能插入正文或下一次 assistant 响应。
+
+自动保存是 loop 完成任务的一部分：`loop.run()` 等到本轮快照保存结束，保存失败时拒绝 Promise，同时发出 TUI error 事件。`session.flush()` 等待本管理器全部会话的保存并报告错误。默认 `agent.dispose()` 在等待当前轮次后保存最终模型、思考等级与权限设置，再清理全部插件，聚合保存与清理失败；`autoSaveSessions: false` 继续禁用自动和退出保存。异步保存的返回摘要来自该次不可变快照。

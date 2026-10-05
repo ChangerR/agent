@@ -17,6 +17,7 @@ import type { Message } from '../src/core/protocol/types.js';
 import type { ChatRequest } from '../src/core/provider.js';
 import { ProviderRegistry, ToolRegistry } from '../src/core/registry.js';
 import { assertSafeHistory, findOrphanToolResults, makeTitle, trimToSafeTail } from '../src/core/session/history.js';
+import { enqueueWrite, flushWrites } from '../src/core/session/atomic.js';
 import { SessionManager } from '../src/core/session/manager.js';
 import {
   deleteSession,
@@ -623,5 +624,59 @@ describe('列表、并发与空历史', () => {
     const { manager } = makeHarness();
     expect(await manager.save()).toBeUndefined();
     await expect(fs.access(sessionsDir(tmp))).rejects.toThrow();
+  });
+});
+
+
+describe('保存完成与失败反馈', () => {
+  it('自动保存失败使 headless run 和 flush 可观察，保留 error 事件', async () => {
+    const { loop, manager, events } = makeHarness({ script: [textResponse('done')] });
+    const errors: Error[] = [];
+    events.on('error', (event) => errors.push(event.error));
+    vi.spyOn(fs, 'rename').mockRejectedValue(Object.assign(new Error('disk failure'), { code: 'EIO' }));
+    await expect(loop.run('hello')).rejects.toThrow(/保存失败/);
+    expect(loop.running).toBe(false);
+    expect(errors.some((error) => error.message.includes('EIO'))).toBe(true);
+    await expect(manager.flush()).rejects.toThrow(/保存失败/);
+    vi.restoreAllMocks();
+    await manager.save();
+    await expect(manager.flush()).resolves.toBeUndefined();
+  });
+
+  it('底层 flush 报告已经完成的失败，后续写入仍可重试', async () => {
+    const path = sessionPath(tmp, 'failed-queue');
+    await expect(enqueueWrite(path, async () => { throw new Error('queue failure'); })).rejects.toThrow('queue failure');
+    await expect(flushWrites(path)).rejects.toThrow(/写入失败/);
+    await enqueueWrite(path, async () => undefined);
+    await expect(flushWrites(path)).resolves.toBeUndefined();
+  });
+
+  it('延迟保存后切换会话，返回摘要仍属于原快照，flush 等待旧路径', async () => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'original' });
+    loop.importSession({ messages: [{ role: 'user', content: 'original title' }], model: 'old-model' });
+    await saveSession(buildFile(tmp, { id: 'other', title: 'other title', model: 'new-model' }));
+    const realRename = fs.rename.bind(fs);
+    let entered!: () => void;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === sessionPath(tmp, 'original')) { entered(); await gate; }
+      return realRename(from, to);
+    });
+    const saving = manager.save();
+    await started;
+    await manager.resume('other');
+    let flushed = false;
+    const flushing = manager.flush().then(() => { flushed = true; });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(flushed).toBe(false);
+    release();
+    const result = await saving;
+    await flushing;
+    expect(result).toMatchObject({ id: 'original', title: 'original title', model: 'old-model', path: sessionPath(tmp, 'original') });
+    expect(manager.id).toBe('other');
+    expect(await loadSession(tmp, 'original')).toMatchObject({ title: 'original title', model: 'old-model' });
+    expect(await loadSession(tmp, 'other')).toMatchObject({ title: 'other title', model: 'new-model' });
   });
 });
