@@ -5,11 +5,27 @@
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { PermissionEngine } from '../src/core/permission/engine.js';
 import { McpClientManager } from '../src/mcp/plugin.js';
 
 const serverEntry = join(__dirname, '..', 'examples', 'mcp-server.ts');
 
 describe('MCP 桥接', () => {
+  it('授权身份包含完整参数，记忆规则只匹配同一目标', async () => {
+    const client = { listTools: async () => ({ tools: [{ name: 'write', inputSchema: {} }] }) } as unknown as Client;
+    const [tool] = await new McpClientManager().bridgeTools('test', client);
+    const first = { padding: 'x'.repeat(250), path: 'src/[a]*.ts' };
+    const second = { ...first, path: '/outside/secret' };
+    const target = tool.analyzeInput!(first).patternTarget;
+    expect(target).toContain(first.path);
+    expect(target).not.toBe(tool.analyzeInput!(second).patternTarget);
+    expect(target).toBe(tool.analyzeInput!({ path: first.path, padding: first.padding }).patternTarget);
+    const permission = new PermissionEngine({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
+    permission.addSessionRule('allow', `${tool.name}(=${JSON.stringify(target)})`);
+    expect(permission.check(tool, first).kind).toBe('allow');
+    expect(permission.check(tool, second).kind).toBe('ask');
+    expect(permission.check(tool, { ...first, path: 'src/a123.ts' }).kind).toBe('ask');
+  });
   it('工具调用传递轮次取消信号，已取消的调用不发往服务端', async () => {
     const controller = new AbortController();
     const callTool = vi.fn((_params, _schema, options) => new Promise((_resolve, reject) => {

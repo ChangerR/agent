@@ -70,7 +70,7 @@ export class McpClientManager {
         // MCP 工具风险未知，保守按 write 处理；可通过 allow 规则精细放行
         risk: 'write',
         analyzeInput: (input) => ({
-          patternTarget: JSON.stringify(input).slice(0, 200),
+          patternTarget: canonicalInput(input),
           summary: `mcp:${serverName}.${t.name}(${JSON.stringify(input).slice(0, 80)})`,
         }),
         execute: async (input, ctx) => {
@@ -135,4 +135,14 @@ export function mcpPlugin(configPath: string): Plugin {
       return () => manager.closeAll();
     },
   };
+}
+
+/** 授权使用完整、键排序后的 JSON；展示摘要可以截短，授权身份不可截短。 */
+function canonicalInput(input: Record<string, unknown>): string {
+  return JSON.stringify(input, (_key, value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]));
+    }
+    return value;
+  });
 }

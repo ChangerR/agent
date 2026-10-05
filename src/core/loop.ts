@@ -393,7 +393,8 @@ export class AgentLoop {
 function ruleFor(tool: Tool, input: Record<string, unknown>): string {
   const target = tool.analyzeInput?.(input).patternTarget;
   // 参数模式可能过于具体，但教学上清晰：精确匹配本次调用
-  return target ? `${tool.name}(${target})` : tool.name;
+  // 记忆本次目标时使用字面量，不能把参数中的 glob 元字符变成额外授权。
+  return target !== undefined ? `${tool.name}(=${JSON.stringify(target)})` : tool.name;
 }
 
 /** 把 provider 的流式事件实时转发给事件总线，同时保持可被 collectStreamAsync 消费 */

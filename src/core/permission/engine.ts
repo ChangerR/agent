@@ -36,17 +36,24 @@ export interface ParsedRule {
   raw: string;
   tool: string;
   pattern?: string;
+  exact?: string;
 }
 
 export function parseRule(raw: string): ParsedRule {
-  const m = /^([a-zA-Z0-9_:*-]+)(?:\((.*)\))?$/.exec(raw.trim());
+  const m = /^([a-zA-Z0-9_:*-]+)(?:\((.*)\))?$/s.exec(raw.trim());
   if (!m) throw new Error(`Invalid permission rule: ${raw}`);
+  if (m[2]?.startsWith('="')) {
+    const exact: unknown = JSON.parse(m[2].slice(1));
+    if (typeof exact !== 'string') throw new Error(`Invalid exact permission rule: ${raw}`);
+    return { raw, tool: m[1], exact };
+  }
   return { raw, tool: m[1], pattern: m[2] };
 }
 
 /** 规则是否命中某次调用。patternTarget 由工具自己提供（bash→命令，文件工具→路径）。 */
 export function matchRule(rule: ParsedRule, toolName: string, patternTarget: string): boolean {
   if (rule.tool !== toolName) return false;
+  if (rule.exact !== undefined) return patternTarget === rule.exact;
   if (rule.pattern === undefined) return true;
   return minimatch(patternTarget, rule.pattern, { dot: true, nocase: false });
 }

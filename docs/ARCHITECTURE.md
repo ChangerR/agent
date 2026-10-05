@@ -196,3 +196,5 @@ interface Plugin {
 5. `src/providers/anthropic.ts` vs `openai.ts` —— 协议翻译
 6. `src/mcp/plugin.ts` —— 插件架构的真实案例
 7. `src/index.ts` —— 装配全景
+
+记忆一次权限目标时使用 `tool(="字面量目标")`，按完整字符串精确匹配；手写 `tool(glob)` 配置继续支持 glob。MCP 参数按键排序后使用完整 JSON，展示摘要的截断不参与授权。审批员参数超过 2000 字符时回落人工确认。
