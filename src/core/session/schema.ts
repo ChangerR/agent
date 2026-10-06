@@ -85,6 +85,7 @@ export const SessionMetaSchema = z.object({
 
 export const SessionFileSchema = SessionMetaSchema.extend({
   schemaVersion: z.literal(1),
+  revision: nonnegativeInt.safe().optional(),
   provider: z.string().min(1).optional(),
   endpointKey: z.string().min(1).optional(),
   thinking: z.enum(['off', 'low', 'medium', 'high']),
