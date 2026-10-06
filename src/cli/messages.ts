@@ -1,6 +1,5 @@
 import { Markdown, Spacer, Text, truncateToWidth, type Component, type MarkdownTheme } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
-import { SUMMARY_MARKER } from '../core/context/manager.js';
 import type { AssistantMessage, Message, ToolResult } from '../core/protocol/types.js';
 
 /** 思考与工具保留完整内容，默认只展示摘要；展开是视图状态，不修改模型历史。 */
@@ -129,7 +128,7 @@ export function renderHistory(messages: readonly Message[], options: HistoryRend
   for (const message of messages) {
     if (message.role === 'user') {
       if (typeof message.content === 'string') {
-        if (message.content.startsWith(SUMMARY_MARKER)) {
+        if (message.source === 'summary') {
           components.push(new CollapsibleText('早期对话摘要', message.content, options.expanded));
         } else {
           pushUserText(message.content);

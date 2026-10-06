@@ -8,15 +8,17 @@ const help = `AgentLab
 用法: agentlab [选项]
 
   --resume <id>   启动后恢复指定会话，id 为 latest 时恢复最近一次
+  --allow-legacy-session  确认当前配置兼容，迁移缺少 provider 身份的旧会话
   --sessions      列出本项目已保存的会话后退出
   -h, --help      显示帮助
 `;
 
-let values: { resume?: string; sessions?: boolean; help?: boolean };
+let values: { resume?: string; sessions?: boolean; help?: boolean; 'allow-legacy-session'?: boolean };
 try {
   ({ values } = parseArgs({
     options: {
       resume: { type: 'string' },
+      'allow-legacy-session': { type: 'boolean', default: false },
       sessions: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -59,4 +61,4 @@ if (values.resume && !process.stdin.isTTY) {
   process.exit(1);
 }
 
-if (!startTui(agent, values.resume ? { resume: values.resume } : {})) await agent.dispose();
+if (!startTui(agent, values.resume ? { resume: values.resume, allowLegacySession: values['allow-legacy-session'] } : {})) await agent.dispose();

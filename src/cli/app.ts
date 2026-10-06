@@ -145,7 +145,7 @@ function cacheHitRate(usage: TokenUsage): string {
 
 export function startTui(
   agent: Agent,
-  options: { terminal?: Terminal; onExit?: () => void; resume?: string } = {},
+  options: { terminal?: Terminal; onExit?: () => void; resume?: string; allowLegacySession?: boolean } = {},
 ): { stop: () => void } | undefined {
   if (!options.terminal && !process.stdin.isTTY) {
     // 非 TTY 环境（管道/CI）：打印装配信息后退出，便于 smoke 测试
@@ -637,7 +637,9 @@ export function startTui(
       case 'resume':
         runAsync(async () => {
           if (arg) {
-            await agent.session.resume(arg);
+            const [id, flag, ...extra] = arg.split(/\s+/);
+            if (extra.length || (flag && flag !== '--legacy')) throw new Error('用法: /resume <id> [--legacy]');
+            await agent.session.resume(id, { allowLegacyProvider: flag === '--legacy' });
             return;
           }
           const listing = await agent.session.list();
@@ -697,7 +699,7 @@ export function startTui(
   tui.setFocus(editor);
   tui.start();
   if (options.resume) {
-    void agent.session.resume(options.resume).catch((error) => err(error instanceof Error ? error.message : String(error)));
+    void agent.session.resume(options.resume, { allowLegacyProvider: options.allowLegacySession }).catch((error) => err(error instanceof Error ? error.message : String(error)));
   }
   return { stop };
 }

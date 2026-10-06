@@ -18,6 +18,9 @@ export interface SessionFile {
   updatedAt: string;
   cwd: string;
   model: string;
+  /** 旧 v1 文件缺省；恢复须显式确认迁移。仅存身份，不存 URL 或凭证。 */
+  provider?: string;
+  endpointKey?: string;
   thinking: ThinkingLevel;
   permissionMode: PermissionMode;
   sessionRules: SessionRules;
