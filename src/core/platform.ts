@@ -35,6 +35,7 @@ export interface HostPlatform {
 
 const POSIX_BULLETS = [
   '读文件用 read_file，搜索内容用 grep，按名字找文件用 glob，改已有文件用 edit_file。这些事不要用 bash 里的 cat、grep、find、sed。',
+  'read_file 的行尾已经收成普通换行。edit_file 和 write_file 按文件原来的换行符和 BOM 写回，不要为了换行符重写整份文件。',
   'bash 跑的是 bash。留给没有专用工具的事：构建、测试、git、启动进程。命令用 bash 语法。',
 ];
 
@@ -42,6 +43,7 @@ function wslBullets(distro: string): string[] {
   const which = distro ? `WSL（${distro}）` : 'WSL';
   return [
     '读文件用 read_file，搜索内容用 grep，按名字找文件用 glob，改已有文件用 edit_file。这些事不要用 bash 里的 cat、grep、find、sed。',
+    'read_file 的行尾已经收成普通换行。edit_file 和 write_file 按文件原来的换行符和 BOM 写回，不要为了换行符重写整份文件。',
     `bash 跑的是 ${which} 里的 bash。留给没有专用工具的事：构建、测试、git、启动进程。命令用 bash 语法。`,
     '当前是 WSL，不是 Windows 本机。路径用正斜杠。Windows 盘挂在 /mnt/c、/mnt/d 这类目录下，不要写 C:\\ 这种路径，也不要调用 powershell.exe 或 cmd.exe。',
   ];
@@ -49,6 +51,7 @@ function wslBullets(distro: string): string[] {
 
 const WINDOWS_BULLETS = [
   '读文件用 read_file，搜索内容用 grep，按名字找文件用 glob，改已有文件用 edit_file。这些事不要用 PowerShell 的 Get-Content、Select-String、Get-ChildItem。',
+  'read_file 的行尾已经收成普通换行。edit_file 和 write_file 按文件原来的换行符和 BOM 写回，CRLF 文件不会被整文件改成 LF。路径用 / 或 \\ 都可以。',
   'bash 是工具名，实际解释器是 powershell.exe（Windows PowerShell）。留给没有专用工具的事：构建、测试、git、启动进程。',
   '命令用 PowerShell 语法。环境变量写成 $env:NAME。串联用分号，不要用 && 和 ||。路径用反斜杠或正斜杠都可以。不要写 bash/sh 专有写法，例如 export、source、heredoc。',
 ];

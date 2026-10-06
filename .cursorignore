@@ -1,0 +1,28 @@
+# Cursor 索引与 Agent 读取都会跳过这里的路径。
+# 语法同 .gitignore。默认忽略列表已含 lockfile、node_modules、.env* 等，
+# 这里按本仓库再显式写一遍，避免依赖 Cursor 内置列表。
+
+# 依赖与构建产物
+node_modules/
+dist/
+coverage/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# 本地运行状态（.agentlab/logs 会持续变大）
+.agentlab/
+*.log
+
+# 密钥与本机配置。示例文件仍需被索引，见 AGENTS.md。
+.env
+.env.*
+!.env.example
+agent.config.json
+mcp.json
+
+# 密钥材料
+*.pem
+*.key
+id_rsa
+id_rsa.*

@@ -8,11 +8,13 @@ import { delimiter, dirname, resolve } from 'node:path';
 import fg from 'fast-glob';
 import { findRg } from '../core/platform.js';
 import type { Tool } from '../core/registry.js';
+import { fsCaseSensitive, matchPath, normalizeGrepLine, textStyle } from './text.js';
 
 const MAX_RESULTS = 100;
 
 export function buildRgArgs(input: { pattern: string; glob?: string; caseInsensitive?: boolean }): string[] {
-  const args = ['--line-number', '--no-heading', '--color=never', '--max-columns=300', '--max-count=100'];
+  // --crlf 让 $ 和行号把 \r\n 当成一个换行，LF 文件不受影响。
+  const args = ['--line-number', '--no-heading', '--color=never', '--crlf', '--max-columns=300', '--max-count=100'];
   if (input.caseInsensitive) args.push('--ignore-case');
   if (input.glob) args.push('--glob', input.glob);
   args.push('--glob', '!**/node_modules/**', '--glob', '!**/.git/**', '--glob', '!**/dist/**', '--regexp', input.pattern);
@@ -59,7 +61,7 @@ export const grepTool: Tool = {
   async execute(input, ctx) {
     const pattern = String(input.pattern ?? '');
     const searchCwd = input.path ? resolve(ctx.cwd, String(input.path)) : ctx.cwd;
-    const glob = input.glob === undefined ? undefined : String(input.glob);
+    const glob = input.glob === undefined ? undefined : matchPath(String(input.glob));
     const bin = findRg();
     if (bin) {
       const rg = await runRg(
@@ -113,7 +115,12 @@ function formatRg(result: RgRun): { content: string; isError?: boolean } {
     const message = (result.stderr || result.stdout || 'rg failed').trim();
     return { content: message, isError: true };
   }
-  const lines = result.stdout.replace(/\r\n/g, '\n').split('\n').filter((line) => line.length > 0);
+  const lines = result.stdout
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => normalizeGrepLine(line));
   if (lines.length === 0) return { content: '(no matches)' };
   const clipped = lines.slice(0, MAX_RESULTS);
   const text = clipped.join('\n');
@@ -136,6 +143,7 @@ async function searchBuiltin(
     cwd,
     onlyFiles: true,
     dot: false,
+    caseSensitiveMatch: fsCaseSensitive(),
     ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
   });
   const hits: string[] = [];
@@ -143,7 +151,7 @@ async function searchBuiltin(
     if (hits.length >= MAX_RESULTS) break;
     let text: string;
     try {
-      text = await readFile(resolve(cwd, file), 'utf-8');
+      text = textStyle(await readFile(resolve(cwd, file), 'utf-8')).body;
     } catch {
       continue;
     }
