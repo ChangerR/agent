@@ -9,7 +9,6 @@ import type { AgentLoop, SessionSnapshot } from '../loop.js';
 import type { PermissionMode } from '../config.js';
 import { parseRule, type PermissionEngine, type SessionRules } from '../permission/engine.js';
 import { emptyUsage, type TokenUsage } from '../protocol/types.js';
-import { flushWrites } from './atomic.js';
 import { SessionError } from './errors.js';
 import { assertSafeHistory, makeTitle } from './history.js';
 import {
@@ -57,6 +56,8 @@ export class SessionManager {
   private usage: TokenUsage = emptyUsage();
   private runs = 0;
   private writePath?: string;
+  private pending = new Set<Promise<unknown>>();
+  private failures = new Map<string, unknown>();
 
   constructor(private readonly opts: SessionManagerOptions) {
     const now = (opts.now ?? (() => new Date()))();
@@ -83,22 +84,46 @@ export class SessionManager {
 
   /** 订阅 loop_end。返回取消订阅。 */
   attach(): () => void {
-    return this.opts.events.on('loop_end', (event) => {
+    const detachEvent = this.opts.events.on('loop_end', (event) => {
       this.runs += 1;
       if (event.usage) this.addUsage(event.usage);
-      if (!this.autoSave) return;
-      const snapshot = this.opts.loop.exportSession();
-      void this.write(snapshot).catch(() => {});
     });
+    const detachCompletion = this.opts.loop.onRunSettled(async () => {
+      if (this.autoSave) await this.save();
+    });
+    return () => { detachEvent(); detachCompletion(); };
   }
 
   save(): Promise<SessionSaveResult | undefined> {
-    return this.write(this.opts.loop.exportSession());
+    try {
+      return this.write(this.opts.loop.exportSession());
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.failures.set(this.idValue, error);
+      this.opts.events.emit({ type: 'error', error });
+      return Promise.reject(error);
+    }
   }
 
+  /** 等待本管理器所有会话的保存（包括已切换的旧会话），错误不能被吞掉。 */
   async flush(): Promise<void> {
-    if (!this.writePath) return;
-    await flushWrites(this.writePath);
+    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    if (this.failures.size) {
+      const errors = [...this.failures.values()];
+      this.failures.clear();
+      throw new AggregateError(errors, '会话保存失败');
+    }
+  }
+
+  /** 退出时先观察排队错误，再保存最终设置，即使没有新的对话轮次。 */
+  async finalize(): Promise<void> {
+    const errors: unknown[] = [];
+    try { await this.flush(); } catch (error) { errors.push(error); }
+    if (this.autoSave) {
+      try { await this.save(); } catch (error) { errors.push(error); }
+    }
+    try { await this.flush(); } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(errors, '退出时会话保存失败');
   }
 
   async resume(id: string, options: { allowLegacyProvider?: boolean } = {}): Promise<SessionSummary> {
@@ -221,18 +246,27 @@ export class SessionManager {
       messages: snapshot.messages,
     };
     this.writePath = sessionPath(cwd, file.id);
-    return saveSession(file).then(
+    const pending = saveSession(file).then(
       (path) => {
-        const summary: SessionSaveResult = { ...this.toSummary(path, file.stats.messages, updatedAt), trimmed: snapshot.trimmed };
+        this.failures.delete(file.id);
+        // 返回摘要只读取本次写入的快照；await 期间可能已经恢复了另一会话。
+        const summary: SessionSaveResult = {
+          id: file.id, title: file.title, createdAt: file.createdAt, updatedAt,
+          model: file.model, messageCount: file.stats.messages, path, trimmed: snapshot.trimmed,
+        };
         this.opts.events.emit({ type: 'session_saved', id: file.id, path, trimmed: snapshot.trimmed });
         return summary;
       },
       (err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
+        this.failures.set(file.id, error);
         this.opts.events.emit({ type: 'error', error });
         throw error;
       },
     );
+    this.pending.add(pending);
+    void pending.finally(() => this.pending.delete(pending)).catch(() => undefined);
+    return pending;
   }
 
   private addUsage(usage: TokenUsage): void {
