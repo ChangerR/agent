@@ -7,6 +7,7 @@
 import { EventEmitter } from 'node:events';
 import type { AssistantMessage, Message, TokenUsage, ToolResult, ToolUseBlock } from './protocol/types.js';
 import type { ChatRequest, ThinkingLevel } from './provider.js';
+import type { Decision } from './permission/engine.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
@@ -31,6 +32,15 @@ export type AgentEvent =
   | { type: 'assistant_message'; message: AssistantMessage }
   | { type: 'tool_call'; toolUse: ToolUseBlock }
   | { type: 'tool_result'; toolUseId: string; name: string; result: ToolResult }
+  | {
+      /** 审核可观测性独立于 UI 提示；静默放行仍保留每阶段的判定。 */
+      type: 'permission_decision';
+      toolUseId: string;
+      toolName: string;
+      input: Record<string, unknown>;
+      phase: 'pipeline' | 'judge' | 'user';
+      decision: Decision;
+    }
   | {
       type: 'permission_request';
       request: PermissionRequest;

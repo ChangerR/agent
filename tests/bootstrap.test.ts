@@ -4,8 +4,9 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAgent, type Agent } from '../src/index.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'node:fs';
+import { createAgent, loadSession, type Agent } from '../src/index.js';
 
 let tmp: string;
 let agent: Agent | undefined;
@@ -21,6 +22,52 @@ afterEach(async () => {
 });
 
 describe('createAgent', () => {
+  it('退出保存最后一次 model / think / mode 设置，无需再发消息', async () => {
+    await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake' }));
+    agent = await createAgent(tmp);
+    await agent.loop.run('hello');
+    const id = agent.session.id;
+    agent.loop.setModel('final-model');
+    agent.loop.setThinking('high');
+    agent.permission.setMode('auto');
+    await agent.dispose();
+    expect(await loadSession(tmp, id)).toMatchObject({ model: 'final-model', thinking: 'high', permissionMode: 'auto' });
+  });
+
+  it('退出保存失败仍释放插件，并向调用方报告聚合错误', async () => {
+    await writeFile(join(tmp, 'plugin.mjs'), `import { writeFile } from 'node:fs/promises';
+export default { name: 'cleanup', register() { return async () => {
+await writeFile(new URL('./cleanup.txt', import.meta.url), 'released'); throw new Error('cleanup failure');
+}; } };`);
+    await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake', plugins: ['plugin.mjs'] }));
+    agent = await createAgent(tmp);
+    await agent.loop.run('hello');
+    vi.spyOn(fs, 'rename').mockRejectedValue(Object.assign(new Error('disk failure'), { code: 'EIO' }));
+    try {
+      const failure = await agent.dispose().catch((error) => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toHaveLength(2);
+      expect(await readFile(join(tmp, 'cleanup.txt'), 'utf8')).toBe('released');
+    } finally { vi.restoreAllMocks(); agent = undefined; }
+  });
+
+  it('明确禁用自动保存时退出也不写会话', async () => {
+    await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake' }));
+    agent = await createAgent(tmp, { autoSaveSessions: false });
+    await agent.loop.run('hello');
+    await agent.dispose();
+    await expect(fs.access(join(tmp, '.agentlab', 'sessions'))).rejects.toThrow();
+  });
+  it('保存 endpoint 指纹，不保存 URL 中的凭证或配置密钥', async () => {
+    await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake', baseURL: 'https://user:secret@example.test/v1?token=private' }));
+    agent = await createAgent(tmp);
+    await agent.loop.run('hello');
+    await agent.session.flush();
+    const file = await agent.session.save();
+    const text = await readFile(file!.path, 'utf8');
+    expect(JSON.parse(text)).toMatchObject({ provider: 'fake', endpointKey: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    for (const value of ['secret', 'private', 'example.test', 'apiKey']) expect(text).not.toContain(value);
+  });
   it('装配全部内置能力：providers / tools / 权限引擎 / loop', async () => {
     agent = await createAgent(tmp);
     expect(agent.providers.list().map((p) => p.name).sort()).toEqual(['anthropic', 'fake', 'openai']);

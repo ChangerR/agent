@@ -9,6 +9,7 @@ import { errnoCode, SessionError } from './errors.js';
 
 const RETRY_DELAYS_MS = [10, 20, 40, 80, 160];
 const queues = new Map<string, Promise<unknown>>();
+const failures = new Map<string, unknown>();
 
 function queueKey(path: string): string {
   const resolved = resolve(path);
@@ -61,16 +62,24 @@ export function enqueueWrite<T>(path: string, task: () => Promise<T>): Promise<T
   const run = prev.catch(() => undefined).then(task);
   queues.set(key, run);
   // finally 会把原拒绝再抛出去；这里没有等待方，必须自己接住，避免 unhandled rejection。
-  void run.finally(() => {
+  void run.then(
+    () => { failures.delete(key); },
+    (error) => { failures.set(key, error); },
+  ).finally(() => {
     if (queues.get(key) === run) queues.delete(key);
   }).catch(() => undefined);
   return run;
 }
 
-/** 等到该路径（或全部路径）上已入队的写入结束。失败也算结束。 */
-export function flushWrites(path?: string): Promise<void> {
-  const pending = path === undefined
-    ? [...queues.values()]
-    : [queues.get(queueKey(path))].filter((item): item is Promise<unknown> => item !== undefined);
-  return Promise.all(pending.map((item) => item.then(() => undefined, () => undefined))).then(() => undefined);
+/** 等到该路径（或全部路径）上已入队的写入结束，并报告尚未观察的失败。 */
+export async function flushWrites(path?: string): Promise<void> {
+  const key = path === undefined ? undefined : queueKey(path);
+  const pending = key === undefined ? [...queues.values()] : [queues.get(key)].filter((item): item is Promise<unknown> => item !== undefined);
+  await Promise.allSettled(pending);
+  const keys = key === undefined ? [...failures.keys()] : [key];
+  const errors: unknown[] = [];
+  for (const failedKey of keys) {
+    if (failures.has(failedKey)) { errors.push(failures.get(failedKey)); failures.delete(failedKey); }
+  }
+  if (errors.length) throw new AggregateError(errors, '会话写入失败');
 }

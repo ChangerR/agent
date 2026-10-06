@@ -4,6 +4,7 @@
  * 加载顺序即架构分层：
  *   providers → builtin tools → skills → MCP → 外部插件
  */
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig, loadModelsFile, MODEL_PRESETS, type AgentConfig, type ModelInfo } from './core/config.js';
@@ -177,24 +178,18 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
       permission,
       events,
       autoSave: options?.autoSaveSessions ?? true,
+      endpointKey: config.baseURL ? createHash('sha256').update(config.baseURL).digest('hex') : 'default',
     });
     const detachSession = session.attach();
 
     let disposal: Promise<void> | undefined;
     const dispose = () => disposal ??= (async () => {
-      try {
-        await loop.dispose();
-      } finally {
-        try {
-          await session.flush();
-        } finally {
-          try {
-            detachSession();
-          } finally {
-            await disposePlugins();
-          }
-        }
-      }
+      const errors: unknown[] = [];
+      try { await loop.dispose(); } catch (error) { errors.push(error); }
+      try { await session.finalize(); } catch (error) { errors.push(error); }
+      detachSession();
+      try { await disposePlugins(); } catch (error) { errors.push(error); }
+      if (errors.length) throw new AggregateError(errors, 'Agent cleanup failed');
     })();
     return { loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath, session, dispose };
   } catch (error) {
@@ -240,6 +235,8 @@ export {
   newSessionId,
   isValidSessionId,
   saveSession,
+  saveSessionVersioned,
+  type SaveSessionOptions,
   loadSession,
   listSessions,
   deleteSession,

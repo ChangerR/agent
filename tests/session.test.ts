@@ -1,6 +1,8 @@
 /**
  * 会话保存 / 恢复。FakeProvider + 临时目录，不碰仓库自己的 .agentlab，不打网络。
  */
+import { fork, type ChildProcess } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -16,7 +18,8 @@ import { MODEL_PRESETS } from '../src/core/config.js';
 import type { Message } from '../src/core/protocol/types.js';
 import type { ChatRequest } from '../src/core/provider.js';
 import { ProviderRegistry, ToolRegistry } from '../src/core/registry.js';
-import { makeTitle, trimToSafeTail } from '../src/core/session/history.js';
+import { assertSafeHistory, findOrphanToolResults, makeTitle, trimToSafeTail } from '../src/core/session/history.js';
+import { enqueueWrite, flushWrites } from '../src/core/session/atomic.js';
 import { SessionManager } from '../src/core/session/manager.js';
 import {
   deleteSession,
@@ -60,6 +63,8 @@ function buildFile(cwd: string, patch: Partial<SessionFile> = {}): SessionFile {
     updatedAt: '2026-10-05T01:02:03.000Z',
     cwd: resolve(cwd),
     model: 'fake',
+    provider: 'fake',
+    endpointKey: 'default',
     thinking: 'off',
     permissionMode: 'ask',
     sessionRules: { allow: [], ask: [], deny: [] },
@@ -126,7 +131,7 @@ function makeHarness(opts: {
 }
 
 const roundTripMessages = [
-  { role: 'user', content: `${SUMMARY_MARKER}\n早期内容保持原样` },
+  { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n早期内容保持原样` },
   {
     role: 'assistant',
     content: [
@@ -198,7 +203,7 @@ describe('会话文件', () => {
       error.code = 'EPERM';
       throw error;
     });
-    await expect(saveSession(buildFile(tmp, { id: 'atomic1', messages: [{ role: 'user', content: 'new' }] }))).rejects.toMatchObject({ code: 'io' });
+    await expect(saveSession(buildFile(tmp, { id: 'atomic1', revision: 1, messages: [{ role: 'user', content: 'new' }] }))).rejects.toMatchObject({ code: 'io' });
     expect(fail).toHaveBeenCalledTimes(6);
     expect(await fs.readFile(target, 'utf8')).toContain('old');
     expect((await fs.readdir(sessionsDir(tmp))).some((name) => name.includes('.tmp'))).toBe(false);
@@ -214,7 +219,7 @@ describe('会话文件', () => {
       }
       return realRename(...args);
     });
-    await saveSession(buildFile(tmp, { id: 'atomic1', messages: [{ role: 'user', content: 'third' }] }));
+    await saveSession(buildFile(tmp, { id: 'atomic1', revision: 1, messages: [{ role: 'user', content: 'third' }] }));
     expect(calls).toBe(3);
     expect(await fs.readFile(target, 'utf8')).toContain('third');
     expect((await fs.readdir(sessionsDir(tmp))).some((name) => name.includes('.tmp'))).toBe(false);
@@ -255,6 +260,49 @@ describe('会话文件', () => {
 });
 
 describe('恢复边界', () => {
+  it('provider / endpoint 不一致拒绝恢复且不改状态，旧 v1 只能显式迁移', async () => {
+    const { loop, permission, manager } = makeHarness({ autoSave: false });
+    loop.importSession({ messages: [{ role: 'user', content: 'current' }] });
+    const before = loop.exportSession();
+    let revision = 0;
+    for (const patch of [{ provider: 'other' }, { endpointKey: 'different' }]) {
+      await saveSession(buildFile(tmp, { id: 'identity', revision: revision++, ...patch }));
+      await expect(manager.resume('identity')).rejects.toMatchObject({ code: 'provider_mismatch' });
+      expect(loop.exportSession()).toEqual(before);
+      expect(permission.getSessionRules()).toEqual({ allow: [], ask: [], deny: [] });
+    }
+    await saveSession(buildFile(tmp, { id: 'legacy', provider: undefined, endpointKey: undefined }));
+    await expect(manager.resume('legacy')).rejects.toMatchObject({ code: 'provider_mismatch' });
+    await manager.resume('legacy', { allowLegacyProvider: true });
+    await manager.save();
+    expect(await loadSession(tmp, 'legacy')).toMatchObject({ provider: 'fake', endpointKey: 'default' });
+  });
+
+  it('历史按顺序一对一校验，重复、逆序或跨正文配对均拒绝', async () => {
+    const use: Message = { role: 'assistant', content: [{ type: 'tool_use', id: 'x', name: 'read_file', input: {} }] };
+    const result: Message = { role: 'user', content: [{ type: 'tool_result', toolUseId: 'x', content: 'ok' }] };
+    const invalid: Message[][] = [
+      [result, use], [use, result, result], [{ ...use, content: [...use.content, ...use.content] }, result], [use, { ...use, content: [...use.content, ...use.content] }, result],
+      [use, { role: 'user', content: 'interrupted' }, result],
+      [use, { role: 'assistant', content: [{ type: 'text', text: 'interrupted' }] }, result],
+      [use, result, use],
+    ];
+    for (const messages of invalid) {
+      expect(() => assertSafeHistory(messages)).toThrow(/配对/);
+      await fs.mkdir(sessionsDir(tmp), { recursive: true });
+      await fs.writeFile(sessionPath(tmp, 'invalid-order'), JSON.stringify(buildFile(tmp, { id: 'invalid-order', messages })));
+      await expect(loadSession(tmp, 'invalid-order')).rejects.toMatchObject({ code: 'invariant' });
+    }
+    expect(findOrphanToolResults([result, use])).toEqual([{ index: 0, id: 'x' }]);
+    expect(findOrphanToolResults([use, result, result])).toEqual([{ index: 2, id: 'x' }]);
+    const multi: Message = { role: 'assistant', content: [
+      { type: 'tool_use', id: 'a', name: 'read_file', input: {} },
+      { type: 'tool_use', id: 'b', name: 'read_file', input: {} },
+    ] };
+    expect(() => assertSafeHistory([multi, { role: 'user', content: [
+      { type: 'tool_result', toolUseId: 'b', content: 'b' }, { type: 'tool_result', toolUseId: 'a', content: 'a' },
+    ] }])).not.toThrow();
+  });
   it('cwd 不一致时拒绝，且不改 loop 与会话规则', async () => {
     const { loop, permission, manager } = makeHarness({ autoSave: false });
     loop.importSession({ messages: [{ role: 'user', content: '留在内存里' }] });
@@ -501,10 +549,11 @@ describe('权限与标题', () => {
     expect(titled.endsWith('…')).toBe(true);
     expect(titled.includes('\uD83D') && !titled.includes('😀')).toBe(false);
     expect(makeTitle([
-      { role: 'user', content: `${SUMMARY_MARKER} 旧摘要` },
+      { role: 'user', source: 'summary', content: `${SUMMARY_MARKER} 旧摘要` },
       { role: 'user', content: '真正的标题' },
     ])).toBe('真正的标题');
     expect(makeTitle([{ role: 'user', content: '   \n' }])).toBe('(未命名会话)');
+    expect(makeTitle([{ role: 'user', content: `${SUMMARY_MARKER} 用户原文` }])).toBe(`${SUMMARY_MARKER} 用户原文`);
     expect(makeTitle([])).toBe('(未命名会话)');
     expect(makeTitle([{ role: 'user', content: [{ type: 'text', text: '从块里来' }] }])).toBe('从块里来');
   });
@@ -540,11 +589,11 @@ describe('列表、并发与空历史', () => {
   });
 
   it('并发三次保存，磁盘上是最后一次，且没有残留临时文件', async () => {
-    const write = (text: string) => saveSession(buildFile(tmp, {
-      id: 'concurrent1',
-      title: text,
-      messages: [{ role: 'user', content: text }],
-    }));
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'concurrent1' });
+    const write = (text: string) => {
+      loop.importSession({ messages: [{ role: 'user', content: text }] });
+      return manager.save();
+    };
     await Promise.all([write('v1'), write('v2'), write('v3')]);
     expect(await loadSession(tmp, 'concurrent1')).toMatchObject({
       messages: [{ role: 'user', content: 'v3' }],
@@ -578,5 +627,155 @@ describe('列表、并发与空历史', () => {
     const { manager } = makeHarness();
     expect(await manager.save()).toBeUndefined();
     await expect(fs.access(sessionsDir(tmp))).rejects.toThrow();
+  });
+});
+
+
+describe('保存完成与失败反馈', () => {
+  it('自动保存失败使 headless run 和 flush 可观察，保留 error 事件', async () => {
+    const { loop, manager, events } = makeHarness({ script: [textResponse('done')] });
+    const errors: Error[] = [];
+    events.on('error', (event) => errors.push(event.error));
+    vi.spyOn(fs, 'rename').mockRejectedValue(Object.assign(new Error('disk failure'), { code: 'EIO' }));
+    await expect(loop.run('hello')).rejects.toThrow(/保存失败/);
+    expect(loop.running).toBe(false);
+    expect(errors.some((error) => error.message.includes('EIO'))).toBe(true);
+    await expect(manager.flush()).rejects.toThrow(/保存失败/);
+    vi.restoreAllMocks();
+    await manager.save();
+    await expect(manager.flush()).resolves.toBeUndefined();
+  });
+
+  it('底层 flush 报告已经完成的失败，后续写入仍可重试', async () => {
+    const path = sessionPath(tmp, 'failed-queue');
+    await expect(enqueueWrite(path, async () => { throw new Error('queue failure'); })).rejects.toThrow('queue failure');
+    await expect(flushWrites(path)).rejects.toThrow(/写入失败/);
+    await enqueueWrite(path, async () => undefined);
+    await expect(flushWrites(path)).resolves.toBeUndefined();
+  });
+
+  it('延迟保存后切换会话，返回摘要仍属于原快照，flush 等待旧路径', async () => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'original' });
+    loop.importSession({ messages: [{ role: 'user', content: 'original title' }], model: 'old-model' });
+    await saveSession(buildFile(tmp, { id: 'other', title: 'other title', model: 'new-model' }));
+    const realRename = fs.rename.bind(fs);
+    let entered!: () => void;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === sessionPath(tmp, 'original')) { entered(); await gate; }
+      return realRename(from, to);
+    });
+    const saving = manager.save();
+    await started;
+    await manager.resume('other');
+    let flushed = false;
+    const flushing = manager.flush().then(() => { flushed = true; });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(flushed).toBe(false);
+    release();
+    const result = await saving;
+    await flushing;
+    expect(result).toMatchObject({ id: 'original', title: 'original title', model: 'old-model', path: sessionPath(tmp, 'original') });
+    expect(manager.id).toBe('other');
+    expect(await loadSession(tmp, 'original')).toMatchObject({ title: 'original title', model: 'old-model' });
+    expect(await loadSession(tmp, 'other')).toMatchObject({ title: 'other title', model: 'new-model' });
+  });
+});
+
+
+describe('删除与跨进程版本冲突', () => {
+  it('删除等待删除前的旧排队保存，成功后不复活；新的明确保存可重建', async () => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'delete-queue' });
+    loop.importSession({ messages: [{ role: 'user', content: 'first' }] });
+    const realRename = fs.rename.bind(fs);
+    let entered!: () => void;
+    let release!: () => void;
+    let delayed = false;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (!delayed && String(to) === sessionPath(tmp, manager.id)) { delayed = true; entered(); await gate; }
+      return realRename(from, to);
+    });
+    const first = manager.save();
+    await started;
+    loop.importSession({ messages: [{ role: 'user', content: 'queued old' }] });
+    const second = manager.save();
+    const deleting = manager.delete(manager.id);
+    release();
+    await Promise.all([first, second]);
+    expect(await deleting).toBe(true);
+    await manager.flush();
+    await expect(loadSession(tmp, manager.id)).rejects.toMatchObject({ code: 'not_found' });
+    await manager.save();
+    expect(await loadSession(tmp, manager.id)).toMatchObject({ revision: 4, messages: [{ role: 'user', content: 'queued old' }] });
+    expect((await fs.readdir(sessionsDir(tmp))).some((name) => name.endsWith('.lock') || name.endsWith('.tmp'))).toBe(false);
+  });
+
+  it('旧 v1 无版本历史删除后，旧写入拒绝；重建也不产生版本 ABA', async () => {
+    const file = buildFile(tmp, { id: 'legacy-deleted' });
+    await fs.mkdir(sessionsDir(tmp), { recursive: true });
+    await fs.writeFile(sessionPath(tmp, file.id), JSON.stringify(file));
+    const stale = await loadSession(tmp, file.id);
+    expect(stale.revision).toBeUndefined();
+    expect(await deleteSession(tmp, file.id)).toBe(true);
+    await expect(saveSession(stale)).rejects.toMatchObject({ code: 'conflict' });
+    await saveSession(stale, { recreate: true });
+    expect((await loadSession(tmp, file.id)).revision).toBe(2);
+    await expect(saveSession(stale)).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it('两个管理器恢复同一版本后，过期写入保留内存和磁盘历史', async () => {
+    await saveSession(buildFile(tmp, { id: 'two-managers' }));
+    const first = makeHarness({ autoSave: false });
+    const second = makeHarness({ autoSave: false });
+    await first.manager.resume('two-managers');
+    await second.manager.resume('two-managers');
+    first.loop.importSession({ messages: [{ role: 'user', content: 'first branch' }] });
+    second.loop.importSession({ messages: [{ role: 'user', content: 'second branch' }] });
+    await first.manager.save();
+    await expect(second.manager.save()).rejects.toMatchObject({ code: 'conflict' });
+    expect(second.loop.getMessages()).toEqual([{ role: 'user', content: 'second branch' }]);
+    expect((await loadSession(tmp, 'two-managers')).messages).toEqual([{ role: 'user', content: 'first branch' }]);
+  });
+
+  it('两个真实进程恢复相同版本同时保存，恰好一个提交，另一个报 conflict', { timeout: 15000 }, async () => {
+    await fs.writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake' }));
+    await saveSession(buildFile(tmp, { id: 'two-processes' }));
+    const entry = fileURLToPath(new URL('./fixtures/session-writer.ts', import.meta.url));
+    const children: ChildProcess[] = [];
+    function writer(text: string) {
+      const child = fork(entry, [tmp, 'two-processes', text], { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      children.push(child);
+      let stderr = '';
+      child.stderr?.on('data', (data) => { stderr += String(data); });
+      let ready!: () => void;
+      let result!: (value: { ok: boolean; code?: string }) => void;
+      let reject!: (error: Error) => void;
+      const started = new Promise<void>((resolve) => { ready = resolve; });
+      const done = new Promise<{ ok: boolean; code?: string }>((resolve, rejectResult) => { result = resolve; reject = rejectResult; });
+      child.on('message', (message: { type?: string; ok: boolean; code?: string }) => {
+        if (message.type === 'ready') ready();
+        if (message.type === 'result') result(message);
+      });
+      child.on('error', reject);
+      child.on('exit', (code) => { if (code) reject(new Error(`writer exited ${code}: ${stderr}`)); });
+      return { child, started, done };
+    }
+    try {
+      const a = writer('process-A');
+      const b = writer('process-B');
+      await Promise.all([a.started, b.started]);
+      a.child.send('save'); b.child.send('save');
+      const results = await Promise.all([a.done, b.done]);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.find((result) => !result.ok)?.code).toBe('conflict');
+      const file = await loadSession(tmp, 'two-processes');
+      expect(file.revision).toBe(2);
+      const text = JSON.stringify(file.messages);
+      expect(Number(text.includes('process-A')) + Number(text.includes('process-B'))).toBe(1);
+    } finally { for (const child of children) child.kill(); }
   });
 });

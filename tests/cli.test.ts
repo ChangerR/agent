@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TuiAltScreen, stripTerminalSequences, visibleWidth, type Component, type MarkdownTheme, type Terminal } from '@earendil-works/pi-tui';
 import { startTui } from '../src/cli/app.js';
-import { renderHistory, StreamMessages, ToolMessage } from '../src/cli/messages.js';
+import { DetailRegistry, renderHistory, StreamMessages, ToolMessage } from '../src/cli/messages.js';
+import { InteractionPanel } from '../src/cli/interaction-panel.js';
 import { TurnQueue } from '../src/cli/turn-queue.js';
 import { SUMMARY_MARKER } from '../src/core/context/manager.js';
 import type { Message } from '../src/core/protocol/types.js';
@@ -23,6 +24,38 @@ const text = (comp: Component, width = 80) => comp.render(width).map(stripTermin
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe('TUI 消息与调度', () => {
+  it('详情编号保留完整参数与实时结果，清空后不引用旧会话', () => {
+    const registry = new DetailRegistry();
+    const operation = { name: 'bash', input: { command: '多行命令\n完整结尾' } };
+    const tool = new ToolMessage('工具摘要', () => false, operation);
+    const id = registry.add('工具', () => tool.details());
+    expect(registry.get(id)?.body()).toContain('正在执行');
+    tool.finish({ content: '完整输出结尾', isError: true });
+    expect(registry.get(id)?.body()).toContain('完整结尾');
+    expect(registry.get(id)?.body()).toContain('完整输出结尾');
+    registry.clear();
+    expect(registry.get(id)).toBeUndefined();
+    expect(registry.add('新会话', () => '新内容')).toBe(1);
+  });
+
+  it('极小面板仍能选到拒绝，鼠标点击不会直接授权，尺寸与内容宽度有界', () => {
+    let rows = 6;
+    const select = vi.fn();
+    const panel = new InteractionPanel({ title: '权限请求', kind: 'permission', rows: () => rows,
+      items: [{ value: 'once', label: '允许一次' }, { value: 'remember', label: '记住' }, { value: 'deny', label: '拒绝' }],
+      body: () => '长正文'.repeat(100), changed: vi.fn(), select, cancel: vi.fn(),
+    });
+    expect(panel.render(20)).toHaveLength(3);
+    panel.handleInput('\x1b[A');
+    expect(text(panel, 20)).toContain('拒绝');
+    panel.handleMouse({ type: 'click', button: 'left', x: 1, y: 1, screenX: 1, screenY: 1, width: 20, height: 3, shift: false, alt: false, ctrl: false });
+    expect(select).not.toHaveBeenCalled();
+    panel.handleInput('\r');
+    expect(select).toHaveBeenCalledWith('deny');
+    rows = 24;
+    for (const line of panel.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+  });
+
   it('刷新前切换思考/正文，旧块内容仍完整，结束时清理刷新任务', () => {
     vi.useFakeTimers();
     const components: Component[] = [];
@@ -114,7 +147,187 @@ class MemoryTerminal implements Terminal {
   setProgress(): void {}
 }
 
+async function mountTui() {
+  vi.stubEnv('AGENTLAB_SCREEN', 'alt');
+  let renderer!: TuiAltScreen;
+  const originalStart = TuiAltScreen.prototype.start;
+  vi.spyOn(TuiAltScreen.prototype, 'start').mockImplementation(function (this: TuiAltScreen) {
+    renderer = this;
+    originalStart.call(this);
+  });
+  const dir = await mkdtemp(join(tmpdir(), 'agentlab-ui-'));
+  await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto' }));
+  const agent = await createAgent(dir);
+  const terminal = new MemoryTerminal();
+  const session = startTui(agent, { terminal, onExit: vi.fn() });
+  const screen = () => renderer.getScreenLines().map(stripTerminalSequences);
+  const send = (command: string) => { terminal.input?.(command); terminal.input?.('\r'); };
+  return {
+    agent, terminal, screen, send, renderer: () => renderer,
+    async dispose() { session?.stop(); await agent.dispose(); await rm(dir, { recursive: true, force: true }); },
+  };
+}
+
+/** 可选保存真实渲染的文本屏幕供人工 QA，不影响默认测试。 */
+async function snapshot(name: string, lines: string[]) {
+  const outputDir = process.env.AGENTLAB_TUI_SNAPSHOT_DIR;
+  if (outputDir) await writeFile(join(outputDir, `tui-${name}.txt`), lines.join('\n'));
+}
+
 describe('真实 TUI 离线交互', () => {
+  it('高窗口中的思考菜单独占底部，移除输入框且切换时清屏重绘', async () => {
+    const ui = await mountTui();
+    try {
+      ui.terminal.columns = 140;
+      ui.terminal.rows = 70;
+      ui.terminal.resize?.();
+      await vi.waitFor(() => expect(ui.screen()).toHaveLength(70));
+      expect(ui.screen().join('\n')).toContain('❯ 输入');
+      ui.terminal.output = '';
+      ui.send('/think');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── 思考等级'));
+      const shown = ui.screen();
+      const start = shown.findIndex((line) => line.includes('── 思考等级'));
+      expect(start).toBeGreaterThanOrEqual(54);
+      expect(shown[start - 1]).not.toContain('思考等级（当前');
+      expect(shown.join('\n')).not.toContain('❯ 输入');
+      expect(shown.join('\n')).not.toContain('Enter 发送');
+      expect(shown.slice(start).join('\n')).toContain('❯ off');
+      expect(shown.slice(start).join('\n')).toContain('Enter 确认');
+      expect(ui.renderer().hasOverlay()).toBe(false);
+      expect(ui.terminal.output).toContain('\x1b[2J');
+      await snapshot('think-tall', shown);
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\x1b[B');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ medium'));
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 输入'));
+      expect(ui.screen().join('\n')).not.toContain('── 思考等级');
+      expect(ui.screen().join('\n')).toContain('思考 medium');
+    } finally { await ui.dispose(); }
+  });
+
+  it('模型选择固定在底部，可筛选，当前模型已选中且无需浮动弹层', async () => {
+    const ui = await mountTui();
+    try {
+      ui.send('/model');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('选择模型'));
+      expect(ui.renderer().hasOverlay()).toBe(false);
+      const shown = ui.screen();
+      const panelStart = shown.findIndex((line) => line.includes('── 选择模型'));
+      expect(panelStart).toBeGreaterThanOrEqual(8);
+      expect(shown.slice(panelStart).join('\n')).toContain('Enter 确认');
+      expect(shown.slice(panelStart).join('\n')).toContain('❯ claude-sonnet-4-5 ✓');
+      await snapshot('model', shown);
+      ui.terminal.input?.('gpt-4o');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('搜索: gpt-4o'));
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.agent.loop.model).toBe('gpt-4o'));
+      await vi.waitFor(() => expect(ui.screen().slice(-8).join('\n')).toContain('Enter 发送'));
+    } finally { await ui.dispose(); }
+  });
+
+  it('长审批正文不能挤走选项，窄屏能滚动到完整参数末尾，浏览详情不会误批准', async () => {
+    const ui = await mountTui();
+    const controller = new AbortController();
+    const resolve = vi.fn();
+    try {
+      ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve, request: {
+        toolName: 'bash', summary: `发布 ${'很长的命令 '.repeat(200)}`,
+        reason: '需要确认远端写入范围', input: { command: `${'command argument\n'.repeat(80)}END_PARAMETER_UNIQUE` },
+      } });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求'));
+      expect(ui.renderer().hasOverlay()).toBe(false);
+      expect(ui.screen().slice(-16).join('\n')).toContain('允许一次');
+      expect(ui.screen().slice(-16).join('\n')).toContain('本次会话记住此操作');
+      expect(ui.screen().slice(-16).join('\n')).toContain('Enter 确认');
+      await snapshot('permission', ui.screen());
+      ui.terminal.columns = 32;
+      ui.terminal.rows = 10;
+      ui.terminal.resize?.();
+      await vi.waitFor(() => expect(ui.screen()).toHaveLength(10));
+      expect(ui.screen().join('\n')).toContain('允许一次');
+      expect(ui.screen().join('\n')).toContain('Enter 确认');
+      for (const line of ui.screen()) expect(visibleWidth(line)).toBeLessThanOrEqual(32);
+      ui.terminal.input?.('\t');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('返回选项'));
+      for (let i = 0; i < 500; i++) ui.terminal.input?.('\x1b[B');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('END_PARAMETER_UNIQUE'));
+      await snapshot('narrow-permission-details', ui.screen());
+      ui.terminal.input?.('\r');
+      expect(resolve).not.toHaveBeenCalled();
+      ui.terminal.input?.('\x1b');
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith({ allow: false });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('Enter 发送'));
+    } finally { controller.abort(); await ui.dispose(); }
+  });
+
+  it('审批优先于模型选择，连续审批与中断后恢复原筛选，后台工具结果不掩盖等待确认状态', async () => {
+    const ui = await mountTui();
+    const first = new AbortController();
+    const second = new AbortController();
+    const firstResolve = vi.fn();
+    const secondResolve = vi.fn();
+    try {
+      ui.send('/model');
+      ui.terminal.input?.('gpt');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('搜索: gpt'));
+      ui.agent.events.emit({ type: 'permission_request', request: { toolName: 'first', input: {}, summary: '第一项', reason: '确认' }, signal: first.signal, resolve: firstResolve });
+      ui.agent.events.emit({ type: 'permission_request', request: { toolName: 'second', input: {}, summary: '第二项', reason: '确认' }, signal: second.signal, resolve: secondResolve });
+      ui.agent.events.emit({ type: 'tool_result', toolUseId: 'background', name: 'read_file', result: { content: '后台读取完成' } });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求 · first'));
+      expect(ui.screen().join('\n')).toContain('等待你确认权限');
+      ui.terminal.input?.('\r');
+      expect(firstResolve).toHaveBeenCalledTimes(1);
+      expect(firstResolve).toHaveBeenCalledWith({ allow: true });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求 · second'));
+      second.abort();
+      expect(secondResolve).toHaveBeenCalledTimes(1);
+      expect(secondResolve).toHaveBeenCalledWith({ allow: false });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('搜索: gpt'));
+      ui.terminal.input?.('\x1b');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('Enter 发送'));
+      expect(ui.agent.permission.getSessionRules().allow).toEqual([]);
+    } finally { first.abort(); second.abort(); await ui.dispose(); }
+  });
+
+  it('对话身份、思考和工具状态清楚，Ctrl+O 展开与编号详情可看到完整内容', async () => {
+    const ui = await mountTui();
+    try {
+      vi.spyOn(ui.agent.loop, 'run').mockImplementation(async () => {
+        ui.agent.events.emit({ type: 'thinking_delta', text: '先检查项目，再执行测试。' });
+        ui.agent.events.emit({ type: 'text_delta', text: '我会检查项目。' });
+        ui.agent.events.emit({ type: 'assistant_message', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '先检查项目，再执行测试。' }, { type: 'text', text: '我会检查项目。' }] } });
+        ui.agent.events.emit({ type: 'tool_call', toolUse: { type: 'tool_use', id: 'test', name: 'bash', input: { command: 'pnpm test', description: '完整参数说明 '.repeat(20) } } });
+        ui.agent.events.emit({ type: 'tool_result', toolUseId: 'test', name: 'bash', result: { content: '输出一\n输出二\n输出三\n输出四\n输出五\nOUTPUT_END_UNIQUE' } });
+        return { reason: 'completed', turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+      });
+      ui.send('帮我运行测试');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('工具 #2'));
+      const collapsed = ui.screen().join('\n');
+      expect(collapsed).toContain('❯ 你');
+      expect(collapsed).toContain('◇ 思考 #1 · 已结束');
+      expect(collapsed).toContain('● Agent');
+      expect(collapsed).toContain('bash · 完成');
+      expect(collapsed).toContain('/details 2');
+      expect(collapsed).not.toContain('OUTPUT_END_UNIQUE');
+      await snapshot('conversation', ui.screen());
+      ui.terminal.input?.('\x0f');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('OUTPUT_END_UNIQUE'));
+      ui.terminal.input?.('\x0f');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).not.toContain('OUTPUT_END_UNIQUE'));
+      ui.send('/details 2');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── #2 工具 · bash'));
+      expect(ui.screen().join('\n')).toContain('完整参数');
+      for (let i = 0; i < 100; i++) ui.terminal.input?.('\x1b[B');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('OUTPUT_END_UNIQUE'));
+      await snapshot('tool-details', ui.screen());
+      ui.terminal.input?.('\x1b');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('Enter 发送'));
+    } finally { await ui.dispose(); }
+  });
+
   it('显示固定底栏，审批 Ctrl+C 后可继续输入，缩窄窗口仍可渲染', async () => {
     vi.stubEnv('AGENTLAB_SCREEN', 'alt');
     let renderer: TuiAltScreen | undefined;
@@ -196,7 +409,7 @@ describe('真实 TUI 离线交互', () => {
     try {
       await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'ask' }));
       const messages = [
-        { role: 'user', content: `${SUMMARY_MARKER}\n这里是很早的讨论，不应该整段铺开。` },
+        { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n这里是很早的讨论，不应该整段铺开。` },
         { role: 'user', content: '请读取笔记' },
         {
           role: 'assistant',
@@ -216,6 +429,8 @@ describe('真实 TUI 离线交互', () => {
         updatedAt: '2026-10-05T01:02:03.000Z',
         cwd: dir,
         model: 'gpt-4o',
+        provider: 'fake',
+        endpointKey: 'default',
         thinking: 'high',
         permissionMode: 'ask',
         sessionRules: { allow: [], ask: [], deny: [] },
@@ -254,7 +469,7 @@ describe('renderHistory', () => {
   it('窄屏下每一行都不超出可见宽度', () => {
     const long = '很长的一行内容'.repeat(30);
     const messages = [
-      { role: 'user', content: `${SUMMARY_MARKER}\n${long}` },
+      { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n${long}` },
       { role: 'user', content: long },
       {
         role: 'assistant',

@@ -126,7 +126,7 @@ export function findCompactCut(messages: readonly Message[]): number {
   const boundaries: number[] = [];
   for (let i = 1; i < messages.length; i++) {
     const message = messages[i]!;
-    if (message.role === 'user' && typeof message.content === 'string' && !message.content.startsWith(SUMMARY_MARKER)) {
+    if (message.role === 'user' && typeof message.content === 'string' && message.source !== 'summary') {
       boundaries.push(i);
     }
   }
@@ -163,7 +163,7 @@ export function renderTranscript(messages: readonly Message[]): string {
   for (const message of messages) {
     if (message.role === 'user') {
       if (typeof message.content === 'string') {
-        const label = message.content.startsWith(SUMMARY_MARKER) ? 'SUMMARY' : 'USER';
+        const label = message.source === 'summary' ? 'SUMMARY' : 'USER';
         lines.push(`${label}: ${message.content}`);
         continue;
       }
@@ -198,9 +198,9 @@ export function renderTranscript(messages: readonly Message[]): string {
 /** 确定性摘录用户原话：第一条是最初目标，末尾补最近的要求。摘要失败时仍然留下。 */
 export function collectUserQuotes(messages: readonly Message[]): string[] {
   const all = messages
-    .filter((m): m is UserMessage & { content: string } => m.role === 'user' && typeof m.content === 'string')
+    .filter((m): m is UserMessage & { content: string } => m.role === 'user' && typeof m.content === 'string' && m.source !== 'summary')
     .map((m) => m.content)
-    .filter((content) => content.trim() && !content.startsWith(SUMMARY_MARKER));
+    .filter((content) => content.trim());
   const picked = all.length <= MAX_QUOTES ? all : [all[0]!, ...all.slice(-(MAX_QUOTES - 1))];
   return picked.map((quote) => truncateMiddle(quote.trim(), QUOTE_LIMIT));
 }
@@ -248,7 +248,7 @@ function buildCompactedHistory(summary: string, quotes: string[], dropped: numbe
   if (quotes.length > 0) {
     parts.push(`## 早期用户原话（节选）\n${quotes.map((quote, i) => `${i + 1}. ${quote}`).join('\n')}`);
   }
-  const out: Message[] = [{ role: 'user', content: parts.join('\n\n') }];
+  const out: Message[] = [{ role: 'user', source: 'summary', content: parts.join('\n\n') }];
   // 保留段以 user 开头时补一句固定确认，避免两条 user 相邻，也避免摘要被读成最新指令。
   if (recent[0]?.role === 'user') {
     out.push({ role: 'assistant', content: [{ type: 'text', text: ACK_TEXT }] });
