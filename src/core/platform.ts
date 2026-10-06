@@ -144,17 +144,17 @@ function locateRg(): string | null {
 export interface ShellInvocation {
   file: string;
   args: string[];
-  /** 写进 stdin 的脚本。有值时调用方占用 stdin，并带上 UTF-8 BOM，让 Windows PowerShell 按 UTF-8 读入。 */
-  input?: string;
 }
 
 /** 把一条用户命令变成当前平台的 spawn 参数。 */
 export function shellInvocation(command: string, platform: NodeJS.Platform = process.platform): ShellInvocation {
   if (platform === 'win32') {
+    // PowerShell 5.1 的 `-Command -` 按控制台代码页读 stdin，不认 UTF-8 BOM。
+    // `-EncodedCommand` 用 UTF-16LE base64，绕开代码页，也不需要临时文件。
+    const encoded = Buffer.from(powershellScript(command), 'utf16le').toString('base64');
     return {
       file: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '-'],
-      input: powershellScript(command),
+      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
     };
   }
   return { file: 'bash', args: ['-c', command] };

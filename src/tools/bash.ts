@@ -70,7 +70,7 @@ export const bashTool: Tool = {
         cwd: ctx.cwd,
         env: envWithRg(process.env),
         windowsHide: true,
-        stdio: [invocation.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
       const chunks: Buffer[] = [];
@@ -85,11 +85,6 @@ export const bashTool: Tool = {
         if (text.length > MAX_OUTPUT) return `${text.slice(0, MAX_OUTPUT)}\n[truncated]`;
         return text;
       };
-
-      if (invocation.input !== undefined && child.stdin) {
-        child.stdin.write(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(invocation.input, 'utf8')]));
-        child.stdin.end();
-      }
 
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
