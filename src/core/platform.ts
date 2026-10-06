@@ -149,15 +149,11 @@ export interface ShellInvocation {
   args: string[];
 }
 
-/**
- * 把一条用户命令变成当前平台的 spawn 参数。
- *
- * Windows 用 `-EncodedCommand`（UTF-16LE 的 base64）。PowerShell 5.1 的 `-Command -`
- * 按控制台输入代码页读 stdin，不认 UTF-8 BOM，BOM 会盖掉脚本第一行，中文也会被误读。
- * 命令行长度上限约 32767 字符，base64 后超长命令（大约超过 12000 字符）会触顶。
- */
+/** 把一条用户命令变成当前平台的 spawn 参数。 */
 export function shellInvocation(command: string, platform: NodeJS.Platform = process.platform): ShellInvocation {
   if (platform === 'win32') {
+    // PowerShell 5.1 的 `-Command -` 按控制台代码页读 stdin，不认 UTF-8 BOM。
+    // `-EncodedCommand` 用 UTF-16LE base64，绕开代码页，也不需要临时文件。
     const encoded = Buffer.from(powershellScript(command), 'utf16le').toString('base64');
     return {
       file: 'powershell.exe',
