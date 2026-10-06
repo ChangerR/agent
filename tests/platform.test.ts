@@ -28,11 +28,27 @@ describe('detectPlatform', () => {
     expect(host.osLabel).toBe('Windows');
     expect(host.shell).toBe('powershell');
     expect(host.toolDescription).toContain('PowerShell');
-    expect(shellInvocation('Write-Output hi', 'win32')).toEqual({
-      file: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '-'],
-      input: powershellScript('Write-Output hi'),
-    });
+    const invocation = shellInvocation('Write-Output hi', 'win32');
+    expect(invocation.file).toBe('powershell.exe');
+    expect(invocation.args.slice(0, 5)).toEqual([
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-EncodedCommand',
+    ]);
+    expect(invocation.args).toHaveLength(6);
+    expect(Buffer.from(invocation.args[5]!, 'base64').toString('utf16le')).toBe(powershellScript('Write-Output hi'));
+  });
+
+  it('Windows EncodedCommand 按 UTF-16LE 编码，中文不会被 stdin 代码页弄乱', () => {
+    const command = "Write-Output '中文测试 OK'";
+    const invocation = shellInvocation(command, 'win32');
+    expect(invocation.args[4]).toBe('-EncodedCommand');
+    const decoded = Buffer.from(invocation.args[5]!, 'base64').toString('utf16le');
+    expect(decoded).toBe(powershellScript(command));
+    expect(decoded).toContain('中文测试 OK');
+    expect(decoded.startsWith('$ProgressPreference')).toBe(true);
   });
 
   it('macOS 与 Linux 使用 bash', () => {
