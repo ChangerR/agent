@@ -18,6 +18,7 @@ const EVENT_TYPES: AgentEvent['type'][] = [
   'tool_call',
   'tool_result',
   'permission_request',
+  'permission_decision',
   'turn_end',
   'notice',
   'loop_end',

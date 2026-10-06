@@ -28,8 +28,8 @@ export interface Decision {
   reason: string;
   /** 命中的规则原文，未命中为 undefined */
   matchedRule?: string;
-  /** 规则来源：session / config / builtin / mode / danger / judge */
-  source: 'session' | 'config' | 'builtin' | 'mode' | 'danger' | 'judge';
+  /** user 表示最终人工确认，与规则放行和模型判断区分。 */
+  source: 'session' | 'config' | 'builtin' | 'mode' | 'danger' | 'judge' | 'user';
 }
 
 export interface ParsedRule {

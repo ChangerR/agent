@@ -27,6 +27,7 @@ import type { HookRunner } from './hooks.js';
 import type { PermissionEngine } from './permission/engine.js';
 import type { AutoJudge } from './permission/judge.js';
 import { mergeJudgeDecision } from './permission/judge.js';
+import { ReviewHistory } from './permission/review-context.js';
 import type { CachePolicy, CacheTtl, Provider, ThinkingLevel } from './provider.js';
 import { observedStream } from './provider.js';
 import { collectStreamAsync, emptyUsage } from './protocol/types.js';
@@ -105,6 +106,8 @@ export class AgentLoop {
   private disposed = false;
   private idle: Promise<void> = Promise.resolve();
   private completionTasks = new Set<() => Promise<void>>();
+  private reviewHistory = new ReviewHistory();
+  private currentUserRequest = '';
 
   constructor(private opts: AgentLoopOptions) {
     this.configuredThreshold = opts.context.threshold;
@@ -162,6 +165,8 @@ export class AgentLoop {
     if (this.abort) throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
     assertSafeHistory(snapshot.messages);
     this.messages = structuredClone(snapshot.messages) as Message[];
+    this.reviewHistory.clear();
+    this.currentUserRequest = '';
     this.toolsSnapshot = null;
     this.lastRequestMessageCount = 0;
     this.lastToolBatchMs = 0;
@@ -192,6 +197,7 @@ export class AgentLoop {
     this.disposed = true;
     this.abort_current();
     await this.idle;
+    this.reviewHistory.clear();
   }
 
   async run(userInput: string): Promise<AgentRunResult> {
@@ -214,6 +220,7 @@ export class AgentLoop {
 
     try {
       await hooks.notify('UserPromptSubmit', { input: userInput });
+      this.currentUserRequest = userInput;
       this.messages.push({ role: 'user', content: userInput });
       await this.maybeCompact(signal);
 
@@ -377,19 +384,26 @@ export class AgentLoop {
 
     // 权限决策管线
     let decision = permission.check(tool, input);
+    const emitDecision = (phase: 'pipeline' | 'judge' | 'user') => events.emit({
+      type: 'permission_decision', toolUseId: toolUse.id, toolName: tool.name,
+      input: structuredClone(input), phase, decision: { ...decision },
+    });
+    emitDecision('pipeline');
 
     // auto 模式 + LLM 审批员：管线判定为 ask（模式默认值）时，让小模型兜底判断
     if (decision.kind === 'ask' && decision.source === 'mode' && this.opts.autoJudge && permission.mode === 'auto') {
-      events.emit({ type: 'notice', text: `LLM 审批员审核中: ${tool.name}…` });
-      const verdict = await this.opts.autoJudge.review(tool, input, signal, events);
+      const reviewContext = this.reviewHistory.build(tool, input, cwd, this.currentUserRequest, this.messages);
+      const verdict = await this.opts.autoJudge.review(tool, input, signal, events, reviewContext);
+      if (signal.aborted) return fail('Tool cancelled');
       decision = mergeJudgeDecision(decision, verdict);
       permission.recordDecision(tool, input, decision);
-      if (decision.kind === 'allow') {
-        events.emit({ type: 'notice', text: decision.reason });
-      }
+      emitDecision('judge');
     }
 
-    if (decision.kind === 'deny') return fail(`Permission denied: ${decision.reason}`);
+    if (decision.kind === 'deny') {
+      this.reviewHistory.record(tool, input, cwd, this.currentUserRequest, decision);
+      return fail(`Permission denied: ${decision.reason}`);
+    }
 
     if (decision.kind === 'ask') {
       const analysis = tool.analyzeInput?.(input);
@@ -417,7 +431,15 @@ export class AgentLoop {
         });
       });
       if (signal.aborted) return fail('Tool cancelled');
+      decision = {
+        kind: userDecision.allow ? 'allow' : 'deny',
+        source: 'user',
+        reason: userDecision.allow ? '用户确认本次操作' : `用户拒绝本次操作${userDecision.feedback ? `：${userDecision.feedback}` : ''}`,
+      };
+      permission.recordDecision(tool, input, decision);
+      emitDecision('user');
       if (!userDecision.allow) {
+        this.reviewHistory.record(tool, input, cwd, this.currentUserRequest, decision);
         return fail(`User denied this action.${userDecision.feedback ? ` Feedback: ${userDecision.feedback}` : ''}`);
       }
       // "始终允许" → 写回会话级规则，后续同类调用自动放行
@@ -435,6 +457,7 @@ export class AgentLoop {
 
     // 执行
     if (signal.aborted) return fail('Tool cancelled');
+    const reviewRecord = this.reviewHistory.record(tool, input, cwd, this.currentUserRequest, decision);
     events.emit({ type: 'tool_call', toolUse: { ...toolUse, input } });
     let result: ToolResult;
     try {
@@ -442,6 +465,7 @@ export class AgentLoop {
     } catch (err) {
       result = { content: err instanceof Error ? err.message : String(err), isError: true };
     }
+    this.reviewHistory.finish(reviewRecord, result, signal.aborted);
     await hooks.notify('PostToolUse', { toolName: tool.name, input, result });
     events.emit({ type: 'tool_result', toolUseId: toolUse.id, name: tool.name, result });
     return { type: 'tool_result', toolUseId: toolUse.id, content: result.content, isError: result.isError };

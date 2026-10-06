@@ -8,7 +8,7 @@
  * - 流式渲染按 ~60ms 节流（Markdown 解析有成本，不逐 token 重排）
  * - 运行中输入进入队列并给出可见反馈
  * - Esc 中断当前轮；Ctrl+C 先中断、空闲时退出
- * - /model /mode /think 不带参数时弹选择器，无需背名字
+ * - /model /mode /think 与权限审批共用底部交互区，不遮挡对话
  */
 import {
   CombinedAutocompleteProvider,
@@ -18,7 +18,6 @@ import {
   matchesKey,
   ProcessTerminal,
   ScrollView,
-  SelectList,
   Spacer,
   Text,
   TruncatedText,
@@ -29,17 +28,18 @@ import {
   type Component,
   type EditorTheme,
   type MarkdownTheme,
-  type OverlayHandle,
   type SelectListTheme,
   type TUI,
   type Terminal,
+  truncateToWidth,
 } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
 import type { PermissionRequest, UserDecision } from '../core/events.js';
 import type { ThinkingLevel } from '../core/provider.js';
 import { emptyUsage, type TokenUsage } from '../core/protocol/types.js';
 import type { Agent } from '../index.js';
-import { renderHistory, StreamMessages, ToolMessage } from './messages.js';
+import { DetailRegistry, PermissionMessage, renderHistory, StreamMessages, ToolMessage, UserMessage } from './messages.js';
+import { InteractionPanel, type PanelItem } from './interaction-panel.js';
 import { TurnQueue } from './turn-queue.js';
 
 // ---------------------------------------------------------------------------
@@ -76,20 +76,21 @@ const editorTheme: EditorTheme = {
   selectList: selectTheme,
 };
 
-const HELP = `命令（不带参数弹出选择器）：
+const HELP = `命令（不带参数在底部打开选择器）：
   /model [name]          查看/切换模型
   /mode [ask|auto|yolo]  查看/切换权限模式
   /think [off|low|medium|high]  查看/设置思考等级
   /permissions           查看权限决策日志
   /skills                列出可用 skill
   /tools                 列出已注册工具
-  /details               展开/收起工具输出和思考内容
+  /details [编号]        展开/收起全部详情，或查看某条完整内容
   /stats                 查看 token、缓存和日志信息
   /queue clear           清空待发送消息
   /redraw                强制全屏重绘（画面残留时用）
   /help                  显示帮助
   /exit                  退出
-其他输入直接作为对话发送。Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
+其他输入直接作为对话发送。Ctrl+O 展开/收起详情，Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
+选择器：↑↓ 选择，Enter 确认，Esc 返回。审批：Tab 查看完整参数，↑↓ 滚动，Tab 返回选项，Esc 拒绝。
 消息区独立滚动，底部保留输入框。AGENTLAB_SCREEN=main 可使用终端原生滚动历史。
 调试：会话事件全量记录在 .agentlab/logs/session-*.jsonl
 画面异常时：先试 /redraw；仍异常可设 AGENTLAB_FULL_REDRAW=1 后重启（关闭差分渲染）。
@@ -178,17 +179,24 @@ export function startTui(
   let expanded = false;
   let startedAt = 0;
   let stopped = false;
+  let picker: InteractionPanel | undefined;
+  let approvalPanel: InteractionPanel | undefined;
+  const activePanel = () => approvalPanel ?? picker;
+  const details = new DetailRegistry();
   const toolMessages = new Map<string, ToolMessage>();
   const unsubscribe: Array<() => void> = [];
   const transcript = new Container();
-  const header = new Text(chalk.bold('AgentLab') + chalk.dim(' · /help 查看命令'), 1, 1);
+  const header = new Text(chalk.bold('AgentLab') + chalk.dim(' · /model 模型 · /help 帮助'), 1, 1);
   const scroll = new ScrollView(transcript, { follow: 'end', primary: true });
 
   // --- 消息区拥有独立视口，状态与输入不参与历史滚动 ---
   let statusText = '';
   const status: Component = {
     invalidate() {},
-    render: (width) => new TruncatedText(statusText, 1, 0).render(width),
+    render: (width) => [
+      truncateToWidth(statusText, width),
+      truncateToWidth(chalk.dim(` ${truncateToWidth(model, Math.max(4, width - 20))} · ${mode} · 思考 ${thinking}`), width),
+    ],
   };
   const editor = new Editor(tui, editorTheme, { paddingX: 1 });
   editor.setAutocompleteProvider(
@@ -219,7 +227,8 @@ export function startTui(
 
   const updateStatus = () => {
     const elapsed = turns.running ? ` · ${Math.floor((Date.now() - startedAt) / 1000)}s` : '';
-    statusText = `${turns.running ? chalk.cyan(phase) : chalk.dim('就绪')}${elapsed}${turns.size ? ` · 排队 ${turns.size}` : ''} · ${chalk.dim(`${model} · ${mode} · ${thinking}`)}`;
+    const current = approvalPanel ? '等待你确认权限' : picker ? '选择 / 查看详情' : turns.running ? phase : '就绪';
+    statusText = ` ${approvalPanel ? chalk.bold.yellow(`? ${current}`) : turns.running ? chalk.cyan(`● ${current}`) : chalk.dim(current)}${elapsed}${turns.size ? ` · 排队 ${turns.size}` : ''}`;
     render();
   };
   const setPhase = (next: string) => {
@@ -235,12 +244,12 @@ export function startTui(
 
   const say = (text: string) => addMessage(new Text(chalk.yellow(text), 1, 0));
   const err = (text: string) => addMessage(new Text(chalk.red(text), 1, 0));
-  const streams = new StreamMessages(markdownTheme, () => expanded, addMessage, render);
+  const streams = new StreamMessages(markdownTheme, () => expanded, addMessage, render, details);
   const turns = new TurnQueue(async (text) => {
     startedAt = Date.now();
     phase = '等待模型响应';
     addMessage(new Spacer(1));
-    addMessage(new Text(chalk.bold(`❯ ${text}`), 1, 0));
+    addMessage(new UserMessage(text));
     scroll.scrollToEnd();
     updateStatus();
     await agent.loop.run(text);
@@ -274,66 +283,72 @@ export function startTui(
     updateStatus();
   };
 
-  // --- 通用选择器弹层 ---
+  const focusInteraction = () => {
+    tui.setFocus(activePanel() ? interaction : editor);
+    updateStatus();
+    // 编辑器与面板占用同一个底部位置；切换时清掉旧边框与光标残影。
+    if (!stopped) tui.requestRender(true);
+  };
+  const interaction: Component = {
+    invalidate() { activePanel()?.invalidate(); },
+    render: (width) => activePanel()?.render(width) ?? [],
+    handleInput: (data) => activePanel()?.handleInput(data),
+    handleMouse: (event) => activePanel()?.handleMouse(event),
+  };
+  const toggleDetails = () => {
+    expanded = !expanded;
+    transcript.invalidate();
+    render();
+  };
+
+  // --- 底部选择器（审批优先；关闭后恢复尚未完成的选择） ---
   function showPicker(
     title: string,
-    items: Array<{ value: string; label: string; description?: string }>,
+    items: PanelItem[],
     onPick: (value: string) => void,
-  ): OverlayHandle {
-    const panel = new Container();
-    panel.addChild(new Text(chalk.bold.yellow(title), 1, 0));
-    const list = new SelectList(items, Math.min(items.length, 10), selectTheme);
-    panel.addChild(list);
-    const handle = tui.showOverlay(panel, { anchor: 'bottom-center', width: '90%', maxHeight: '80%' });
+    initialValue?: string,
+    filterable = false,
+  ): void {
     const close = () => {
-      handle.hide();
-      tui.setFocus(editor);
-      render();
+      picker = undefined;
+      focusInteraction();
     };
-    list.onSelect = (item) => {
-      close();
-      onPick(item.value);
-    };
-    list.onCancel = () => close();
-    tui.setFocus(list);
-    return handle;
+    picker = new InteractionPanel({
+      title, kind: 'picker', items, initialValue, filterable,
+      rows: () => terminal.rows, changed: render, cancel: close,
+      select: (value) => { close(); onPick(value); },
+    });
+    focusInteraction();
   }
 
-  // --- 权限请求弹层 ---
-  function showPermissionOverlay(request: PermissionRequest, resolve: (d: UserDecision) => void, signal: AbortSignal, next: () => void): void {
-    const panel = new Container();
-    panel.addChild(new Text(chalk.bold.yellow('权限请求'), 1, 0));
-    panel.addChild(new Text(request.summary, 1, 0));
-    panel.addChild(new Text(chalk.dim(request.reason), 1, 0));
+  // --- 固定底部审批：完整参数可滚动，选项不会被长正文挤掉 ---
+  function showPermissionPanel(request: PermissionRequest, resolve: (d: UserDecision) => void, signal: AbortSignal, next: () => void): void {
     const options: Array<{ label: string; decision: UserDecision }> = [
       { label: '允许一次', decision: { allow: true } },
       { label: '本次会话记住此操作', decision: { allow: true, remember: 'session' } },
       { label: '拒绝', decision: { allow: false } },
     ];
-    const list = new SelectList(
-      options.map((o, i) => ({ value: String(i), label: o.label })),
-      options.length,
-      selectTheme,
-    );
-    panel.addChild(list);
-    panel.addChild(new Text(chalk.dim('Enter 确认 · Esc 拒绝 · Ctrl+C 中断当前轮'), 1, 0));
-    const handle = tui.showOverlay(panel, { anchor: 'center', width: '90%', maxHeight: '90%' });
     let settled = false;
     const done = (decision: UserDecision) => {
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', cancel);
-      handle.hide();
+      approvalPanel = undefined;
       resolve(decision);
-      tui.setFocus(editor);
-      render();
       next();
+      focusInteraction();
     };
     const cancel = () => done({ allow: false });
     signal.addEventListener('abort', cancel, { once: true });
-    list.onSelect = (item) => done(options[Number(item.value)].decision);
-    list.onCancel = () => done({ allow: false });
-    tui.setFocus(list);
+    approvalPanel = new InteractionPanel({
+      title: `权限请求 · ${request.toolName}`, kind: 'permission',
+      items: options.map((o, i) => ({ value: String(i), label: o.label })),
+      body: () => `理由: ${request.reason}\n操作摘要: ${request.summary.replace(/\s+/g, ' ').slice(0, 100)}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
+      rows: () => terminal.rows, changed: render, cancel: () => done({ allow: false }),
+      select: (value) => done(options[Number(value)].decision),
+    });
+    if (signal.aborted) cancel();
+    else focusInteraction();
   }
 
   // --- 事件订阅 ---
@@ -349,7 +364,8 @@ export function startTui(
   unsubscribe.push(agent.events.on('tool_call', (e) => {
     streams.finish();
     const summary = summarizeToolCall(agent.tools, e.toolUse.name, e.toolUse.input);
-    const comp = new ToolMessage(summary, () => expanded);
+    const comp = new ToolMessage(summary, () => expanded, { name: e.toolUse.name, input: e.toolUse.input });
+    comp.detailId = details.add(`工具 · ${e.toolUse.name}`, () => comp.details());
     toolMessages.set(e.toolUse.id, comp);
     phase = `执行工具 · ${e.toolUse.name}`;
     addMessage(comp);
@@ -367,6 +383,10 @@ export function startTui(
     updateStatus();
   }));
   unsubscribe.push(agent.events.on('notice', (e) => say(e.text)));
+  // 后台审核只更新状态栏，自动放行的理由可在 /permissions 与日志里查看。
+  unsubscribe.push(agent.events.on('model_request', (e) => {
+    if (e.purpose === 'judge') setPhase('自动审核工具权限');
+  }));
   unsubscribe.push(agent.events.on('compacted', (e) => say(`上下文已压缩：${e.beforeMessages} → ${e.afterMessages} 条消息`)));
   unsubscribe.push(agent.events.on('error', (e) => err(e.error.message)));
   unsubscribe.push(agent.events.on('model_usage', (e) => {
@@ -389,7 +409,7 @@ export function startTui(
   unsubscribe.push(agent.events.on('session_saved', (e) => {
     if (e.trimmed > 0) say(`尾部 ${e.trimmed} 条未完成的工具调用未写入`);
   }));
-  // 并行只读工具可能同时询问；审批逐个显示，避免弹层争抢焦点。
+  // 并行工具可能同时询问；审批逐个显示，避免争抢底部交互区。
   type Approval = Extract<import('../core/events.js').AgentEvent, { type: 'permission_request' }>;
   const approvals: Approval[] = [];
   let approving = false;
@@ -400,16 +420,26 @@ export function startTui(
       const approval = approvals.shift()!;
       if (approval.signal.aborted) continue;
       approving = true;
-      phase = '等待审批';
+      phase = '等待你确认权限';
       updateStatus();
-      showPermissionOverlay(approval.request, approval.resolve, approval.signal, nextApproval);
+      showPermissionPanel(approval.request, approval.resolve, approval.signal, nextApproval);
       return;
     }
     phase = '等待执行工具';
     updateStatus();
   };
   unsubscribe.push(agent.events.on('permission_request', (e) => {
-    approvals.push(e);
+    const comp = new PermissionMessage(e.request);
+    comp.detailId = details.add(`权限 · ${e.request.toolName}`, () => comp.details());
+    addMessage(comp);
+    const cancelRecord = () => { comp.finish('已中断'); render(); };
+    e.signal.addEventListener('abort', cancelRecord, { once: true });
+    approvals.push({ ...e, resolve: (decision) => {
+      e.signal.removeEventListener('abort', cancelRecord);
+      comp.finish(e.signal.aborted ? '已中断' : decision.allow ? decision.remember ? '已允许并记住' : '已允许一次' : '已拒绝');
+      e.resolve(decision);
+      render();
+    } });
     if (!approving) nextApproval();
   }));
   unsubscribe.push(agent.events.on('session_restored', (e) => {
@@ -417,12 +447,16 @@ export function startTui(
     toolMessages.clear();
     approvals.length = 0;
     approving = false;
+    picker = undefined;
+    approvalPanel = undefined;
     transcript.clear();
+    details.clear();
     transcript.addChild(header);
     for (const comp of renderHistory(e.messages, {
       theme: markdownTheme,
       expanded: () => expanded,
       summarize: (name, input) => summarizeToolCall(agent.tools, name, input),
+      details,
     })) {
       transcript.addChild(comp);
     }
@@ -439,21 +473,29 @@ export function startTui(
     say(`已恢复会话 ${e.id}（${e.title}）`);
     transcript.invalidate();
     scroll.scrollToEnd();
-    updateStatus();
+    focusInteraction();
   }));
 
   // --- 全局按键：Esc 中断当前轮；Ctrl+C 中断/退出 ---
   unsubscribe.push(tui.addInputListener((data) => {
-    if (matchesKey(data, Key.escape) && turns.running && !tui.hasOverlay()) {
+    if (matchesKey(data, Key.escape) && turns.running && !activePanel() && !tui.hasOverlay()) {
       interrupt();
       return { consume: true };
     }
     if (matchesKey(data, Key.ctrl('c'))) {
+      if (activePanel() && !turns.running) {
+        activePanel()?.handleInput('\x1b');
+        return { consume: true };
+      }
       if (turns.running) {
         interrupt();
       } else {
         exit();
       }
+      return { consume: true };
+    }
+    if (matchesKey(data, Key.ctrl('o')) && !activePanel()) {
+      toggleDetails();
       return { consume: true };
     }
     return undefined;
@@ -505,9 +547,16 @@ export function startTui(
         say('已强制全屏重绘');
         return;
       case 'details':
-        expanded = !expanded;
-        transcript.invalidate();
-        say(expanded ? '已展开工具输出和思考内容' : '已收起工具输出和思考内容');
+        if (arg) {
+          const entry = /^\d+$/.test(arg) ? details.get(Number(arg)) : undefined;
+          if (!entry) { err('用法: /details [消息编号]，编号显示在工具与思考旁'); return; }
+          picker = new InteractionPanel({
+            title: `#${entry.id} ${entry.title}`, kind: 'details', body: entry.body,
+            rows: () => terminal.rows, changed: render,
+            cancel: () => { picker = undefined; focusInteraction(); },
+          });
+          focusInteraction();
+        } else toggleDetails();
         return;
       case 'stats':
         say(`tokens: ${fmtTokens(usage.inputTokens)} 输入 / ${fmtTokens(usage.outputTokens)} 输出\ncache: ${fmtTokens(usage.cacheReadTokens)} 读 / ${fmtTokens(usage.cacheWriteTokens)} 写 · 命中率 ${cacheHitRate(usage)}\n会话日志: ${agent.logPath}`);
@@ -529,6 +578,8 @@ export function startTui(
             description: m.info ? `context ${m.info.contextWindow.toLocaleString()} · output ${m.info.maxOutputTokens.toLocaleString()}` : '未知规格',
           })),
           setModel,
+          model,
+          true,
         );
         return;
       }
@@ -549,6 +600,7 @@ export function startTui(
             { value: 'yolo', label: 'yolo', description: '全部放行（deny 规则与危险检测仍生效），仅限沙箱' },
           ],
           setMode,
+          mode,
         );
         return;
       }
@@ -570,6 +622,7 @@ export function startTui(
             { value: 'high', label: 'high', description: '深度推理，慢但适合难题' },
           ],
           setThinking,
+          thinking,
         );
         return;
       }
@@ -683,17 +736,23 @@ export function startTui(
 
   // --- 启动 ---
   transcript.addChild(header);
-  const hints = new TruncatedText(chalk.dim('Enter 发送 · Esc 中断 · /details 展开输出 · /stats 统计'), 1, 0);
+  const hints: Component = {
+    invalidate() {},
+    render: (width) => [truncateToWidth(` Enter 发送 · Ctrl+O ${expanded ? '收起' : '详情'} · /details 编号 · Esc 中断`, width)],
+  };
+  const footer = new VStack([
+    status,
+    { component: interaction, visible: () => !!activePanel() },
+    { component: new VStack([new TruncatedText(chalk.bold(' ❯ 输入 · 运行中发送会排队'), 1, 0), editor, hints]), visible: () => !activePanel() },
+  ]);
   if (isViewportTUI(tui)) {
     tui.setLayoutRoot(new VStack([
       { component: scroll, basis: 0, grow: 1, minSize: 1 },
-      { component: new VStack([status, editor, hints]), basis: 'auto', shrink: 1, minSize: 3 },
+      { component: footer, basis: 'auto', shrink: 0, minSize: 3 },
     ]));
   } else {
     tui.addChild(transcript);
-    tui.addChild(status);
-    tui.addChild(editor);
-    tui.addChild(hints);
+    tui.addChild(footer);
   }
   updateStatus();
   tui.setFocus(editor);
