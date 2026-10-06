@@ -1,12 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Tool } from '../core/registry.js';
+import { matchPath, textStyle } from './text.js';
 
 const MAX_CHARS = 100_000;
 
 export const readFileTool: Tool = {
   name: 'read_file',
-  description: 'Read a text file. Returns numbered lines. Use offset/limit to page large files.',
+  description:
+    'Read a text file. Returns numbered lines separated by LF, even when the file uses CRLF. Do not include the line-number prefix in later edits. Use offset/limit to page large files.',
   risk: 'read',
   isConcurrencySafe: true,
   inputSchema: {
@@ -20,12 +22,12 @@ export const readFileTool: Tool = {
   },
   analyzeInput(input) {
     const path = String(input.path ?? '');
-    return { patternTarget: path, summary: `read_file: ${path}` };
+    return { patternTarget: matchPath(path), summary: `read_file: ${path}` };
   },
   async execute(input, ctx) {
     const path = resolve(ctx.cwd, String(input.path));
-    const text = await readFile(path, 'utf-8');
-    const lines = text.split('\n');
+    const { body } = textStyle(await readFile(path, 'utf-8'));
+    const lines = body.split('\n');
     const offset = Number(input.offset ?? 1);
     const limit = Number(input.limit ?? lines.length);
     const slice = lines.slice(offset - 1, offset - 1 + limit);

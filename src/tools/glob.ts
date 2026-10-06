@@ -1,5 +1,7 @@
+import { resolve } from 'node:path';
 import fg from 'fast-glob';
 import type { Tool } from '../core/registry.js';
+import { fsCaseSensitive, matchPath } from './text.js';
 
 export const globTool: Tool = {
   name: 'glob',
@@ -15,16 +17,17 @@ export const globTool: Tool = {
     required: ['pattern'],
   },
   analyzeInput(input) {
-    const pattern = String(input.pattern ?? '');
+    const pattern = matchPath(String(input.pattern ?? ''));
     return { patternTarget: pattern, summary: `glob: ${pattern}` };
   },
   async execute(input, ctx) {
-    const pattern = String(input.pattern);
-    const cwd = input.path ? String(input.path) : ctx.cwd;
+    const pattern = matchPath(String(input.pattern));
+    const cwd = input.path ? resolve(ctx.cwd, String(input.path)) : ctx.cwd;
     const entries = await fg(pattern, {
       cwd,
       dot: false,
       onlyFiles: true,
+      caseSensitiveMatch: fsCaseSensitive(),
       stats: true,
       ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
     });

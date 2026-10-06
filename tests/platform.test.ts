@@ -28,11 +28,23 @@ describe('detectPlatform', () => {
     expect(host.osLabel).toBe('Windows');
     expect(host.shell).toBe('powershell');
     expect(host.toolDescription).toContain('PowerShell');
-    expect(shellInvocation('Write-Output hi', 'win32')).toEqual({
-      file: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '-'],
-      input: powershellScript('Write-Output hi'),
-    });
+    const invocation = shellInvocation('Write-Output hi', 'win32');
+    expect(invocation.file).toBe('powershell.exe');
+    expect(invocation.args.slice(0, -1)).toEqual([
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-EncodedCommand',
+    ]);
+    const encoded = invocation.args.at(-1) ?? '';
+    expect(Buffer.from(encoded, 'base64').toString('utf16le')).toBe(powershellScript('Write-Output hi'));
+  });
+
+  it('Windows 的 EncodedCommand 保留命令里的中文', () => {
+    const invocation = shellInvocation("Write-Output '中文测试 OK'", 'win32');
+    const encoded = invocation.args.at(-1) ?? '';
+    expect(Buffer.from(encoded, 'base64').toString('utf16le')).toContain('中文测试 OK');
   });
 
   it('macOS 与 Linux 使用 bash', () => {
