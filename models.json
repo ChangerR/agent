@@ -3,5 +3,8 @@
   "claude-opus-4-5": { "contextWindow": 200000, "maxOutputTokens": 64000 },
   "claude-haiku-4-5": { "contextWindow": 200000, "maxOutputTokens": 64000 },
   "deepseek-flash": { "contextWindow": 1000000, "maxOutputTokens": 384000 },
-  "deepseek-pro": { "contextWindow": 1000000, "maxOutputTokens": 384000 }
+  "deepseek-pro": { "contextWindow": 1000000, "maxOutputTokens": 384000 },
+  "qwen3:14b": { "contextWindow": 4096, "maxOutputTokens": 4096 },
+  "qwen3:8b": { "contextWindow": 4096, "maxOutputTokens": 8192 },
+  "qwen3-8b-8k": { "contextWindow": 8192, "maxOutputTokens": 8192 }
 }
