@@ -28,14 +28,14 @@ describe('TUI 消息与调度', () => {
     let expanded = false;
     const tool = new ToolMessage('read_file: 长路径', () => expanded, { name: 'read_file', input: { path: '完整参数路径' } });
     tool.finish({ content: '中文长行'.repeat(300) + '\n末尾' });
-    expect(tool.render(24)).toHaveLength(2);
+    expect(tool.render(24)).toHaveLength(6);
     expect(text(tool, 24)).toContain('2 行输出');
     expanded = true;
     expect(text(tool, 80)).toContain('完整参数路径');
     expect(text(tool, 80)).toContain('末尾');
     expanded = false;
     tool.finish({ content: '错误原因\n修复方法\n第三行\n末尾', isError: true });
-    expect(tool.render(24)).toHaveLength(4);
+    expect(tool.render(24)).toHaveLength(6);
     expect(text(tool, 24)).toContain('失败');
     expect(text(tool, 24)).toContain('错误原因');
   });
@@ -162,7 +162,7 @@ describe('TUI 消息与调度', () => {
     const second = new ToolMessage('读取乙', () => expanded);
     second.finish({ content: '乙结果' });
     first.finish({ content: '甲一\n甲二\n甲三' });
-    expect(text(first)).not.toContain('甲三');
+    expect(text(first)).toContain('甲三');
     expect(text(second)).toContain('乙结果');
     expanded = true;
     expect(text(first)).toContain('甲三');
@@ -292,7 +292,7 @@ describe('真实 TUI 离线交互', () => {
         expect(screen.join('\n')).toContain('bash');
         for (const line of screen) expect(visibleWidth(line)).toBeLessThanOrEqual(columns);
         ui.terminal.input?.('\x1b[A');
-        await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 拒绝'));
+        await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('> 拒绝'));
         ui.terminal.input?.('\x1b[B');
       }
       ui.terminal.columns = 80; ui.terminal.rows = 24; ui.terminal.resize?.(); ui.terminal.input?.('\t');
@@ -331,7 +331,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x15');
       ui.send('/think'); ui.terminal.input?.('\x1b[B'); ask();
       ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ low'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('> low'));
       expect(ui.agent.loop.thinking).toBe('off');
       ui.terminal.input?.('\x1b');
     } finally { controller.abort(); await ui.dispose(); }
@@ -357,7 +357,7 @@ describe('真实 TUI 离线交互', () => {
     try {
       ui.send('/think');
       ui.terminal.input?.('\x1b[B');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ low'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('> low'));
       expect(ui.screen().join('\n')).toContain('off · 当前');
       expect(ui.agent.loop.thinking).toBe('off');
       ui.terminal.input?.('\t');
@@ -412,7 +412,7 @@ describe('真实 TUI 离线交互', () => {
       expect(ui.screen().join('\n')).toContain('Enter 排队');
       ui.send('/model');
       ui.terminal.input?.('\x03');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 输入'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── '));
       expect(abort).not.toHaveBeenCalled();
       ui.send('/queue clear');
       ui.terminal.input?.('未发送草稿');
@@ -441,27 +441,27 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.rows = 70;
       ui.terminal.resize?.();
       await vi.waitFor(() => expect(ui.screen()).toHaveLength(70));
-      expect(ui.screen().join('\n')).toContain('❯ 输入');
+      expect(ui.screen().join('\n')).toContain('── ');
       ui.terminal.output = '';
       ui.send('/think');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('╭ 思考等级'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('─ 思考等级'));
       const shown = ui.screen();
-      const start = shown.findIndex((line) => line.includes('╭ 思考等级'));
+      const start = shown.findIndex((line) => line.includes('─ 思考等级'));
       expect(start).toBeGreaterThanOrEqual(54);
       expect(shown[start - 1]).not.toContain('思考等级（当前');
-      expect(shown.join('\n')).not.toContain('❯ 输入');
+      expect(shown.join('\n')).not.toContain('── ');
       expect(shown.join('\n')).not.toContain('Enter 发送');
-      expect(shown.slice(start).join('\n')).toContain('❯ off');
+      expect(shown.slice(start).join('\n')).toContain('> off');
       expect(shown.slice(start).join('\n')).toContain('Enter 确认');
       expect(ui.renderer().hasOverlay()).toBe(false);
       expect(ui.terminal.output).toContain('\x1b[2J');
       await snapshot('think-tall', shown);
       ui.terminal.input?.('\x1b[B');
       ui.terminal.input?.('\x1b[B');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ medium'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('> medium'));
       ui.terminal.input?.('\r');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 输入'));
-      expect(ui.screen().join('\n')).not.toContain('╭ 思考等级');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── '));
+      expect(ui.screen().join('\n')).not.toContain('─ 思考等级');
       expect(ui.screen().join('\n')).toContain('思考 medium');
     } finally { await ui.dispose(); }
   });
@@ -473,10 +473,10 @@ describe('真实 TUI 离线交互', () => {
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('选择模型'));
       expect(ui.renderer().hasOverlay()).toBe(false);
       const shown = ui.screen();
-      const panelStart = shown.findIndex((line) => line.includes('╭ 选择模型'));
+      const panelStart = shown.findIndex((line) => line.includes('─ 选择模型'));
       expect(panelStart).toBeGreaterThanOrEqual(3);
       expect(shown.slice(panelStart).join('\n')).toContain('Enter 确认');
-      expect(shown.slice(panelStart).join('\n')).toContain('❯ claude-sonnet-4-5 · 当前');
+      expect(shown.slice(panelStart).join('\n')).toContain('> claude-sonnet-4-5 · 当前');
       await snapshot('model', shown);
       ui.terminal.input?.('gpt-4o');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('搜索: gpt-4o'));
@@ -518,7 +518,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b');
       expect(resolve).toHaveBeenCalledTimes(1);
       expect(resolve).toHaveBeenCalledWith({ allow: false });
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('Enter 发送'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── '));
     } finally { controller.abort(); await ui.dispose(); }
   });
 
@@ -568,13 +568,13 @@ describe('真实 TUI 离线交互', () => {
         return { reason: 'completed', turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
       });
       ui.send('帮我运行测试');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('工具 #2'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('6 行输出'));
       const collapsed = ui.screen().join('\n');
-      expect(collapsed).toContain('❯ 你');
+      expect(collapsed).toContain('帮我运行测试');
       expect(collapsed).toContain('◇ 思考 #1 · 已结束');
-      expect(collapsed).toContain('● Agent');
-      expect(collapsed).toContain('完成 · bash');
-      expect(collapsed).toContain('#2 · 6 行输出');
+      expect(collapsed).toContain('我会检查项目。');
+      expect(collapsed).toContain('✓ bash');
+      expect(collapsed).toContain('6 行输出 · Ctrl+O /details 2');
       expect(collapsed).not.toContain('OUTPUT_END_UNIQUE');
       await snapshot('conversation', ui.screen());
       ui.terminal.input?.('\x0f');
@@ -582,7 +582,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x0f');
       await vi.waitFor(() => expect(ui.screen().join('\n')).not.toContain('OUTPUT_END_UNIQUE'));
       ui.send('/details 2');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('╭ #2 工具 · bash'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('─ #2 工具 · bash'));
       expect(ui.screen().join('\n')).toContain('完整参数');
       for (let i = 0; i < 100; i++) ui.terminal.input?.('\x1b[B');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('OUTPUT_END_UNIQUE'));
@@ -710,7 +710,7 @@ describe('真实 TUI 离线交互', () => {
       const screen = () => renderer!.getScreenLines().map(stripTerminalSequences);
       await vi.waitFor(() => expect(screen().join('\n')).toContain('请读取笔记'));
       const shown = screen().join('\n');
-      expect(shown).toContain('AgentLab');
+      expect(shown).toContain('/settings 设置');
       expect(shown).toContain('早期对话摘要');
       expect(shown).toContain('笔记正文-UNIQUE');
       expect(shown).not.toContain('不应该整段铺开');

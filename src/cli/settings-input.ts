@@ -1,6 +1,7 @@
 /** 设置中的单行草稿输入；Enter 只提交字段草稿，不保存配置。 */
 import { Input, Text, truncateToWidth, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
+import { safeTerminalText, ui } from './theme.js';
 
 export interface SettingsInputRequest {
   title: string;
@@ -12,7 +13,7 @@ export interface SettingsInputRequest {
 }
 
 export class SettingsInputPanel implements Component {
-  private input = new Input({ prompt: '> ' });
+  private input = new Input({ prompt: ui.accent('> ') });
   private error?: string;
   private inputRow = 1;
   constructor(private options: SettingsInputRequest & { rows: () => number; changed: () => void }) {
@@ -29,21 +30,21 @@ export class SettingsInputPanel implements Component {
   render(width: number): string[] {
     const height = Math.max(3, Math.min(10, this.options.rows() - 3));
     const inner = Math.max(1, width - 4);
-    const frame = (line: string) => {
+    const row = (line: string) => {
       const content = truncateToWidth(line, inner);
-      return truncateToWidth(`│ ${content}${' '.repeat(Math.max(0, inner - visibleWidth(content)))} │`, width);
+      return truncateToWidth(ui.border('│ ') + content + ' '.repeat(Math.max(0, inner - visibleWidth(content))) + ui.border(' │'), width);
     };
-    const border = (left: string, label: string, right: string) => {
-      const content = truncateToWidth(label, Math.max(0, width - 4));
-      return truncateToWidth(`${left} ${content} ${'─'.repeat(Math.max(0, width - visibleWidth(content) - 4))}${right}`, width);
+    const rule = (label: string, title = false) => {
+      const content = truncateToWidth(` ${safeTerminalText(label).replace(/\s+/g, ' ')} `, Math.max(0, width - 2));
+      return truncateToWidth(ui.border(title ? '╭' : '╰') + (title ? ui.accent(chalk.bold(content)) : ui.dim(content)) + ui.border('─'.repeat(Math.max(0, width - visibleWidth(content) - 2)) + (title ? '╮' : '╯')), width);
     };
-    const lines = [chalk.cyan(border('╭', this.options.title, '╮'))];
+    const lines = [rule(this.options.title, true)];
     this.inputRow = lines.length;
-    lines.push(...this.input.render(inner).map(frame));
-    const body = this.error ? chalk.red(this.error) : this.options.description;
+    lines.push(...this.input.render(inner).map(row));
+    const body = this.error ? ui.error(safeTerminalText(this.error)) : ui.muted(safeTerminalText(this.options.description));
     const room = Math.max(0, height - lines.length - 1);
-    lines.push(...new Text(body, 0, 0).render(inner).slice(0, room).map(frame));
-    lines.push(chalk.cyan(border('╰', 'Enter 草稿 · Esc 返回 · 需 Save', '╯')));
+    lines.push(...new Text(body, 0, 0).render(inner).slice(0, room).map(row));
+    lines.push(rule(width < 28 ? 'Enter草稿 · Esc返回' : width < 40 ? 'Enter 草稿 · Esc 返回' : 'Enter 草稿 · Esc 返回 · 需 Save'));
     return lines.slice(0, height);
   }
   handleInput(data: string): void {

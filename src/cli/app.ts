@@ -13,7 +13,6 @@
 import {
   CombinedAutocompleteProvider,
   Container,
-  Editor,
   Key,
   matchesKey,
   ProcessTerminal,
@@ -25,14 +24,14 @@ import {
   VStack,
   isViewportTUI,
   type Component,
-  type EditorTheme,
-  type MarkdownTheme,
-  type SelectListTheme,
   type TUI,
   type Terminal,
   truncateToWidth,
 } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
+import { basename } from 'node:path';
+import { Composer } from './composer.js';
+import { markdownTheme, selectTheme, ui, thinkingBorder, safeTerminalText } from './theme.js';
 import type { PermissionRequest, UserDecision } from '../core/events.js';
 import type { ThinkingLevel } from '../core/provider.js';
 import { emptyUsage, type TokenUsage } from '../core/protocol/types.js';
@@ -46,36 +45,6 @@ import { SettingsInputPanel } from './settings-input.js';
 // ---------------------------------------------------------------------------
 // 主题
 // ---------------------------------------------------------------------------
-
-const markdownTheme: MarkdownTheme = {
-  heading: (s) => chalk.bold.cyan(s),
-  link: (s) => chalk.blue(s),
-  linkUrl: (s) => chalk.dim(s),
-  code: (s) => chalk.yellow(s),
-  codeBlock: (s) => chalk.gray(s),
-  codeBlockBorder: (s) => chalk.dim(s),
-  quote: (s) => chalk.gray.italic(s),
-  quoteBorder: (s) => chalk.dim(s),
-  hr: (s) => chalk.dim(s),
-  listBullet: (s) => chalk.cyan(s),
-  bold: (s) => chalk.bold(s),
-  italic: (s) => chalk.italic(s),
-  strikethrough: (s) => chalk.strikethrough(s),
-  underline: (s) => chalk.underline(s),
-};
-
-const selectTheme: SelectListTheme = {
-  selectedPrefix: (s) => chalk.green(s),
-  selectedText: (s) => chalk.green.bold(s),
-  description: (s) => chalk.gray(s),
-  scrollInfo: (s) => chalk.dim(s),
-  noMatch: (s) => chalk.yellow(s),
-};
-
-const editorTheme: EditorTheme = {
-  borderColor: (s) => chalk.cyan(s),
-  selectList: selectTheme,
-};
 
 const HELP = `命令（不带参数在底部打开选择器）：
   /model [name]          查看/切换模型
@@ -190,7 +159,7 @@ export function startTui(
   const toolMessages = new Map<string, ToolMessage>();
   const unsubscribe: Array<() => void> = [];
   const transcript = new Container();
-  const header = new Text(chalk.bold('AgentLab') + chalk.dim(' · /settings 设置 · /help 帮助'), 1, 1);
+  const header = new Text(ui.accent(chalk.bold('AgentLab')) + ui.dim('  coding agent') + '\n' + ui.muted('/model 切换模型 · /settings 设置 · /help 帮助'), 1, 1);
   const scroll = new ScrollView(transcript, { follow: 'end', primary: true });
 
   // --- 消息区拥有独立视口，状态与输入不参与历史滚动 ---
@@ -198,11 +167,12 @@ export function startTui(
   const status: Component = {
     invalidate() {},
     render: (width) => [
-      truncateToWidth(`${statusText}${mode === 'auto' ? chalk.dim(` · 审批 ${describeJudgeStatus(agent.loop.getJudgeStatus())}`) : ''}`, width),
-      truncateToWidth(chalk.dim(` ${mode} · 思考 ${thinking} · ${model}`), width),
+      truncateToWidth(ui.dim(` ${mode} · 思考 ${thinking}${mode === 'auto' ? ` · 审批 ${describeJudgeStatus(agent.loop.getJudgeStatus())}` : width >= 60 ? ` · ${safeTerminalText(basename(agent.cwd))}` : ''}`), width),
+      truncateToWidth(ui.muted(` ↑${fmtTokens(usage.inputTokens)} ↓${fmtTokens(usage.outputTokens)} · cache ${cacheHitRate(usage)} · ${safeTerminalText(model)}`), width),
     ],
   };
-  const editor = new Editor(tui, editorTheme, { paddingX: 1 });
+  const editor = new Composer(tui, { borderColor: ui.border, selectList: selectTheme }, { paddingX: 1, autocompleteMaxVisible: 6 });
+  editor.status = () => statusText;
   editor.setAutocompleteProvider(
     new CombinedAutocompleteProvider(
       [
@@ -234,6 +204,7 @@ export function startTui(
     const elapsed = turns.running ? ` · ${Math.floor((Date.now() - startedAt) / 1000)}s` : '';
     const current = approvalPanel ? '等待你确认权限' : picker ? '选择 / 查看详情' : turns.running ? phase : '就绪';
     statusText = ` ${approvalPanel ? chalk.bold.yellow(`? ${current}`) : turns.running ? chalk.cyan(`● ${current}`) : chalk.dim(current)}${elapsed}${turns.size ? ` · 排队 ${turns.size}` : ''}`;
+    editor.borderColor = thinkingBorder(thinking);
     render();
   };
   const setPhase = (next: string) => {
@@ -314,13 +285,14 @@ export function startTui(
     initialValue?: string,
     filterable = false,
     onCancel?: () => void,
+    framed = false,
   ): void {
     const close = () => {
       picker = undefined;
       focusInteraction();
     };
     picker = new InteractionPanel({
-      title, kind: 'picker', items: items.map(item => ({ ...item, current: item.value === initialValue })), initialValue, filterable,
+      title, kind: 'picker', framed, items: items.map(item => ({ ...item, current: item.value === initialValue })), initialValue, filterable,
       context: initialValue ? () => `当前: ${initialValue} · Enter 应用 · Esc 不更改` : undefined,
       rows: () => terminal.rows, changed: render, cancel: () => { close(); onCancel?.(); },
       select: (value) => { close(); onPick(value); },
@@ -554,7 +526,7 @@ export function startTui(
     onModeChange: (next) => { mode = next; updateStatus(); },
     showPicker: (request) => {
       picker = new InteractionPanel({
-        title: request.title, kind: 'picker', items: request.items.map(item => ({ ...item, current: item.value === request.initialValue })),
+        title: request.title, kind: 'picker', framed: true, items: request.items.map(item => ({ ...item, current: item.value === request.initialValue })),
         initialValue: request.initialValue, context: request.context ? () => request.context! : undefined, body: request.body, requireSelection: request.requireSelection,
         rows: () => terminal.rows, changed: render,
         select: (value) => {
@@ -567,7 +539,7 @@ export function startTui(
       focusInteraction();
     },
     showDetails: (title, body, onBack) => {
-      picker = new InteractionPanel({ title, kind: 'details', body, rows: () => terminal.rows, changed: render,
+      picker = new InteractionPanel({ title, kind: 'details', framed: true, body, rows: () => terminal.rows, changed: render,
         cancel: () => { picker = undefined; onBack(); focusInteraction(); } });
       focusInteraction();
     },
@@ -636,7 +608,7 @@ export function startTui(
           { value: 'model', label: `模型 · ${model}`, description: '本次会话；下一次模型请求生效。' },
           { value: 'think', label: `思考 · ${thinking}`, description: '本次会话；下一次模型请求生效。' },
           { value: 'permissions', label: `权限 · ${mode}`, description: `auto 审批模型: ${describeJudgeStatus(agent.loop.getJudgeStatus())}\n会话审批行为、记住的规则、项目默认与决策日志。` },
-        ], value => handleCommand(`/${value}`, () => handleCommand('/settings')));
+        ], value => handleCommand(`/${value}`, () => handleCommand('/settings')), undefined, false, undefined, true);
         return;
       case 'mode':
         if (arg === 'ask' || arg === 'auto' || arg === 'yolo') permissions.requestMode(arg);
@@ -772,20 +744,19 @@ export function startTui(
   transcript.addChild(header);
   const hints: Component = {
     invalidate() {},
-    render: (width) => [truncateToWidth(turns.running
+    render: (width) => terminal.rows < 16 ? [] : [truncateToWidth(ui.dim(turns.running
       ? ` Enter 排队 · Esc 中断${turns.size ? '并清空队列' : ''} · Ctrl+O 详情`
-      : ` Enter 发送 · /settings 设置 · Ctrl+O ${expanded ? '收起' : '详情'} · /help`, width)],
+      : ` Enter 发送 · Shift+Enter 换行 · Ctrl+O ${expanded ? '收起' : '详情'}`), width)],
   };
-  const inputHeading: Component = {
+  const queuePreview: Component = {
     invalidate() {},
-    render: (width) => [truncateToWidth(chalk.bold(turns.size
-      ? ` ❯ 输入 · 排队 ${turns.size} · 下一条: ${turns.next?.replace(/\s+/g, ' ')}`
-      : turns.running ? ' ❯ 输入 · 当前轮结束后发送' : ' ❯ 输入'), width)],
+    render: (width) => turns.size ? [truncateToWidth(ui.muted(` ↳ 排队 ${turns.size} · 下一条: ${safeTerminalText(turns.next ?? '').replace(/\s+/g, ' ')}`), width)] : [],
   };
   const footer = new VStack([
-    status,
+    { component: { invalidate() {}, render: (width: number) => terminal.rows >= 16 ? [truncateToWidth(statusText, width)] : [] }, visible: () => !!activePanel() },
     { component: interaction, visible: () => !!activePanel() },
-    { component: new VStack([inputHeading, editor, hints]), visible: () => !activePanel() },
+    { component: new VStack([queuePreview, editor, hints]), visible: () => !activePanel() },
+    status,
   ]);
   if (isViewportTUI(tui)) {
     tui.setLayoutRoot(new VStack([

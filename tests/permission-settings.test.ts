@@ -141,7 +141,7 @@ describe('TUI 权限中心', () => {
     h.settings.requestMode('yolo'); h.session.id = 'session-two'; h.pick('confirm'); expect(h.permission.mode).toBe('ask');
   });
 
-  it('设置输入有完整边框，窄终端宽高有界，无效输入不提交，Esc 取消', () => {
+  it('设置输入使用细分隔线，窄终端宽高有界，无效输入不提交，Esc 取消', () => {
     const onSubmit = vi.fn(); const onCancel = vi.fn();
     const panel = new SettingsInputPanel({ title: '项目规则', value: 'bad rule', description: '规则说明', validate: value => value.includes(' ') ? '无效规则' : undefined,
       onSubmit, onCancel, rows: () => 8, changed: vi.fn() });
