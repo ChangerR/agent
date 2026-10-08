@@ -4,6 +4,7 @@
  * PreToolUse 在权限管线第 0 步执行，可改写参数或直接否决；
  * 其余点主要用于注入上下文与观测。
  */
+import { prepareRegistration, type RegistrationBatch } from './registration.js';
 import type { ToolResult } from './protocol/types.js';
 
 export type HookPoint = 'PreToolUse' | 'PostToolUse' | 'UserPromptSubmit' | 'TurnEnd';
@@ -11,6 +12,7 @@ export type HookPoint = 'PreToolUse' | 'PostToolUse' | 'UserPromptSubmit' | 'Tur
 export interface PreToolUsePayload {
   toolName: string;
   input: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 export interface PreToolUseResult {
@@ -27,16 +29,30 @@ export interface PreToolUseResult {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type HookHandler = (payload: any) => any;
 
-interface RegisteredHook {
+export interface RegisteredHook {
   point: HookPoint;
   handler: HookHandler;
 }
 
 export class HookRunner {
   private hooks: RegisteredHook[] = [];
+  private frozen = false;
+  freeze(): void { this.frozen = true; }
 
   register(point: HookPoint, handler: HookHandler): void {
-    this.hooks.push({ point, handler });
+    const batch = this.prepareBatch([{ point, handler }]); batch.commit(); batch.seal();
+  }
+  prepareBatch(hooks: readonly RegisteredHook[]): RegistrationBatch {
+    const assertMutable = () => { if (this.frozen) throw new Error('Hook registry is frozen'); };
+    assertMutable();
+    for (const hook of hooks) {
+      if (!['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'TurnEnd'].includes(hook.point) || typeof hook.handler !== 'function') throw new Error('Invalid hook registration');
+    }
+    return prepareRegistration(this.hooks, [...this.hooks, ...hooks], () => this.hooks, value => { this.hooks = value; }, assertMutable);
+  }
+  /** 供旧 loadPlugins 的上下文使用；不要只传不可回滚的 register 包装。 */
+  registrationSink(): { register: HookRunner['register']; prepareBatch: HookRunner['prepareBatch'] } {
+    return Object.freeze({ register: this.register.bind(this), prepareBatch: this.prepareBatch.bind(this) });
   }
 
   /** PreToolUse：依次执行，允许改写 input，任一钩子 veto 即短路 */
@@ -44,7 +60,14 @@ export class HookRunner {
     let input = payload.input;
     for (const hook of this.hooks) {
       if (hook.point !== 'PreToolUse') continue;
+      payload.signal?.throwIfAborted();
       const result = (await hook.handler({ ...payload, input })) as PreToolUseResult | void;
+      payload.signal?.throwIfAborted();
+      if (result !== undefined && (!result || typeof result !== 'object'
+        || (result.veto !== undefined && typeof result.veto !== 'string')
+        || (result.input !== undefined && (!result.input || typeof result.input !== 'object' || Array.isArray(result.input))))) {
+        throw new Error('Invalid PreToolUse hook result');
+      }
       if (result?.veto) return { veto: result.veto };
       if (result?.input) input = result.input;
     }
@@ -52,10 +75,12 @@ export class HookRunner {
   }
 
   /** 通知型钩子（PostToolUse / UserPromptSubmit / TurnEnd） */
-  async notify(point: Exclude<HookPoint, 'PreToolUse'>, payload: unknown): Promise<void> {
+  async notify(point: Exclude<HookPoint, 'PreToolUse'>, payload: unknown, signal?: AbortSignal): Promise<void> {
     for (const hook of this.hooks) {
       if (hook.point !== point) continue;
-      await hook.handler(payload);
+      signal?.throwIfAborted();
+      await hook.handler(payload && typeof payload === 'object' ? { ...payload, signal } : payload);
+      signal?.throwIfAborted();
     }
   }
 
