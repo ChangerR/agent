@@ -37,8 +37,10 @@ export function sessionPath(cwd: string, id: string): string {
 }
 
 export interface SaveSessionOptions {
-  /** 删除成功后显式发起的新保存可以重建；旧排队写入不能带此授权。 */
+  /** 显式重建紧接快照版本的删除；快照须含最后加载或提交的版本，旧排队写入不能带此授权。 */
   recreate?: boolean;
+  /** 本次重建授权对应的删除版本；省略时仅允许紧接快照版本的一次删除。 */
+  recreateRevision?: number;
 }
 
 export async function saveSession(file: SessionFile, options: SaveSessionOptions = {}): Promise<string> {
@@ -59,13 +61,17 @@ export async function saveSessionVersioned(file: SessionFile, options: SaveSessi
   assertSafeHistory(file.messages);
   const snapshot = JSON.parse(JSON.stringify(file)) as SessionFile;
   const recreate = options.recreate === true;
+  const recreateRevision = options.recreateRevision;
   return enqueueWrite(path, () => withSessionLock(path, async () => {
     const state = await diskRevision(snapshot.cwd, snapshot.id);
     const expected = snapshot.revision ?? 0;
-    if (expected !== state.revision && !(recreate && !state.exists)) {
+    // 重建只能针对已知的那次删除，不能越过其他写入者后续的重建 / 删除。
+    const canRecreate = recreate && !state.exists && state.deleted
+      && state.revision === (recreateRevision ?? expected + 1);
+    if (expected !== state.revision && !canRecreate) {
       throw new SessionError('conflict', `会话 ${file.id} 已被其他进程更新或删除（当前版本 ${state.revision}，本地版本 ${expected}）。未覆盖磁盘历史；请先保留内存历史，再恢复最新会话。`, { path });
     }
-    if (!state.exists && state.deleted && !recreate) {
+    if (!state.exists && state.deleted && !canRecreate) {
       throw new SessionError('conflict', `会话 ${file.id} 已删除，旧写入不能重建。请显式发起新的保存。`, { path });
     }
     const revision = state.revision + 1;
@@ -160,15 +166,20 @@ export async function listSessions(cwd: string): Promise<SessionListing> {
 }
 
 export async function deleteSession(cwd: string, id: string): Promise<boolean> {
+  return (await deleteSessionVersioned(cwd, id)).deleted;
+}
+
+/** 在删除锁内返回实际删除版本，避免读取墓碑时已被其他写入者推进。 */
+export async function deleteSessionVersioned(cwd: string, id: string): Promise<{ deleted: boolean; revision: number }> {
   const path = sessionPath(cwd, id);
   // 同进程删除排在已提交的写入后，跨进程用锁与删除版本防止旧写入复活。
   return enqueueWrite(path, () => withSessionLock(path, async () => {
     const state = await diskRevision(cwd, id);
-    if (!state.exists) return false;
+    if (!state.exists) return { deleted: false, revision: state.revision };
     try {
       await writeFileAtomic(`${path}.deleted`, JSON.stringify({ revision: state.revision + 1 }) + '\n');
       await fs.unlink(path);
-      return true;
+      return { deleted: true, revision: state.revision + 1 };
     } catch (err) {
       if (err instanceof SessionError) throw err;
       throw new SessionError('io', `删除会话失败: ${path}（${errnoCode(err)}）。`, { cause: err, path });
