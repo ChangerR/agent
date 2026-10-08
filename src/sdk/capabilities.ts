@@ -11,7 +11,7 @@ export type Disposer = () => MaybePromise<void>;
 export type ReadonlyDeep<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer U)[] ? readonly ReadonlyDeep<U>[] : T extends object ? { readonly [K in keyof T]: ReadonlyDeep<T[K]> } : T;
 
 export type ApprovalTool = Omit<Tool, 'execute'>;
-export interface AnalysisInput { readonly tool: ApprovalTool; readonly input: Readonly<Record<string, unknown>>; readonly cwd: string }
+export interface AnalysisInput { readonly configRevision?: string | number; readonly policyRevision?: string | number; readonly tool: ApprovalTool; readonly input: Readonly<Record<string, unknown>>; readonly cwd: string }
 export interface ToolAnalysis {
   analyzerId: string;
   analyzerVersion: string;
@@ -79,7 +79,7 @@ export interface ReviewResult {
   reason: string;
   judge?: JudgeMetadata;
 }
-export interface ReviewerStatus { loaded: boolean; model?: string; source?: 'current' | 'explicit'; reason?: string }
+export interface ReviewerStatus { provider?: string; providerSource?: 'current' | 'explicit'; loaded: boolean; model?: string; source?: 'current' | 'explicit'; reason?: string }
 export interface Reviewer {
   review(input: ReviewInput, signal: AbortSignal): Promise<ReviewResult>;
   getStatus?(): ReviewerStatus;

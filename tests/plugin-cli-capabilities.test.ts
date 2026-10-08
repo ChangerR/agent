@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -76,4 +76,19 @@ describe('generic plugin CLI capabilities', () => {
     message.render(80);
     expect(renderer).toHaveBeenCalledOnce(); expect(report).toHaveBeenCalledOnce(); expect(result).toEqual({ content: 'successful output' });
   });
+});
+
+it('真实 v2 模式选择器说明范围授权与强制约束，不沿用 legacy yolo 文案', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'agent-v2-mode-ui-')); await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto', capabilities: { policy: 'deterministic-v2' }, pluginConfig: { 'agentlab.policy-deterministic-v2': { writeRoots: ['src'] } } }));
+  const ui = await mount([], cwd);
+  try {
+    ui.send('/mode'); await vi.waitFor(() => expect(ui.screen()).toContain('v2 auto'));
+    expect(ui.screen()).toContain('writeRoots'); expect(ui.screen()).toContain('src');
+    ui.terminal.input?.('\u001b'); ui.send('/mode yolo');
+    await vi.waitFor(() => expect(ui.screen()).toContain('v2 yolo'));
+    expect(ui.screen()).toContain('未知 Shell/MCP');
+    expect(ui.screen()).not.toContain('普通操作自动放行，包括写入与执行');
+    expect(ui.agent.permission.mode).toBe('auto');
+  } finally { await ui.dispose(); }
 });

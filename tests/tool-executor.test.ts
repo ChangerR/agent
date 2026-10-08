@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolExecutor, type ToolExecutorOptions } from '../src/core/tool-executor.js';
-import { EventBus, type AgentEvent, type UserDecision } from '../src/core/events.js';
+import { EventBus, type AgentEvent, type PermissionRequest, type UserDecision } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry, type Tool } from '../src/core/registry.js';
 import { PermissionEngine, createLegacyPolicy } from '../src/builtin/policy-legacy/index.js';
@@ -183,11 +183,14 @@ describe('ToolExecutor 唯一授权门', () => {
 
   it('配置 revision 变更使旧人工批准失效并重新询问', async () => {
     let revision = 1;
-    const responder = vi.fn(async () => { if (revision === 1) { revision = 2; return { allow: true } as const; } return { allow: false } as const; });
+    const prompts: PermissionRequest[] = [];
+    const responder = vi.fn(async (request: PermissionRequest) => { prompts.push(request); if (revision === 1) { revision = 2; return { allow: true } as const; } return { allow: false } as const; });
     const f = fixture({ policy: ask, configRevision: () => revision, approvalResponder: responder });
     expect((await f.run()).content).toContain('User denied');
     expect(responder).toHaveBeenCalledTimes(2); expect(f.execute).not.toHaveBeenCalled();
     expect(f.audits.some((e) => e.reasonCode === 'approval_stale')).toBe(true);
+    expect(new Set(prompts.map(prompt => prompt.requestId)).size).toBe(2);
+    expect(new Set(prompts.map(prompt => prompt.toolRequestId)).size).toBe(1);
   });
 
   it('工具版本和实际执行函数变更使批准失效', async () => {

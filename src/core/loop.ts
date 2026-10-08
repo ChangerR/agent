@@ -63,7 +63,7 @@ export interface AgentLoopOptions {
   capabilityTimeoutMs?: number;
   shutdownTimeoutMs?: number;
   toolExecutor?: ToolExecutor;
-  cacheStrategy?: CacheStrategy;
+  cacheStrategy?: CacheStrategy | null;
   hooks: HookRunner;
   events: EventBus;
   context: ContextCoordinator;
@@ -393,6 +393,7 @@ export class AgentLoop {
 
   /** 工具和系统提示各一个稳定断点；消息上保留上一轮末尾（读）和本轮末尾（写） */
   private buildCachePolicy(): CachePolicy | undefined {
+    if (this.opts.cacheStrategy === null) return undefined;
     const { enabled, ttl, escalateAfterMs } = this.cacheSettings();
     if (this.opts.cacheStrategy) return this.opts.cacheStrategy.build({ messageCount: this.messages.length, previousMessageCount: this.lastRequestMessageCount,
       lastToolBatchMs: this.lastToolBatchMs, hasSystem: this.opts.systemPrompt.length > 0, hasTools: (this.toolsSnapshot?.length ?? 0) > 0,

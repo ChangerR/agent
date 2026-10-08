@@ -31,9 +31,9 @@ function unchanged(path: string, old: State): void {
   const now = read(path);
   if (now.dev !== old.dev || now.ino !== old.ino || now.mode !== old.mode || Boolean(now.bytes) !== Boolean(old.bytes) || (now.bytes && old.bytes && !now.bytes.equals(old.bytes))) throw new ConfigConflictError();
 }
-function snapshot(path: string, state: State, pluginId: string): ConfigSnapshot {
+function snapshot(path: string, state: State, pluginId?: string): ConfigSnapshot {
   const all = state.raw.pluginConfig as Record<string, unknown> | undefined;
-  const value = structuredClone(all?.[pluginId] ?? {}) as Record<string, unknown>;
+  const value = structuredClone(pluginId === undefined ? state.raw.capabilities ?? {} : all?.[pluginId] ?? {}) as Record<string, unknown>;
   const result = Object.freeze({ path, revision: createHash('sha256').update(state.bytes ?? '').digest('hex'), value: Object.freeze(value) });
   records.set(result, state);
   return result;
@@ -41,6 +41,11 @@ function snapshot(path: string, state: State, pluginId: string): ConfigSnapshot 
 export class PluginConfigStore {
   constructor(readonly path: string) { this.path = resolve(path); }
   read(pluginId: string): ConfigSnapshot { return snapshot(this.path, read(this.path), pluginId); }
+  readCapabilities(): ConfigSnapshot { return snapshot(this.path, read(this.path)); }
+  commitCapabilities(base: ConfigSnapshot, selections: Record<string, string | false>): ConfigSnapshot {
+    if (base.path !== this.path || !records.has(base)) throw new Error('无效配置快照。');
+    return this.write(base, { ...records.get(base)!.raw, capabilities: structuredClone(selections) });
+  }
   commit(pluginId: string, base: ConfigSnapshot, draft: unknown, definition: PluginConfigDefinition = {}): ConfigSnapshot {
     if (base.path !== this.path || !records.has(base)) throw new Error('无效配置快照。');
     const original = records.get(base)!;
@@ -51,6 +56,10 @@ export class PluginConfigStore {
       if (value !== undefined && (typeof value !== 'string' || !/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(value))) throw new Error(`敏感字段 ${field} 只允许 env:NAME 引用。`);
     }
     const raw = { ...original.raw, pluginConfig: { ...(original.raw.pluginConfig as object ?? {}), [pluginId]: { ...((original.raw.pluginConfig as Record<string, object> | undefined)?.[pluginId] ?? {}), ...structuredClone(parsed) } } };
+    return this.write(base, raw, pluginId);
+  }
+  private write(base: ConfigSnapshot, raw: Record<string, unknown>, pluginId?: string): ConfigSnapshot {
+    const original = records.get(base)!;
     const bytes = Buffer.from(JSON.stringify(raw, null, 2) + '\n');
     const lock = this.path + '.settings.lock';
     const temporary = this.path + '.' + randomUUID() + '.tmp';

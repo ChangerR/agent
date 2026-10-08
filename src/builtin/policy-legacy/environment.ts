@@ -31,6 +31,20 @@ async function snapshot({ input, cwd }: AnalysisInput, signal: AbortSignal): Pro
   if (typeof command === 'string') {
     // 常见脚本/配置变更必须使等待中的批准失效。复杂语法不据此宣称完整。
     for (const file of ['package.json', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'Makefile', '.git/config', '.git/HEAD', '.npmrc']) paths.add(join(cwd, file));
+    // worktree 的 .git 是指针文件，真实配置/HEAD/commondir 也属于环境前提。
+    try {
+      const dotGit = join(cwd, '.git'); const stat = await lstat(dotGit);
+      if (stat.isFile()) {
+        paths.add(dotGit);
+        const match = /^gitdir:\s*(.+)\s*$/m.exec(await readFile(dotGit, 'utf8'));
+        if (match) {
+          const gitdir = resolve(cwd, match[1].trim());
+          for (const file of ['HEAD', 'config', 'config.worktree', 'commondir']) paths.add(join(gitdir, file));
+          try { const common = (await readFile(join(gitdir, 'commondir'), 'utf8')).trim(); if (common) paths.add(resolve(gitdir, common, 'config')); }
+          catch { /* commondir 缺失仍由上面的指纹覆盖。 */ }
+        }
+      }
+    } catch { /* 缺失 .git 不是分析失败；已有不可读文件会在指纹阶段失败。 */ }
     for (const match of command.matchAll(/(?:^|\s)["']?((?:\.\.?\/|\/)[^\s"';&|<>]+|[\w./-]+\.(?:[cm]?js|tsx?|sh|py|ps1))(?=["']?(?:\s|$))/g)) {
       paths.add(isAbsolute(match[1]) ? match[1] : resolve(cwd, match[1]));
     }
@@ -61,7 +75,7 @@ async function fingerprintPath(path: string, signal: AbortSignal): Promise<strin
     return identity;
   } catch (error) {
     signal.throwIfAborted();
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
     const parent = dirname(path);
     return parent === path ? 'missing' : `missing:${await fingerprintPath(parent, signal)}`;
   }

@@ -3,6 +3,10 @@ import { join, resolve } from 'node:path';
 import { loadModelsFile, type AgentConfig } from '../core/config.js';
 import type { Provider } from '../core/provider.js';
 import { definePlugin, type CapabilitySelections, type Plugin } from '../sdk/index.js';
+import { createDeterministicPolicyPlugin } from './policy-deterministic-v2/index.js';
+import { createPolicyShadowPlugin } from './policy-shadow/index.js';
+import { strictReviewerPlugin } from './reviewer-strict-plugin.js';
+import { runtimeSettingsPlugin } from './runtime-settings.js';
 import { uiPlugin } from './ui-plugin.js';
 import { providerPlugins } from './providers.js';
 import { localToolsPlugin } from './local-tools.js';
@@ -32,10 +36,10 @@ export function defaultPreset(input: PresetContext): Preset {
         const provider: Provider = { name: config.provider, get capabilities() { return input.provider().capabilities; }, stream: (request, signal) => input.provider().stream(request, signal) };
         ctx.provide.reviewer('model-v1', createModelReviewer(new AutoJudge(provider, config.judgeModel?.trim() || services.model, input.modelInfo)));
       } }),
-      createContextDefaultPlugin(), createCompactionSummaryPlugin(), createCachePrefixPlugin(),
+      createDeterministicPolicyPlugin({ cwd, config }), createPolicyShadowPlugin({ cwd, config, getActiveState: () => ({ policyId: String(input.capabilityChoices().policy?.selected ?? 'unavailable'), mode: services.permission().mode, sessionRules: services.permission().getSessionRules() }) }), strictReviewerPlugin(input), createContextDefaultPlugin(), createCompactionSummaryPlugin(), createCachePrefixPlugin(),
       createModelCatalogPlugin(loadModelsFile(join(cwd, config.modelsFile))), createSessionFilePlugin(),
       createTelemetryJsonlPlugin({ path: input.logPath, includeBodies: config.pluginConfig['agentlab.telemetry-jsonl']?.includeBodies === true }),
-      modelCommandsPlugin(services), permissionCommandsPlugin(services), sessionCommandsPlugin(services), uiPlugin(),
+      modelCommandsPlugin(services), permissionCommandsPlugin(services), sessionCommandsPlugin(services), uiPlugin(), runtimeSettingsPlugin(input),
     ],
   };
 }

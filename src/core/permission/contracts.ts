@@ -7,7 +7,7 @@ import type { Tool } from '../registry.js';
 export type DecisionKind = 'allow' | 'ask' | 'deny';
 export type JudgeReasonCode = 'model_allow' | 'model_ask' | 'model_deny' | 'invalid_response' | 'incomplete_response' | 'provider_error' | 'cancelled' | 'timeout' | 'input_budget' | 'user_request_budget' | 'request_budget';
 export interface JudgeMetadata { model: string; source: 'current' | 'explicit'; reasonCode: JudgeReasonCode }
-export interface JudgeStatus { loaded: boolean; model?: string; source?: 'current' | 'explicit' }
+export interface JudgeStatus { provider?: string; providerSource?: 'current' | 'explicit'; loaded: boolean; model?: string; source?: 'current' | 'explicit' }
 export interface JudgeVerdict { verdict: 'allow' | 'ask' | 'deny' | 'unknown'; reason: string; judge?: JudgeMetadata }
 export interface Decision {
   kind: DecisionKind;

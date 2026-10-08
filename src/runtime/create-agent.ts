@@ -51,7 +51,7 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     session: () => agent!.session,
   };
   const preset = (options.preset ?? presetFactory)({ cwd, config: providerConfig, logPath, services,
-    provider: () => providers.get(config.provider), modelInfo: model => host?.selected('modelCatalog')?.get(model) });
+    provider: name => providers.get(name ?? config.provider), capabilityChoices: () => Object.fromEntries((['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const).map(kind => { const current = host.selected(kind); return [kind, { selected: host.list(kind).find(r => r.implementation === current)?.capabilityId ?? false, available: host.list(kind).map(r => r.capabilityId) }]; })), modelInfo: model => host?.selected('modelCatalog')?.get(model) });
   const plugins = [...preset.plugins, ...(options.plugins ?? [])].filter(plugin => !config.disabledPlugins.includes(plugin.manifest.id));
   for (const entry of [...config.plugins, ...config.pluginEntries]) {
     if (typeof entry !== 'string' && !entry.enabled) continue;
@@ -70,7 +70,7 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     for (const record of host.list('provider')) providers.register(record.implementation);
     for (const record of host.list('tool')) {
       const implementation = record.implementation;
-      const tool = Object.freeze({ ...implementation, version: record.version, inputSchema: observationSnapshot(implementation.inputSchema) });
+      const tool = Object.freeze({ ...implementation, version: record.version, ownerPlugin: record.ownerPlugin, inputSchema: observationSnapshot(implementation.inputSchema) });
       tools.register(tool);
       for (const alias of new Set([...(record.capabilityId !== tool.name ? [record.capabilityId] : []), ...record.aliases])) tools.alias(alias, tool.name);
     }
@@ -79,6 +79,9 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     const compactor = host.selected('compactor'); if (!compactor) throw new Error('A compactor must be selected');
     const store = host.selected('sessionStore'); if (!store) throw new Error('A session store must be selected');
     const catalog = host.selected('modelCatalog'); if (!catalog) throw new Error('A model catalog must be selected');
+    const reviewer = host.selected('reviewer');
+    // 选中的模型实现须在开始接收请求前解析实际 provider/model；未选能力不被探测。
+    reviewer?.getStatus?.();
     const permission = policy.controller ?? unavailableController(config);
     const skillSources = host.list('skillSource').map(r => r.implementation);
     const skillLoader: SkillSource = { list: () => skillSources.flatMap(s => s.list()), get: name => skillSources.map(s => s.get(name)).find(Boolean) };
@@ -86,9 +89,9 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     const modelInfo = (model: string) => catalog.get(model);
     const knownModels = [...new Set([...Object.keys(catalog.list()), config.model])].map(name => ({ name, info: modelInfo(name) }));
     const loop = new AgentLoop({ provider: providers.get(config.provider), model: config.model, tools, permission: undefined,
-      policy, reviewer: host.selected('reviewer'), analyzer: host.list('analyzer')[0]?.implementation,
+      policy, reviewer, analyzer: policy.analyzer, reviewTimeoutMs: selections.reviewer === 'model-v2' && typeof config.pluginConfig['agentlab.reviewer-strict']?.timeoutMs === 'number' ? config.pluginConfig['agentlab.reviewer-strict'].timeoutMs as number : undefined,
       hooks, events, context: new ContextManager({ compactThreshold: config.compactThreshold, compactor }), systemPrompt: contextText(segments),
-      maxTurns: config.maxTurns, cwd, shutdownTimeoutMs: options.lifecycleTimeoutMs, modelInfo, thinking: config.thinking, cache: config.cache, cacheStrategy: host.selected('cacheStrategy'),
+      maxTurns: config.maxTurns, cwd, shutdownTimeoutMs: options.lifecycleTimeoutMs, modelInfo, thinking: config.thinking, cache: config.cache, cacheStrategy: host.selected('cacheStrategy') ?? null,
       toolIdentity: name => { const record = host.getRecord('tool', name) ?? host.list('tool').find(r => r.implementation.name === name); return record && { capabilityId: record.capabilityId, ownerPlugin: record.ownerPlugin, version: record.version }; },
       configRevision, sessionId: () => agent?.session.id ?? 'initializing' });
     const session = new SessionManager({ cwd, loop, permission, events, store,

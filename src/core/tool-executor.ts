@@ -141,7 +141,7 @@ export class ToolExecutor {
         if (tools.get(toolUse.name) !== tool) { audit('validation', 'tool_changed'); return fail('Tool identity changed; invoke the selected tool again'); }
         const binding = this.bind(tool, toolUse.id, requestId, input, context);
         const descriptor = approvalTool(tool);
-        const analysisInput: AnalysisInput = { tool: descriptor, input, cwd };
+        const analysisInput: AnalysisInput = { tool: descriptor, input, cwd, configRevision: binding.configRevision, policyRevision: binding.policyRevision };
         const analyzer = this.opts.analyzer ?? this.opts.policy?.analyzer ?? this.opts.permission?.createAnalyzer?.();
         let analysis: ToolAnalysis | undefined;
         let analysisFailed = false;
@@ -194,7 +194,7 @@ export class ToolExecutor {
         let remember: 'session' | 'project' | undefined;
         if (decision.kind === 'ask') {
           const summary = analysis?.summary ?? descriptor.analyzeInput?.(input).summary ?? tool.name;
-          const request = freeze({ runId: context.runId, requestId, toolName: tool.name, toolUseId: toolUse.id,
+          const request = freeze({ runId: context.runId, requestId: randomUUID(), toolRequestId: requestId, toolName: tool.name, toolUseId: toolUse.id,
             decisionSource: decision.source, matchedRule: decision.matchedRule, cwd, input: structuredClone(input), summary, reason: decision.reason });
           const userDecision = await this.ask(request, signal);
           if (signal.aborted) return cancelled();
@@ -365,12 +365,12 @@ export class ToolExecutor {
 }
 
 function approvalTool(tool: Tool): AnalysisInput['tool'] {
-  return freeze({ name: tool.name, version: tool.version, description: tool.description,
+  return freeze({ name: tool.name, version: tool.version, ownerPlugin: tool.ownerPlugin, description: tool.description,
     inputSchema: structuredClone(tool.inputSchema), risk: tool.risk, isConcurrencySafe: tool.isConcurrencySafe,
     ...(tool.analyzeInput ? { analyzeInput: tool.analyzeInput.bind(tool) } : {}) });
 }
 function definitionHash(tool: Tool): string {
-  return fingerprint({ name: tool.name, version: tool.version ?? 'legacy', description: tool.description, risk: tool.risk, inputSchema: tool.inputSchema });
+  return fingerprint({ name: tool.name, version: tool.version ?? 'legacy', ownerPlugin: tool.ownerPlugin, description: tool.description, risk: tool.risk, inputSchema: tool.inputSchema });
 }
 function fingerprint(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value, (_key, v: unknown) => v && typeof v === 'object' && !Array.isArray(v)

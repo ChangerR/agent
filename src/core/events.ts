@@ -11,6 +11,8 @@ import type { Decision } from './permission/contracts.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
+  /** 一次工具调用审计 ID；requestId 单独标识每次人工询问。 */
+  toolRequestId?: string;
   runId?: string;
   requestId?: string;
   toolName: string;

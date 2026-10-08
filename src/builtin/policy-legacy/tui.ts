@@ -44,7 +44,7 @@ const restartNotice = '重启后新会话生效；当前会话的模式、规则
 export function describeJudgeStatus(status: ReturnType<Agent['loop']['getJudgeStatus']>): string {
   if (!status.loaded) return '未加载';
   const source = status.source === 'current' ? '跟随当前模型' : status.source === 'explicit' ? '显式指定' : '来源未知';
-  return `已加载 ${safeText(status.model ?? '未知模型')}（${source}）`;
+  return `已加载 ${status.provider ? `${safeText(status.provider)} / ` : ''}${safeText(status.model ?? '未知模型')}（${source}${status.providerSource ? `；provider ${status.providerSource === 'explicit' ? '独立指定' : '跟随当前'}` : ''}）`;
 }
 
 export function describePermissionRule(raw: string): string {
@@ -59,11 +59,22 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   const { agent, showPicker, showDetails, showInput, notify } = options;
   const cwd = options.cwd ?? agent.cwd;
   const globalPath = options.globalConfigPath ?? GLOBAL_CONFIG;
-  const guard = () => agent.config.dangerForceAsk
+  const policyId = () => agent.plugins?.selected('policy')?.id ?? 'legacy-v1';
+  const isV2 = () => policyId() === 'deterministic-v2';
+  const isLegacy = () => ['legacy-v1', 'legacy-shadow'].includes(policyId());
+  const guard = () => isV2() ? 'v2: deny 与明确 ask 优先；敏感、项目外、未知 Shell/MCP 不因 writeRoots 或 yolo 放行。'
+    : !isLegacy() ? `当前策略: ${safeText(policyId())}；具体模式语义由该插件定义。`
+    : agent.config.dangerForceAsk
     ? 'deny 规则最高优先；危险操作仍强制询问；allow 与 ask 规则继续生效。'
     : 'deny 规则最高优先；当前启动配置已关闭危险操作强制询问；allow 与 ask 规则继续生效。';
   const modeDescription = (mode: PermissionMode): string => {
     const judge = agent.loop.getJudgeStatus();
+    if (isV2()) return {
+      ask: 'v2 ask: 除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
+      auto: `v2 auto: 只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy-deterministic-v2']?.writeRoots ?? []))}）。剩余可审查操作才交 reviewer；原始 Shell 不作确定性放行。`,
+      yolo: 'v2 yolo: 仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
+    }[mode];
+    if (!isLegacy()) return `${safeText(policyId())} 的 ${mode} 模式；请查看该策略设置与说明，宿主不假定其放行规则。`;
     return {
       ask: '未命中规则的操作均询问。',
       auto: judge.loaded
@@ -117,7 +128,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   function openJudgeStatus(): void {
-    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型，复用主 provider 与 endpoint。\n\n${guard()}\n项目草稿与磁盘配置不代表当前已加载的审批员。`, reopenRoot);
+    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n${isV2() ? '仅 v2 策略返回 review 的操作交给审批员；明确 ask/deny 不会交模型降级。' : '仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。'}\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型；model-v2 可独立选择已注册 provider，实际来源以上方运行状态为准。\n\n${guard()}\n项目草稿与磁盘配置不代表当前已加载的审批员。`, reopenRoot);
   }
 
   function reopenModes(): void {
@@ -163,7 +174,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   function openEffectiveRules(): void {
-    showDetails('当前生效的配置规则 · 只读', () => `${guard()}\n判定顺序: deny → 危险检测（启用时）→ allow → ask → 模式默认。\n同类中会话规则优先于配置；配置内部为全局规则后接项目规则。\n这里是启动时加载的快照，项目 Save 后要重启才能更新。\n\n${sourceRows.join('\n\n') || '(没有配置规则)'}`, reopenRoot);
+    showDetails('当前生效的配置规则 · 只读', () => `${guard()}\n判定顺序: ${isV2() ? 'deny → 不可降级约束/明确 ask → 精确 allow/确定性范围 → review/人工回退。' : isLegacy() ? 'deny → 危险检测（启用时）→ allow → ask → 模式默认。' : '由当前策略插件定义。'}\n同类中会话规则优先于配置；配置内部为全局规则后接项目规则。\n这里是启动时加载的快照，项目 Save 后要重启才能更新。\n\n${sourceRows.join('\n\n') || '(没有配置规则)'}`, reopenRoot);
   }
 
   function openAudit(): void {

@@ -54,6 +54,8 @@ export interface ToolContext {
 export interface Tool {
   name: string;
   version?: string;
+  /** 宿主装配时填写的来源；工具自行声明不能覆盖实际所有者。 */
+  ownerPlugin?: string;
   description: string;
   /** JSON Schema */
   inputSchema: Record<string, unknown>;
