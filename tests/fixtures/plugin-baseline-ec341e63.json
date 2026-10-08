@@ -1,0 +1,1072 @@
+[
+  {
+    "scenario": "read",
+    "trace": [
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "fixture-1",
+              "name": "fixture_tool",
+              "input": {
+                "value": "original"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "pipeline",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "allow",
+          "source": "mode"
+        }
+      },
+      {
+        "type": "tool_call",
+        "toolUse": {
+          "type": "tool_use",
+          "id": "fixture-1",
+          "name": "fixture_tool",
+          "input": {
+            "value": "original"
+          }
+        }
+      },
+      {
+        "type": "tool_result",
+        "toolUseId": "fixture-1",
+        "name": "fixture_tool",
+        "result": {
+          "content": "result:original"
+        }
+      },
+      {
+        "type": "text_delta",
+        "text": "complete"
+      },
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "complete"
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "loop_end",
+        "reason": "completed",
+        "turns": 2,
+        "usage": {
+          "inputTokens": 20,
+          "outputTokens": 20,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform the fixture operation"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "fixture-1",
+            "name": "fixture_tool",
+            "input": {
+              "value": "original"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "fixture-1",
+            "content": "result:original"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "complete"
+          }
+        ]
+      }
+    ],
+    "executions": 1,
+    "reviewerCalls": 0,
+    "run": {
+      "reason": "completed",
+      "turns": 2,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 20,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  },
+  {
+    "scenario": "deny",
+    "trace": [
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "fixture-1",
+              "name": "fixture_tool",
+              "input": {
+                "value": "original"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "pipeline",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "deny",
+          "source": "config"
+        }
+      },
+      {
+        "type": "tool_result",
+        "toolUseId": "fixture-1",
+        "name": "fixture_tool",
+        "result": {
+          "content": "Permission denied: 命中 deny 规则 \"fixture_tool\"",
+          "isError": true
+        }
+      },
+      {
+        "type": "text_delta",
+        "text": "complete"
+      },
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "complete"
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "loop_end",
+        "reason": "completed",
+        "turns": 2,
+        "usage": {
+          "inputTokens": 20,
+          "outputTokens": 20,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform the fixture operation"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "fixture-1",
+            "name": "fixture_tool",
+            "input": {
+              "value": "original"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "fixture-1",
+            "content": "Permission denied: 命中 deny 规则 \"fixture_tool\"",
+            "isError": true
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "complete"
+          }
+        ]
+      }
+    ],
+    "executions": 0,
+    "reviewerCalls": 0,
+    "run": {
+      "reason": "completed",
+      "turns": 2,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 20,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  },
+  {
+    "scenario": "ask-allow",
+    "trace": [
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "fixture-1",
+              "name": "fixture_tool",
+              "input": {
+                "value": "original"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "pipeline",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "ask",
+          "source": "config"
+        }
+      },
+      {
+        "type": "permission_request",
+        "toolName": "fixture_tool",
+        "input": {
+          "value": "original"
+        },
+        "source": "config"
+      },
+      {
+        "type": "permission_decision",
+        "phase": "user",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "allow",
+          "source": "user"
+        }
+      },
+      {
+        "type": "tool_call",
+        "toolUse": {
+          "type": "tool_use",
+          "id": "fixture-1",
+          "name": "fixture_tool",
+          "input": {
+            "value": "original"
+          }
+        }
+      },
+      {
+        "type": "tool_result",
+        "toolUseId": "fixture-1",
+        "name": "fixture_tool",
+        "result": {
+          "content": "result:original"
+        }
+      },
+      {
+        "type": "text_delta",
+        "text": "complete"
+      },
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "complete"
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "loop_end",
+        "reason": "completed",
+        "turns": 2,
+        "usage": {
+          "inputTokens": 20,
+          "outputTokens": 20,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform the fixture operation"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "fixture-1",
+            "name": "fixture_tool",
+            "input": {
+              "value": "original"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "fixture-1",
+            "content": "result:original"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "complete"
+          }
+        ]
+      }
+    ],
+    "executions": 1,
+    "reviewerCalls": 0,
+    "run": {
+      "reason": "completed",
+      "turns": 2,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 20,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  },
+  {
+    "scenario": "ask-deny",
+    "trace": [
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "fixture-1",
+              "name": "fixture_tool",
+              "input": {
+                "value": "original"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "pipeline",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "ask",
+          "source": "config"
+        }
+      },
+      {
+        "type": "permission_request",
+        "toolName": "fixture_tool",
+        "input": {
+          "value": "original"
+        },
+        "source": "config"
+      },
+      {
+        "type": "permission_decision",
+        "phase": "user",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "deny",
+          "source": "user"
+        }
+      },
+      {
+        "type": "tool_result",
+        "toolUseId": "fixture-1",
+        "name": "fixture_tool",
+        "result": {
+          "content": "User denied this action.",
+          "isError": true
+        }
+      },
+      {
+        "type": "text_delta",
+        "text": "complete"
+      },
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "complete"
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "loop_end",
+        "reason": "completed",
+        "turns": 2,
+        "usage": {
+          "inputTokens": 20,
+          "outputTokens": 20,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform the fixture operation"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "fixture-1",
+            "name": "fixture_tool",
+            "input": {
+              "value": "original"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "fixture-1",
+            "content": "User denied this action.",
+            "isError": true
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "complete"
+          }
+        ]
+      }
+    ],
+    "executions": 0,
+    "reviewerCalls": 0,
+    "run": {
+      "reason": "completed",
+      "turns": 2,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 20,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  },
+  {
+    "scenario": "review",
+    "trace": [
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "fixture-1",
+              "name": "fixture_tool",
+              "input": {
+                "value": "original"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "pipeline",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "ask",
+          "source": "mode"
+        }
+      },
+      {
+        "type": "model_usage",
+        "purpose": "judge",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "judge",
+        "input": {
+          "value": "original"
+        },
+        "decision": {
+          "kind": "allow",
+          "source": "judge"
+        }
+      },
+      {
+        "type": "tool_call",
+        "toolUse": {
+          "type": "tool_use",
+          "id": "fixture-1",
+          "name": "fixture_tool",
+          "input": {
+            "value": "original"
+          }
+        }
+      },
+      {
+        "type": "tool_result",
+        "toolUseId": "fixture-1",
+        "name": "fixture_tool",
+        "result": {
+          "content": "result:original"
+        }
+      },
+      {
+        "type": "text_delta",
+        "text": "complete"
+      },
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "complete"
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "loop_end",
+        "reason": "completed",
+        "turns": 2,
+        "usage": {
+          "inputTokens": 30,
+          "outputTokens": 30,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform the fixture operation"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "fixture-1",
+            "name": "fixture_tool",
+            "input": {
+              "value": "original"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "fixture-1",
+            "content": "result:original"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "complete"
+          }
+        ]
+      }
+    ],
+    "executions": 1,
+    "reviewerCalls": 1,
+    "run": {
+      "reason": "completed",
+      "turns": 2,
+      "usage": {
+        "inputTokens": 30,
+        "outputTokens": 30,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  },
+  {
+    "scenario": "rewrite",
+    "trace": [
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "fixture-1",
+              "name": "fixture_tool",
+              "input": {
+                "value": "original"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "pipeline",
+        "input": {
+          "value": "rewritten"
+        },
+        "decision": {
+          "kind": "ask",
+          "source": "mode"
+        }
+      },
+      {
+        "type": "model_usage",
+        "purpose": "judge",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "permission_decision",
+        "phase": "judge",
+        "input": {
+          "value": "rewritten"
+        },
+        "decision": {
+          "kind": "allow",
+          "source": "judge"
+        }
+      },
+      {
+        "type": "tool_call",
+        "toolUse": {
+          "type": "tool_use",
+          "id": "fixture-1",
+          "name": "fixture_tool",
+          "input": {
+            "value": "rewritten"
+          }
+        }
+      },
+      {
+        "type": "tool_result",
+        "toolUseId": "fixture-1",
+        "name": "fixture_tool",
+        "result": {
+          "content": "result:rewritten"
+        }
+      },
+      {
+        "type": "text_delta",
+        "text": "complete"
+      },
+      {
+        "type": "model_usage",
+        "purpose": "agent",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "assistant_message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "complete"
+            }
+          ]
+        }
+      },
+      {
+        "type": "turn_end",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      {
+        "type": "loop_end",
+        "reason": "completed",
+        "turns": 2,
+        "usage": {
+          "inputTokens": 30,
+          "outputTokens": 30,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform the fixture operation"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "fixture-1",
+            "name": "fixture_tool",
+            "input": {
+              "value": "original"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "fixture-1",
+            "content": "result:rewritten"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "complete"
+          }
+        ]
+      }
+    ],
+    "executions": 1,
+    "reviewerCalls": 1,
+    "run": {
+      "reason": "completed",
+      "turns": 2,
+      "usage": {
+        "inputTokens": 30,
+        "outputTokens": 30,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  }
+]

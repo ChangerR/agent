@@ -32,11 +32,12 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-async function assembled(config: Partial<AgentConfig> = {}, judgeResponse: ScriptedResponse = textResponse('{"verdict":"allow","reason":"本地检查"}')) {
+async function assembled(config: Partial<AgentConfig> = {}, judgeResponse: ScriptedResponse = textResponse('{"verdict":"allow","reason":"本地检查"}'), toolOverrides: Partial<Tool> = {}) {
   await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({
     provider: 'fake', model: 'current-a', permissionMode: 'auto', ...config,
   }));
-  agent = await createAgent(tmp, { autoSaveSessions: false });
+  const execute = vi.fn(commandTool.execute);
+  agent = await createAgent(tmp, { autoSaveSessions: false, plugins: [{ manifest: { id: "test.command", version: "1.0.0", apiVersion: 1 }, setup(ctx) { ctx.provide.tool(commandTool.name, { ...commandTool, ...toolOverrides, execute }); } }] });
   let id = 0;
   const fake = new FakeProvider([request => {
     if (request.tools.length === 0) return typeof judgeResponse === 'function' ? judgeResponse(request) : judgeResponse;
@@ -44,8 +45,7 @@ async function assembled(config: Partial<AgentConfig> = {}, judgeResponse: Scrip
     return toolUseResponse([{ id: `check-${++id}`, name: commandTool.name, input: { command: 'pnpm test' } }]);
   }]);
   vi.spyOn(agent.providers.get('fake'), 'stream').mockImplementation(fake.stream.bind(fake));
-  const execute = vi.fn(commandTool.execute);
-  agent.tools.register({ ...commandTool, execute });
+
   const decisions: Array<Extract<AgentEvent, { type: 'permission_decision' }>> = [];
   const requests: Array<Extract<AgentEvent, { type: 'permission_request' }>['request']> = [];
   const traces: Array<Extract<AgentEvent, { type: 'model_request' }>> = [];
@@ -328,8 +328,7 @@ describe('默认加载审批员不改变确定性权限优先级', () => {
   });
 
   it('auto 只读工具保持静默放行，不增加审批请求', async () => {
-    const fixture = await assembled();
-    fixture.agent.tools.register({ ...commandTool, risk: 'read', execute: fixture.execute });
+    const fixture = await assembled({}, undefined, { risk: 'read' });
     await fixture.agent.loop.run('读取');
     expect(judgeRequests(fixture.fake)).toHaveLength(0);
     expect(fixture.execute).toHaveBeenCalledTimes(1);
@@ -337,10 +336,7 @@ describe('默认加载审批员不改变确定性权限优先级', () => {
   });
 
   it.each(['auto', 'yolo'] as const)('%s 的危险检测优先于审批模型和普通 allow 规则', async permissionMode => {
-    const fixture = await assembled({ permissionMode, permissions: { allow: [commandTool.name], ask: [], deny: [] } });
-    fixture.agent.tools.register({ ...commandTool, execute: fixture.execute,
-      analyzeInput: () => ({ patternTarget: 'danger', summary: '危险检查', dangerous: true }),
-    });
+    const fixture = await assembled({ permissionMode, permissions: { allow: [commandTool.name], ask: [], deny: [] } }, undefined, { analyzeInput: () => ({ patternTarget: 'danger', summary: '危险检查', dangerous: true }) });
     await fixture.agent.loop.run('检查');
     expect(judgeRequests(fixture.fake)).toHaveLength(0);
     expect(fixture.execute).not.toHaveBeenCalled();

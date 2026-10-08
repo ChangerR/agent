@@ -37,62 +37,26 @@ import type { ThinkingLevel } from '../core/provider.js';
 import { emptyUsage, type TokenUsage } from '../core/protocol/types.js';
 import type { Agent } from '../index.js';
 import { DetailRegistry, PermissionMessage, renderHistory, StreamMessages, ToolMessage, UserMessage } from './messages.js';
+import { PluginToolMessage } from './plugin-renderers.js';
+import { observationSnapshot } from '../runtime/plugin-host.js';
 import { InteractionPanel, type PanelItem } from './interaction-panel.js';
 import { TurnQueue } from './turn-queue.js';
-import { createPermissionSettings, describeJudgeStatus } from './permission-settings.js';
+import { describeJudgeStatus } from './permission-settings.js';
+import { createTuiAdapter } from '../builtin/tui-command-adapter.js';
+import type { TuiAdapter, TuiEntry, TuiPluginContext, BuiltinTuiContext } from './tui-plugins.js';
+import type { CommandResult, InteractionRequest } from '../sdk/index.js';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import { SettingsInputPanel } from './settings-input.js';
 
 // ---------------------------------------------------------------------------
 // 主题
 // ---------------------------------------------------------------------------
 
-const HELP = `命令（不带参数在底部打开选择器）：
-  /model [name]          查看/切换模型
-  /mode [ask|auto|yolo]  查看/切换权限模式
-  /think [off|low|medium|high]  查看/设置思考等级
-  /settings              模型、思考与权限设置
-  /permissions           权限设置（会话与项目默认）
-  /permissions audit     查看权限决策日志
-  /skills                列出可用 skill
-  /tools                 列出已注册工具
-  /details [编号]        展开/收起全部详情，或查看某条完整内容
-  /stats                 查看 token、缓存和日志信息
-  /queue clear           清空待发送消息
-  /redraw                强制全屏重绘（画面残留时用）
-  /help                  显示帮助
-  /exit                  退出
-其他输入直接作为对话发送。Ctrl+O 展开/收起详情，Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
-选择器：↑↓ 选择，Enter 确认，Esc 返回。审批：先用 ↑↓ 或鼠标选择，再 Enter 确认；Tab 查看完整参数，↑↓ 滚动，Tab 返回选项，Esc 拒绝。
-消息区独立滚动，底部保留输入框。AGENTLAB_SCREEN=main 可使用终端原生滚动历史。
-调试：会话事件全量记录在 .agentlab/logs/session-*.jsonl
-画面异常时：先试 /redraw；仍异常可设 AGENTLAB_FULL_REDRAW=1 后重启（关闭差分渲染）。
-缓存命中率 = cache 读取 / (cache 读取 + 未命中输入)。分母为 0 时显示为 -。
-  /save                  保存当前会话
-  /sessions              列出已保存会话（/sessions rm <id> 删除）
-  /resume [id]           恢复会话（无参数弹出选择器，latest 为最近一次）`;
-
-function relativeTime(iso: string): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return iso;
-  const delta = Date.now() - then;
-  if (delta < 10_000) return '刚刚';
-  const sec = Math.floor(delta / 1000);
-  if (sec < 60) return `${sec} 秒前`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} 分钟前`;
-  const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour} 小时前`;
-  const day = Math.floor(hour / 24);
-  if (day < 30) return `${day} 天前`;
-  return formatUpdated(iso);
-}
-
-function formatUpdated(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+const HELP_FOOTER = `其他输入直接作为对话发送。Ctrl+O 展开/收起详情，Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
+选择器：↑↓ 选择，Enter 确认，Esc 返回。审批需先明确选择；Tab 查看完整参数。
+AGENTLAB_SCREEN=main 使用终端原生滚动历史；AGENTLAB_FULL_REDRAW=1 关闭差分渲染。
+调试日志默认脱敏，完整正文日志需要显式开启。`;
 
 function summarizeToolCall(tools: Agent['tools'], name: string, input: unknown): string {
   const record = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
@@ -157,6 +121,8 @@ export function startTui(
   const activePanel = () => approvalPanel ?? picker;
   const details = new DetailRegistry();
   const toolMessages = new Map<string, ToolMessage>();
+  const adapters: TuiAdapter[] = [];
+  const failedStatuses = new Set<string>();
   const unsubscribe: Array<() => void> = [];
   const transcript = new Container();
   const header = new Text(ui.accent(chalk.bold('AgentLab')) + ui.dim('  coding agent') + '\n' + ui.muted('/model 切换模型 · /settings 设置 · /help 帮助'), 1, 1);
@@ -169,30 +135,23 @@ export function startTui(
     render: (width) => [
       truncateToWidth(ui.dim(` ${mode} · 思考 ${thinking}${mode === 'auto' ? ` · 审批 ${describeJudgeStatus(agent.loop.getJudgeStatus())}` : width >= 60 ? ` · ${safeTerminalText(basename(agent.cwd))}` : ''}`), width),
       truncateToWidth(ui.muted(` ↑${fmtTokens(usage.inputTokens)} ↓${fmtTokens(usage.outputTokens)} · cache ${cacheHitRate(usage)} · ${safeTerminalText(model)}`), width),
+      ...renderPluginStatus(width),
     ],
   };
+  function renderPluginStatus(width: number): string[] {
+    const values: string[] = [];
+    for (const adapter of adapters) for (const [id, read] of Object.entries(adapter.statusItems ?? {})) {
+      if (failedStatuses.has(id)) continue;
+      try { const value = read(); if (typeof value !== 'string') throw new Error('状态项必须返回文本'); values.push(safeTerminalText(value)); }
+      catch (error) { failedStatuses.add(id); console.error(`可选状态项 ${id} 失败:`, error); }
+    }
+    return values.length ? [truncateToWidth(ui.dim(` ${values.join(' · ')}`), width)] : [];
+  }
   const editor = new Composer(tui, { borderColor: ui.border, selectList: selectTheme }, { paddingX: 1, autocompleteMaxVisible: 6 });
   editor.status = () => statusText;
   editor.setAutocompleteProvider(
     new CombinedAutocompleteProvider(
-      [
-        { name: 'model', description: '查看/切换模型' },
-        { name: 'mode', description: '查看/切换权限模式' },
-        { name: 'think', description: '查看/设置思考等级' },
-        { name: 'settings', description: '模型、思考与权限设置' },
-        { name: 'permissions', description: '权限设置与决策日志' },
-        { name: 'redraw', description: '强制全屏重绘' },
-        { name: 'skills', description: '列出 skill' },
-        { name: 'tools', description: '列出工具' },
-        { name: 'details', description: '展开/收起工具输出和思考' },
-        { name: 'stats', description: 'token、缓存和日志' },
-        { name: 'save', description: '保存当前会话' },
-        { name: 'sessions', description: '列出会话，rm 删除' },
-        { name: 'resume', description: '恢复会话' },
-        { name: 'queue', description: '/queue clear 清空排队' },
-        { name: 'help', description: '帮助' },
-        { name: 'exit', description: '退出' },
-      ],
+      agent.commands.list().map(command => ({ name: command.id, description: command.description })),
       process.cwd(),
     ),
   );
@@ -353,7 +312,9 @@ export function startTui(
   unsubscribe.push(agent.events.on('tool_call', (e) => {
     streams.finish();
     const summary = summarizeToolCall(agent.tools, e.toolUse.name, e.toolUse.input);
-    const comp = new ToolMessage(summary, () => expanded, { name: e.toolUse.name, input: e.toolUse.input });
+    const comp = new PluginToolMessage(summary, () => expanded, { name: e.toolUse.name, input: e.toolUse.input },
+      () => adapters.map(adapter => adapter.toolRenderers?.[e.toolUse.name]).find(Boolean),
+      message => { setTimeout(() => { if (!stopped) err(message); }, 0); });
     comp.detailId = details.add(`工具 · ${e.toolUse.name}`, () => comp.details());
     toolMessages.set(e.toolUse.id, comp);
     phase = `执行工具 · ${e.toolUse.name}`;
@@ -494,238 +455,131 @@ export function startTui(
     return undefined;
   }));
 
-  // --- 命令 ---
-  const setModel = (name: string) => {
-    agent.loop.setModel(name);
-    model = name;
-    const info = agent.modelInfo(name);
-    say(
-      info
-        ? `模型切换为 ${name}（context: ${info.contextWindow.toLocaleString()} tokens，max output: ${info.maxOutputTokens.toLocaleString()}）`
-        : `模型切换为 ${name}（未知规格，压缩阈值保持配置值；可在 models.json 中补充）`,
-    );
-    say('下一次模型请求生效（可能在本轮内）；不会切换 provider 或 endpoint');
-    updateStatus();
+  // --- 命令：注册表负责发现与调用，插件的可选 entry 负责专用终端交互。 ---
+  const refreshStatus = () => {
+    model = agent.loop.model; thinking = agent.loop.thinking; mode = agent.permission.mode; updateStatus();
   };
-
-
-  const setThinking = (level: string) => {
-    agent.loop.setThinking(level as ThinkingLevel);
-    thinking = level as ThinkingLevel;
-    say(`思考等级切换为 ${level}（下一次模型请求生效，可能在本轮内）`);
-    updateStatus();
+  const showDetails = (title: string, body: () => string, onBack?: () => void, framed = false) => {
+    picker = new InteractionPanel({ title, kind: 'details', framed, body, rows: () => terminal.rows, changed: render,
+      cancel: () => { picker = undefined; onBack?.(); focusInteraction(); } }); focusInteraction();
   };
-
-  const runAsync = (task: () => Promise<void>) => {
-    void task().catch((error) => err(error instanceof Error ? error.message : String(error)));
+  const showInput: TuiPluginContext['showInput'] = request => {
+    picker = new SettingsInputPanel({ ...request, rows: () => terminal.rows, changed: render,
+      onSubmit: value => { picker = undefined; request.onSubmit(value); focusInteraction(); },
+      onCancel: () => { picker = undefined; request.onCancel(); focusInteraction(); } }); focusInteraction();
   };
-
-  const permissions = createPermissionSettings({
-    agent, cwd: agent.cwd,
-    notify: (text, error) => error ? err(text) : say(text),
-    onModeChange: (next) => { mode = next; updateStatus(); },
-    showPicker: (request) => {
-      picker = new InteractionPanel({
-        title: request.title, kind: 'picker', framed: true, items: request.items.map(item => ({ ...item, current: item.value === request.initialValue })),
-        initialValue: request.initialValue, context: request.context ? () => request.context! : undefined, body: request.body, requireSelection: request.requireSelection,
-        rows: () => terminal.rows, changed: render,
-        select: (value) => {
-          picker = undefined;
-          if (request.requireSelection) suppressEnterUntil = Date.now() + 500;
-          request.onPick(value); focusInteraction();
-        },
+  const adapterContext: BuiltinTuiContext = {
+    agent, cwd: agent.cwd, dispatchCommand: agent.dispatchCommand, invokeTool: agent.invokeTool,
+    inspect: () => observationSnapshot({ commands: agent.commands.list(),
+      settings: agent.settings.map(({ id, ownerPlugin, section }) => ({ id, ownerPlugin, title: section.title, description: section.description, applyMode: section.applyMode })),
+      plugins: agent.plugins.manifests.map(({ id, version }) => ({ id, version })), tools: agent.tools.list().map(({ name, risk }) => ({ name, risk })),
+    }), say, error: err, showPicker, showDetails, showInput, updateStatus: refreshStatus,
+    exit, redraw: () => tui.requestRender(true), toggleDetails, detail: id => details.get(id), usage: () => usage,
+    queue: { size: () => turns.size, clear: () => turns.clear() },
+    showPermissionPicker: request => {
+      picker = new InteractionPanel({ title: request.title, kind: 'picker', framed: true,
+        items: request.items.map(item => ({ ...item, current: item.value === request.initialValue })),
+        initialValue: request.initialValue, context: request.context ? () => request.context! : undefined,
+        body: request.body, requireSelection: request.requireSelection, rows: () => terminal.rows, changed: render,
+        select: value => { picker = undefined; if (request.requireSelection) suppressEnterUntil = Date.now() + 500; request.onPick(value); focusInteraction(); },
         cancel: () => { picker = undefined; request.onCancel?.(); focusInteraction(); },
-      });
-      focusInteraction();
+      }); focusInteraction();
     },
-    showDetails: (title, body, onBack) => {
-      picker = new InteractionPanel({ title, kind: 'details', framed: true, body, rows: () => terminal.rows, changed: render,
-        cancel: () => { picker = undefined; onBack(); focusInteraction(); } });
-      focusInteraction();
-    },
-    showInput: (request) => {
-      picker = new SettingsInputPanel({ ...request, rows: () => terminal.rows, changed: render,
-        onSubmit: value => { picker = undefined; request.onSubmit(value); focusInteraction(); },
-        onCancel: () => { picker = undefined; request.onCancel(); focusInteraction(); } });
-      focusInteraction();
-    },
-  });
-
-  const handleCommand = (cmd: string, onBack?: () => void) => {
-    const [name, ...rest] = cmd.slice(1).split(/\s+/);
-    const arg = rest.join(' ');
-    switch (name) {
-      case 'exit':
-        exit();
-        return;
-      case 'help':
-        say(HELP);
-        return;
-      case 'redraw':
-        tui.requestRender(true);
-        say('已强制全屏重绘');
-        return;
-      case 'details':
-        if (arg) {
-          const entry = /^\d+$/.test(arg) ? details.get(Number(arg)) : undefined;
-          if (!entry) { err('用法: /details [消息编号]，编号显示在工具与思考旁'); return; }
-          picker = new InteractionPanel({
-            title: `#${entry.id} ${entry.title}`, kind: 'details', body: entry.body,
-            rows: () => terminal.rows, changed: render,
-            cancel: () => { picker = undefined; focusInteraction(); },
-          });
-          focusInteraction();
-        } else toggleDetails();
-        return;
-      case 'stats':
-        say(`tokens: ${fmtTokens(usage.inputTokens)} 输入 / ${fmtTokens(usage.outputTokens)} 输出\ncache: ${fmtTokens(usage.cacheReadTokens)} 读 / ${fmtTokens(usage.cacheWriteTokens)} 写 · 命中率 ${cacheHitRate(usage)}\n会话日志: ${agent.logPath}`);
-        return;
-      case 'queue':
-        if (arg === 'clear') say(`已取消 ${turns.clear()} 条排队消息`);
-        else say(`待发送 ${turns.size} 条消息，/queue clear 清空`);
-        return;
-      case 'model': {
-        if (arg) {
-          setModel(arg);
-          return;
-        }
-        showPicker(
-          `选择模型 · ${agent.loop.providerName}`,
-          agent.knownModels.map((m) => ({
-            value: m.name,
-            label: m.name,
-            description: `${m.info ? `context ${m.info.contextWindow.toLocaleString()} · output ${m.info.maxOutputTokens.toLocaleString()}` : '未知规格'}\n下一次模型请求生效；需与当前 provider / endpoint 兼容。`,
-          })),
-          setModel,
-          model,
-          true,
-          onBack,
-        );
-        return;
-      }
-      case 'settings':
-        showPicker('设置 · 当前会话', [
-          { value: 'model', label: `模型 · ${model}`, description: '本次会话；下一次模型请求生效。' },
-          { value: 'think', label: `思考 · ${thinking}`, description: '本次会话；下一次模型请求生效。' },
-          { value: 'permissions', label: `权限 · ${mode}`, description: `auto 审批模型: ${describeJudgeStatus(agent.loop.getJudgeStatus())}\n会话审批行为、记住的规则、项目默认与决策日志。` },
-        ], value => handleCommand(`/${value}`, () => handleCommand('/settings')), undefined, false, undefined, true);
-        return;
-      case 'mode':
-        if (arg === 'ask' || arg === 'auto' || arg === 'yolo') permissions.requestMode(arg);
-        else if (arg) err('用法: /mode ask|auto|yolo');
-        else permissions.openModes(onBack);
-        return;
-      case 'think': {
-        if (arg === 'off' || arg === 'low' || arg === 'medium' || arg === 'high') {
-          setThinking(arg);
-          return;
-        }
-        if (arg) {
-          err('用法: /think off|low|medium|high');
-          return;
-        }
-        showPicker(
-          `思考等级（当前: ${thinking}）`,
-          [
-            { value: 'off', label: 'off', description: '不请求额外推理参数，实际行为由模型决定。下一次模型请求生效。' },
-            { value: 'low', label: 'low', description: '请求轻度推理；下一次模型请求生效，模型需支持。' },
-            { value: 'medium', label: 'medium', description: '请求均衡推理；下一次模型请求生效，模型需支持。' },
-            { value: 'high', label: 'high', description: '请求深度推理；下一次模型请求生效，模型需支持。' },
-          ],
-          setThinking,
-          thinking,
-          false,
-          onBack,
-        );
-        return;
-      }
-      case 'permissions':
-        if (arg === 'audit') permissions.openAudit();
-        else if (arg) err('用法: /permissions 或 /permissions audit');
-        else permissions.open(onBack);
-        return;
-      case 'skills': {
-        const skills = agent.skillLoader.list();
-        say(skills.length === 0 ? '(无可用 skill)' : skills.map((s) => `${s.name}: ${s.description}`).join('\n'));
-        return;
-      }
-      case 'tools':
-        say(agent.tools.list().map((t) => `${t.name} [${t.risk}]`).join('\n'));
-        return;
-      case 'save':
-        runAsync(async () => {
-          const saved = await agent.session.save();
-          if (!saved) {
-            say('当前会话还没有内容，未保存');
-            return;
-          }
-          const trimmed = saved.trimmed > 0 ? `（尾部 ${saved.trimmed} 条未完成的工具调用未写入）` : '';
-          say(`已保存会话 ${saved.id}（${saved.messageCount} 条消息）→ ${saved.path}${trimmed}`);
-        });
-        return;
-      case 'sessions':
-        runAsync(async () => {
-          if (arg.startsWith('rm')) {
-            const id = arg.slice(2).trim();
-            if (!id) {
-              err('用法: /sessions rm <id>');
-              return;
-            }
-            const removed = await agent.session.delete(id);
-            if (!removed) {
-              err(`会话 ${id} 不存在`);
-              return;
-            }
-            say(`已删除会话 ${id}`);
-            if (id === agent.session.id) say('当前会话已从磁盘删除，下一次保存会重建');
-            return;
-          }
-          if (arg) {
-            err('用法: /sessions 或 /sessions rm <id>');
-            return;
-          }
-          const listing = await agent.session.list();
-          if (listing.sessions.length === 0 && listing.broken.length === 0) {
-            say('(本项目还没有已保存的会话)');
-          } else {
-            for (const item of listing.sessions) {
-              const mark = item.id === agent.session.id ? ' ✓' : '';
-              say(`${item.id}${mark} · ${item.title} · ${relativeTime(item.updatedAt)} · ${item.messageCount} 条`);
-            }
-          }
-          for (const item of listing.broken) err(`[坏文件] ${item.id}: ${item.error.message}`);
-        });
-        return;
-      case 'resume':
-        runAsync(async () => {
-          if (arg) {
-            const [id, flag, ...extra] = arg.split(/\s+/);
-            if (extra.length || (flag && flag !== '--legacy')) throw new Error('用法: /resume <id> [--legacy]');
-            await agent.session.resume(id, { allowLegacyProvider: flag === '--legacy' });
-            return;
-          }
-          const listing = await agent.session.list();
-          if (listing.sessions.length === 0) {
-            say('(本项目还没有已保存的会话)');
-            return;
-          }
-          showPicker(
-            '恢复会话',
-            listing.sessions.map((item) => ({
-              value: item.id,
-              label: item.title,
-              description: `${item.id} · ${formatUpdated(item.updatedAt)} · ${item.messageCount} 条`,
-            })),
-            (value) => {
-              void agent.session.resume(value).catch((error) => err(error instanceof Error ? error.message : String(error)));
-            },
-          );
-        });
-        return;
-      default:
-        err(`未知命令: /${name}，输入 /help 查看帮助`);
-    }
   };
+  const { agent: _privateAgent, ...publicContext } = adapterContext;
+  Object.freeze(publicContext);
+  const installAdapter = (adapter: TuiAdapter) => {
+    for (const key of ['commands', 'settings', 'toolRenderers', 'statusItems'] as const) {
+      for (const [id, handler] of Object.entries(adapter[key] ?? {})) {
+        if (typeof handler !== 'function') throw new Error(`无效 TUI ${key}: ${id}`);
+        if (adapters.some(existing => existing[key]?.[id])) throw new Error(`重复 TUI ${key}: ${id}`);
+      }
+    }
+    adapters.push(adapter);
+    render();
+  };
+  const pendingAdapters: Promise<void>[] = [];
+  for (const { implementation: descriptor } of agent.plugins.tui) {
+    // 内置入口随 CLI 同步加载，保留首个按键和连续输入的原有时序。
+    if (descriptor.entry === 'agentlab:builtin-ui') { installAdapter(createTuiAdapter(adapterContext)); continue; }
+    const entry = descriptor.entry.startsWith('.') || descriptor.entry.startsWith('/')
+      ? pathToFileURL(resolve(agent.cwd, descriptor.entry)).href : descriptor.entry;
+    pendingAdapters.push(import(entry).then(async (module: TuiEntry) => {
+      if (typeof module.createTuiAdapter !== 'function') throw new Error(`TUI entry 缺少 createTuiAdapter: ${descriptor.entry}`);
+      const adapter = await module.createTuiAdapter(publicContext);
+      if (stopped) { await adapter.dispose?.(); return; }
+      installAdapter(adapter);
+    }).catch(error => err(`可选界面加载失败: ${error instanceof Error ? error.message : String(error)}`)));
+  }
+  unsubscribe.push(() => { for (const adapter of adapters) void Promise.resolve(adapter.dispose?.()).catch(error => console.error(error)); });
+  const commandController = new AbortController();
+  unsubscribe.push(() => commandController.abort());
+  const interact = (request: InteractionRequest): Promise<string | undefined> => new Promise(resolve => {
+    if (stopped) { resolve(undefined); return; }
+    let settled = false;
+    const done = (value?: string) => { if (settled) return; settled = true; commandController.signal.removeEventListener('abort', cancel); resolve(value); };
+    const cancel = () => done(); commandController.signal.addEventListener('abort', cancel, { once: true });
+    if (request.kind === 'input') { showInput({ title: request.prompt, value: request.initialValue ?? '', description: request.body ?? '', onSubmit: done, onCancel: cancel }); return; }
+    if (request.kind === 'details' || !request.choices?.length) { showDetails(request.prompt, () => request.body ?? '', cancel); return; }
+    adapterContext.showPermissionPicker({ title: request.prompt,
+      items: request.choices.map(choice => ({ value: choice.id, label: choice.label, description: choice.description })),
+      initialValue: request.initialValue, body: request.body ? () => request.body! : undefined, requireSelection: request.requireSelection,
+      onPick: done, onCancel: cancel,
+    });
+  });
+  const showResult = async (result: CommandResult): Promise<void> => {
+    if (!result) return;
+    if (result.type === 'text') say(result.text);
+    else if (result.type === 'data') say(result.text ?? JSON.stringify(result.data, null, 2));
+    else await interact(result);
+    refreshStatus();
+  };
+  const openSetting = (id: string) => {
+    const record = agent.settings.find(setting => setting.id === id); if (!record) return;
+    const specialized = adapters.map(adapter => adapter.settings?.[id]).find(Boolean);
+    if (specialized) { specialized(openSettings); return; }
+    const section = record.section;
+    void (async () => {
+      const value = await section.read?.(commandController.signal);
+      const body = `${section.description ?? ''}\n拥有者: ${record.ownerPlugin}\n生效时机: ${section.applyMode}\n配置来源: ${JSON.stringify(record.sources ?? {})}\n实现: ${(record.implementations ?? []).join(', ')}\n当前值:\n${JSON.stringify(value ?? null, null, 2)}`;
+      if (!section.draft || !section.commit) { showDetails(section.title, () => body, openSettings); return; }
+      showPicker(section.title, [{ value: 'view', label: '查看当前值', description: body }, { value: 'edit', label: '编辑草稿', description: '编辑 JSON；只有明确 Save 才提交。' }], action => {
+        if (action === 'view') { showDetails(section.title, () => body, () => openSetting(id)); return; }
+        showInput({ title: `${section.title} · 草稿`, value: JSON.stringify(value ?? null), description: '输入 JSON；Enter 创建草稿，尚未保存。',
+          validate: text => { try { JSON.parse(text); return undefined; } catch { return '请输入合法 JSON'; } },
+          onCancel: () => openSetting(id), onSubmit: text => {
+            void (async () => {
+              const draft = await section.draft!(JSON.parse(text), commandController.signal);
+              const choice = await interact({ type: 'interaction', id: `settings:${id}:save`, kind: 'confirm', prompt: `确认 Save · ${section.title}`, body: `生效时机: ${section.applyMode}\n${JSON.stringify(draft, null, 2)}`, requireSelection: true, choices: [{ id: 'cancel', label: '取消' }, { id: 'save', label: 'Save' }] });
+              if (choice === 'save') { await section.commit!(draft, commandController.signal); say(`已保存 ${section.title}；生效时机: ${section.applyMode}`); }
+              openSetting(id);
+            })().catch(error => err(error instanceof Error ? error.message : String(error)));
+          },
+        });
+      }, undefined, false, openSettings, true);
+    })().catch(error => err(error instanceof Error ? error.message : String(error)));
+  };
+  function openSettings(): void {
+    showPicker('设置 · 当前会话', [...agent.settings].sort((a, b) => (a.section.order ?? 100) - (b.section.order ?? 100)).map(({ id, section, ownerPlugin }) => ({
+      value: id, label: section.title,
+      description: `${section.description ?? ''}\n拥有者: ${ownerPlugin} · 生效时机: ${section.applyMode}`,
+    })), openSetting, undefined, false, undefined, true);
+  }
+  const frontendCommands: Record<string, (arg: string) => void> = {
+    settings: () => openSettings(),
+    help: () => say(`命令（由已加载插件提供）：\n${agent.commands.list().map(command => `  /${command.id}  ${command.description}`).join('\n')}\n${HELP_FOOTER}`),
+  };
+  const dispatch = (line: string) => {
+    const [name, ...rest] = line.slice(1).trim().split(/\s+/); const arg = rest.join(' ');
+    if (!agent.commands.has(name)) { err(`未知命令: /${name}，输入 /help 查看帮助`); return; }
+    const frontend = frontendCommands[name]; if (frontend) { frontend(arg); return; }
+    const specialized = adapters.map(adapter => adapter.commands?.[name]).find(Boolean);
+    if (specialized) { void Promise.resolve(specialized(arg)).catch(error => err(error instanceof Error ? error.message : String(error))); return; }
+    void agent.dispatchCommand(line, { signal: commandController.signal, interact }).then(showResult).catch(error => err(error instanceof Error ? error.message : String(error)));
+  };
+  let adaptersReady = pendingAdapters.length === 0;
+  const ready = Promise.all(pendingAdapters).then(() => { adaptersReady = true; });
+  const handleCommand = (line: string) => { if (adaptersReady) dispatch(line); else void ready.then(() => { if (!stopped) dispatch(line); }); };
 
   // --- 输入 ---
   editor.onSubmit = (text) => {
