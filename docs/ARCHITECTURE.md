@@ -1,5 +1,8 @@
 # AgentLab 架构与内部原理
 
+> 插件宿主、唯一 ToolExecutor、会话 v2 和可选确定性策略已经迁移。当前实现与源文件映射以 [PLUGINS.md](PLUGINS.md)、[POLICY-V2.md](POLICY-V2.md) 为准。下文保留原版教学原理；其中旧 core 路径现在可能是兼容 façade，不能据此推断当前装配归属。
+
+
 本文档逐模块讲解 AgentLab 的实现原理。AgentLab 是一个仿 Claude Code 的教学版 coding agent，设计目标是把"一个 agent 到底是怎么运转的"讲清楚。
 
 ## 0. 一张图看懂全局
