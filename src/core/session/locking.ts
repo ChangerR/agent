@@ -3,11 +3,13 @@ import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { errnoCode, SessionError } from './errors.js';
 
-export async function withSessionLock<T>(path: string, task: () => Promise<T>): Promise<T> {
+export async function withSessionLock<T>(path: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
   const lockPath = `${path}.lock`;
   await fs.mkdir(dirname(path), { recursive: true });
   let handle;
   for (let attempt = 0; ; attempt++) {
+    signal?.throwIfAborted();
     try {
       handle = await fs.open(lockPath, 'wx');
       break;
@@ -18,6 +20,7 @@ export async function withSessionLock<T>(path: string, task: () => Promise<T>): 
     }
   }
   try {
+    signal?.throwIfAborted();
     await handle.writeFile(String(process.pid));
     return await task();
   } finally {

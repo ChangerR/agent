@@ -2,16 +2,24 @@
  * 落盘的会话文件形状。SessionRules 定义在权限引擎里，这里只再导出，避免循环依赖。
  */
 import type { PermissionMode } from '../config.js';
-import type { SessionRules } from '../permission/engine.js';
+import type { SessionRules } from '../permission/contracts.js';
 import type { ThinkingLevel } from '../provider.js';
 import type { Message, TokenUsage } from '../protocol/types.js';
 
 export type { SessionRules };
 
-export const SESSION_SCHEMA_VERSION = 1;
+/** v2 将 runtime、policy 和插件状态分别版本化；旧二进制会明确拒绝。 */
+export const SESSION_SCHEMA_VERSION = 2;
+export interface SessionPolicyIdentity { id: string; version: string; stateSchemaVersion: number }
+export interface SessionPluginState { schemaVersion: number; requiredForSafety?: boolean; data: unknown }
+export interface SessionRuntimeState { schemaVersion: 1 }
+
 
 export interface SessionFile {
-  schemaVersion: typeof SESSION_SCHEMA_VERSION;
+  schemaVersion: 1 | typeof SESSION_SCHEMA_VERSION;
+  runtime?: SessionRuntimeState;
+  policy?: SessionPolicyIdentity;
+  pluginStates?: Record<string, SessionPluginState>;
   id: string;
   title: string;
   /** 最后观察到的版本；旧 v1 缺省为 0，每次保存/删除递增。 */
