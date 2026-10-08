@@ -1,5 +1,6 @@
 import { Markdown, Spacer, Text, truncateToWidth, type Component, type MarkdownTheme } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
+import { ui, markdownTheme, paddedBackground, safeTerminalText } from './theme.js';
 import type { PermissionRequest } from '../core/events.js';
 import type { AssistantMessage, Message, ToolResult } from '../core/protocol/types.js';
 
@@ -18,20 +19,21 @@ export class DetailRegistry {
 }
 
 export class UserMessage implements Component {
-  constructor(private content: string) {}
-  invalidate(): void {}
-  render(width: number): string[] {
-    return [truncateToWidth(chalk.bold.cyan(' ❯ 你'), width), ...new Text(this.content, 3, 0).render(width)];
+  private markdown: Markdown;
+  constructor(content: string) {
+    this.markdown = new Markdown(safeTerminalText(content), 1, 1, markdownTheme, { color: ui.text, bgColor: ui.userBg }, { preserveOrderedListMarkers: true, preserveBackslashEscapes: true });
   }
+  invalidate(): void { this.markdown.invalidate(); }
+  render(width: number): string[] { return this.markdown.render(width); }
 }
 
 class AssistantText implements Component {
   private markdown: Markdown;
-  constructor(text: string, theme: MarkdownTheme) { this.markdown = new Markdown(text, 3, 0, theme); }
-  setText(text: string): void { this.markdown.setText(text); }
+  constructor(text: string, theme: MarkdownTheme) { this.markdown = new Markdown(safeTerminalText(text), 1, 1, theme); }
+  setText(text: string): void { this.markdown.setText(safeTerminalText(text)); }
   invalidate(): void { this.markdown.invalidate(); }
   render(width: number): string[] {
-    return [truncateToWidth(chalk.bold(' ● Agent'), width), ...this.markdown.render(width)];
+    return this.markdown.render(width);
   }
 }
 
@@ -45,8 +47,8 @@ export class ThinkingMessage implements Component {
   invalidate(): void {}
   render(width: number): string[] {
     const title = ` ◇ 思考${this.detailId ? ` #${this.detailId}` : ''} · ${this.active ? '进行中' : '已结束'}`;
-    const lines = [truncateToWidth(chalk.cyan(title), width)];
-    if (this.expanded()) lines.push(...new Text(this.text, 3, 0).render(width));
+    const lines = [truncateToWidth(ui.dim(chalk.italic(title)), width)];
+    if (this.expanded()) lines.push(...new Text(ui.muted(safeTerminalText(this.text)), 1, 0).render(width));
     return lines;
   }
 }
@@ -66,29 +68,31 @@ export class ToolMessage implements Component {
     return `${this.summary}\n${this.operation ? `\n完整参数:\n${JSON.stringify(this.operation.input, null, 2)}\n` : ''}\n${this.result ? `执行${this.result.isError ? '失败' : '完成'}:\n${this.result.content}` : '正在执行，尚无结果'}`;
   }
   render(width: number): string[] {
-    const marker = !this.result ? '…' : this.result.isError ? '×' : '✓';
-    const color = this.result?.isError ? chalk.red : !this.result ? chalk.cyan : chalk.green;
+    const marker = !this.result ? '◌' : this.result.isError ? '×' : '✓';
+    const color = this.result?.isError ? ui.error : !this.result ? ui.muted : ui.success;
+    const background = this.result?.isError ? ui.toolErrorBg : !this.result ? ui.toolPendingBg : ui.toolSuccessBg;
     const seconds = `${(((this.finishedAt ?? Date.now()) - this.startedAt) / 1000).toFixed(1)}s`;
-    const label = this.operation?.name ?? this.summary.replace(/\s+/g, ' ');
-    const rawSummary = this.summary.replace(/\s+/g, ' ').trim();
+    const label = safeTerminalText(this.operation?.name ?? this.summary).replace(/\s+/g, ' ');
+    const rawSummary = safeTerminalText(this.summary).replace(/\s+/g, ' ').trim();
     const summary = rawSummary.startsWith(`${label}: `) ? rawSummary.slice(label.length + 2) : rawSummary;
-    const title = ` ${marker} 工具${this.detailId ? ` #${this.detailId}` : ''} · ${!this.result ? '执行中' : this.result.isError ? '失败' : '完成'} · ${label}`;
-    const lines = [truncateToWidth(color(`${title} · ${summary === label ? '' : `${summary} · `}${seconds}`), width)];
-    if (!this.result) return lines;
-    const content = this.result.content || '(无输出)';
+    const title = ` ${marker} ${label}${this.result?.isError ? ' · 失败' : !this.result ? ' · 执行中' : ''}`;
+    const lines = [truncateToWidth(color(chalk.bold(title)) + ui.dim(`  ${seconds}${this.detailId ? `  #${this.detailId}` : ''}`), width)];
+    if (summary !== label) lines.push(truncateToWidth(ui.text(`   ${summary}`), width));
+    if (!this.result) return paddedBackground(lines, width, background);
+    const content = safeTerminalText(this.result.content || '(无输出)');
     if (this.expanded()) {
-      if (this.operation) lines.push(...new Text(`参数: ${JSON.stringify(this.operation.input, null, 2)}`, 3, 0).render(width));
-      lines.push(...new Text(content, 3, 0).render(width));
+      if (this.operation) lines.push(...new Text(ui.dim(`参数: ${safeTerminalText(JSON.stringify(this.operation.input, null, 2))}`), 1, 0).render(width));
+      lines.push(...new Text(ui.muted(content), 1, 0).render(width));
     } else {
-      // 按可见行预算折叠，窄屏下长输出也不会挤走对话。
-      const output = content.split('\n');
-      const limit = this.result.isError ? 3 : 1;
-      for (const line of output.slice(0, limit)) lines.push(truncateToWidth(`   ${line}`, width));
-      if (output.length > limit) lines[lines.length - 1] = truncateToWidth(
-        `   ${this.detailId ? `#${this.detailId} · ` : ''}${output.length} 行输出 · ${output[limit - 1]}`, width,
-      );
+      // 预览限制实际终端行数；完整参数/结果仍由详情访问。
+      const limit = 3;
+      const rawLines = content.split('\n');
+      const preview = rawLines.slice(0, limit + 1).map(line => truncateToWidth(line, Math.max(1, width) * (limit + 1))).join('\n');
+      const output = new Text(preview, 1, 0).render(width);
+      lines.push(...output.slice(0, limit).map(ui.muted));
+      if (output.length > limit || rawLines.length > limit) lines.push(truncateToWidth(ui.dim(` … ${content.split('\n').length} 行输出 · Ctrl+O /details${this.detailId ? ` ${this.detailId}` : ''}`), width));
     }
-    return lines;
+    return paddedBackground(lines, width, background);
   }
 }
 
