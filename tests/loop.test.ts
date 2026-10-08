@@ -249,7 +249,10 @@ describe('AgentLoop', () => {
       ],
     });
     // 模拟 UI：自动点"允许一次"
-    events.on('permission_request', (e) => e.resolve({ allow: true }));
+    events.on('permission_request', (e) => {
+      expect(e.request).toMatchObject({ toolUseId: 't1', decisionSource: 'mode', cwd: tmp, toolName: 'write_file' });
+      e.resolve({ allow: true });
+    });
     await loop.run('write out.txt');
     expect(await readFile(join(tmp, 'out.txt'), 'utf-8')).toBe('abc');
   });

@@ -1,4 +1,4 @@
-import { Key, matchesKey, Text, truncateToWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from '@earendil-works/pi-tui';
+import { Key, matchesKey, Text, truncateToWidth, visibleWidth, stripTerminalSequences, type Component, type TuiMouseEvent, type TuiMouseEventResult } from '@earendil-works/pi-tui';
 import chalk from 'chalk';
 
 export interface PanelItem {
@@ -18,6 +18,8 @@ export interface PanelOptions {
   context?: () => string;
   previewBody?: () => string;
   requireSelection?: boolean;
+  /** 窄屏标题与操作来源仍保留在边框内。 */
+  compactTitle?: string;
   rows: () => number;
   changed: () => void;
   select?: (value: string) => void;
@@ -47,54 +49,62 @@ export class InteractionPanel implements Component {
   invalidate(): void {}
 
   render(width: number): string[] {
-    const height = Math.max(3, Math.min(14, Math.floor(this.options.rows() * 0.6), this.options.rows() - 3));
+    const height = Math.max(3, Math.min(18, Math.floor(this.options.rows() * 0.8), this.options.rows() - 3));
+    const inner = Math.max(1, width - 4);
+    const color = this.options.kind === 'permission' ? chalk.yellow : chalk.cyan;
+    // 不信任工具提供的终端控制序列；详情保留文本与换行，不执行 ANSI / OSC。
+    const safe = (s: string) => stripTerminalSequences(s).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+    const row = (s: string) => {
+      const content = truncateToWidth(s, inner);
+      return truncateToWidth(color('│ ') + content + ' '.repeat(Math.max(0, inner - visibleWidth(content))) + color(' │'), width);
+    };
     const items = this.items;
     this.selected = Math.max(this.options.requireSelection ? -1 : 0, Math.min(this.selected, items.length - 1));
     const selected = items[this.selected];
-    const title = `${this.options.title}${this.viewingDetails && this.options.kind !== 'details' ? ' · 详情' : ''}`;
-    const lines = [truncateToWidth(chalk.bold.cyan(`── ${title}`), width)];
+    const heading = width < 40 ? this.options.compactTitle ?? this.options.title : this.options.title;
+    const title = truncateToWidth(` ${safe(heading)}${this.viewingDetails ? ' · 详情' : ''} `, Math.max(1, width - 2));
+    const lines = [color(`╭${title}${'─'.repeat(Math.max(0, width - 2 - visibleWidth(title)))}╮`)];
     this.optionRows.clear();
-    if (!this.viewingDetails && this.options.context && height >= 7) lines.push(truncateToWidth(` ${this.options.context()}`, width));
-    if (this.options.filterable && height >= 5) lines.push(truncateToWidth(` 搜索: ${this.filter || '输入模型名筛选'}`, width));
-    const footerCount = height >= 6 ? 2 : 1;
-    const available = height - lines.length - footerCount;
-    const optionCount = this.viewingDetails ? 0 : Math.min(items.length, Math.max(1, Math.min(6, available - 2)));
-    // 选项与确认提示始终保留；详情再长也不能把它们挤走。
+    // 极小窗口将取消提示放进底框，给操作来源、选项留出可见行。
+    const footerCount = height >= 8 ? 2 : height >= 5 ? 1 : 0;
+    const capacity = height - 2 - footerCount;
+    if (this.options.context && capacity >= 2) lines.push(row(chalk.bold(safe(this.options.context()).replace(/\s+/g, ' '))));
+    if (this.options.filterable && capacity >= 4) lines.push(row(`搜索: ${safe(this.filter) || '输入模型名筛选'}`));
+    if (!this.viewingDetails && this.options.previewBody && capacity >= 5) lines.push(row(safe(this.options.previewBody()).replace(/\s+/g, ' ')));
+    const available = height - 1 - footerCount - lines.length;
+    const optionCount = this.viewingDetails ? 0 : Math.min(items.length, Math.max(1, Math.min(6, available - (available >= 4 ? 1 : 0))));
     const start = Math.max(0, Math.min(this.selected - Math.floor(optionCount / 2), items.length - optionCount));
     for (let i = start; i < start + optionCount; i++) {
       const active = i === this.selected;
       this.optionRows.set(lines.length, i);
-      const label = ` ${active ? '❯' : ' '} ${items[i].label}${items[i].current ? ' · 当前' : ''}`;
-      lines.push(truncateToWidth(active ? chalk.bgCyan.black.bold(label) : label, width));
+      const label = `${active ? '❯' : ' '} ${safe(items[i].label)}${items[i].current ? ' · 当前' : ''}`;
+      lines.push(row(active ? chalk.bgCyan.black.bold(label) : label));
     }
-    if (!this.viewingDetails && !items.length && available > 0) lines.push(truncateToWidth(chalk.yellow(' 无匹配项，请退格修改搜索'), width));
-    const room = Math.max(0, height - lines.length - footerCount);
+    if (!this.viewingDetails && !items.length && available > 0) lines.push(row(chalk.yellow('无匹配项，请退格修改搜索')));
+    const room = Math.max(0, height - 1 - footerCount - lines.length);
     const body = this.viewingDetails
       ? [selected?.description, this.options.body?.()].filter(Boolean).join('\n\n')
-      : selected?.description ?? this.options.previewBody?.() ?? this.options.body?.() ?? '';
-    const bodyLines = body ? new Text(body, 1, 0).render(width) : [];
+      : selected?.description ?? (!this.options.previewBody ? this.options.body?.() : '') ?? '';
+    const bodyLines = body ? new Text(safe(body), 0, 0).render(inner) : [];
     this.bodyHeight = Math.max(1, room);
     this.bodyLines = bodyLines.length;
     this.offset = Math.max(0, Math.min(this.offset, Math.max(0, bodyLines.length - room)));
-    const content = bodyLines.slice(this.viewingDetails ? this.offset : 0, (this.viewingDetails ? this.offset : 0) + room);
-    lines.push(...content);
-    const scrollInfo = this.viewingDetails && bodyLines.length ? ` ${this.offset + 1}–${Math.min(this.offset + room, bodyLines.length)}/${bodyLines.length} 行` : items.length ? this.selected < 0 ? ` 未选择` : ` ${this.selected + 1}/${items.length}` : '';
-    if (footerCount === 2) lines.push(truncateToWidth(chalk.bold(`${this.viewingDetails ? ' ↑↓ 滚动' : this.selected < 0 ? ' ↑↓ 选择后 Enter 确认' : ' ↑↓ 选择 · Enter 确认'}${scrollInfo}`), width));
+    lines.push(...bodyLines.slice(this.viewingDetails ? this.offset : 0, (this.viewingDetails ? this.offset : 0) + room).map(row));
+    const scrollInfo = this.viewingDetails && bodyLines.length ? ` ${this.offset + 1}–${Math.min(this.offset + room, bodyLines.length)}/${bodyLines.length}` : this.selected < 0 ? ' 未选择' : items.length ? ` ${this.selected + 1}/${items.length}` : '';
+    if (footerCount === 2) lines.push(row(chalk.bold(`${this.viewingDetails ? '↑↓ 滚动' : '↑↓ 选择 · Enter 确认'}${scrollInfo}`)));
     const cancel = this.options.kind === 'permission' ? 'Esc 拒绝' : 'Esc 返回';
-    const hint = this.options.kind === 'details'
-      ? ' ↑↓/PgUp/PgDn 滚动 · Esc 返回'
-      : this.viewingDetails ? ` Tab/Enter 返回选项 · ${cancel}`
-        : footerCount === 2 ? ` Tab 查看完整详情 · ${cancel}` : width < 28 ? ' ↑↓ Enter Tab Esc' : ' ↑↓选 Enter确认 Tab详情 Esc';
-    lines.push(truncateToWidth(hint, width));
-    return lines.slice(0, height);
+    if (footerCount) lines.push(row(this.options.kind === 'details' ? (width < 40 ? '↑↓ 滚动 · Esc 返回' : '↑↓/PgUp/PgDn 滚动 · Esc 返回') : this.viewingDetails ? `Tab/Enter 返回选项 · ${cancel}` : width < 28 ? '↑↓ Enter确认 Tab详情' : width < 40 ? '↑↓ Enter 确认 · Tab详情' : `Tab 查看完整详情 · ${cancel}`));
+    const bottom = truncateToWidth(height < 8 ? ` ${cancel} ` : '', Math.max(0, width - 2));
+    lines.push(color(`╰${bottom}${'─'.repeat(Math.max(0, width - 2 - visibleWidth(bottom)))}╯`));
+    return lines.map(line => truncateToWidth(line, width));
   }
 
   handleInput(data: string): void {
     if (matchesKey(data, Key.escape)) { this.options.cancel(); return; }
     if (matchesKey(data, Key.tab) || matchesKey(data, Key.ctrl('o'))) {
-      if (this.options.kind !== 'details') { this.viewingDetails = !this.viewingDetails; this.offset = 0; }
+      if (this.options.kind !== 'details') { this.viewingDetails = !this.viewingDetails; this.offset = 0; if (!this.viewingDetails && this.options.requireSelection) this.selected = -1; }
     } else if (matchesKey(data, Key.enter)) {
-      if (this.viewingDetails && this.options.kind !== 'details') this.viewingDetails = false;
+      if (this.viewingDetails && this.options.kind !== 'details') { this.viewingDetails = false; if (this.options.requireSelection) this.selected = -1; }
       else if (!this.viewingDetails) {
         const item = this.items[this.selected];
         if (item) this.options.select?.(item.value);

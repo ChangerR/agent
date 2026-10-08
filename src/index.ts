@@ -29,6 +29,8 @@ import { SessionManager } from './core/session/manager.js';
 import { builtinTools } from './tools/index.js';
 
 export interface Agent {
+  /** 创建 Agent 时确定的项目目录。 */
+  readonly cwd: string;
   loop: AgentLoop;
   events: EventBus;
   permission: PermissionEngine;
@@ -198,7 +200,7 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
       try { await disposePlugins(); } catch (error) { errors.push(error); }
       if (errors.length) throw new AggregateError(errors, 'Agent cleanup failed');
     })();
-    return { loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath, session, dispose };
+    return { cwd, loop, events, permission, config, tools, providers, skillLoader, modelInfo, knownModels, logPath, session, dispose };
   } catch (error) {
     try { await disposePlugins(); }
     catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Agent initialization and cleanup failed'); }

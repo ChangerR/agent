@@ -12,6 +12,11 @@ import type { Decision } from './permission/engine.js';
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
   toolName: string;
+  /** 请求对应的模型工具调用及实际触发审批的决策来源。 */
+  toolUseId?: string;
+  decisionSource?: Decision['source'];
+  matchedRule?: string;
+  cwd?: string;
   input: unknown;
   /** 展示给用户的一句话摘要，如 `bash: npm test` */
   summary: string;
