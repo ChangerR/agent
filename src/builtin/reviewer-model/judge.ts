@@ -120,5 +120,5 @@ export class AutoJudge {
 /** 模型要求询问及失败回退也属于审批员判定，不能冒充模式默认值。 */
 export function mergeJudgeDecision(original: Decision, verdict: JudgeVerdict): Decision {
   return { ...original, kind: verdict.verdict === 'unknown' ? 'ask' : verdict.verdict, source: 'judge', judge: verdict.judge,
-    reason: verdict.verdict === 'allow' ? `LLM 审批员放行：${verdict.reason}` : `LLM 审批员要求询问：${verdict.reason}` };
+    reason: verdict.verdict === 'allow' ? `LLM 审批员放行：${verdict.reason}` : verdict.verdict === 'deny' ? `LLM 审批员拒绝：${verdict.reason}` : `LLM 审批员要求询问：${verdict.reason}` };
 }

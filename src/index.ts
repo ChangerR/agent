@@ -20,7 +20,7 @@ export { complete, type ChatRequest, type Provider, type ThinkingLevel, type Cac
 export { ContextManager, estimateTokens } from './core/context/manager.js';
 export { buildSystemPrompt } from './core/context/system-prompt.js';
 export { loadConfig, MODEL_PRESETS, type AgentConfig, type ModelInfo, type PermissionMode } from './core/config.js';
-export { AnthropicProvider, toAnthropicMessages, toAnthropicTools, fromAnthropicEvent, buildAnthropicBody } from './providers/anthropic.js';
+export { AnthropicProvider, AnthropicStreamTranslator, toAnthropicMessages, toAnthropicTools, fromAnthropicEvent, buildAnthropicBody } from './providers/anthropic.js';
 export { OpenAIProvider, toOpenAIMessages, toOpenAITools, OpenAIStreamTranslator } from './providers/openai.js';
 export { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from './providers/fake.js';
 export { analyzeCommand } from './tools/bash.js';
