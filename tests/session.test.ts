@@ -23,6 +23,7 @@ import { enqueueWrite, flushWrites } from '../src/core/session/atomic.js';
 import { SessionManager } from '../src/core/session/manager.js';
 import {
   deleteSession,
+  deleteSessionVersioned,
   latestSessionId,
   listSessions,
   loadSession,
@@ -725,6 +726,87 @@ describe('删除与跨进程版本冲突', () => {
     await saveSession(stale, { recreate: true });
     expect((await loadSession(tmp, file.id)).revision).toBe(2);
     await expect(saveSession(stale)).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it.each(['manager', 'store'])('%s 重建授权不能跨越另一个写入者的重建和删除', async (writer) => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'stale-recreate' });
+    loop.importSession({ messages: [{ role: 'user', content: 'original history' }] });
+    await manager.save();
+    const stale = await loadSession(tmp, manager.id);
+    expect(await manager.delete(manager.id)).toBe(true);
+    await saveSession({ ...stale, messages: [{ role: 'user', content: 'newer history' }] }, { recreate: true });
+    expect((await loadSession(tmp, manager.id)).revision).toBe(3);
+    expect(await deleteSession(tmp, manager.id)).toBe(true);
+    const markerPath = `${sessionPath(tmp, manager.id)}.deleted`;
+    const marker = await fs.readFile(markerPath, 'utf8');
+    expect(JSON.parse(marker).revision).toBe(4);
+
+    const saving = writer === 'manager' ? manager.save() : saveSession(stale, { recreate: true });
+    await expect(saving).rejects.toMatchObject({ code: 'conflict' });
+    await expect(loadSession(tmp, manager.id)).rejects.toMatchObject({ code: 'not_found' });
+    expect(await fs.readFile(markerPath, 'utf8')).toBe(marker);
+    expect(loop.getMessages()).toEqual(stale.messages);
+  });
+
+  it('版本化删除返回实际删除版本，重复删除和从未存在时不推进版本', async () => {
+    const file = buildFile(tmp, { id: 'versioned-delete' });
+    await expect(deleteSessionVersioned(tmp, file.id)).resolves.toEqual({ deleted: false, revision: 0 });
+    await saveSession(file);
+    await expect(deleteSessionVersioned(tmp, file.id)).resolves.toEqual({ deleted: true, revision: 2 });
+    await expect(deleteSessionVersioned(tmp, file.id)).resolves.toEqual({ deleted: false, revision: 2 });
+    await expect(loadSession(tmp, file.id)).rejects.toMatchObject({ code: 'not_found' });
+    expect(JSON.parse(await fs.readFile(`${sessionPath(tmp, file.id)}.deleted`, 'utf8'))).toEqual({ revision: 2 });
+  });
+
+  it('底层布尔重建使用已加载版本，不修改或接受过期的初始快照', async () => {
+    const original = buildFile(tmp, { id: 'loaded-recreate' });
+    await saveSession(original);
+    expect(original.revision).toBeUndefined();
+    const loaded = await loadSession(tmp, original.id);
+    expect(loaded.revision).toBe(1);
+    expect(await deleteSession(tmp, original.id)).toBe(true);
+    await expect(saveSession(original, { recreate: true })).rejects.toMatchObject({ code: 'conflict' });
+    await saveSession(loaded, { recreate: true });
+    expect(await loadSession(tmp, original.id)).toMatchObject({ revision: 3, messages: original.messages });
+  });
+
+  it('删除成功前发起的保存不能获得重建授权，之后的新保存仍可重建', async () => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'pending-delete' });
+    loop.importSession({ messages: [{ role: 'user', content: 'local history' }] });
+    await manager.save();
+    const deleting = manager.delete(manager.id);
+    const saving = manager.save();
+    const rejected = expect(saving).rejects.toMatchObject({ code: 'conflict' });
+    expect(await deleting).toBe(true);
+    await rejected;
+    await expect(loadSession(tmp, manager.id)).rejects.toMatchObject({ code: 'not_found' });
+    await manager.save();
+    expect((await loadSession(tmp, manager.id)).revision).toBe(3);
+    await expect(manager.flush()).resolves.toBeUndefined();
+  });
+
+  it('旧管理器显式删除其他写入者的新版本后，可以重建并连续保存', async () => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'delete-newer' });
+    loop.importSession({ messages: [{ role: 'user', content: 'local history' }] });
+    await manager.save();
+    const current = await loadSession(tmp, manager.id);
+    await saveSession({ ...current, messages: [{ role: 'user', content: 'external history' }] });
+    expect(await manager.delete(manager.id)).toBe(true);
+    await Promise.all([manager.save(), manager.save()]);
+    expect(await loadSession(tmp, manager.id)).toMatchObject({ revision: 5, messages: loop.getMessages() });
+  });
+
+  it('重建授权不能覆盖另一个写入者的现存历史', async () => {
+    const { loop, manager } = makeHarness({ autoSave: false, makeId: () => 'live-recreate' });
+    loop.importSession({ messages: [{ role: 'user', content: 'local history' }] });
+    await manager.save();
+    const stale = await loadSession(tmp, manager.id);
+    expect(await manager.delete(manager.id)).toBe(true);
+    const messages: Message[] = [{ role: 'user', content: 'external history' }];
+    await saveSession({ ...stale, messages }, { recreate: true });
+    await expect(manager.save()).rejects.toMatchObject({ code: 'conflict' });
+    await expect(saveSession(stale, { recreate: true })).rejects.toMatchObject({ code: 'conflict' });
+    expect(await loadSession(tmp, manager.id)).toMatchObject({ revision: 3, messages });
   });
 
   it('两个管理器恢复同一版本后，过期写入保留内存和磁盘历史', async () => {

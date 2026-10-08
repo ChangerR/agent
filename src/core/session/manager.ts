@@ -12,7 +12,7 @@ import { emptyUsage, type TokenUsage } from '../protocol/types.js';
 import { SessionError } from './errors.js';
 import { assertSafeHistory, makeTitle } from './history.js';
 import {
-  deleteSession,
+  deleteSessionVersioned,
   isValidSessionId,
   latestSessionId,
   listSessions,
@@ -58,7 +58,7 @@ export class SessionManager {
   private writePath?: string;
   private revisions = new Map<string, number>();
   private tails = new Map<string, Promise<unknown>>();
-  private recreate = new Set<string>();
+  private recreate = new Map<string, number>();
   private pending = new Set<Promise<unknown>>();
   private failures = new Map<string, unknown>();
 
@@ -219,8 +219,8 @@ export class SessionManager {
 
   delete(id: string): Promise<boolean> {
     const previous = this.tails.get(id) ?? Promise.resolve();
-    const deleting = previous.catch(() => undefined).then(() => deleteSession(this.opts.cwd, id)).then((deleted) => {
-      if (deleted) this.recreate.add(id);
+    const deleting = previous.catch(() => undefined).then(() => deleteSessionVersioned(this.opts.cwd, id)).then(({ deleted, revision }) => {
+      if (deleted) this.recreate.set(id, revision);
       return deleted;
     });
     this.track(id, deleting);
@@ -259,11 +259,11 @@ export class SessionManager {
     };
     this.writePath = sessionPath(cwd, file.id);
     // 捕获调用时是否已明确删除成功；删除前排队的旧保存不能获得重建权。
-    const recreate = this.recreate.has(file.id);
+    const recreateRevision = this.recreate.get(file.id);
     const previous = this.tails.get(file.id) ?? Promise.resolve();
     const saving = previous.catch(() => undefined).then(() => {
       file.revision = this.revisions.get(file.id) ?? 0;
-      return saveSessionVersioned(file, { recreate });
+      return saveSessionVersioned(file, { recreate: recreateRevision !== undefined, recreateRevision });
     });
     const pending = saving.then(
       ({ path, revision }) => {

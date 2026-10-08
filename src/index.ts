@@ -240,6 +240,7 @@ export {
   loadSession,
   listSessions,
   deleteSession,
+  deleteSessionVersioned,
   latestSessionId,
 } from './core/session/store.js';
 export {
