@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +38,18 @@ describe('TUI 消息与调度', () => {
     expect(tool.render(24)).toHaveLength(4);
     expect(text(tool, 24)).toContain('失败');
     expect(text(tool, 24)).toContain('错误原因');
+  });
+
+  it('框内不执行工具来源的 ANSI/OSC 控制序列，独立详情提示真实可用按键', () => {
+    const panel = new InteractionPanel({ title: '工具\x1b[2J标题', kind: 'details', rows: () => 12,
+      body: () => '\x1b]52;c;clipboard\x07可见正文\x1b[31m红色', changed: vi.fn(), cancel: vi.fn() });
+    const raw = panel.render(40).join('\n');
+    expect(raw).not.toContain('\x1b[2J');
+    expect(raw).not.toContain('\x1b]52');
+    const display = stripTerminalSequences(raw);
+    expect(display).toContain('可见正文');
+    expect(display).toContain('Esc 返回');
+    expect(display).not.toContain('返回选项');
   });
 
   it('详情支持翻页与首尾跳转，返回选项不会授权', () => {
@@ -208,6 +220,76 @@ async function snapshot(name: string, lines: string[]) {
 }
 
 describe('真实 TUI 离线交互', () => {
+  it('设置入口可返回，项目默认单独确认 Save，浏览与草稿不修改运行权限', async () => {
+    const ui = await mountTui();
+    const file = join(ui.agent.cwd, 'agent.config.json');
+    const before = await readFile(file, 'utf8');
+    const down = () => ui.terminal.input?.('\x1b[B');
+    const enter = () => ui.terminal.input?.('\r');
+    try {
+      ui.send('/settings'); down(); enter();
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('思考等级'));
+      ui.terminal.input?.('\x1b');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('设置 · 当前会话'));
+      ui.terminal.input?.('\x1b');
+      ui.send('/permissions'); down(); down(); down(); enter();
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));
+      enter(); down(); enter(); // auto -> yolo，仍只是项目草稿
+      expect(await readFile(file, 'utf8')).toBe(before);
+      expect(ui.agent.permission.mode).toBe('auto');
+      for (let i = 0; i < 5; i++) down(); enter();
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('确认 Save'));
+      enter(); enter(); // 未重新选择不能保存
+      expect(await readFile(file, 'utf8')).toBe(before);
+      down(); down(); enter(); enter(); // 显式确认；重复 Enter 不触发新菜单
+      expect(JSON.parse(await readFile(file, 'utf8')).permissionMode).toBe('yolo');
+      expect(ui.agent.permission.mode).toBe('auto');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));
+      await snapshot('project-explicit-save', ui.screen());
+    } finally { await ui.dispose(); }
+  });
+
+  it('审批面板具有完整边框与来源，40×12 和 24×8 保留可选动作，详情控制字符不执行', async () => {
+    const ui = await mountTui(); const controller = new AbortController(); const resolve = vi.fn();
+    try {
+      ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve,
+        request: { toolName: 'bash', toolUseId: 'call-unique', decisionSource: 'danger', cwd: '/tmp/project', input: { command: 'echo ok' }, summary: 'echo ok', reason: '危险操作需要确认' } });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('Agent 正在请求权限'));
+      expect(ui.screen().join('\n')).toContain('触发: 危险检测');
+      for (const [columns, rows] of [[40, 12], [24, 8]]) {
+        ui.terminal.columns = columns; ui.terminal.rows = rows; ui.terminal.resize?.();
+        await vi.waitFor(() => expect(ui.screen()).toHaveLength(rows));
+        const screen = ui.screen();
+        expect(screen.some(line => line.startsWith('╭') && line.endsWith('╮'))).toBe(true);
+        expect(screen.some(line => line.startsWith('╰') && line.endsWith('╯'))).toBe(true);
+        expect(screen.join('\n')).toContain('bash');
+        for (const line of screen) expect(visibleWidth(line)).toBeLessThanOrEqual(columns);
+        ui.terminal.input?.('\x1b[A');
+        await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 拒绝'));
+        ui.terminal.input?.('\x1b[B');
+      }
+      ui.terminal.columns = 80; ui.terminal.rows = 24; ui.terminal.resize?.(); ui.terminal.input?.('\t');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('call-unique'));
+      expect(ui.screen().join('\n')).toContain('/tmp/project');
+      expect(resolve).not.toHaveBeenCalled();
+    } finally { controller.abort(); await ui.dispose(); }
+  });
+
+  it('Esc 拒绝和外部取消不吞掉恢复草稿的 Enter', async () => {
+    for (const abort of [false, true]) {
+      const ui = await mountTui(); const controller = new AbortController();
+      const run = vi.spyOn(ui.agent.loop, 'run');
+      try {
+        ui.terminal.input?.('草稿');
+        ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve: vi.fn(),
+          request: { toolName: 'bash', input: {}, summary: '操作', reason: '确认' } });
+        if (abort) controller.abort(); else ui.terminal.input?.('\x1b');
+        ui.terminal.input?.('\r');
+        await vi.waitFor(() => expect(run).toHaveBeenCalledWith('草稿'));
+      } finally { controller.abort(); await ui.dispose(); }
+    }
+  });
+
   it('审批结束后的重复 Enter 不发送草稿，也不应用恢复的设置候选', async () => {
     const ui = await mountTui();
     const run = vi.spyOn(ui.agent.loop, 'run');
@@ -233,13 +315,13 @@ describe('真实 TUI 离线交互', () => {
     const controller = new AbortController();
     try {
       ui.send('/mode'); ui.terminal.input?.('\x1b[B');
-      await vi.waitFor(() => expect(ui.screen().join('').replace(/\s/g, '')).toContain('已关闭危险操作强制询问'));
+      await vi.waitFor(() => expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('已关闭危险操作强制询问'));
       ui.terminal.input?.('\x1b');
       ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve: vi.fn(),
         request: { toolName: 'custom_plugin', input: {}, summary: '插件调用', reason: '确认' } });
       ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\t');
-      await vi.waitFor(() => expect(ui.screen().join('').replace(/\s/g, '')).toContain('custom_plugin的所有调用'));
-      expect(ui.screen().join('').replace(/\s/g, '')).toContain('已关闭危险操作强制询问');
+      await vi.waitFor(() => expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('custom_plugin的所有调用'));
+      expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('已关闭危险操作强制询问');
     } finally { controller.abort(); await ui.dispose(); }
   });
 
@@ -261,7 +343,7 @@ describe('真实 TUI 离线交互', () => {
       await snapshot('filtered-model-current', ui.screen());
       ui.terminal.input?.('\x1b');
       ui.send('/mode');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未配置审批模型'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未加载审批模型'));
       expect(ui.agent.permission.mode).toBe('auto');
       ui.terminal.input?.('\x1b');
     } finally { await ui.dispose(); }
@@ -279,11 +361,12 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('相同匹配目标'));
       expect(ui.screen().join('\n')).toContain('其他参数可能不同');
-      expect(ui.screen().join('').replace(/\s/g, '')).toContain('会话保存和恢复');
+      expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('会话保存和恢复');
       await snapshot('permission-remember-scope', ui.screen());
       ui.terminal.input?.('\t'); ui.terminal.input?.('\r');
+      ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
       expect(resolve).not.toHaveBeenCalled();
-      ui.terminal.input?.('\r');
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r');
       expect(resolve).toHaveBeenCalledTimes(1);
       expect(resolve).toHaveBeenCalledWith({ allow: true, remember: 'session' });
     } finally { controller.abort(); await ui.dispose(); }
@@ -309,7 +392,7 @@ describe('真实 TUI 离线交互', () => {
       const resolve = vi.fn();
       ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve,
         request: { toolName: 'bash', input: {}, summary: '操作上下文', reason: '需要确认' } });
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('请求权限'));
       ui.terminal.input?.('\x1b');
       expect(resolve).toHaveBeenCalledWith({ allow: false });
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未发送草稿'));
@@ -333,9 +416,9 @@ describe('真实 TUI 离线交互', () => {
       expect(ui.screen().join('\n')).toContain('❯ 输入');
       ui.terminal.output = '';
       ui.send('/think');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── 思考等级'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('╭ 思考等级'));
       const shown = ui.screen();
-      const start = shown.findIndex((line) => line.includes('── 思考等级'));
+      const start = shown.findIndex((line) => line.includes('╭ 思考等级'));
       expect(start).toBeGreaterThanOrEqual(54);
       expect(shown[start - 1]).not.toContain('思考等级（当前');
       expect(shown.join('\n')).not.toContain('❯ 输入');
@@ -350,7 +433,7 @@ describe('真实 TUI 离线交互', () => {
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ medium'));
       ui.terminal.input?.('\r');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 输入'));
-      expect(ui.screen().join('\n')).not.toContain('── 思考等级');
+      expect(ui.screen().join('\n')).not.toContain('╭ 思考等级');
       expect(ui.screen().join('\n')).toContain('思考 medium');
     } finally { await ui.dispose(); }
   });
@@ -362,8 +445,8 @@ describe('真实 TUI 离线交互', () => {
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('选择模型'));
       expect(ui.renderer().hasOverlay()).toBe(false);
       const shown = ui.screen();
-      const panelStart = shown.findIndex((line) => line.includes('── 选择模型'));
-      expect(panelStart).toBeGreaterThanOrEqual(8);
+      const panelStart = shown.findIndex((line) => line.includes('╭ 选择模型'));
+      expect(panelStart).toBeGreaterThanOrEqual(3);
       expect(shown.slice(panelStart).join('\n')).toContain('Enter 确认');
       expect(shown.slice(panelStart).join('\n')).toContain('❯ claude-sonnet-4-5 · 当前');
       await snapshot('model', shown);
@@ -384,7 +467,7 @@ describe('真实 TUI 离线交互', () => {
         toolName: 'bash', summary: `发布 ${'很长的命令 '.repeat(200)}`,
         reason: '需要确认远端写入范围', input: { command: `${'command argument\n'.repeat(80)}END_PARAMETER_UNIQUE` },
       } });
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('请求权限'));
       expect(ui.renderer().hasOverlay()).toBe(false);
       expect(ui.screen().slice(-16).join('\n')).toContain('允许一次');
       expect(ui.screen().slice(-16).join('\n')).toContain('允许并记住此规则');
@@ -400,7 +483,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\t');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('返回选项'));
       for (let i = 0; i < 500; i++) ui.terminal.input?.('\x1b[B');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('END_PARAMETER_UNIQUE'));
+      await vi.waitFor(() => expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('END_PARAMETER_UNIQUE'));
       await snapshot('narrow-permission-details', ui.screen());
       ui.terminal.input?.('\r');
       expect(resolve).not.toHaveBeenCalled();
@@ -424,7 +507,7 @@ describe('真实 TUI 离线交互', () => {
       ui.agent.events.emit({ type: 'permission_request', request: { toolName: 'first', input: {}, summary: '第一项', reason: '确认' }, signal: first.signal, resolve: firstResolve });
       ui.agent.events.emit({ type: 'permission_request', request: { toolName: 'second', input: {}, summary: '第二项', reason: '确认' }, signal: second.signal, resolve: secondResolve });
       ui.agent.events.emit({ type: 'tool_result', toolUseId: 'background', name: 'read_file', result: { content: '后台读取完成' } });
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求 · first'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('first · 第一项'));
       expect(ui.screen().join('\n')).toContain('等待你确认权限');
       ui.terminal.input?.('\r');
       expect(firstResolve).not.toHaveBeenCalled();
@@ -432,7 +515,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\r');
       expect(firstResolve).toHaveBeenCalledTimes(1);
       expect(firstResolve).toHaveBeenCalledWith({ allow: true });
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求 · second'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('second · 第二项'));
       ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
       expect(secondResolve).not.toHaveBeenCalled();
       second.abort();
@@ -471,7 +554,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x0f');
       await vi.waitFor(() => expect(ui.screen().join('\n')).not.toContain('OUTPUT_END_UNIQUE'));
       ui.send('/details 2');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('── #2 工具 · bash'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('╭ #2 工具 · bash'));
       expect(ui.screen().join('\n')).toContain('完整参数');
       for (let i = 0; i < 100; i++) ui.terminal.input?.('\x1b[B');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('OUTPUT_END_UNIQUE'));
@@ -504,7 +587,7 @@ describe('真实 TUI 离线交互', () => {
       expect(screen().slice(-8).join('\n')).toContain('Enter 发送');
       terminal.input?.('读取 demo.txt');
       terminal.input?.('\r');
-      await vi.waitFor(() => expect(stripTerminalSequences(terminal.output)).toContain('权限请求'));
+      await vi.waitFor(() => expect(stripTerminalSequences(terminal.output)).toContain('请求权限'));
       terminal.input?.('\x03');
       await vi.waitFor(() => expect(stripTerminalSequences(terminal.output)).toContain('本轮已中断'));
       expect(exit).not.toHaveBeenCalled();

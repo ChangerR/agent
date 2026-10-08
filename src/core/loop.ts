@@ -422,6 +422,7 @@ export class AgentLoop {
           type: 'permission_request',
           request: {
             toolName: tool.name,
+            toolUseId: toolUse.id, decisionSource: decision.source, matchedRule: decision.matchedRule, cwd,
             input,
             summary: analysis?.summary ?? tool.name,
             reason: decision.reason,

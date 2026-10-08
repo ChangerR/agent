@@ -40,6 +40,8 @@ import type { Agent } from '../index.js';
 import { DetailRegistry, PermissionMessage, renderHistory, StreamMessages, ToolMessage, UserMessage } from './messages.js';
 import { InteractionPanel, type PanelItem } from './interaction-panel.js';
 import { TurnQueue } from './turn-queue.js';
+import { createPermissionSettings } from './permission-settings.js';
+import { SettingsInputPanel } from './settings-input.js';
 
 // ---------------------------------------------------------------------------
 // 主题
@@ -79,7 +81,9 @@ const HELP = `命令（不带参数在底部打开选择器）：
   /model [name]          查看/切换模型
   /mode [ask|auto|yolo]  查看/切换权限模式
   /think [off|low|medium|high]  查看/设置思考等级
-  /permissions           查看权限决策日志
+  /settings              模型、思考与权限设置
+  /permissions           权限设置（会话与项目默认）
+  /permissions audit     查看权限决策日志
   /skills                列出可用 skill
   /tools                 列出已注册工具
   /details [编号]        展开/收起全部详情，或查看某条完整内容
@@ -179,14 +183,14 @@ export function startTui(
   let startedAt = 0;
   let stopped = false;
   let suppressEnterUntil = 0;
-  let picker: InteractionPanel | undefined;
+  let picker: Component | undefined;
   let approvalPanel: InteractionPanel | undefined;
   const activePanel = () => approvalPanel ?? picker;
   const details = new DetailRegistry();
   const toolMessages = new Map<string, ToolMessage>();
   const unsubscribe: Array<() => void> = [];
   const transcript = new Container();
-  const header = new Text(chalk.bold('AgentLab') + chalk.dim(' · /model 模型 · /help 帮助'), 1, 1);
+  const header = new Text(chalk.bold('AgentLab') + chalk.dim(' · /settings 设置 · /help 帮助'), 1, 1);
   const scroll = new ScrollView(transcript, { follow: 'end', primary: true });
 
   // --- 消息区拥有独立视口，状态与输入不参与历史滚动 ---
@@ -205,7 +209,8 @@ export function startTui(
         { name: 'model', description: '查看/切换模型' },
         { name: 'mode', description: '查看/切换权限模式' },
         { name: 'think', description: '查看/设置思考等级' },
-        { name: 'permissions', description: '权限决策日志' },
+        { name: 'settings', description: '模型、思考与权限设置' },
+        { name: 'permissions', description: '权限设置与决策日志' },
         { name: 'redraw', description: '强制全屏重绘' },
         { name: 'skills', description: '列出 skill' },
         { name: 'tools', description: '列出工具' },
@@ -292,8 +297,8 @@ export function startTui(
   const interaction: Component = {
     invalidate() { activePanel()?.invalidate(); },
     render: (width) => activePanel()?.render(width) ?? [],
-    handleInput: (data) => activePanel()?.handleInput(data),
-    handleMouse: (event) => activePanel()?.handleMouse(event),
+    handleInput: (data) => activePanel()?.handleInput?.(data),
+    handleMouse: (event) => activePanel()?.handleMouse?.(event),
   };
   const toggleDetails = () => {
     expanded = !expanded;
@@ -308,6 +313,7 @@ export function startTui(
     onPick: (value: string) => void,
     initialValue?: string,
     filterable = false,
+    onCancel?: () => void,
   ): void {
     const close = () => {
       picker = undefined;
@@ -316,7 +322,7 @@ export function startTui(
     picker = new InteractionPanel({
       title, kind: 'picker', items: items.map(item => ({ ...item, current: item.value === initialValue })), initialValue, filterable,
       context: initialValue ? () => `当前: ${initialValue} · Enter 应用 · Esc 不更改` : undefined,
-      rows: () => terminal.rows, changed: render, cancel: close,
+      rows: () => terminal.rows, changed: render, cancel: () => { close(); onCancel?.(); },
       select: (value) => { close(); onPick(value); },
     });
     focusInteraction();
@@ -326,6 +332,7 @@ export function startTui(
   function showPermissionPanel(request: PermissionRequest, resolve: (d: UserDecision) => void, signal: AbortSignal, next: () => void): void {
     const input = request.input && typeof request.input === 'object' && !Array.isArray(request.input) ? request.input as Record<string, unknown> : {};
     const target = agent.tools.get(request.toolName)?.analyzeInput?.(input).patternTarget;
+    const origin = request.decisionSource ? ({ mode: '权限模式', danger: '危险检测', config: '配置规则', session: '会话规则', judge: '自动审批员', builtin: '内置检查', user: '用户' }[request.decisionSource]) : '权限检查';
     const dangerNotice = agent.config.dangerForceAsk ? '拒绝规则与危险检测仍优先' : '拒绝规则仍优先；当前已关闭危险操作强制询问';
     const rememberedScope = target === undefined ? `${request.toolName} 的所有调用` : `${request.toolName} 的相同匹配目标: ${JSON.stringify(target)}`;
     const options: Array<{ label: string; description: string; decision: UserDecision }> = [
@@ -334,13 +341,13 @@ export function startTui(
       { label: '拒绝', description: '拒绝这一次调用，Agent 会收到拒绝结果。', decision: { allow: false } },
     ];
     let settled = false;
-    const done = (decision: UserDecision) => {
+    const done = (decision: UserDecision, confirmedByEnter = false) => {
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', cancel);
       approvalPanel = undefined;
       // 防止确认键的重复输入落到恢复的草稿或设置面板上。
-      suppressEnterUntil = Date.now() + 500;
+      if (confirmedByEnter) suppressEnterUntil = Date.now() + 500;
       resolve(decision);
       next();
       focusInteraction();
@@ -348,14 +355,14 @@ export function startTui(
     const cancel = () => done({ allow: false });
     signal.addEventListener('abort', cancel, { once: true });
     approvalPanel = new InteractionPanel({
-      title: `权限请求 · ${request.toolName}`, kind: 'permission',
+      title: 'Agent 正在请求权限 · 需要你确认', compactTitle: 'Agent 请求权限', kind: 'permission',
       items: options.map((o, i) => ({ value: String(i), label: o.label, description: o.description })),
       requireSelection: true,
-      body: () => `理由: ${request.reason}\n操作摘要: ${request.summary}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
-      context: () => request.summary.replace(/\s+/g, ' '),
-      previewBody: () => `理由: ${request.reason}\n先选择授权范围，再按 Enter；Tab 查看完整参数`,
+      body: () => `来源: Agent 执行工具调用${request.toolUseId ? ` #${request.toolUseId}` : ''}\n工具: ${request.toolName}\n触发: ${origin}${request.matchedRule ? ` · ${request.matchedRule}` : ''}\n${request.cwd ? `目录: ${request.cwd}\n` : ''}理由: ${request.reason}\n操作摘要: ${request.summary}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
+      context: () => `${request.toolName} · ${request.summary.replace(/\s+/g, ' ')}`,
+      previewBody: () => `触发: ${origin} · ${request.reason}`,
       rows: () => terminal.rows, changed: render, cancel: () => done({ allow: false }),
-      select: (value) => done(options[Number(value)].decision),
+      select: (value) => done(options[Number(value)].decision, true),
     });
     if (signal.aborted) cancel();
     else focusInteraction();
@@ -489,7 +496,6 @@ export function startTui(
   // --- 全局按键：Esc 中断当前轮；Ctrl+C 中断/退出 ---
   unsubscribe.push(tui.addInputListener((data) => {
     if (matchesKey(data, Key.enter) && Date.now() < suppressEnterUntil) {
-      suppressEnterUntil = Date.now() + 500;
       return { consume: true };
     }
     if (!matchesKey(data, Key.enter)) suppressEnterUntil = 0;
@@ -499,7 +505,7 @@ export function startTui(
     }
     if (matchesKey(data, Key.ctrl('c'))) {
       if (activePanel() && (!turns.running || !approvalPanel)) {
-        activePanel()?.handleInput('\x1b');
+        activePanel()?.handleInput?.('\x1b');
         return { consume: true };
       }
       if (turns.running) {
@@ -530,12 +536,6 @@ export function startTui(
     updateStatus();
   };
 
-  const setMode = (m: string) => {
-    agent.permission.setMode(m as 'ask' | 'auto' | 'yolo');
-    mode = m;
-    say(`权限模式切换为 ${m}（后续权限检查生效；当前审批仍需处理）`);
-    updateStatus();
-  };
 
   const setThinking = (level: string) => {
     agent.loop.setThinking(level as ThinkingLevel);
@@ -548,7 +548,38 @@ export function startTui(
     void task().catch((error) => err(error instanceof Error ? error.message : String(error)));
   };
 
-  const handleCommand = (cmd: string) => {
+  const permissions = createPermissionSettings({
+    agent, cwd: agent.cwd,
+    notify: (text, error) => error ? err(text) : say(text),
+    onModeChange: (next) => { mode = next; updateStatus(); },
+    showPicker: (request) => {
+      picker = new InteractionPanel({
+        title: request.title, kind: 'picker', items: request.items.map(item => ({ ...item, current: item.value === request.initialValue })),
+        initialValue: request.initialValue, context: request.context ? () => request.context! : undefined, body: request.body, requireSelection: request.requireSelection,
+        rows: () => terminal.rows, changed: render,
+        select: (value) => {
+          picker = undefined;
+          if (request.requireSelection) suppressEnterUntil = Date.now() + 500;
+          request.onPick(value); focusInteraction();
+        },
+        cancel: () => { picker = undefined; request.onCancel?.(); focusInteraction(); },
+      });
+      focusInteraction();
+    },
+    showDetails: (title, body, onBack) => {
+      picker = new InteractionPanel({ title, kind: 'details', body, rows: () => terminal.rows, changed: render,
+        cancel: () => { picker = undefined; onBack(); focusInteraction(); } });
+      focusInteraction();
+    },
+    showInput: (request) => {
+      picker = new SettingsInputPanel({ ...request, rows: () => terminal.rows, changed: render,
+        onSubmit: value => { picker = undefined; request.onSubmit(value); focusInteraction(); },
+        onCancel: () => { picker = undefined; request.onCancel(); focusInteraction(); } });
+      focusInteraction();
+    },
+  });
+
+  const handleCommand = (cmd: string, onBack?: () => void) => {
     const [name, ...rest] = cmd.slice(1).split(/\s+/);
     const arg = rest.join(' ');
     switch (name) {
@@ -596,30 +627,22 @@ export function startTui(
           setModel,
           model,
           true,
+          onBack,
         );
         return;
       }
-      case 'mode': {
-        if (arg === 'ask' || arg === 'auto' || arg === 'yolo') {
-          setMode(arg);
-          return;
-        }
-        if (arg) {
-          err('用法: /mode ask|auto|yolo');
-          return;
-        }
-        showPicker(
-          `权限模式（当前: ${mode}）`,
-          [
-            { value: 'ask', label: 'ask', description: '未命中规则的操作均询问；已有允许/拒绝规则仍生效。后续权限检查生效。' },
-            { value: 'auto', label: 'auto', description: agent.config.judgeModel ? '未命中规则的普通只读操作自动放行；写操作由 LLM 审批员检查。后续权限检查生效。' : '未命中规则的普通只读操作自动放行；写操作仍询问你（未配置审批模型）。后续权限检查生效。' },
-            { value: 'yolo', label: 'yolo', description: `普通操作自动放行；${agent.config.dangerForceAsk ? 'deny 规则与危险检测仍优先' : 'deny 规则仍优先；当前已关闭危险操作强制询问'}。仅建议隔离沙箱，后续权限检查生效。` },
-          ],
-          setMode,
-          mode,
-        );
+      case 'settings':
+        showPicker('设置 · 当前会话', [
+          { value: 'model', label: `模型 · ${model}`, description: '本次会话；下一次模型请求生效。' },
+          { value: 'think', label: `思考 · ${thinking}`, description: '本次会话；下一次模型请求生效。' },
+          { value: 'permissions', label: `权限 · ${mode}`, description: '会话审批行为、记住的规则、项目默认与决策日志。' },
+        ], value => handleCommand(`/${value}`, () => handleCommand('/settings')));
         return;
-      }
+      case 'mode':
+        if (arg === 'ask' || arg === 'auto' || arg === 'yolo') permissions.requestMode(arg);
+        else if (arg) err('用法: /mode ask|auto|yolo');
+        else permissions.openModes(onBack);
+        return;
       case 'think': {
         if (arg === 'off' || arg === 'low' || arg === 'medium' || arg === 'high') {
           setThinking(arg);
@@ -639,18 +662,16 @@ export function startTui(
           ],
           setThinking,
           thinking,
+          false,
+          onBack,
         );
         return;
       }
-      case 'permissions': {
-        const log = agent.permission.getAuditLog();
-        say(
-          log.length === 0
-            ? '(暂无决策记录)'
-            : log.map((e) => `[${e.decision.kind}] ${e.summary} — ${e.decision.reason} (${e.decision.source})`).join('\n'),
-        );
+      case 'permissions':
+        if (arg === 'audit') permissions.openAudit();
+        else if (arg) err('用法: /permissions 或 /permissions audit');
+        else permissions.open(onBack);
         return;
-      }
       case 'skills': {
         const skills = agent.skillLoader.list();
         say(skills.length === 0 ? '(无可用 skill)' : skills.map((s) => `${s.name}: ${s.description}`).join('\n'));
@@ -753,7 +774,7 @@ export function startTui(
     invalidate() {},
     render: (width) => [truncateToWidth(turns.running
       ? ` Enter 排队 · Esc 中断${turns.size ? '并清空队列' : ''} · Ctrl+O 详情`
-      : ` Enter 发送 · Ctrl+O ${expanded ? '收起' : '详情'} · /details 编号 · /help`, width)],
+      : ` Enter 发送 · /settings 设置 · Ctrl+O ${expanded ? '收起' : '详情'} · /help`, width)],
   };
   const inputHeading: Component = {
     invalidate() {},
