@@ -22,12 +22,14 @@
  * 用户拒绝工具调用时，反馈同样以 tool_result(isError) 回填给模型 ——
  * 模型据此调整后续行为，这是"人在回路"的标准实现方式。
  */
-import type { EventBus, LoopEndReason, UserDecision } from './events.js';
+import { randomUUID } from 'node:crypto';
+import { bounded } from './permission/async.js';
+import type { EventBus, LoopEndReason } from './events.js';
 import type { HookRunner } from './hooks.js';
-import type { PermissionEngine } from './permission/engine.js';
-import type { AutoJudge } from './permission/judge.js';
-import { mergeJudgeDecision } from './permission/judge.js';
-import { ReviewHistory } from './permission/review-context.js';
+import type { LegacyPermission, LegacyReviewer, JudgeStatus } from './permission/contracts.js';
+import { ToolExecutor, type ToolExecutorOptions } from './tool-executor.js';
+import type { ContextCoordinator, CacheStrategy } from '../sdk/runtime-capabilities.js';
+import type { Policy, Reviewer, ToolAnalyzer } from '../sdk/capabilities.js';
 import type { CachePolicy, CacheTtl, Provider, ThinkingLevel } from './provider.js';
 import { observedStream } from './provider.js';
 import { collectStreamAsync, emptyUsage } from './protocol/types.js';
@@ -39,8 +41,8 @@ import type {
   ToolUseBlock,
   TokenUsage,
 } from './protocol/types.js';
-import type { Tool, ToolRegistry } from './registry.js';
-import { estimateTokens, type ContextManager } from './context/manager.js';
+import type { ToolRegistry } from './registry.js';
+import { estimateTokens } from './context/tokens.js';
 import { SessionError } from './session/errors.js';
 import { assertSafeHistory, trimToSafeTail } from './session/history.js';
 
@@ -48,10 +50,23 @@ export interface AgentLoopOptions {
   provider: Provider;
   model: string;
   tools: ToolRegistry;
-  permission: PermissionEngine;
+  /** 旧构造入口；新 runtime 提供选定 policy/reviewer。 */
+  permission?: LegacyPermission;
+  policy?: Policy;
+  reviewer?: Reviewer;
+  analyzer?: ToolAnalyzer;
+  configRevision?: () => string | number;
+  sessionId?: () => string;
+  toolIdentity?: ToolExecutorOptions['toolIdentity'];
+  approvalResponder?: ToolExecutorOptions['approvalResponder'];
+  reviewTimeoutMs?: number;
+  capabilityTimeoutMs?: number;
+  shutdownTimeoutMs?: number;
+  toolExecutor?: ToolExecutor;
+  cacheStrategy?: CacheStrategy;
   hooks: HookRunner;
   events: EventBus;
-  context: ContextManager;
+  context: ContextCoordinator;
   systemPrompt: string;
   maxTurns: number;
   cwd: string;
@@ -68,7 +83,7 @@ export interface AgentLoopOptions {
    * auto 模式的可选 LLM 审批员：确定性管线判定 ask（来源为模式默认值）时，
    * 先让小模型判断"是否明显安全"，allow 才静默放行，其余回落询问用户。
    */
-  autoJudge?: AutoJudge;
+  autoJudge?: LegacyReviewer;
   /**
    * 提示缓存。不传时默认开启（ttl 5 分钟，不因工具耗时升级）。
    * enabled: false 时请求不带 cache 策略。
@@ -92,6 +107,11 @@ export interface AgentRunResult {
   error?: string;
 }
 
+export class UnresolvedExecutionError extends Error {
+  readonly code = 'shutdown_timeout';
+  constructor() { super('Shutdown timed out with unresolved execution; resources must remain available until whenSettled() completes'); this.name = 'UnresolvedExecutionError'; }
+}
+
 export class AgentLoop {
   private messages: Message[] = [];
   private abort: AbortController | null = null;
@@ -106,10 +126,17 @@ export class AgentLoop {
   private disposed = false;
   private idle: Promise<void> = Promise.resolve();
   private completionTasks = new Set<() => Promise<void>>();
-  private reviewHistory = new ReviewHistory();
+  private readonly executor: ToolExecutor;
+  private sessionId = randomUUID();
+  private activeRunId = '';
   private currentUserRequest = '';
+  private detachedRuns = new Set<AbortController>();
+  private detachedTasks = new Set<Promise<ToolResult>>();
+  private detachedRunIds = new Set<string>();
 
   constructor(private opts: AgentLoopOptions) {
+    this.executor = opts.toolExecutor ?? new ToolExecutor({ ...opts, sessionId: opts.sessionId ?? (() => this.sessionId),
+      runActive: (runId) => this.activeRunId === runId || this.detachedRunIds.has(runId) });
     this.configuredThreshold = opts.context.threshold;
     this.configuredMaxTokens = opts.maxTokens;
     this.applyModelInfo(opts.model);
@@ -127,8 +154,22 @@ export class AgentLoop {
     return this.opts.model;
   }
 
-  getJudgeStatus(): import('./permission/judge.js').JudgeStatus {
-    return this.opts.autoJudge?.getStatus() ?? { loaded: false };
+  getJudgeStatus(): JudgeStatus { return this.executor.getJudgeStatus(); }
+
+  /** 命令与插件使用相同执行门；运行中子调用沿用取消、真实请求与审计 runId。 */
+  async invokeTool(name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
+    if (this.disposed) throw new Error('AgentLoop is disposed');
+    const detached = this.abort ? undefined : new AbortController();
+    if (detached) this.detachedRuns.add(detached);
+    const parent = this.abort?.signal ?? detached!.signal;
+    const invocationSignal = signal ? AbortSignal.any([parent, signal]) : parent;
+    const runId = this.activeRunId || randomUUID();
+    if (detached) this.detachedRunIds.add(runId);
+    const task = this.executor.invokeTool(name, input, { signal: invocationSignal, runId,
+      userRequest: this.currentUserRequest, messages: structuredClone(this.messages) });
+    if (detached) this.detachedTasks.add(task);
+    try { return await task; }
+    finally { if (detached) { detached.abort(); this.executor.finishRun(runId); this.detachedRunIds.delete(runId); this.detachedRuns.delete(detached); this.detachedTasks.delete(task); } }
   }
 
   setModel(model: string): void {
@@ -147,6 +188,13 @@ export class AgentLoop {
   /** 当前有没有还没结束的 run。loop_end 发出时 abort 尚未清空，这里仍为 true。 */
   get running(): boolean {
     return this.abort !== null;
+  }
+
+  get hasPendingActivity(): boolean { return this.abort !== null || this.detachedTasks.size > 0 || this.executor.hasPendingActivity; }
+
+  /** 等待原始执行结算；不会执行重试、伪造结果或释放仍被使用的资源。 */
+  async whenSettled(): Promise<void> {
+    while (this.hasPendingActivity) await Promise.allSettled([this.idle, ...this.detachedTasks, this.executor.whenSettled()]);
   }
 
   /** 裁掉不安全的尾部再克隆。不改 this.messages，也不发事件。 */
@@ -169,7 +217,8 @@ export class AgentLoop {
     if (this.abort) throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
     assertSafeHistory(snapshot.messages);
     this.messages = structuredClone(snapshot.messages) as Message[];
-    this.reviewHistory.clear();
+    this.executor.clear();
+    this.sessionId = randomUUID();
     this.currentUserRequest = '';
     this.toolsSnapshot = null;
     this.lastRequestMessageCount = 0;
@@ -189,6 +238,7 @@ export class AgentLoop {
 
   abort_current(): void {
     this.abort?.abort();
+    for (const controller of this.detachedRuns) controller.abort();
   }
 
   /** 轮次完成前等待持久化等任务；失败传给 run 调用方，仍保证释放运行状态。 */
@@ -200,8 +250,14 @@ export class AgentLoop {
   async dispose(): Promise<void> {
     this.disposed = true;
     this.abort_current();
-    await this.idle;
-    this.reviewHistory.clear();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([this.whenSettled(), new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new UnresolvedExecutionError()), this.opts.shutdownTimeoutMs ?? 30_000);
+      })]);
+    } finally { if (timer) clearTimeout(timer); }
+    this.executor.clear();
+    this.sessionId = randomUUID();
   }
 
   async run(userInput: string): Promise<AgentRunResult> {
@@ -209,6 +265,7 @@ export class AgentLoop {
     if (this.abort) throw new Error('AgentLoop is already running');
     const { events, hooks, provider, tools, context } = this.opts;
     this.abort = new AbortController();
+    this.activeRunId = randomUUID();
     const signal = this.abort.signal;
     let release!: () => void;
     this.idle = new Promise<void>((resolve) => { release = resolve; });
@@ -223,7 +280,7 @@ export class AgentLoop {
     };
 
     try {
-      await hooks.notify('UserPromptSubmit', { input: userInput });
+      await this.notify('UserPromptSubmit', { input: userInput }, signal);
       this.currentUserRequest = userInput;
       this.messages.push({ role: 'user', content: userInput });
       await this.maybeCompact(signal);
@@ -262,7 +319,7 @@ export class AgentLoop {
         this.messages.push(message);
         events.emit({ type: 'assistant_message', message });
         events.emit({ type: 'turn_end', stopReason, usage });
-        await hooks.notify('TurnEnd', { turn: turns, message: structuredClone(message), stopReason, usage: { ...usage } });
+        await this.notify('TurnEnd', { turn: turns, message: structuredClone(message), stopReason, usage: { ...usage } }, signal);
 
         const toolUses = message.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
         if (toolUses.length === 0 || stopReason !== 'tool_use') {
@@ -290,10 +347,21 @@ export class AgentLoop {
         const errors = settled.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => item.reason);
         if (errors.length) throw new AggregateError(errors, '轮次完成后的保存失败');
       } finally {
+        this.abort?.abort();
         this.abort = null;
+        this.executor.finishRun(this.activeRunId);
+        this.activeRunId = '';
         stopUsage();
         release();
       }
+    }
+  }
+
+  private async notify(point: 'UserPromptSubmit' | 'TurnEnd', payload: unknown, signal: AbortSignal): Promise<void> {
+    try { await bounded((s) => this.opts.hooks.notify(point, payload, s), signal, this.opts.capabilityTimeoutMs ?? 30_000); }
+    catch {
+      signal.throwIfAborted();
+      this.opts.events.emit({ type: 'notice', text: `${point} observer failed or timed out; continuing with the original state` });
     }
   }
 
@@ -326,6 +394,9 @@ export class AgentLoop {
   /** 工具和系统提示各一个稳定断点；消息上保留上一轮末尾（读）和本轮末尾（写） */
   private buildCachePolicy(): CachePolicy | undefined {
     const { enabled, ttl, escalateAfterMs } = this.cacheSettings();
+    if (this.opts.cacheStrategy) return this.opts.cacheStrategy.build({ messageCount: this.messages.length, previousMessageCount: this.lastRequestMessageCount,
+      lastToolBatchMs: this.lastToolBatchMs, hasSystem: this.opts.systemPrompt.length > 0, hasTools: (this.toolsSnapshot?.length ?? 0) > 0,
+      settings: { enabled, ttl, escalateAfterMs } });
     if (!enabled) return undefined;
     const last = this.messages.length - 1;
     const prev = this.lastRequestMessageCount - 1;
@@ -366,123 +437,8 @@ export class AgentLoop {
   }
 
   private async runOneTool(toolUse: ToolUseBlock, signal: AbortSignal): Promise<ToolResultBlock> {
-    const { tools, permission, hooks, events, cwd } = this.opts;
-    const tool: Tool | undefined = tools.get(toolUse.name);
-
-    const fail = async (content: string): Promise<ToolResultBlock> => {
-      const result: ToolResult = { content, isError: true };
-      events.emit({ type: 'tool_result', toolUseId: toolUse.id, name: toolUse.name, result });
-      return { type: 'tool_result', toolUseId: toolUse.id, content, isError: true };
-    };
-
-    if (signal.aborted) return fail('Tool cancelled');
-
-    if (!tool) return fail(`Unknown tool: ${toolUse.name}`);
-    let input = (toolUse.input ?? {}) as Record<string, unknown>;
-
-    // 权限管线第 0 步：PreToolUse 钩子（可改写参数 / 否决）
-    const hookResult = await hooks.runPreToolUse({ toolName: tool.name, input });
-    if (hookResult.veto) return fail(`Vetoed by PreToolUse hook: ${hookResult.veto}`);
-    if (hookResult.input) input = hookResult.input;
-    if (signal.aborted) return fail('Tool cancelled');
-
-    // 权限决策管线
-    let decision = permission.check(tool, input);
-    const emitDecision = (phase: 'pipeline' | 'judge' | 'user') => events.emit({
-      type: 'permission_decision', toolUseId: toolUse.id, toolName: tool.name,
-      input: structuredClone(input), phase, decision: { ...decision },
-    });
-    emitDecision('pipeline');
-
-    // auto 模式 + LLM 审批员：管线判定为 ask（模式默认值）时，让已加载的审批模型兜底判断
-    if (decision.kind === 'ask' && decision.source === 'mode' && this.opts.autoJudge && permission.mode === 'auto') {
-      const reviewContext = this.reviewHistory.build(tool, input, cwd, this.currentUserRequest, this.messages);
-      const verdict = await this.opts.autoJudge.review(tool, input, signal, events, reviewContext);
-      if (signal.aborted) return fail('Tool cancelled');
-      decision = mergeJudgeDecision(decision, verdict);
-      permission.recordDecision(tool, input, decision);
-      emitDecision('judge');
-    }
-
-    if (decision.kind === 'deny') {
-      this.reviewHistory.record(tool, input, cwd, this.currentUserRequest, decision);
-      return fail(`Permission denied: ${decision.reason}`);
-    }
-
-    if (decision.kind === 'ask') {
-      const analysis = tool.analyzeInput?.(input);
-      if (signal.aborted) return fail('Tool cancelled');
-      const userDecision = await new Promise<UserDecision>((resolve) => {
-        let settled = false;
-        const finish = (value: UserDecision) => {
-          if (settled) return;
-          settled = true;
-          signal.removeEventListener('abort', cancel);
-          resolve(value);
-        };
-        const cancel = () => finish({ allow: false, feedback: 'Tool cancelled' });
-        signal.addEventListener('abort', cancel, { once: true });
-        events.emit({
-          type: 'permission_request',
-          request: {
-            toolName: tool.name,
-            toolUseId: toolUse.id, decisionSource: decision.source, matchedRule: decision.matchedRule, cwd,
-            input,
-            summary: analysis?.summary ?? tool.name,
-            reason: decision.reason,
-          },
-          signal,
-          resolve: finish,
-        });
-      });
-      if (signal.aborted) return fail('Tool cancelled');
-      decision = {
-        kind: userDecision.allow ? 'allow' : 'deny',
-        source: 'user',
-        reason: userDecision.allow ? '用户确认本次操作' : `用户拒绝本次操作${userDecision.feedback ? `：${userDecision.feedback}` : ''}`,
-      };
-      permission.recordDecision(tool, input, decision);
-      emitDecision('user');
-      if (!userDecision.allow) {
-        this.reviewHistory.record(tool, input, cwd, this.currentUserRequest, decision);
-        return fail(`User denied this action.${userDecision.feedback ? ` Feedback: ${userDecision.feedback}` : ''}`);
-      }
-      // "始终允许" → 写回会话级规则，后续同类调用自动放行
-      if (userDecision.remember) {
-        const rule = ruleFor(tool, input);
-        permission.addSessionRule('allow', rule);
-        if (userDecision.remember === 'project') {
-          events.emit({
-            type: 'notice',
-            text: `已加入会话规则。要持久化到项目，请把 "${rule}" 加入 agent.config.json 的 permissions.allow`,
-          });
-        }
-      }
-    }
-
-    // 执行
-    if (signal.aborted) return fail('Tool cancelled');
-    const reviewRecord = this.reviewHistory.record(tool, input, cwd, this.currentUserRequest, decision);
-    events.emit({ type: 'tool_call', toolUse: { ...toolUse, input } });
-    let result: ToolResult;
-    try {
-      result = await tool.execute(input, { cwd, signal });
-    } catch (err) {
-      result = { content: err instanceof Error ? err.message : String(err), isError: true };
-    }
-    this.reviewHistory.finish(reviewRecord, result, signal.aborted);
-    await hooks.notify('PostToolUse', { toolName: tool.name, input, result });
-    events.emit({ type: 'tool_result', toolUseId: toolUse.id, name: tool.name, result });
-    return { type: 'tool_result', toolUseId: toolUse.id, content: result.content, isError: result.isError };
+    return this.executor.execute(toolUse, { signal, runId: this.activeRunId, userRequest: this.currentUserRequest, messages: this.messages });
   }
-}
-
-/** 为工具调用生成一条可记忆的规则，如 bash(npm test *) → 简化起见用精确命令或整工具 */
-function ruleFor(tool: Tool, input: Record<string, unknown>): string {
-  const target = tool.analyzeInput?.(input).patternTarget;
-  // 参数模式可能过于具体，但教学上清晰：精确匹配本次调用
-  // 记忆本次目标时使用字面量，不能把参数中的 glob 元字符变成额外授权。
-  return target !== undefined ? `${tool.name}(=${JSON.stringify(target)})` : tool.name;
 }
 
 /** 把 provider 的流式事件实时转发给事件总线，同时保持可被 collectStreamAsync 消费 */

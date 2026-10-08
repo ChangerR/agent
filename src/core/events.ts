@@ -7,10 +7,12 @@
 import { EventEmitter } from 'node:events';
 import type { AssistantMessage, Message, TokenUsage, ToolResult, ToolUseBlock } from './protocol/types.js';
 import type { ChatRequest, ThinkingLevel } from './provider.js';
-import type { Decision } from './permission/engine.js';
+import type { Decision } from './permission/contracts.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
+  runId?: string;
+  requestId?: string;
   toolName: string;
   /** 请求对应的模型工具调用及实际触发审批的决策来源。 */
   toolUseId?: string;
@@ -30,16 +32,39 @@ export type UserDecision =
 export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
 
 export type AgentEvent =
-  | { type: 'model_request'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; provider: string; request: ChatRequest }
-  | { type: 'model_usage'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; usage: TokenUsage }
+  | { type: 'model_request'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; provider: string; request: ChatRequest; runId?: string; toolCallId?: string; toolRequestId?: string }
+  | { type: 'model_usage'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; usage: TokenUsage; runId?: string; toolCallId?: string; toolRequestId?: string }
   | { type: 'text_delta'; text: string }
   | { type: 'thinking_delta'; text: string }
   | { type: 'assistant_message'; message: AssistantMessage }
   | { type: 'tool_call'; toolUse: ToolUseBlock }
   | { type: 'tool_result'; toolUseId: string; name: string; result: ToolResult }
   | {
+      /** 不含参数正文的结构化执行审计，适用于模型、命令和子工具。 */
+      type: 'tool_execution';
+      runId: string;
+      toolCallId: string;
+      requestId: string;
+      sessionId: string;
+      toolName: string;
+      toolVersion: string;
+      toolOwner?: string;
+      capabilityId?: string;
+      policyId: string;
+      policyVersion: string;
+      configRevision: string | number;
+      policyRevision: string | number;
+      inputHash?: string;
+      phase: 'validation' | 'analysis' | 'policy' | 'reviewer' | 'human' | 'execution';
+      reasonCode: string;
+      decision?: 'allow' | 'ask' | 'deny' | 'review';
+      durationMs?: number;
+    }
+  | {
       /** 审核可观测性独立于 UI 提示；静默放行仍保留每阶段的判定。 */
       type: 'permission_decision';
+      runId?: string;
+      requestId?: string;
       toolUseId: string;
       toolName: string;
       input: Record<string, unknown>;
@@ -65,6 +90,7 @@ type Handler<E> = (event: E) => void;
 
 export class EventBus {
   private emitter = new EventEmitter();
+  private observers = new Set<(event: AgentEvent) => void>();
 
   constructor() {
     this.emitter.setMaxListeners(100);
@@ -75,9 +101,30 @@ export class EventBus {
     return () => this.emitter.off(type, handler as Handler<AgentEvent>);
   }
 
+  hasListeners(type: AgentEvent['type']): boolean {
+    return this.emitter.listenerCount(type) > 0;
+  }
+
+  /** 通用观测不算人工审批 responder；异常不能触发已执行工具重试。 */
+  onAll(handler: (event: AgentEvent) => void): () => void {
+    this.observers.add(handler);
+    return () => { this.observers.delete(handler); };
+  }
+
   emit(event: AgentEvent): void {
-    // Node 的 error 事件在没有订阅者时会抛异常；headless 使用不应依赖 UI 兜底。
-    if (event.type === 'error' && this.emitter.listenerCount('error') === 0) return;
-    this.emitter.emit(event.type, event);
+    for (const observer of this.observers) this.deliver(observer, event, false);
+    // 单个 renderer/观测者失败不能把成功的工具伪装成失败或阻断其他订阅者。
+    for (const handler of this.emitter.listeners(event.type)) this.deliver(handler as Handler<AgentEvent>, event, true);
+  }
+
+  private deliver(handler: Handler<AgentEvent>, event: AgentEvent, responder: boolean): void {
+    const failed = () => {
+      if (responder && event.type === 'permission_request') event.resolve({ allow: false, feedback: 'Approval responder failed' });
+      if (event.type !== 'notice') this.emit({ type: 'notice', text: `事件订阅者失败（${event.type}）；原始执行结果已保留` });
+    };
+    try {
+      const value: unknown = handler(event);
+      if (value && typeof value === 'object' && 'then' in value) Promise.resolve(value).catch(failed);
+    } catch { failed(); }
   }
 }
