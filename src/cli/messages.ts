@@ -47,11 +47,6 @@ export class ThinkingMessage implements Component {
     const title = ` ◇ 思考${this.detailId ? ` #${this.detailId}` : ''} · ${this.active ? '进行中' : '已结束'}`;
     const lines = [truncateToWidth(chalk.cyan(title), width)];
     if (this.expanded()) lines.push(...new Text(this.text, 3, 0).render(width));
-    else {
-      const preview = this.text.trim().split('\n').filter(Boolean).at(-1) ?? '正在整理思路…';
-      lines.push(truncateToWidth(`   ${preview}`, width));
-      lines.push(truncateToWidth(`   ${this.detailId ? `/details ${this.detailId}` : '/details'} · Ctrl+O 展开`, width));
-    }
     return lines;
   }
 }
@@ -73,18 +68,26 @@ export class ToolMessage implements Component {
   render(width: number): string[] {
     const marker = !this.result ? '…' : this.result.isError ? '×' : '✓';
     const color = this.result?.isError ? chalk.red : !this.result ? chalk.cyan : chalk.green;
-    const seconds = ` · ${(((this.finishedAt ?? Date.now()) - this.startedAt) / 1000).toFixed(1)}s`;
+    const seconds = `${(((this.finishedAt ?? Date.now()) - this.startedAt) / 1000).toFixed(1)}s`;
     const label = this.operation?.name ?? this.summary.replace(/\s+/g, ' ');
-    const lines = [truncateToWidth(color(` ${marker} 工具${this.detailId ? ` #${this.detailId}` : ''} · ${label} · ${!this.result ? '执行中' : this.result.isError ? '失败' : '完成'}${seconds}`), width)];
-    if (this.operation) lines.push(truncateToWidth(`   ${this.summary.replace(/\s+/g, ' ')}`, width));
-    const detailHint = truncateToWidth(`   ${this.detailId ? `/details ${this.detailId}` : '/details'} · Ctrl+O ${this.expanded() ? '收起' : '展开'}`, width);
-    if (!this.result) return [...lines, detailHint];
+    const rawSummary = this.summary.replace(/\s+/g, ' ').trim();
+    const summary = rawSummary.startsWith(`${label}: `) ? rawSummary.slice(label.length + 2) : rawSummary;
+    const title = ` ${marker} 工具${this.detailId ? ` #${this.detailId}` : ''} · ${!this.result ? '执行中' : this.result.isError ? '失败' : '完成'} · ${label}`;
+    const lines = [truncateToWidth(color(`${title} · ${summary === label ? '' : `${summary} · `}${seconds}`), width)];
+    if (!this.result) return lines;
     const content = this.result.content || '(无输出)';
-    const output = content.split('\n');
-    const limit = this.result.isError ? 5 : 2;
-    const preview = this.expanded() ? content : output.slice(0, limit).map((line) => line.slice(0, 180)).join('\n');
-    lines.push(...new Text(preview, 3, 0).render(width));
-    if (this.detailId || !this.expanded() && preview !== content) lines.push(detailHint);
+    if (this.expanded()) {
+      if (this.operation) lines.push(...new Text(`参数: ${JSON.stringify(this.operation.input, null, 2)}`, 3, 0).render(width));
+      lines.push(...new Text(content, 3, 0).render(width));
+    } else {
+      // 按可见行预算折叠，窄屏下长输出也不会挤走对话。
+      const output = content.split('\n');
+      const limit = this.result.isError ? 3 : 1;
+      for (const line of output.slice(0, limit)) lines.push(truncateToWidth(`   ${line}`, width));
+      if (output.length > limit) lines[lines.length - 1] = truncateToWidth(
+        `   ${this.detailId ? `#${this.detailId} · ` : ''}${output.length} 行输出 · ${output[limit - 1]}`, width,
+      );
+    }
     return lines;
   }
 }
@@ -98,9 +101,9 @@ export class PermissionMessage implements Component {
   invalidate(): void {}
   render(width: number): string[] {
     return [
-      truncateToWidth(chalk.bold.yellow(` ? 权限 · ${this.request.toolName} · ${this.result}`), width),
+      truncateToWidth(chalk.bold.yellow(` ? 权限${this.detailId ? ` #${this.detailId}` : ''} · ${this.request.toolName} · ${this.result}`), width),
       truncateToWidth(`   ${this.request.summary.replace(/\s+/g, ' ')}`, width),
-      ...(this.detailId ? [truncateToWidth(`   /details ${this.detailId} 查看审批理由和参数`, width)] : []),
+
     ];
   }
 }

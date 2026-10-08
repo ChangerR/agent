@@ -20,7 +20,6 @@ import {
   ScrollView,
   Spacer,
   Text,
-  TruncatedText,
   TuiAltScreen,
   TuiMainScreen,
   VStack,
@@ -90,7 +89,7 @@ const HELP = `命令（不带参数在底部打开选择器）：
   /help                  显示帮助
   /exit                  退出
 其他输入直接作为对话发送。Ctrl+O 展开/收起详情，Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
-选择器：↑↓ 选择，Enter 确认，Esc 返回。审批：Tab 查看完整参数，↑↓ 滚动，Tab 返回选项，Esc 拒绝。
+选择器：↑↓ 选择，Enter 确认，Esc 返回。审批：先用 ↑↓ 或鼠标选择，再 Enter 确认；Tab 查看完整参数，↑↓ 滚动，Tab 返回选项，Esc 拒绝。
 消息区独立滚动，底部保留输入框。AGENTLAB_SCREEN=main 可使用终端原生滚动历史。
 调试：会话事件全量记录在 .agentlab/logs/session-*.jsonl
 画面异常时：先试 /redraw；仍异常可设 AGENTLAB_FULL_REDRAW=1 后重启（关闭差分渲染）。
@@ -179,6 +178,7 @@ export function startTui(
   let expanded = false;
   let startedAt = 0;
   let stopped = false;
+  let suppressEnterUntil = 0;
   let picker: InteractionPanel | undefined;
   let approvalPanel: InteractionPanel | undefined;
   const activePanel = () => approvalPanel ?? picker;
@@ -195,7 +195,7 @@ export function startTui(
     invalidate() {},
     render: (width) => [
       truncateToWidth(statusText, width),
-      truncateToWidth(chalk.dim(` ${truncateToWidth(model, Math.max(4, width - 20))} · ${mode} · 思考 ${thinking}`), width),
+      truncateToWidth(chalk.dim(` ${mode} · 思考 ${thinking} · ${model}`), width),
     ],
   };
   const editor = new Editor(tui, editorTheme, { paddingX: 1 });
@@ -314,7 +314,8 @@ export function startTui(
       focusInteraction();
     };
     picker = new InteractionPanel({
-      title, kind: 'picker', items, initialValue, filterable,
+      title, kind: 'picker', items: items.map(item => ({ ...item, current: item.value === initialValue })), initialValue, filterable,
+      context: initialValue ? () => `当前: ${initialValue} · Enter 应用 · Esc 不更改` : undefined,
       rows: () => terminal.rows, changed: render, cancel: close,
       select: (value) => { close(); onPick(value); },
     });
@@ -323,10 +324,14 @@ export function startTui(
 
   // --- 固定底部审批：完整参数可滚动，选项不会被长正文挤掉 ---
   function showPermissionPanel(request: PermissionRequest, resolve: (d: UserDecision) => void, signal: AbortSignal, next: () => void): void {
-    const options: Array<{ label: string; decision: UserDecision }> = [
-      { label: '允许一次', decision: { allow: true } },
-      { label: '本次会话记住此操作', decision: { allow: true, remember: 'session' } },
-      { label: '拒绝', decision: { allow: false } },
+    const input = request.input && typeof request.input === 'object' && !Array.isArray(request.input) ? request.input as Record<string, unknown> : {};
+    const target = agent.tools.get(request.toolName)?.analyzeInput?.(input).patternTarget;
+    const dangerNotice = agent.config.dangerForceAsk ? '拒绝规则与危险检测仍优先' : '拒绝规则仍优先；当前已关闭危险操作强制询问';
+    const rememberedScope = target === undefined ? `${request.toolName} 的所有调用` : `${request.toolName} 的相同匹配目标: ${JSON.stringify(target)}`;
+    const options: Array<{ label: string; description: string; decision: UserDecision }> = [
+      { label: '允许一次', description: '只允许这一次调用，不新增规则。', decision: { allow: true } },
+      { label: '允许并记住此规则', description: `允许 ${rememberedScope}。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } },
+      { label: '拒绝', description: '拒绝这一次调用，Agent 会收到拒绝结果。', decision: { allow: false } },
     ];
     let settled = false;
     const done = (decision: UserDecision) => {
@@ -334,6 +339,8 @@ export function startTui(
       settled = true;
       signal.removeEventListener('abort', cancel);
       approvalPanel = undefined;
+      // 防止确认键的重复输入落到恢复的草稿或设置面板上。
+      suppressEnterUntil = Date.now() + 500;
       resolve(decision);
       next();
       focusInteraction();
@@ -342,8 +349,11 @@ export function startTui(
     signal.addEventListener('abort', cancel, { once: true });
     approvalPanel = new InteractionPanel({
       title: `权限请求 · ${request.toolName}`, kind: 'permission',
-      items: options.map((o, i) => ({ value: String(i), label: o.label })),
-      body: () => `理由: ${request.reason}\n操作摘要: ${request.summary.replace(/\s+/g, ' ').slice(0, 100)}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
+      items: options.map((o, i) => ({ value: String(i), label: o.label, description: o.description })),
+      requireSelection: true,
+      body: () => `理由: ${request.reason}\n操作摘要: ${request.summary}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
+      context: () => request.summary.replace(/\s+/g, ' '),
+      previewBody: () => `理由: ${request.reason}\n先选择授权范围，再按 Enter；Tab 查看完整参数`,
       rows: () => terminal.rows, changed: render, cancel: () => done({ allow: false }),
       select: (value) => done(options[Number(value)].decision),
     });
@@ -478,12 +488,17 @@ export function startTui(
 
   // --- 全局按键：Esc 中断当前轮；Ctrl+C 中断/退出 ---
   unsubscribe.push(tui.addInputListener((data) => {
+    if (matchesKey(data, Key.enter) && Date.now() < suppressEnterUntil) {
+      suppressEnterUntil = Date.now() + 500;
+      return { consume: true };
+    }
+    if (!matchesKey(data, Key.enter)) suppressEnterUntil = 0;
     if (matchesKey(data, Key.escape) && turns.running && !activePanel() && !tui.hasOverlay()) {
       interrupt();
       return { consume: true };
     }
     if (matchesKey(data, Key.ctrl('c'))) {
-      if (activePanel() && !turns.running) {
+      if (activePanel() && (!turns.running || !approvalPanel)) {
         activePanel()?.handleInput('\x1b');
         return { consume: true };
       }
@@ -511,20 +526,21 @@ export function startTui(
         ? `模型切换为 ${name}（context: ${info.contextWindow.toLocaleString()} tokens，max output: ${info.maxOutputTokens.toLocaleString()}）`
         : `模型切换为 ${name}（未知规格，压缩阈值保持配置值；可在 models.json 中补充）`,
     );
+    say('下一次模型请求生效（可能在本轮内）；不会切换 provider 或 endpoint');
     updateStatus();
   };
 
   const setMode = (m: string) => {
     agent.permission.setMode(m as 'ask' | 'auto' | 'yolo');
     mode = m;
-    say(`权限模式切换为 ${m}`);
+    say(`权限模式切换为 ${m}（后续权限检查生效；当前审批仍需处理）`);
     updateStatus();
   };
 
   const setThinking = (level: string) => {
     agent.loop.setThinking(level as ThinkingLevel);
     thinking = level as ThinkingLevel;
-    say(`思考等级切换为 ${level}`);
+    say(`思考等级切换为 ${level}（下一次模型请求生效，可能在本轮内）`);
     updateStatus();
   };
 
@@ -571,11 +587,11 @@ export function startTui(
           return;
         }
         showPicker(
-          `选择模型（当前: ${model}）`,
+          `选择模型 · ${agent.loop.providerName}`,
           agent.knownModels.map((m) => ({
             value: m.name,
-            label: m.name === model ? `${m.name} ✓` : m.name,
-            description: m.info ? `context ${m.info.contextWindow.toLocaleString()} · output ${m.info.maxOutputTokens.toLocaleString()}` : '未知规格',
+            label: m.name,
+            description: `${m.info ? `context ${m.info.contextWindow.toLocaleString()} · output ${m.info.maxOutputTokens.toLocaleString()}` : '未知规格'}\n下一次模型请求生效；需与当前 provider / endpoint 兼容。`,
           })),
           setModel,
           model,
@@ -595,9 +611,9 @@ export function startTui(
         showPicker(
           `权限模式（当前: ${mode}）`,
           [
-            { value: 'ask', label: 'ask', description: '每个操作都询问（最安全）' },
-            { value: 'auto', label: 'auto', description: '只读自动放行；配置 judgeModel 后写操作由 LLM 审批员把关' },
-            { value: 'yolo', label: 'yolo', description: '全部放行（deny 规则与危险检测仍生效），仅限沙箱' },
+            { value: 'ask', label: 'ask', description: '未命中规则的操作均询问；已有允许/拒绝规则仍生效。后续权限检查生效。' },
+            { value: 'auto', label: 'auto', description: agent.config.judgeModel ? '未命中规则的普通只读操作自动放行；写操作由 LLM 审批员检查。后续权限检查生效。' : '未命中规则的普通只读操作自动放行；写操作仍询问你（未配置审批模型）。后续权限检查生效。' },
+            { value: 'yolo', label: 'yolo', description: `普通操作自动放行；${agent.config.dangerForceAsk ? 'deny 规则与危险检测仍优先' : 'deny 规则仍优先；当前已关闭危险操作强制询问'}。仅建议隔离沙箱，后续权限检查生效。` },
           ],
           setMode,
           mode,
@@ -616,10 +632,10 @@ export function startTui(
         showPicker(
           `思考等级（当前: ${thinking}）`,
           [
-            { value: 'off', label: 'off', description: '关闭思考，最快最省' },
-            { value: 'low', label: 'low', description: '轻度推理' },
-            { value: 'medium', label: 'medium', description: '均衡' },
-            { value: 'high', label: 'high', description: '深度推理，慢但适合难题' },
+            { value: 'off', label: 'off', description: '不请求额外推理参数，实际行为由模型决定。下一次模型请求生效。' },
+            { value: 'low', label: 'low', description: '请求轻度推理；下一次模型请求生效，模型需支持。' },
+            { value: 'medium', label: 'medium', description: '请求均衡推理；下一次模型请求生效，模型需支持。' },
+            { value: 'high', label: 'high', description: '请求深度推理；下一次模型请求生效，模型需支持。' },
           ],
           setThinking,
           thinking,
@@ -728,9 +744,6 @@ export function startTui(
       handleCommand(trimmed);
       return;
     }
-    if (turns.running) {
-      say(`已排队（当前轮结束后发送）：${trimmed.slice(0, 60)}${trimmed.length > 60 ? '…' : ''}`);
-    }
     turns.submit(trimmed);
   };
 
@@ -738,12 +751,20 @@ export function startTui(
   transcript.addChild(header);
   const hints: Component = {
     invalidate() {},
-    render: (width) => [truncateToWidth(` Enter 发送 · Ctrl+O ${expanded ? '收起' : '详情'} · /details 编号 · Esc 中断`, width)],
+    render: (width) => [truncateToWidth(turns.running
+      ? ` Enter 排队 · Esc 中断${turns.size ? '并清空队列' : ''} · Ctrl+O 详情`
+      : ` Enter 发送 · Ctrl+O ${expanded ? '收起' : '详情'} · /details 编号 · /help`, width)],
+  };
+  const inputHeading: Component = {
+    invalidate() {},
+    render: (width) => [truncateToWidth(chalk.bold(turns.size
+      ? ` ❯ 输入 · 排队 ${turns.size} · 下一条: ${turns.next?.replace(/\s+/g, ' ')}`
+      : turns.running ? ' ❯ 输入 · 当前轮结束后发送' : ' ❯ 输入'), width)],
   };
   const footer = new VStack([
     status,
     { component: interaction, visible: () => !!activePanel() },
-    { component: new VStack([new TruncatedText(chalk.bold(' ❯ 输入 · 运行中发送会排队'), 1, 0), editor, hints]), visible: () => !activePanel() },
+    { component: new VStack([inputHeading, editor, hints]), visible: () => !activePanel() },
   ]);
   if (isViewportTUI(tui)) {
     tui.setLayoutRoot(new VStack([
