@@ -44,8 +44,9 @@ describe('MCP 桥接', () => {
     const manager = new McpClientManager();
     try {
       const client = await manager.connect('demo', {
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: ['tsx', serverEntry],
+        // 使用已安装的 loader，不依赖 npx 下载/包装或 tsx CLI 的额外 IPC socket。
+        command: process.execPath,
+        args: ['--import', 'tsx', serverEntry],
       });
       const tools = await manager.bridgeTools('demo', client);
 

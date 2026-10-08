@@ -40,7 +40,7 @@ import type { Agent } from '../index.js';
 import { DetailRegistry, PermissionMessage, renderHistory, StreamMessages, ToolMessage, UserMessage } from './messages.js';
 import { InteractionPanel, type PanelItem } from './interaction-panel.js';
 import { TurnQueue } from './turn-queue.js';
-import { createPermissionSettings } from './permission-settings.js';
+import { createPermissionSettings, describeJudgeStatus } from './permission-settings.js';
 import { SettingsInputPanel } from './settings-input.js';
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ export function startTui(
   const status: Component = {
     invalidate() {},
     render: (width) => [
-      truncateToWidth(statusText, width),
+      truncateToWidth(`${statusText}${mode === 'auto' ? chalk.dim(` · 审批 ${describeJudgeStatus(agent.loop.getJudgeStatus())}`) : ''}`, width),
       truncateToWidth(chalk.dim(` ${mode} · 思考 ${thinking} · ${model}`), width),
     ],
   };
@@ -635,7 +635,7 @@ export function startTui(
         showPicker('设置 · 当前会话', [
           { value: 'model', label: `模型 · ${model}`, description: '本次会话；下一次模型请求生效。' },
           { value: 'think', label: `思考 · ${thinking}`, description: '本次会话；下一次模型请求生效。' },
-          { value: 'permissions', label: `权限 · ${mode}`, description: '会话审批行为、记住的规则、项目默认与决策日志。' },
+          { value: 'permissions', label: `权限 · ${mode}`, description: `auto 审批模型: ${describeJudgeStatus(agent.loop.getJudgeStatus())}\n会话审批行为、记住的规则、项目默认与决策日志。` },
         ], value => handleCommand(`/${value}`, () => handleCommand('/settings')));
         return;
       case 'mode':

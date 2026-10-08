@@ -146,11 +146,6 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
       dangerForceAsk: config.dangerForceAsk,
     });
 
-    // auto 模式可选的 LLM 审批员（复用主 provider，换个便宜快速的模型）
-    const autoJudge = config.judgeModel
-      ? new AutoJudge(providers.get(config.provider), config.judgeModel)
-      : undefined;
-
     const systemPrompt = buildSystemPrompt({
       cwd,
       tools,
@@ -164,7 +159,9 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
       (name) => ({ name, info: modelInfo(name) }),
     );
 
-    const loop = new AgentLoop({
+    // 默认实时跟随主模型；显式配置独立。空字符串覆盖全局配置并恢复跟随。
+    const autoJudge: AutoJudge = new AutoJudge(providers.get(config.provider), config.judgeModel?.trim() || (() => loop.model), modelInfo);
+    const loop: AgentLoop = new AgentLoop({
       provider: providers.get(config.provider),
       model: config.model,
       tools,
@@ -214,7 +211,7 @@ export { EventBus, type AgentEvent, type LoopEndReason, type UserDecision, type 
 export { HookRunner } from './core/hooks.js';
 export { AgentLoop, type AgentLoopOptions, type AgentRunResult, type SessionSnapshot } from './core/loop.js';
 export { PermissionEngine, parseRule, matchRule, type Decision, type SessionRules } from './core/permission/engine.js';
-export { AutoJudge, mergeJudgeDecision, type JudgeVerdict } from './core/permission/judge.js';
+export { AutoJudge, mergeJudgeDecision, type JudgeVerdict, type JudgeStatus, type JudgeMetadata, type JudgeReasonCode } from './core/permission/judge.js';
 export { loadPlugins, type Plugin, type PluginContext, type PluginDisposer } from './core/plugin.js';
 export { ProviderRegistry, ToolRegistry, type Tool, type ToolContext, type ToolRisk } from './core/registry.js';
 export { complete, type ChatRequest, type Provider, type ThinkingLevel, type CachePolicy, type CacheTtl } from './core/provider.js';

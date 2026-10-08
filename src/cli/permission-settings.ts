@@ -37,8 +37,15 @@ const safeText = (value: string): string => value.replace(/[\u0000-\u001f\u007f-
 const rulesCount = (rules: SessionRules) => kinds.reduce((sum, kind) => sum + rules[kind].length, 0);
 const sameRules = (left: SessionRules, right: SessionRules) => kinds.every(kind => JSON.stringify(left[kind]) === JSON.stringify(right[kind]));
 const modeLabel = (mode?: PermissionMode) => mode ?? '继承全局 / 内置 ask';
-const judgeLabel = (model?: string) => model === undefined ? '继承全局' : model === '' ? '关闭' : safeText(model);
+const judgeLabel = (model?: string) => model === undefined ? '继承全局 / 默认跟随当前模型' : model.trim() === '' ? '跟随当前模型（覆盖全局）' : safeText(model.trim());
 const restartNotice = '重启后新会话生效；当前会话的模式、规则和审批模型不变。恢复旧会话时可能还原它保存的模式与会话规则。';
+
+/** 显示已装配的运行状态，不能从配置字段推断审批员是否存在。 */
+export function describeJudgeStatus(status: ReturnType<Agent['loop']['getJudgeStatus']>): string {
+  if (!status.loaded) return '未加载';
+  const source = status.source === 'current' ? '跟随当前模型' : status.source === 'explicit' ? '显式指定' : '来源未知';
+  return `已加载 ${safeText(status.model ?? '未知模型')}（${source}）`;
+}
 
 export function describePermissionRule(raw: string): string {
   try {
@@ -55,13 +62,16 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   const guard = () => agent.config.dangerForceAsk
     ? 'deny 规则最高优先；危险操作仍强制询问；allow 与 ask 规则继续生效。'
     : 'deny 规则最高优先；当前启动配置已关闭危险操作强制询问；allow 与 ask 规则继续生效。';
-  const modeDescription = (mode: PermissionMode): string => ({
-    ask: '未命中规则的操作均询问。',
-    auto: agent.config.judgeModel
-      ? `未命中规则的普通只读操作放行；写入/执行由已加载的审批模型 ${safeText(agent.config.judgeModel)} 检查，只有明确安全才放行，否则询问。`
-      : '未命中规则的普通只读操作放行；写入/执行仍询问（当前未加载审批模型）。',
-    yolo: '未命中规则的普通操作自动放行，包括写入与执行。仅建议在隔离沙箱中使用。',
-  })[mode];
+  const modeDescription = (mode: PermissionMode): string => {
+    const judge = agent.loop.getJudgeStatus();
+    return {
+      ask: '未命中规则的操作均询问。',
+      auto: judge.loaded
+        ? `未命中规则的普通只读操作放行；写入/执行由审批模型检查（${describeJudgeStatus(judge)}），只有明确安全才放行；不确定或审批失败时询问。`
+        : '未命中规则的普通只读操作放行；写入/执行仍询问（当前未加载审批模型）。',
+      yolo: '未命中规则的普通操作自动放行，包括写入与执行。仅建议在隔离沙箱中使用。',
+    }[mode];
+  };
   const reportError = (error: unknown) => notify(error instanceof PermissionConfigError ? error.message : '权限设置操作失败，未保存更改。', true);
   const confirm = (title: string, body: string, label: string, apply: () => void, back: () => void) => showPicker({
     title, context: '先选择，再 Enter 确认；Esc 返回', body: () => body, requireSelection: true,
@@ -92,17 +102,22 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
       title: '权限设置', context: `当前会话: ${agent.permission.mode} · 项目设置需 Save 后重启`,
       items: [
         { value: 'mode', label: `当前会话模式 · ${agent.permission.mode}`, description: `${modeDescription(agent.permission.mode)}\n${guard()}\n只改变后续权限检查；不会处理已弹出的审批。` },
+        { value: 'judge', label: `auto 审批模型 · ${describeJudgeStatus(agent.loop.getJudgeStatus())}`, description: '查看实际加载的模型与来源。仅 auto 模式使用；跟随当前模型时会随 /model 和会话恢复更新。' },
         { value: 'session', label: `已记住的会话规则 · ${rulesCount(agent.permission.getSessionRules())} 条`, description: '查看准确匹配范围并逐条移除。规则可能随会话保存和恢复。' },
         { value: 'effective', label: '当前生效的配置规则 · 只读', description: '启动时已加载的全局与项目规则；在此查看来源与优先级。' },
         { value: 'project', label: '项目默认设置 · 编辑 / Save', description: `编辑默认模式、项目 allow / ask / deny 与审批模型。${restartNotice}` },
         { value: 'audit', label: '权限决策日志', description: '查看本进程中的实际判定、原因与来源。' },
       ],
       onPick: value => {
-        const actions: Record<string, () => void> = { mode: () => { modeBack = reopenRoot; reopenModes(); }, session: openSessionRules, effective: openEffectiveRules, project: openProject, audit: openAudit };
+        const actions: Record<string, () => void> = { mode: () => { modeBack = reopenRoot; reopenModes(); }, judge: openJudgeStatus, session: openSessionRules, effective: openEffectiveRules, project: openProject, audit: openAudit };
         actions[value]?.();
       },
       onCancel: () => rootBack(),
     });
+  }
+
+  function openJudgeStatus(): void {
+    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型，复用主 provider 与 endpoint。\n\n${guard()}\n项目草稿与磁盘配置不代表当前已加载的审批员。`, reopenRoot);
   }
 
   function reopenModes(): void {
@@ -175,7 +190,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
         { value: 'mode', label: `默认模式 · ${modeLabel(draft.permissionMode)}`, description: `全局默认: ${global.permissionMode ?? 'ask（内置）'}。${restartNotice}` },
         { value: 'rules', label: `项目规则 · ${rulesCount(draft.permissions)} 条`, description: '添加 / 编辑 / 删除项目 allow、ask、deny；全局规则另外合并，不能在此删除。' },
         { value: 'global', label: `全局继承规则 · ${rulesCount(global.permissions)} 条 · 只读`, description: '查看 ~/.agent/config.json 中的规则；项目规则不会删除全局规则。' },
-        { value: 'judge', label: `审批模型 · ${judgeLabel(draft.judgeModel)}`, description: `全局: ${judgeLabel(global.judgeModel)}。模型复用主 provider 与 endpoint；输入名称需与其兼容。${restartNotice}` },
+        { value: 'judge', label: `审批模型 · ${judgeLabel(draft.judgeModel)}`, description: `全局: ${global.judgeModel ? safeText(global.judgeModel) : '跟随当前模型'}。模型复用主 provider 与 endpoint；输入名称需与其兼容。选择“跟随当前模型”会保存为空字符串。${restartNotice}` },
         { value: 'review', label: '查看完整草稿 / 更改', description: '核对模式、审批模型和各条规则。这里只显示权限设置，不展示配置中的其他字段。' },
         { value: 'save', label: 'Save · 保存项目草稿', description: `写入 ${safeText(snapshot.path)}。保留其他配置字段。${restartNotice}` },
         { value: 'back', label: '返回权限中心', description: dirty() ? '有未保存草稿，返回前会询问是否放弃。' : '没有未保存更改。' },
@@ -205,8 +220,8 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     };
     const editJudge = () => showPicker({ title: '项目审批模型 · 草稿', items: [
       { value: 'name', label: '输入模型名称', description: '仅在 auto 模式使用；复用主 provider / endpoint。不会填写 API key。' },
-      { value: 'inherit', label: `继承全局（${judgeLabel(global.judgeModel)}）` },
-      { value: 'off', label: '关闭项目审批模型', description: '即使全局配置了审批模型，也明确关闭；auto 下写入/执行回落为询问。' },
+      { value: 'inherit', label: `继承全局（${global.judgeModel ? safeText(global.judgeModel) : '默认跟随当前模型'}）`, description: '移除项目 judgeModel；全局未指定模型时跟随当前模型。' },
+      { value: 'current', label: '跟随当前模型', description: '保存为空字符串，覆盖全局审批模型；/model 切换和恢复会话时随主模型更新。需要逐次询问时可选择 ask 模式。' },
     ], onPick: value => {
       if (value === 'name') showInput({ title: '审批模型名称 · 草稿', value: draft.judgeModel || '', description: restartNotice,
         validate: name => !name.trim() || /[\s\u0000-\u001f\u007f-\u009f]/u.test(name) ? '请输入不含空白或控制字符的模型名称。' : undefined,

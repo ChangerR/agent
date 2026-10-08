@@ -219,6 +219,33 @@ async function snapshot(name: string, lines: string[]) {
   if (outputDir) await writeFile(join(outputDir, `tui-${name}.txt`), lines.join('\n'));
 }
 
+describe('TUI 审批模型运行状态', () => {
+  it.each([
+    { judgeModel: '', before: 'initial-model（跟随当前模型）', after: 'changed-model（跟随当前模型）' },
+    { judgeModel: 'fixed-reviewer', before: 'fixed-reviewer（显式指定）', after: 'fixed-reviewer（显式指定）' },
+  ])('auto 底栏展示实际加载模型，切换主模型时来源为 $judgeModel', async ({ judgeModel, before, after }) => {
+    const ui = await mountTui({ model: 'initial-model', judgeModel });
+    try {
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain(`审批 已加载 ${before}`));
+      ui.send('/model changed-model');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain(`审批 已加载 ${after}`));
+      ui.send('/permissions');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('auto 审批模型'));
+      expect(ui.screen().join('\n')).toContain(`已加载 ${after}`);
+    } finally { await ui.dispose(); }
+  });
+
+  it('运行时未加载时底栏不把已配置模型显示成已加载', async () => {
+    const ui = await mountTui({ judgeModel: 'configured-reviewer' });
+    try {
+      vi.spyOn(ui.agent.loop, 'getJudgeStatus').mockReturnValue({ loaded: false });
+      ui.send('/redraw');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('审批 未加载'));
+      expect(ui.screen().slice(-8).join('\n')).not.toContain('审批 已加载');
+    } finally { await ui.dispose(); }
+  });
+});
+
 describe('真实 TUI 离线交互', () => {
   it('设置入口可返回，项目默认单独确认 Save，浏览与草稿不修改运行权限', async () => {
     const ui = await mountTui();
@@ -232,7 +259,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('设置 · 当前会话'));
       ui.terminal.input?.('\x1b');
-      ui.send('/permissions'); down(); down(); down(); enter();
+      ui.send('/permissions'); down(); down(); down(); down(); enter();
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));
       enter(); down(); enter(); // auto -> yolo，仍只是项目草稿
       expect(await readFile(file, 'utf8')).toBe(before);
@@ -343,7 +370,8 @@ describe('真实 TUI 离线交互', () => {
       await snapshot('filtered-model-current', ui.screen());
       ui.terminal.input?.('\x1b');
       ui.send('/mode');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未加载审批模型'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('跟随当前模型'));
+      expect(ui.screen().join('\n')).not.toContain('未加载审批模型');
       expect(ui.agent.permission.mode).toBe('auto');
       ui.terminal.input?.('\x1b');
     } finally { await ui.dispose(); }
