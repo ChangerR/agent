@@ -39,7 +39,7 @@ import type { Agent } from '../index.js';
 import { DetailRegistry, PermissionMessage, renderHistory, StreamMessages, ToolMessage, UserMessage } from './messages.js';
 import { InteractionPanel, type PanelItem } from './interaction-panel.js';
 import { TurnQueue } from './turn-queue.js';
-import { createPermissionSettings } from './permission-settings.js';
+import { createPermissionSettings, describeJudgeStatus } from './permission-settings.js';
 import { SettingsInputPanel } from './settings-input.js';
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ export function startTui(
   const status: Component = {
     invalidate() {},
     render: (width) => [
-      truncateToWidth(ui.dim(` ${mode} · 思考 ${thinking}${width >= 60 ? ` · ${safeTerminalText(basename(agent.cwd))}` : ''}`), width),
+      truncateToWidth(ui.dim(` ${mode} · 思考 ${thinking}${mode === 'auto' ? ` · 审批 ${describeJudgeStatus(agent.loop.getJudgeStatus())}` : width >= 60 ? ` · ${safeTerminalText(basename(agent.cwd))}` : ''}`), width),
       truncateToWidth(ui.muted(` ↑${fmtTokens(usage.inputTokens)} ↓${fmtTokens(usage.outputTokens)} · cache ${cacheHitRate(usage)} · ${safeTerminalText(model)}`), width),
     ],
   };
@@ -607,7 +607,7 @@ export function startTui(
         showPicker('设置 · 当前会话', [
           { value: 'model', label: `模型 · ${model}`, description: '本次会话；下一次模型请求生效。' },
           { value: 'think', label: `思考 · ${thinking}`, description: '本次会话；下一次模型请求生效。' },
-          { value: 'permissions', label: `权限 · ${mode}`, description: '会话审批行为、记住的规则、项目默认与决策日志。' },
+          { value: 'permissions', label: `权限 · ${mode}`, description: `auto 审批模型: ${describeJudgeStatus(agent.loop.getJudgeStatus())}\n会话审批行为、记住的规则、项目默认与决策日志。` },
         ], value => handleCommand(`/${value}`, () => handleCommand('/settings')), undefined, false, undefined, true);
         return;
       case 'mode':

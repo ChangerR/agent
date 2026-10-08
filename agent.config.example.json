@@ -2,6 +2,7 @@
   "provider": "anthropic",
   "model": "claude-sonnet-4-5",
   "permissionMode": "ask",
+  "judgeModel": "",
   "dangerForceAsk": true,
   "permissions": {
     "allow": ["bash(npm test *)"],
