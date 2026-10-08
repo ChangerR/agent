@@ -24,6 +24,39 @@ const text = (comp: Component, width = 80) => comp.render(width).map(stripTermin
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe('TUI 消息与调度', () => {
+  it('折叠工具按可见行限高，完整输出与参数仍能展开，失败突出显示', () => {
+    let expanded = false;
+    const tool = new ToolMessage('read_file: 长路径', () => expanded, { name: 'read_file', input: { path: '完整参数路径' } });
+    tool.finish({ content: '中文长行'.repeat(300) + '\n末尾' });
+    expect(tool.render(24)).toHaveLength(2);
+    expect(text(tool, 24)).toContain('2 行输出');
+    expanded = true;
+    expect(text(tool, 80)).toContain('完整参数路径');
+    expect(text(tool, 80)).toContain('末尾');
+    expanded = false;
+    tool.finish({ content: '错误原因\n修复方法\n第三行\n末尾', isError: true });
+    expect(tool.render(24)).toHaveLength(4);
+    expect(text(tool, 24)).toContain('失败');
+    expect(text(tool, 24)).toContain('错误原因');
+  });
+
+  it('详情支持翻页与首尾跳转，返回选项不会授权', () => {
+    const select = vi.fn();
+    const panel = new InteractionPanel({ title: '权限', kind: 'permission', rows: () => 24,
+      items: [{ value: 'once', label: '允许一次' }], body: () => Array.from({ length: 60 }, (_, i) => `参数 ${i}`).join('\n'),
+      changed: vi.fn(), select, cancel: vi.fn(),
+    });
+    panel.handleInput('\t'); panel.render(40);
+    panel.handleInput('\x1b[F');
+    expect(text(panel, 40)).toContain('参数 59');
+    panel.handleInput('\x1b[H');
+    expect(text(panel, 40)).toContain('参数 0');
+    panel.handleInput('\x1b[6~');
+    expect(text(panel, 40)).not.toContain('参数 0\n');
+    panel.handleInput('\r');
+    expect(select).not.toHaveBeenCalled();
+  });
+
   it('详情编号保留完整参数与实时结果，清空后不引用旧会话', () => {
     const registry = new DetailRegistry();
     const operation = { name: 'bash', input: { command: '多行命令\n完整结尾' } };
@@ -147,7 +180,7 @@ class MemoryTerminal implements Terminal {
   setProgress(): void {}
 }
 
-async function mountTui() {
+async function mountTui(config: Record<string, unknown> = {}) {
   vi.stubEnv('AGENTLAB_SCREEN', 'alt');
   let renderer!: TuiAltScreen;
   const originalStart = TuiAltScreen.prototype.start;
@@ -156,7 +189,7 @@ async function mountTui() {
     originalStart.call(this);
   });
   const dir = await mkdtemp(join(tmpdir(), 'agentlab-ui-'));
-  await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto' }));
+  await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto', ...config }));
   const agent = await createAgent(dir);
   const terminal = new MemoryTerminal();
   const session = startTui(agent, { terminal, onExit: vi.fn() });
@@ -175,6 +208,121 @@ async function snapshot(name: string, lines: string[]) {
 }
 
 describe('真实 TUI 离线交互', () => {
+  it('审批结束后的重复 Enter 不发送草稿，也不应用恢复的设置候选', async () => {
+    const ui = await mountTui();
+    const run = vi.spyOn(ui.agent.loop, 'run');
+    const controller = new AbortController();
+    const ask = () => ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve: vi.fn(),
+      request: { toolName: 'bash', input: { command: 'echo test' }, summary: 'echo test', reason: '确认' } });
+    try {
+      ui.terminal.input?.('未发送草稿'); ask();
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未发送草稿'));
+      expect(run).not.toHaveBeenCalled();
+      ui.terminal.input?.('\x15');
+      ui.send('/think'); ui.terminal.input?.('\x1b[B'); ask();
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ low'));
+      expect(ui.agent.loop.thinking).toBe('off');
+      ui.terminal.input?.('\x1b');
+    } finally { controller.abort(); await ui.dispose(); }
+  });
+
+  it('关闭危险操作强制询问时，模式和记忆范围不承诺仍会拦截', async () => {
+    const ui = await mountTui({ dangerForceAsk: false });
+    const controller = new AbortController();
+    try {
+      ui.send('/mode'); ui.terminal.input?.('\x1b[B');
+      await vi.waitFor(() => expect(ui.screen().join('').replace(/\s/g, '')).toContain('已关闭危险操作强制询问'));
+      ui.terminal.input?.('\x1b');
+      ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve: vi.fn(),
+        request: { toolName: 'custom_plugin', input: {}, summary: '插件调用', reason: '确认' } });
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\t');
+      await vi.waitFor(() => expect(ui.screen().join('').replace(/\s/g, '')).toContain('custom_plugin的所有调用'));
+      expect(ui.screen().join('').replace(/\s/g, '')).toContain('已关闭危险操作强制询问');
+    } finally { controller.abort(); await ui.dispose(); }
+  });
+
+  it('设置候选不等于当前值，筛选和取消不修改设置，详情解释生效时机', async () => {
+    const ui = await mountTui();
+    try {
+      ui.send('/think');
+      ui.terminal.input?.('\x1b[B');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ low'));
+      expect(ui.screen().join('\n')).toContain('off · 当前');
+      expect(ui.agent.loop.thinking).toBe('off');
+      ui.terminal.input?.('\t');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('下一次模型请求生效'));
+      ui.terminal.input?.('\x1b');
+      expect(ui.agent.loop.thinking).toBe('off');
+      ui.send('/model'); ui.terminal.input?.('gpt-4o');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('当前: claude-sonnet-4-5'));
+      expect(ui.agent.loop.model).toBe('claude-sonnet-4-5');
+      await snapshot('filtered-model-current', ui.screen());
+      ui.terminal.input?.('\x1b');
+      ui.send('/mode');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未配置审批模型'));
+      expect(ui.agent.permission.mode).toBe('auto');
+      ui.terminal.input?.('\x1b');
+    } finally { await ui.dispose(); }
+  });
+
+  it('记住审批说明真实匹配范围与会话恢复，未选择和详情返回不能授权', async () => {
+    const ui = await mountTui();
+    const controller = new AbortController(); const resolve = vi.fn();
+    try {
+      ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve,
+        request: { toolName: 'read_file', input: { path: 'note.txt' }, summary: '读取 note.txt', reason: '请确认' } });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未选择'));
+      ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
+      expect(resolve).not.toHaveBeenCalled();
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('相同匹配目标'));
+      expect(ui.screen().join('\n')).toContain('其他参数可能不同');
+      expect(ui.screen().join('').replace(/\s/g, '')).toContain('会话保存和恢复');
+      await snapshot('permission-remember-scope', ui.screen());
+      ui.terminal.input?.('\t'); ui.terminal.input?.('\r');
+      expect(resolve).not.toHaveBeenCalled();
+      ui.terminal.input?.('\r');
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith({ allow: true, remember: 'session' });
+    } finally { controller.abort(); await ui.dispose(); }
+  });
+
+  it('运行时关闭选择器不打断任务，草稿与排队提示在底部保留', async () => {
+    const ui = await mountTui();
+    let release!: () => void;
+    const abort = vi.spyOn(ui.agent.loop, 'abort_current');
+    vi.spyOn(ui.agent.loop, 'run').mockImplementation(() => new Promise((resolve) => { release = () => resolve({ reason: 'completed', turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }); }));
+    try {
+      ui.send('第一轮');
+      ui.send('下一项任务');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('下一条: 下一项任务'));
+      expect(ui.screen().join('\n')).toContain('Enter 排队');
+      ui.send('/model');
+      ui.terminal.input?.('\x03');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('❯ 输入'));
+      expect(abort).not.toHaveBeenCalled();
+      ui.send('/queue clear');
+      ui.terminal.input?.('未发送草稿');
+      const controller = new AbortController();
+      const resolve = vi.fn();
+      ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve,
+        request: { toolName: 'bash', input: {}, summary: '操作上下文', reason: '需要确认' } });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求'));
+      ui.terminal.input?.('\x1b');
+      expect(resolve).toHaveBeenCalledWith({ allow: false });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('未发送草稿'));
+      release();
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('Enter 发送'));
+      ui.terminal.columns = 24; ui.terminal.rows = 8; ui.terminal.resize?.();
+      await vi.waitFor(() => expect(ui.screen()).toHaveLength(8));
+      expect(ui.screen().join('\n')).toContain('auto · 思考 off');
+      for (const line of ui.screen()) expect(visibleWidth(line)).toBeLessThanOrEqual(24);
+      await snapshot('narrow-idle', ui.screen());
+    } finally { release?.(); await ui.dispose(); }
+  });
+
   it('高窗口中的思考菜单独占底部，移除输入框且切换时清屏重绘', async () => {
     const ui = await mountTui();
     try {
@@ -217,7 +365,7 @@ describe('真实 TUI 离线交互', () => {
       const panelStart = shown.findIndex((line) => line.includes('── 选择模型'));
       expect(panelStart).toBeGreaterThanOrEqual(8);
       expect(shown.slice(panelStart).join('\n')).toContain('Enter 确认');
-      expect(shown.slice(panelStart).join('\n')).toContain('❯ claude-sonnet-4-5 ✓');
+      expect(shown.slice(panelStart).join('\n')).toContain('❯ claude-sonnet-4-5 · 当前');
       await snapshot('model', shown);
       ui.terminal.input?.('gpt-4o');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('搜索: gpt-4o'));
@@ -239,7 +387,7 @@ describe('真实 TUI 离线交互', () => {
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求'));
       expect(ui.renderer().hasOverlay()).toBe(false);
       expect(ui.screen().slice(-16).join('\n')).toContain('允许一次');
-      expect(ui.screen().slice(-16).join('\n')).toContain('本次会话记住此操作');
+      expect(ui.screen().slice(-16).join('\n')).toContain('允许并记住此规则');
       expect(ui.screen().slice(-16).join('\n')).toContain('Enter 确认');
       await snapshot('permission', ui.screen());
       ui.terminal.columns = 32;
@@ -279,9 +427,14 @@ describe('真实 TUI 离线交互', () => {
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求 · first'));
       expect(ui.screen().join('\n')).toContain('等待你确认权限');
       ui.terminal.input?.('\r');
+      expect(firstResolve).not.toHaveBeenCalled();
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\r');
       expect(firstResolve).toHaveBeenCalledTimes(1);
       expect(firstResolve).toHaveBeenCalledWith({ allow: true });
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('权限请求 · second'));
+      ui.terminal.input?.('\r'); ui.terminal.input?.('\r');
+      expect(secondResolve).not.toHaveBeenCalled();
       second.abort();
       expect(secondResolve).toHaveBeenCalledTimes(1);
       expect(secondResolve).toHaveBeenCalledWith({ allow: false });
@@ -309,8 +462,8 @@ describe('真实 TUI 离线交互', () => {
       expect(collapsed).toContain('❯ 你');
       expect(collapsed).toContain('◇ 思考 #1 · 已结束');
       expect(collapsed).toContain('● Agent');
-      expect(collapsed).toContain('bash · 完成');
-      expect(collapsed).toContain('/details 2');
+      expect(collapsed).toContain('完成 · bash');
+      expect(collapsed).toContain('#2 · 6 行输出');
       expect(collapsed).not.toContain('OUTPUT_END_UNIQUE');
       await snapshot('conversation', ui.screen());
       ui.terminal.input?.('\x0f');

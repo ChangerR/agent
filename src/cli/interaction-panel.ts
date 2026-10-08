@@ -5,6 +5,7 @@ export interface PanelItem {
   value: string;
   label: string;
   description?: string;
+  current?: boolean;
 }
 
 export interface PanelOptions {
@@ -14,6 +15,9 @@ export interface PanelOptions {
   initialValue?: string;
   filterable?: boolean;
   body?: () => string;
+  context?: () => string;
+  previewBody?: () => string;
+  requireSelection?: boolean;
   rows: () => number;
   changed: () => void;
   select?: (value: string) => void;
@@ -33,7 +37,7 @@ export class InteractionPanel implements Component {
   constructor(private options: PanelOptions) {
     this.viewingDetails = options.kind === 'details';
     const index = this.items.findIndex((item) => item.value === options.initialValue);
-    this.selected = Math.max(0, index);
+    this.selected = options.requireSelection ? -1 : Math.max(0, index);
   }
 
   private get items(): PanelItem[] {
@@ -45,11 +49,12 @@ export class InteractionPanel implements Component {
   render(width: number): string[] {
     const height = Math.max(3, Math.min(14, Math.floor(this.options.rows() * 0.6), this.options.rows() - 3));
     const items = this.items;
-    this.selected = Math.max(0, Math.min(this.selected, items.length - 1));
+    this.selected = Math.max(this.options.requireSelection ? -1 : 0, Math.min(this.selected, items.length - 1));
     const selected = items[this.selected];
     const title = `${this.options.title}${this.viewingDetails && this.options.kind !== 'details' ? ' · 详情' : ''}`;
     const lines = [truncateToWidth(chalk.bold.cyan(`── ${title}`), width)];
     this.optionRows.clear();
+    if (!this.viewingDetails && this.options.context && height >= 7) lines.push(truncateToWidth(` ${this.options.context()}`, width));
     if (this.options.filterable && height >= 5) lines.push(truncateToWidth(` 搜索: ${this.filter || '输入模型名筛选'}`, width));
     const footerCount = height >= 6 ? 2 : 1;
     const available = height - lines.length - footerCount;
@@ -59,23 +64,25 @@ export class InteractionPanel implements Component {
     for (let i = start; i < start + optionCount; i++) {
       const active = i === this.selected;
       this.optionRows.set(lines.length, i);
-      const label = ` ${active ? '❯' : ' '} ${items[i].label}`;
+      const label = ` ${active ? '❯' : ' '} ${items[i].label}${items[i].current ? ' · 当前' : ''}`;
       lines.push(truncateToWidth(active ? chalk.bgCyan.black.bold(label) : label, width));
     }
     if (!this.viewingDetails && !items.length && available > 0) lines.push(truncateToWidth(chalk.yellow(' 无匹配项，请退格修改搜索'), width));
     const room = Math.max(0, height - lines.length - footerCount);
-    const body = this.options.body?.() ?? selected?.description ?? '';
+    const body = this.viewingDetails
+      ? [selected?.description, this.options.body?.()].filter(Boolean).join('\n\n')
+      : selected?.description ?? this.options.previewBody?.() ?? this.options.body?.() ?? '';
     const bodyLines = body ? new Text(body, 1, 0).render(width) : [];
     this.bodyHeight = Math.max(1, room);
     this.bodyLines = bodyLines.length;
     this.offset = Math.max(0, Math.min(this.offset, Math.max(0, bodyLines.length - room)));
     const content = bodyLines.slice(this.viewingDetails ? this.offset : 0, (this.viewingDetails ? this.offset : 0) + room);
     lines.push(...content);
-    const scrollInfo = this.viewingDetails && bodyLines.length ? ` ${this.offset + 1}–${Math.min(this.offset + room, bodyLines.length)}/${bodyLines.length} 行` : items.length ? ` ${this.selected + 1}/${items.length}` : '';
-    if (footerCount === 2) lines.push(truncateToWidth(chalk.bold(`${this.viewingDetails ? ' ↑↓ 滚动' : ' ↑↓ 选择 · Enter 确认'}${scrollInfo}`), width));
+    const scrollInfo = this.viewingDetails && bodyLines.length ? ` ${this.offset + 1}–${Math.min(this.offset + room, bodyLines.length)}/${bodyLines.length} 行` : items.length ? this.selected < 0 ? ` 未选择` : ` ${this.selected + 1}/${items.length}` : '';
+    if (footerCount === 2) lines.push(truncateToWidth(chalk.bold(`${this.viewingDetails ? ' ↑↓ 滚动' : this.selected < 0 ? ' ↑↓ 选择后 Enter 确认' : ' ↑↓ 选择 · Enter 确认'}${scrollInfo}`), width));
     const cancel = this.options.kind === 'permission' ? 'Esc 拒绝' : 'Esc 返回';
     const hint = this.options.kind === 'details'
-      ? ' ↑↓ 滚动 · Esc 返回'
+      ? ' ↑↓/PgUp/PgDn 滚动 · Esc 返回'
       : this.viewingDetails ? ` Tab/Enter 返回选项 · ${cancel}`
         : footerCount === 2 ? ` Tab 查看完整详情 · ${cancel}` : width < 28 ? ' ↑↓ Enter Tab Esc' : ' ↑↓选 Enter确认 Tab详情 Esc';
     lines.push(truncateToWidth(hint, width));
@@ -93,10 +100,14 @@ export class InteractionPanel implements Component {
         if (item) this.options.select?.(item.value);
         return;
       }
+    } else if (this.viewingDetails && (matchesKey(data, Key.pageUp) || matchesKey(data, Key.pageDown))) {
+      this.scroll(matchesKey(data, Key.pageUp) ? -this.bodyHeight : this.bodyHeight);
+    } else if (this.viewingDetails && (matchesKey(data, Key.home) || matchesKey(data, Key.end))) {
+      this.scroll(matchesKey(data, Key.home) ? -this.bodyLines : this.bodyLines);
     } else if (matchesKey(data, Key.up) || matchesKey(data, Key.down)) {
       const direction = matchesKey(data, Key.up) ? -1 : 1;
       if (this.viewingDetails) this.scroll(direction);
-      else if (this.items.length) this.selected = (this.selected + direction + this.items.length) % this.items.length;
+      else if (this.items.length) this.selected = this.selected < 0 ? (direction < 0 ? this.items.length - 1 : 0) : (this.selected + direction + this.items.length) % this.items.length;
     } else if (this.options.filterable && !this.viewingDetails) {
       if (matchesKey(data, Key.backspace)) this.filter = Array.from(this.filter).slice(0, -1).join('');
       else if (/^[^\x00-\x1f\x7f]+$/u.test(data)) this.filter += data;

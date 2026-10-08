@@ -11,6 +11,7 @@ export class TurnQueue {
 
   get running(): boolean { return this.active; }
   get size(): number { return this.pending.length; }
+  get next(): string | undefined { return this.pending[0]; }
 
   submit(text: string): void {
     this.pending.push(text);
