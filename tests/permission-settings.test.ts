@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stripTerminalSequences, visibleWidth } from '@earendil-works/pi-tui';
 import { AgentConfigSchema } from '../src/core/config.js';
 import { PermissionEngine } from '../src/core/permission/engine.js';
-import { createPermissionSettings, describePermissionRule, type PermissionSettingsPicker } from '../src/cli/permission-settings.js';
+import { createPermissionSettings, describeJudgeStatus, describePermissionRule, type PermissionSettingsPicker } from '../src/cli/permission-settings.js';
 import { SettingsInputPanel, type SettingsInputRequest } from '../src/cli/settings-input.js';
 import type { Agent } from '../src/index.js';
 
@@ -20,7 +20,8 @@ function setup() {
   const config = AgentConfigSchema.parse({ permissionMode: 'ask', permissions: { allow: ['read_file'], deny: ['bash(rm *)'] } });
   const permission = new PermissionEngine({ mode: 'ask', rules: config.permissions });
   const session = { id: 'session-one' };
-  const agent = { cwd, config, permission, session } as unknown as Agent;
+  const getJudgeStatus = vi.fn<() => ReturnType<Agent['loop']['getJudgeStatus']>>(() => ({ loaded: true, model: config.model, source: 'current' }));
+  const agent = { cwd, config, permission, session, loop: { getJudgeStatus } } as unknown as Agent;
   let picker!: PermissionSettingsPicker;
   let input!: SettingsInputRequest;
   let detail = { title: '', body: () => '', onBack: () => {} };
@@ -29,10 +30,53 @@ function setup() {
     showPicker: request => { picker = request; }, showInput: request => { input = request; },
     showDetails: (title, body, onBack) => { detail = { title, body, onBack }; }, notify, onModeChange });
   const pick = (value: string) => { expect(picker.items.some(item => item.value === value), `Missing ${value} in ${picker.title}`).toBe(true); picker.onPick(value); };
-  return { settings, permission, config, session, path, cwd, notify, onModeChange, pick, get picker() { return picker; }, get input() { return input; }, get detail() { return detail; } };
+  return { settings, permission, config, session, path, globalConfigPath, cwd, notify, onModeChange, getJudgeStatus, pick, get picker() { return picker; }, get input() { return input; }, get detail() { return detail; } };
 }
 
 describe('TUI 权限中心', () => {
+  it('按实际运行状态显示审批模型与来源，不以 judgeModel 配置推断是否加载', () => {
+    const h = setup();
+    expect(h.config.judgeModel).toBeUndefined();
+    h.getJudgeStatus.mockReturnValue({ loaded: true, model: 'current-runtime-model', source: 'current' });
+    h.settings.open();
+    expect(h.picker.items.find(item => item.value === 'judge')?.label).toContain('已加载 current-runtime-model（跟随当前模型）');
+    h.pick('mode');
+    expect(h.picker.items.find(item => item.value === 'auto')?.description).toContain('current-runtime-model');
+    h.getJudgeStatus.mockReturnValue({ loaded: true, model: 'explicit-runtime-model', source: 'explicit' });
+    h.settings.open(); h.pick('judge');
+    expect(h.detail.body()).toContain('已加载 explicit-runtime-model（显式指定）');
+    h.config.judgeModel = 'configured-but-not-loaded';
+    h.getJudgeStatus.mockReturnValue({ loaded: false });
+    expect(h.detail.body()).toContain('未加载');
+    expect(h.detail.body()).not.toContain('configured-but-not-loaded');
+    h.settings.openModes();
+    expect(h.picker.items.find(item => item.value === 'auto')?.description).toContain('当前未加载审批模型');
+  });
+
+  it('项目可保存空字符串跟随当前模型并覆盖全局，也可恢复继承；保存不冒充当前运行状态', () => {
+    const h = setup();
+    writeFileSync(h.globalConfigPath, JSON.stringify({ judgeModel: 'global-reviewer' }));
+    h.getJudgeStatus.mockReturnValue({ loaded: true, model: 'global-reviewer', source: 'explicit' });
+    h.settings.open(); h.pick('project'); h.pick('judge');
+    expect(h.picker.items.some(item => item.value === 'off' || item.label.includes('关闭'))).toBe(false);
+    expect(h.picker.items.find(item => item.value === 'inherit')?.label).toContain('global-reviewer');
+    h.pick('current');
+    expect(h.picker.body?.()).toContain('跟随当前模型（覆盖全局）');
+    h.pick('save'); h.pick('confirm');
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).judgeModel).toBe('');
+    h.pick('back');
+    expect(h.picker.items.find(item => item.value === 'judge')?.label).toContain('已加载 global-reviewer（显式指定）');
+    h.pick('project'); h.pick('judge'); h.pick('inherit'); h.pick('save'); h.pick('confirm');
+    expect(JSON.parse(readFileSync(h.path, 'utf8'))).not.toHaveProperty('judgeModel');
+  });
+
+  it('审批状态中的模型名称转义终端控制字符', () => {
+    const label = describeJudgeStatus({ loaded: true, model: 'model\x1b[2J\nnext', source: 'current' });
+    expect(label).toContain('model\\u001b[2J\\u000anext');
+    expect(label).not.toContain('\x1b');
+    expect(label).not.toContain('\n');
+  });
+
   it('模式只能明确确认后改变，取消不变，准确解释作用范围与已有规则', () => {
     const h = setup(); h.settings.open(); h.pick('mode'); h.pick('yolo');
     expect(h.permission.mode).toBe('ask'); expect(h.picker.requireSelection).toBe(true); expect(h.picker.initialValue).toBeUndefined();

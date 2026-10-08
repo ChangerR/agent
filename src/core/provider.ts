@@ -4,7 +4,7 @@
  * Provider 的唯一职责：给定规范化请求，产出规范化流式事件。
  * 厂商 SDK 的所有细节都被关在各自的 adapter 里。
  */
-import type { Message, StreamEvent, ToolDefinition } from './protocol/types.js';
+import type { Message, StreamEvent, ToolDefinition, StopReason } from './protocol/types.js';
 import { emptyUsage, mergeUsage, type TokenUsage } from './protocol/types.js';
 import { randomUUID } from 'node:crypto';
 import type { EventBus } from './events.js';
@@ -75,13 +75,15 @@ export async function complete(
   req: ChatRequest,
   signal: AbortSignal,
   trace?: { events: EventBus; purpose: 'compact' | 'judge' },
-): Promise<{ text: string; usage: TokenUsage }> {
+): Promise<{ text: string; usage: TokenUsage; stopReason?: StopReason }> {
   let text = '';
+  let stopReason: StopReason | undefined;
   const usage = emptyUsage();
   const stream = trace ? observedStream(provider, req, signal, trace) : provider.stream(req, signal);
   for await (const ev of stream) {
     if (ev.type === 'text_delta') text += ev.text;
+    if (ev.type === 'message_stop') stopReason = ev.stopReason;
     if (ev.type === 'usage') mergeUsage(usage, ev);
   }
-  return { text, usage };
+  return { text, usage, stopReason };
 }

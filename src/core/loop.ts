@@ -127,6 +127,10 @@ export class AgentLoop {
     return this.opts.model;
   }
 
+  getJudgeStatus(): import('./permission/judge.js').JudgeStatus {
+    return this.opts.autoJudge?.getStatus() ?? { loaded: false };
+  }
+
   setModel(model: string): void {
     this.opts.model = model;
     this.applyModelInfo(model);
@@ -390,7 +394,7 @@ export class AgentLoop {
     });
     emitDecision('pipeline');
 
-    // auto 模式 + LLM 审批员：管线判定为 ask（模式默认值）时，让小模型兜底判断
+    // auto 模式 + LLM 审批员：管线判定为 ask（模式默认值）时，让已加载的审批模型兜底判断
     if (decision.kind === 'ask' && decision.source === 'mode' && this.opts.autoJudge && permission.mode === 'auto') {
       const reviewContext = this.reviewHistory.build(tool, input, cwd, this.currentUserRequest, this.messages);
       const verdict = await this.opts.autoJudge.review(tool, input, signal, events, reviewContext);

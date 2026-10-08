@@ -57,8 +57,9 @@ export const AgentConfigSchema = z.object({
   modelsFile: z.string().default('./models.json'),
   /**
    * auto 模式的 LLM 审批员模型（如 deepseek-flash / claude-haiku-4-5）。
-   * 设置后：auto 模式下写/执行操作先由它判断，明显安全才静默放行；
-   * 不设置则回落为询问用户。
+   * auto 模式下写/执行操作先由它判断，明显安全才静默放行；失败或不确定则询问。
+   * 项目未设置时继承全局；最终未设置或为空字符串时跟随当前主模型。
+   * 项目空字符串可覆盖全局指定的审批模型；切换/恢复主模型时同步跟随。
    */
   judgeModel: z.string().optional(),
   /** 思考等级：off / low / medium / high（可用 /think 切换） */

@@ -23,6 +23,8 @@ import type { PermissionMode } from '../config.js';
 export type DecisionKind = 'allow' | 'ask' | 'deny';
 
 export interface Decision {
+  /** 本次实际审批模型及结构化结果，不记录底层错误或凭据。 */
+  judge?: import('./judge.js').JudgeMetadata;
   kind: DecisionKind;
   /** 人类可读的判定理由（展示与审计用） */
   reason: string;
