@@ -99,6 +99,13 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
     // .env 不存在时忽略
   }
   const config = loadConfig(cwd);
+  // 与 SDK 使用相同的端点优先级；在组装时冻结，避免首次请求前环境变量变化。
+  const configuredEndpoint = config.baseURL ?? (config.provider === 'openai' ? process.env.OPENAI_BASE_URL : undefined);
+  // OpenAI SDK 将空字符串回退到默认地址，但不会 trim 空白字符串。
+  const endpointURL = config.provider === 'openai' ? configuredEndpoint || undefined : configuredEndpoint;
+  const providerConfig = config.provider === 'openai'
+    ? { ...config, baseURL: endpointURL ?? 'https://api.openai.com/v1' }
+    : config;
   const providers = new ProviderRegistry();
   const tools = new ToolRegistry();
   const hookRunner = new HookRunner();
@@ -120,7 +127,7 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
 
   // 内置 + 外部插件，同一个接口
   const plugins: Plugin[] = [
-    providersPlugin(config),
+    providersPlugin(providerConfig),
     builtinTools,
     skillPlugin(skillLoader),
     mcpPlugin(resolve(cwd, config.mcpConfig)),
@@ -178,7 +185,7 @@ export async function createAgent(cwd: string, options?: { autoSaveSessions?: bo
       permission,
       events,
       autoSave: options?.autoSaveSessions ?? true,
-      endpointKey: config.baseURL ? createHash('sha256').update(config.baseURL).digest('hex') : 'default',
+      endpointKey: endpointURL ? createHash('sha256').update(endpointURL).digest('hex') : 'default',
     });
     const detachSession = session.attach();
 
