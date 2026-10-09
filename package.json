@@ -17,7 +17,7 @@
     "@earendil-works/pi-tui": "^1.0.2",
     "@modelcontextprotocol/sdk": "^1.8.0",
     "chalk": "^6.0.1",
-    "fast-glob": "^3.3.2",
+    "ignore": "^7.0.12",
     "minimatch": "^10.0.1",
     "openai": "^4.77.0",
     "zod": "^3.24.1"

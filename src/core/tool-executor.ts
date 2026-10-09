@@ -249,7 +249,7 @@ export class ToolExecutor {
         let result: ToolResult;
         try {
           // 子调用只继承本次执行的来源与取消信号，不读取 loop 的当前活动请求。
-          result = await binding.execute.call(tool, input, { cwd, signal,
+          result = await binding.execute.call(tool, input, { cwd, signal, analysis,
             invokeTool: (name, childInput) => this.invokeTool(name, childInput, { ...context, depth: (context.depth ?? 0) + 1 }) });
           if (!result || typeof result.content !== 'string' || (result.isError !== undefined && typeof result.isError !== 'boolean')) {
             result = { content: 'Tool returned an invalid result', isError: true };

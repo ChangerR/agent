@@ -1,11 +1,11 @@
 import { resolve } from 'node:path';
-import fg from 'fast-glob';
+import { authorizedSearchFiles, authorizedSearchTarget, collectSearchFiles, searchPluginEntries } from './search-scope.js';
 import type { Tool } from '../core/registry.js';
-import { fsCaseSensitive, matchPath } from './text.js';
+import { matchPath } from './text.js';
 
-export const globTool: Tool = {
+export function createGlobTool(pluginEntries: readonly string[] = []): Tool { return {
   name: 'glob',
-  description: 'Find files by glob pattern, sorted by modification time (newest first). Respects .gitignore.',
+  description: 'Find ordinary project files by glob pattern, newest first. Excludes hidden/sensitive files, configured plugin entries, symlinks, node_modules and dist. Respects project and nested .gitignore, including for explicit patterns. The pattern only filters files within the project.',
   risk: 'read',
   isConcurrencySafe: true,
   inputSchema: {
@@ -23,18 +23,14 @@ export const globTool: Tool = {
   async execute(input, ctx) {
     const pattern = matchPath(String(input.pattern));
     const cwd = input.path ? resolve(ctx.cwd, String(input.path)) : ctx.cwd;
-    const entries = await fg(pattern, {
-      cwd,
-      dot: false,
-      onlyFiles: true,
-      caseSensitiveMatch: fsCaseSensitive(),
-      stats: true,
-      ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
-    });
+    const protectedEntries = await searchPluginEntries(ctx.cwd, pluginEntries);
+    const entries = authorizedSearchFiles(await collectSearchFiles(ctx.cwd, cwd, pattern, protectedEntries, ctx.signal, false, (file) => authorizedSearchTarget(file.absolute, ctx.analysis)), ctx.analysis);
     const sorted = entries
-      .sort((a, b) => (b.stats?.mtimeMs ?? 0) - (a.stats?.mtimeMs ?? 0))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
       .slice(0, 200)
       .map((e) => e.path);
     return { content: sorted.length > 0 ? sorted.join('\n') : '(no matches)' };
   },
-};
+}; }
+
+export const globTool = createGlobTool();

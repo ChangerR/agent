@@ -5,6 +5,7 @@
  * 一切通过 register() 挂进来，loop 只面向注册表编程。
  */
 import { prepareRegistration, type RegistrationBatch } from './registration.js';
+import type { ToolAnalysis } from '../sdk/capabilities.js';
 import type { Provider } from './provider.js';
 import type { ToolDefinition, ToolResult } from './protocol/types.js';
 
@@ -47,6 +48,8 @@ export type ToolRisk = 'read' | 'write' | 'execute';
 export interface ToolContext {
   cwd: string;
   signal: AbortSignal;
+  /** 本次决策绑定并完成最终重验的分析；工具只能收窄其已批准目标，不扩展范围。 */
+  analysis?: ToolAnalysis;
   /** 子工具经过相同授权门，并继承当前工具绑定的请求、runId 与取消信号。 */
   invokeTool?(name: string, input: Record<string, unknown>): Promise<ToolResult>;
 }
@@ -59,7 +62,7 @@ export interface Tool {
   description: string;
   /** JSON Schema */
   inputSchema: Record<string, unknown>;
-  /** 风险级别：权限引擎 auto 模式按此放行只读工具 */
+  /** 风险声明供展示/调度参考；auto 授权必须基于已验证效果，不凭声明放行。 */
   risk: ToolRisk;
   /** 只读工具可在同一轮内并行执行 */
   isConcurrencySafe?: boolean;
