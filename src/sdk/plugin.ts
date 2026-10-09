@@ -12,6 +12,10 @@ export interface PluginManifest {
 export interface PluginConfigDefinition {
   /** 接受 zod 等具备 parse 的 schema；解析结果仍须为普通对象。 */
   schema?: { parse(input: unknown): unknown };
+  /** 本插件管理的顶层字段；保存时用解析结果替换，省略或 undefined 表示删除。
+   * 未列出的旧字段保留；不声明时保持补丁式合并。无需从 schema 实现反射字段。
+   */
+  ownedFields?: readonly string[];
   defaults?: Record<string, unknown>;
   scopes?: readonly ('global' | 'project' | 'session' | 'cli')[];
   sensitiveFields?: readonly string[];

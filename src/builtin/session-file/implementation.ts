@@ -2,6 +2,7 @@
  * 会话文件的读写。只认路径，不认 loop。
  * 校验失败一律不碰磁盘。load 返回 JSON.parse 的原对象，不用 zod 的输出。
  */
+import { resolveAgentPaths } from '../../core/paths.js';
 import { isValidSessionId } from '../../core/session/identity.js';
 export { isValidSessionId, newSessionId } from '../../core/session/identity.js';
 import { promises as fs } from 'node:fs';
@@ -14,7 +15,7 @@ import { formatInvalidSchema, SessionFileSchema, SessionFileV1Schema, SessionMet
 import { SESSION_SCHEMA_VERSION, type SessionFile, type SessionListing, type SessionSummary } from '../../core/session/types.js';
 
 export function sessionsDir(cwd: string): string {
-  return join(cwd, '.agentlab', 'sessions');
+  return resolveAgentPaths(cwd).sessionsDir;
 }
 
 export function sessionPath(cwd: string, id: string): string {

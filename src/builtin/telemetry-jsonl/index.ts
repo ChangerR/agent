@@ -33,9 +33,9 @@ export function createJsonlTelemetry(options: JsonlTelemetryOptions): Telemetry 
     onEvent(event) {
       if (!active) return;
       try {
-        if (!initialized) { mkdirSync(dirname(options.path), { recursive: true }); initialized = true; }
+        if (!initialized) { mkdirSync(dirname(options.path), { recursive: true, mode: 0o700 }); initialized = true; }
         const value = options.includeBodies ? event : redactedEvent(event);
-        appendFileSync(options.path, `${JSON.stringify({ at: new Date().toISOString(), ...value })}\n`);
+        appendFileSync(options.path, `${JSON.stringify({ at: new Date().toISOString(), ...value })}\n`, { mode: 0o600 });
       } catch (error) { if (options.onError) options.onError(error); else throw error; }
     },
     dispose() { active = false; },
@@ -44,7 +44,7 @@ export function createJsonlTelemetry(options: JsonlTelemetryOptions): Telemetry 
 export function createTelemetryJsonlPlugin(options: JsonlTelemetryOptions) {
   return definePlugin({
     manifest: { id: 'agentlab.telemetry-jsonl', version: '1.0.0', apiVersion: 1, configVersion: 1 },
-    config: { schema: z.object({ includeBodies: z.boolean().default(false) }).passthrough(), defaults: { includeBodies: options.includeBodies ?? false }, applyMode: 'new-session' },
+    config: { schema: z.object({ includeBodies: z.boolean().default(false) }).passthrough(), ownedFields: ['includeBodies'], defaults: { includeBodies: options.includeBodies ?? false }, applyMode: 'new-session' },
     setup(ctx) {
       const telemetry = createJsonlTelemetry({ ...options, includeBodies: ctx.config.value.includeBodies === true });
       ctx.onDispose(() => telemetry.dispose?.());

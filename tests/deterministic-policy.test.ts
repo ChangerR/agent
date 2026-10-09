@@ -82,6 +82,59 @@ describe('optional deterministic policy v2', () => {
     expect((await policy('ask', { allow: ['write_file(src/new.ts)'] }).decide(input, signal())).kind).toBe('allow');
   });
 
+  describe.each(['ask', 'auto'] as const)('%s 模式的精确 allow 搜索', (mode) => {
+    it.each([
+      { broadSource: 'config', literalSource: 'config' },
+      { broadSource: 'session', literalSource: 'session' },
+      { broadSource: 'session', literalSource: 'config' },
+      { broadSource: 'config', literalSource: 'session' },
+    ] as const)('跳过 $broadSource 宽规则，找到 $literalSource 字面量授权', async ({ broadSource, literalSource }) => {
+      for (const broad of ['write_file', 'write_file(src/**)']) for (const literal of ['write_file(="src/new.ts")', 'write_file(src/new.ts)']) {
+        const grants: Record<'config' | 'session', string[]> = { config: [], session: [] };
+        grants[broadSource].push(broad);
+        grants[literalSource].push('write_file(="src/other.ts")', literal);
+        const value = policy(mode, { allow: grants.config });
+        for (const rule of grants.session) value.controller!.addSessionRule('allow', rule);
+        expect(await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal())).toMatchObject({
+          kind: 'allow', reasonCode: 'v2_exact_allow', source: literalSource, matchedRule: literal,
+        });
+      }
+    });
+
+    it.each(['config', 'session'] as const)('只有 %s 宽规则时仍不能确定性放行写入', async (source) => {
+      const broad = ['write_file', 'write_file(src/**)'];
+      const value = policy(mode, { allow: source === 'config' ? broad : [] });
+      if (source === 'session') for (const rule of broad) value.controller!.addSessionRule('allow', rule);
+      expect(await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal())).toMatchObject({
+        kind: mode === 'ask' ? 'ask' : 'review', reasonCode: mode === 'ask' ? 'v2_ask_mode' : 'v2_review_uncertain',
+      });
+    });
+
+    it.each(['config', 'session'] as const)('%s deny/ask 仍优先于两种来源的宽规则与精确授权', async (source) => {
+      const allow = ['write_file', 'write_file(="src/new.ts")'];
+      for (const kind of ['deny', 'ask'] as const) {
+        const restriction = 'write_file(src/**)';
+        const value = policy(mode, { allow, ...(source === 'config' ? { [kind]: [restriction] } : {}) });
+        for (const rule of allow) value.controller!.addSessionRule('allow', rule);
+        if (source === 'session') value.controller!.addSessionRule(kind, restriction);
+        if (kind === 'deny') value.controller!.addSessionRule('ask', 'write_file');
+        expect(await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal())).toMatchObject({
+          kind, reasonCode: kind === 'deny' ? 'v2_deny_rule' : 'v2_explicit_ask', source, matchedRule: restriction,
+        });
+      }
+    });
+
+    it('跳过宽规则后仍不绕过敏感目标与未知分析约束', async () => {
+      const value = policy(mode, { allow: ['write_file', 'write_file(=".env")', 'write_file(="src/new.ts")', 'bash', 'bash(="npm test")'] });
+      expect(await value.decide(operation(write, { path: '.env', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_sensitive_target' });
+      for (const input of [operation(bash, { command: 'npm test' }), operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' })]) {
+        expect(await value.decide(input, signal())).toMatchObject({
+          kind: mode === 'ask' ? 'ask' : 'review', reasonCode: mode === 'ask' ? 'v2_ask_mode' : 'v2_review_uncertain',
+        });
+      }
+    });
+  });
+
   it.each(['.env', '.env.local', '.ssh/id_ed25519', '.git/hooks/pre-commit', '.git/config', '.agent/settings.json', 'agent.config.json', 'mcp.json', 'plugins/plugin.js', 'AGENTS.md'])('敏感目标 %s 必须询问，精确规则与 yolo 均不能覆盖', async (path) => {
     await mkdir(dirname(join(cwd, path)), { recursive: true }); await writeFile(join(cwd, path), 'fixture');
     const value = policy('yolo', { allow: [`write_file(=${JSON.stringify(path)})`, `read_file(=${JSON.stringify(path)})`] });

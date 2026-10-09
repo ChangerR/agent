@@ -19,7 +19,7 @@ export { ProviderRegistry, ToolRegistry, type Tool, type ToolContext, type ToolR
 export { complete, type ChatRequest, type Provider, type ThinkingLevel, type CachePolicy, type CacheTtl } from './core/provider.js';
 export { ContextManager, estimateTokens } from './core/context/manager.js';
 export { buildSystemPrompt } from './core/context/system-prompt.js';
-export { loadConfig, MODEL_PRESETS, type AgentConfig, type ModelInfo, type PermissionMode } from './core/config.js';
+export { loadConfig, loadConfigWithSources, MODEL_PRESETS, type AgentConfig, type ModelInfo, type PermissionMode } from './core/config.js';
 export { AnthropicProvider, AnthropicStreamTranslator, toAnthropicMessages, toAnthropicTools, fromAnthropicEvent, buildAnthropicBody } from './providers/anthropic.js';
 export { OpenAIProvider, toOpenAIMessages, toOpenAITools, OpenAIStreamTranslator } from './providers/openai.js';
 export { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from './providers/fake.js';
@@ -61,3 +61,5 @@ export {
 } from './core/session/history.js';
 export { writeFileAtomic, enqueueWrite, flushWrites } from './core/session/atomic.js';
 export { SessionManager, type SessionManagerOptions, type SessionSaveResult } from './core/session/manager.js';
+
+export { resolveAgentPaths, getGlobalConfigPath, type AgentPaths } from './core/paths.js';

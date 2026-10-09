@@ -64,3 +64,19 @@ PTY 原始记录的 SHA-256 分别为 `ec25e5b1bb235bb678de0a4c5926c0b65f9938f04
 ## 明确限制
 
 所有实际原始 Shell 调用都不做确定性放行，字面量解析缓存只提供事实。没有 OS 沙箱、插件市场、在线安装器、任意热卸载、新增长期记忆产品或真实模型安全准确率保证。文件系统前提会重验，但不是针对恶意外部进程的原子隔离。
+
+## PR #17 review 修复（2026-10-09）
+
+本轮修复以远端 `356be066653eaba8a930f95218eaddd223bc6f67` 的源码树为基线；保持默认策略选择不变，不调用真实模型，不修改真实用户配置。
+
+- 工具请求来源：公开入口与命令各自建立独立调用，不读取活动或已完成模型轮次的用户请求/历史；模型工具的子调用仅继承绑定的父上下文与取消信号。真实 strict reviewer 在缺少当前请求时要求人工确认，不发模型请求。
+- 策略持久化身份：从实际选中的 CapabilityRecord 获取 canonical ID/version 缺省值，支持隐式 singleton、alias，以及共享 implementation 的多个记录；显式 Policy 身份保持有效，注册版本升级不能恢复旧授权；设置选择、执行审计和授权绑定哈希使用同一 canonical 缺省来源。
+- 能力选择：配置 schema 和 PluginHost 运行时均拒绝未知或非 singleton 键，含 `polciy` 拼写错误；直接 JS/options.config 入口也不能静默使用默认策略。
+- 压缩历史：真实用户消息按原始出现位置递增匹配；倒序或多出的副本降为 summary，合法重复原文仍可按序保留。
+- 旧插件别名：注册与别名均事务暂存，完整 aliases 才提交到能力记录；插件失败和冲突不会留下半成品；deprecated loadPlugins 入口投射工具/别名时也采用同一原子事务。
+- v2 精确授权：搜索跳过没有授权资格的 broad allow，继续查找 config/session 的 literal grant；deny、ask、敏感目标和不完整分析约束不变。
+- 配置删除：通过显式 schema-owned 字段合同删除草稿省略的可选字段，同时保留未知字段、其他插件和顶层配置；不依赖 Zod 的内部 shape。
+
+新增回归先在修复前复现失败，再验证修复后通过。验证仅使用已安装依赖及临时目录中的 FakeProvider/替身；当前环境的 pnpm 依赖自动检查尝试创建不存在的 home 路径而失败，因此使用同一 package.json 脚本对应的本地 Vitest、TypeScript 和 tsup 执行文件。
+
+本轮最终全量结果：47 个测试文件，606 通过、1 个 native-Windows-only 跳过；`tsc --noEmit`、三入口 ESM build 与 `git diff --check` 全部通过。新增 53 个测试；既有测试断言保留。独立复审覆盖核心七项以及 legacy-loader alias 投射与 canonical 审计身份。

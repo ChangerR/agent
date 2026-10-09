@@ -1,7 +1,8 @@
+import { mkdtempProject } from './helpers/project.js';
 /**
  * 装配冒烟测试：createAgent 全插件加载（不触网）。
  */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +13,7 @@ let tmp: string;
 let agent: Agent | undefined;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'agentlab-boot-'));
+  tmp = await mkdtempProject(join(tmpdir(), 'agentlab-boot-'));
 });
 
 afterEach(async () => {
@@ -56,7 +57,7 @@ await writeFile(new URL('./cleanup.txt', import.meta.url), 'released'); throw ne
     agent = await createAgent(tmp, { autoSaveSessions: false });
     await agent.loop.run('hello');
     await agent.dispose();
-    await expect(fs.access(join(tmp, '.agentlab', 'sessions'))).rejects.toThrow();
+    await expect(fs.access(agent.paths.sessionsDir)).rejects.toThrow();
   });
   it('保存 endpoint 指纹，不保存 URL 中的凭证或配置密钥', async () => {
     await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake', baseURL: 'https://user:secret@example.test/v1?token=private' }));

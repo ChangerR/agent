@@ -1,6 +1,5 @@
 /** 默认产品装配集中在 preset；runtime/core 不知道具体实现。 */
-import { join, resolve } from 'node:path';
-import { loadModelsFile, type AgentConfig } from '../core/config.js';
+import { loadModelsFile } from '../core/config.js';
 import type { Provider } from '../core/provider.js';
 import { definePlugin, type CapabilitySelections, type Plugin } from '../sdk/index.js';
 import { createDeterministicPolicyPlugin } from './policy-deterministic-v2/index.js';
@@ -27,7 +26,7 @@ export function defaultPreset(input: PresetContext): Preset {
   return {
     selections: { policy: 'legacy-v1', reviewer: 'model-v1', compactor: 'summary', cacheStrategy: 'prefix', modelCatalog: 'presets', sessionStore: 'file' },
     plugins: [
-      ...providerPlugins(config), localToolsPlugin, skillsLocalPlugin(cwd), builtinMcpPlugin(resolve(cwd, config.mcpConfig)),
+      ...providerPlugins(config), localToolsPlugin, skillsLocalPlugin(cwd), builtinMcpPlugin(config.mcpConfig),
       definePlugin({ manifest: { id: 'agentlab.policy-legacy', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
         const controller = new PermissionEngine({ mode: config.permissionMode, rules: config.permissions, dangerForceAsk: config.dangerForceAsk });
         ctx.provide.policy('legacy-v1', createLegacyPolicy(controller));
@@ -37,9 +36,9 @@ export function defaultPreset(input: PresetContext): Preset {
         ctx.provide.reviewer('model-v1', createModelReviewer(new AutoJudge(provider, config.judgeModel?.trim() || services.model, input.modelInfo)));
       } }),
       createDeterministicPolicyPlugin({ cwd, config }), createPolicyShadowPlugin({ cwd, config, getActiveState: () => ({ policyId: String(input.capabilityChoices().policy?.selected ?? 'unavailable'), mode: services.permission().mode, sessionRules: services.permission().getSessionRules() }) }), strictReviewerPlugin(input), createContextDefaultPlugin(), createCompactionSummaryPlugin(), createCachePrefixPlugin(),
-      createModelCatalogPlugin(loadModelsFile(join(cwd, config.modelsFile))), createSessionFilePlugin(),
+      createModelCatalogPlugin(loadModelsFile(config.modelsFile)), createSessionFilePlugin(),
       createTelemetryJsonlPlugin({ path: input.logPath, includeBodies: config.pluginConfig['agentlab.telemetry-jsonl']?.includeBodies === true }),
-      modelCommandsPlugin(services), permissionCommandsPlugin(services), sessionCommandsPlugin(services), uiPlugin(), runtimeSettingsPlugin(input),
+      modelCommandsPlugin(services), permissionCommandsPlugin(services, cwd), sessionCommandsPlugin(services), uiPlugin(), runtimeSettingsPlugin(input),
     ],
   };
 }

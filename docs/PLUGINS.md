@@ -86,9 +86,11 @@ export default definePlugin({
 
 插件可声明 defaults、schema、configVersion、允许 scopes、敏感字段、字段 merge 和 applyMode。默认数组替换；明确的 append 才拼接。层级是 defaults → global → project → session/CLI。`$version` 可声明配置格式版本；不兼容版本明确拒绝并要求迁移，不自动猜测。敏感字段只接受 `env:NAME` 引用，不保存明文密钥。
 
-SettingsSection 是可发现的元数据与 read/draft/commit API。TUI 的通用编辑器先建立独立草稿，只有明确 Save 才 commit；复杂权限编辑器复用同一注册入口。`PluginConfigStore` 提供 schema 校验、未知字段保留、文件身份/CAS、符号链接保护和原子写。插件仍需选择适合自己领域的提交语义，不能把 applyMode 标签误当作自动热更新。
+SettingsSection 是可发现的元数据与 read/draft/commit API。`scopeTargets` 声明实际支持的作用域及保存路径；read/draft/commit 的可选 scope 参数选择原始配置层，草稿与该层绑定，不能跨层提交。内置持久化设置的默认 API 作用域仍为项目层；未声明 scope 的第三方设置保持原调用合同，界面标为“插件定义（未声明保存目标）”，不推断其是否持久化。通用 TUI 先明确选择作用域，显示真实路径，读取原始层值；不会把已合并的项目权限或能力选择自动存入全局。TUI 的通用编辑器先建立独立草稿，只有明确 Save 才 commit；复杂权限编辑器复用同一注册入口。`PluginConfigStore` 提供 schema 校验、未知字段保留、文件身份/CAS、符号链接保护和原子写。插件仍需选择适合自己领域的提交语义，不能把 applyMode 标签误当作自动热更新。
 
-旧权限配置的 global 后 project 列表拼接、同 action 类别 session 优先、跨 action deny 优先保持。新旧字段同时存在且不同值会报冲突。启动只读适配，不重写原文件。
+配置定义可用 `ownedFields` 明确声明插件管理的顶层字段，提交时须把同一定义传给 `store.commit`。解析结果中省略或为 `undefined` 的已声明字段会从该插件当前选定作用域的配置删除（例如删掉严格 reviewer 的 `provider` 后恢复继承）；schema 提供默认值的字段则保存其解析后的默认值。其他旧字段、其他插件命名空间和顶层未知配置保持不变。不声明 `ownedFields` 时沿用补丁合并，省略字段不删除。schema 只需实现 `parse`，宿主不会依赖 zod 的 `shape` 或其他实现细节；嵌套对象仍按顶层字段整体替换。
+
+旧权限配置的 global 后 project 列表拼接、同 action 类别 session 优先、跨 action deny 优先保持。同一层的新旧字段同时存在且不同值会报冲突；跨层仍按优先级覆盖。启动只读适配，不重写原文件。
 
 `judgeModel` 三态保持：缺省继承；最终未指定或空字符串跟随当前主模型；非空固定模型。默认 permissionMode 仍是 ask。关闭 reviewer 要显式 `capabilities.reviewer=false`，不是把 judgeModel 清空。
 
@@ -110,6 +112,7 @@ TUI entry 独立按需加载。外部 entry 获得 UI 操作、只读目录、di
 - runtime 能力图冻结，不再支持 `agent.tools.register(...)` 或 `agent.providers.register(...)` 启动后替换。测试使用 createAgent 的插件注入；产品使用 pluginEntries/选择配置。
 - `agent.tools` 与 `agent.plugins` 是只读描述目录，不暴露 execute/注册/释放。调用工具使用 `agent.invokeTool`，子工具使用 context.invokeTool。
 - 旧 register(ctx) 通过事务 adapter 继续工作；完整旧 config 暴露属于可信兼容边界。依赖工具 execute 不再提供快捷绕过；旧调用方必须迁移到 invokeTool。
+- 旧工具的 `register` 和 `alias` 在本地一并暂存，`get`、`aliasesFor` 在注册期间即可查询，只有 `register(ctx)` 成功后才把完整别名提交给宿主。旧 `loadPlugins` 入口也把工具和别名整批投影回调用方注册表。名称冲突或后续初始化失败会回滚；依赖别名只读，不能给其他插件的工具追加别名。
 - 参数 schema、批准绑定、无 responder 终止、观察者隔离是显式加固；默认日志脱敏、会话 v2 envelope 是显式格式/隐私变化。
 - 旧 `src/core/...` 路径保留命名明确的 deprecated façade；实际运行图不经这些 façade。具体列表由 architecture guard 验证，不通过隐藏转发假装依赖不存在。
 

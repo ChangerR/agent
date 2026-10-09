@@ -41,29 +41,50 @@ export function adaptLegacyPlugin(plugin: LegacyPlugin, options: LegacyPluginOpt
         override list(): Provider[] { return [...dependencies.flatMap((dependency) => dependency.list('provider').map((record) => record.implementation)), ...this.staged.values()]; }
       }
       class TransactionalTools extends ToolRegistry {
-        private staged = new Map<string, Tool>();
+        private open = true;
+        private assertOpen(): void { if (!this.open) throw new Error('Legacy tool registration is closed'); }
         override register(tool: Tool): void {
-          if (this.staged.has(tool.name)) throw new Error(`Duplicate legacy tool: ${tool.name}`);
-          context.provide.tool(tool.name, tool);
-          this.staged.set(tool.name, tool);
+          this.assertOpen();
+          if (this.get(tool.name)) throw new Error(`Duplicate legacy tool: ${tool.name}`);
+          // 本地注册表同时暂存工具和别名，不能在 alias 声明之前提交宿主记录。
+          super.register(tool);
+        }
+        override alias(name: string, target: string): void {
+          this.assertOpen();
+          if (this.get(name)) throw new Error(`Invalid or conflicting tool alias: ${name}`);
+          // 依赖工具仅可读，不能通过别名把它重新归属到当前插件。
+          super.alias(name, target);
         }
         override get(name: string): Tool | undefined {
-          const own = this.staged.get(name); if (own) return own;
+          const own = super.get(name); if (own) return own;
           const record = dependencies.flatMap(dependency => dependency.list('tool')).find(record => record.capabilityId === name || record.aliases.includes(name));
           return record ? { ...record.implementation, execute: async () => { throw new Error('Dependent tools must be invoked through runtime.invokeTool'); } } : undefined;
         }
-        override list(): Tool[] { return [...dependencies.flatMap((dependency) => dependency.list('tool').map((record) => ({ ...record.implementation, execute: async () => { throw new Error('Dependent tools must be invoked through runtime.invokeTool'); } }))), ...this.staged.values()]; }
+        override list(): Tool[] { return [...dependencies.flatMap((dependency) => dependency.list('tool').map((record) => ({ ...record.implementation, execute: async () => { throw new Error('Dependent tools must be invoked through runtime.invokeTool'); } }))), ...super.list()]; }
+        override aliasesFor(name: string): readonly string[] {
+          return Object.freeze([...super.aliasesFor(name), ...dependencies.flatMap(dependency => dependency.list('tool')).filter(record => record.capabilityId === name).flatMap(record => record.aliases)]);
+        }
+        flush(): void {
+          this.assertOpen();
+          for (const tool of super.list()) context.provide.tool(tool.name, tool, { aliases: super.aliasesFor(tool.name) });
+        }
+        close(): void { this.open = false; super.freeze(); }
       }
+      const tools = new TransactionalTools();
       const legacyContext: PluginContext & Pick<PluginSetupContext, 'onDispose' | 'withResource'> = {
         providers: new TransactionalProviders(),
-        tools: new TransactionalTools(),
+        tools,
         hooks: context.hooks,
         config: structuredClone(options.config ?? context.config.core) as AgentConfig,
         onDispose: context.onDispose,
         withResource: context.withResource,
       };
-      const dispose = await plugin.register(legacyContext);
-      if (dispose) context.onDispose(dispose);
+      try {
+        const dispose = await plugin.register(legacyContext);
+        // flush 的验证也可能失败，返回的资源清理必须先加入宿主回滚事务。
+        if (dispose) context.onDispose(dispose);
+        tools.flush();
+      } finally { tools.close(); }
     },
   });
 }

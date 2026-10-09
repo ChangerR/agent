@@ -47,7 +47,7 @@ export type ToolRisk = 'read' | 'write' | 'execute';
 export interface ToolContext {
   cwd: string;
   signal: AbortSignal;
-  /** 子工具和命令必须经过相同的最终授权门；不暴露注册表执行快捷方式。 */
+  /** 子工具经过相同授权门，并继承当前工具绑定的请求、runId 与取消信号。 */
   invokeTool?(name: string, input: Record<string, unknown>): Promise<ToolResult>;
 }
 
@@ -78,41 +78,42 @@ export interface Tool {
 }
 
 export class ToolRegistry {
-  private tools = new Map<string, Tool>();
-  private aliases = new Map<string, string>();
+  private state = { tools: new Map<string, Tool>(), aliases: new Map<string, string>() };
   private frozen = false;
   freeze(): void { this.frozen = true; }
   alias(name: string, target: string): void {
-    if (this.frozen || this.tools.has(name) || this.aliases.has(name) || !this.tools.has(target)) throw new Error(`Invalid or conflicting tool alias: ${name}`);
-    this.aliases = new Map(this.aliases).set(name, target);
+    if (this.frozen || this.state.tools.has(name) || this.state.aliases.has(name) || !this.state.tools.has(target)) throw new Error(`Invalid or conflicting tool alias: ${name}`);
+    this.state = { ...this.state, aliases: new Map(this.state.aliases).set(name, target) };
   }
 
   register(tool: Tool): void {
     const batch = this.prepareBatch([tool]); batch.commit(); batch.seal();
   }
-  /** 保留既有 alias，整批重复检查后再允许单次提交。 */
-  prepareBatch(tools: readonly Tool[]): RegistrationBatch {
-    const aliases = this.aliases;
+  /** 工具和别名共享一个状态快照，整批检查、提交与回滚不会留下半个注册。 */
+  prepareBatch(tools: readonly Tool[], aliases: readonly { name: string; target: string }[] = []): RegistrationBatch {
     const assertMutable = () => {
       if (this.frozen) throw new Error('Tool registry is frozen; select replacements before session startup');
-      if (this.aliases !== aliases) throw new Error('Tool aliases changed before registration');
     };
     assertMutable();
-    const next = new Map(this.tools);
+    const next = { tools: new Map(this.state.tools), aliases: new Map(this.state.aliases) };
     for (const tool of tools) {
-      if (next.has(tool.name) || aliases.has(tool.name)) throw new Error(`Duplicate tool: ${tool.name}`);
-      next.set(tool.name, tool);
+      if (next.tools.has(tool.name) || next.aliases.has(tool.name)) throw new Error(`Duplicate tool: ${tool.name}`);
+      next.tools.set(tool.name, tool);
     }
-    return prepareRegistration(this.tools, next, () => this.tools, value => { this.tools = value; }, assertMutable);
+    for (const { name, target } of aliases) {
+      if (next.tools.has(name) || next.aliases.has(name) || !next.tools.has(target)) throw new Error(`Invalid or conflicting tool alias: ${name}`);
+      next.aliases.set(name, target);
+    }
+    return prepareRegistration(this.state, next, () => this.state, value => { this.state = value; }, assertMutable);
   }
-  aliasesFor(name: string): readonly string[] { return Object.freeze([...this.aliases].filter(([, target]) => target === name).map(([alias]) => alias)); }
+  aliasesFor(name: string): readonly string[] { return Object.freeze([...this.state.aliases].filter(([, target]) => target === name).map(([alias]) => alias)); }
 
   get(name: string): Tool | undefined {
-    return this.tools.get(this.aliases.get(name) ?? name);
+    return this.state.tools.get(this.state.aliases.get(name) ?? name);
   }
 
   list(): Tool[] {
-    return [...this.tools.values()];
+    return [...this.state.tools.values()];
   }
 
   /** 发给模型的工具定义清单 */

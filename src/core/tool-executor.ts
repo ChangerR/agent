@@ -13,11 +13,11 @@ import type { Message, ToolResult, ToolResultBlock, ToolUseBlock } from './proto
 import type { Tool, ToolRegistry } from './registry.js';
 
 export interface ToolInvocationContext {
-  signal: AbortSignal;
-  runId: string;
-  userRequest: string;
-  messages: readonly Message[];
-  depth?: number;
+  readonly signal: AbortSignal;
+  readonly runId: string;
+  readonly userRequest: string;
+  readonly messages: readonly Message[];
+  readonly depth?: number;
 }
 export interface ToolExecutorOptions {
   tools: ToolRegistry;
@@ -25,6 +25,8 @@ export interface ToolExecutorOptions {
   events: EventBus;
   cwd: string;
   policy?: Policy;
+  /** 选中能力的 canonical 身份，供实现未声明身份时使用。 */
+  policyIdentity?: Readonly<{ id: string; version: string }>;
   reviewer?: Reviewer;
   analyzer?: ToolAnalyzer;
   /** 旧构造入口，完全通过结构化接口适配。 */
@@ -111,9 +113,9 @@ export class ToolExecutor {
     const audit = (phase: 'validation' | 'analysis' | 'policy' | 'reviewer' | 'human' | 'execution', reasonCode: string, decision?: PolicyDecision['kind'], binding?: Binding, durationMs?: number) => {
       events.emit({ type: 'tool_execution', runId: context.runId, toolCallId: toolUse.id, requestId,
         sessionId: binding?.sessionId ?? String(safeMetadata(() => this.sessionId())), toolName: toolUse.name,
-        toolVersion: binding?.toolVersion ?? tool?.version ?? 'legacy', policyId: this.opts.policy?.id ?? 'legacy-v1',
+        toolVersion: binding?.toolVersion ?? tool?.version ?? 'legacy', policyId: this.policyIdentity().id,
         toolOwner: binding?.toolOwner, capabilityId: binding?.capabilityId,
-        policyVersion: this.opts.policy?.version ?? '1.0.0', configRevision: binding?.configRevision ?? safeMetadata(() => this.configRevision()),
+        policyVersion: this.policyIdentity().version, configRevision: binding?.configRevision ?? safeMetadata(() => this.configRevision()),
         policyRevision: binding?.policyRevision ?? safeMetadata(() => this.policyRevision()), inputHash: binding?.inputHash,
         phase, reasonCode, ...(decision ? { decision } : {}), ...(durationMs !== undefined ? { durationMs } : {}) });
     };
@@ -248,6 +250,7 @@ export class ToolExecutor {
         const started = Date.now();
         let result: ToolResult;
         try {
+          // 子调用只继承本次执行的来源与取消信号，不读取 loop 的当前活动请求。
           result = await binding.execute.call(tool, input, { cwd, signal,
             invokeTool: (name, childInput) => this.invokeTool(name, childInput, { ...context, depth: (context.depth ?? 0) + 1 }) });
           if (!result || typeof result.content !== 'string' || (result.isError !== undefined && typeof result.isError !== 'boolean')) {
@@ -348,9 +351,11 @@ export class ToolExecutor {
       && binding.tool.analyzeInput === binding.analyzeInput
       && definitionHash(binding.tool) === binding.toolDefinitionHash && fingerprint(input) === binding.inputHash;
   }
-  private policyIdentityHash(): string {
-    return fingerprint({ id: this.opts.policy?.id ?? 'legacy-v1', version: this.opts.policy?.version ?? '1.0.0' });
+  private policyIdentity(): { id: string; version: string } {
+    return { id: this.opts.policy?.id ?? this.opts.policyIdentity?.id ?? 'legacy-v1',
+      version: this.opts.policy?.version ?? this.opts.policyIdentity?.version ?? '1.0.0' };
   }
+  private policyIdentityHash(): string { return fingerprint(this.policyIdentity()); }
   private recordDecision(tool: AnalysisInput['tool'], input: Record<string, unknown>, decision: Decision): void {
     (this.opts.policy?.controller ?? this.opts.permission)?.recordDecision(tool, input, structuredClone(decision));
   }

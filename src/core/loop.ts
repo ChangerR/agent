@@ -27,7 +27,7 @@ import { bounded } from './permission/async.js';
 import type { EventBus, LoopEndReason } from './events.js';
 import type { HookRunner } from './hooks.js';
 import type { LegacyPermission, LegacyReviewer, JudgeStatus } from './permission/contracts.js';
-import { ToolExecutor, type ToolExecutorOptions } from './tool-executor.js';
+import { ToolExecutor, type ToolExecutorOptions, type ToolInvocationContext } from './tool-executor.js';
 import type { ContextCoordinator, CacheStrategy } from '../sdk/runtime-capabilities.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../sdk/capabilities.js';
 import type { CachePolicy, CacheTtl, Provider, ThinkingLevel } from './provider.js';
@@ -53,6 +53,7 @@ export interface AgentLoopOptions {
   /** 旧构造入口；新 runtime 提供选定 policy/reviewer。 */
   permission?: LegacyPermission;
   policy?: Policy;
+  policyIdentity?: ToolExecutorOptions['policyIdentity'];
   reviewer?: Reviewer;
   analyzer?: ToolAnalyzer;
   configRevision?: () => string | number;
@@ -129,7 +130,6 @@ export class AgentLoop {
   private readonly executor: ToolExecutor;
   private sessionId = randomUUID();
   private activeRunId = '';
-  private currentUserRequest = '';
   private detachedRuns = new Set<AbortController>();
   private detachedTasks = new Set<Promise<ToolResult>>();
   private detachedRunIds = new Set<string>();
@@ -156,20 +156,19 @@ export class AgentLoop {
 
   getJudgeStatus(): JudgeStatus { return this.executor.getJudgeStatus(); }
 
-  /** 命令与插件使用相同执行门；运行中子调用沿用取消、真实请求与审计 runId。 */
+  /** 独立调用没有模型请求授权；只有 ToolContext.invokeTool 继承显式绑定的父上下文。 */
   async invokeTool(name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
     if (this.disposed) throw new Error('AgentLoop is disposed');
-    const detached = this.abort ? undefined : new AbortController();
-    if (detached) this.detachedRuns.add(detached);
-    const parent = this.abort?.signal ?? detached!.signal;
-    const invocationSignal = signal ? AbortSignal.any([parent, signal]) : parent;
-    const runId = this.activeRunId || randomUUID();
-    if (detached) this.detachedRunIds.add(runId);
+    const detached = new AbortController();
+    this.detachedRuns.add(detached);
+    const invocationSignal = signal ? AbortSignal.any([detached.signal, signal]) : detached.signal;
+    const runId = randomUUID();
+    this.detachedRunIds.add(runId);
     const task = this.executor.invokeTool(name, input, { signal: invocationSignal, runId,
-      userRequest: this.currentUserRequest, messages: structuredClone(this.messages) });
-    if (detached) this.detachedTasks.add(task);
+      userRequest: '', messages: [] });
+    this.detachedTasks.add(task);
     try { return await task; }
-    finally { if (detached) { detached.abort(); this.executor.finishRun(runId); this.detachedRunIds.delete(runId); this.detachedRuns.delete(detached); this.detachedTasks.delete(task); } }
+    finally { detached.abort(); this.executor.finishRun(runId); this.detachedRunIds.delete(runId); this.detachedRuns.delete(detached); this.detachedTasks.delete(task); }
   }
 
   setModel(model: string): void {
@@ -219,7 +218,6 @@ export class AgentLoop {
     this.messages = structuredClone(snapshot.messages) as Message[];
     this.executor.clear();
     this.sessionId = randomUUID();
-    this.currentUserRequest = '';
     this.toolsSnapshot = null;
     this.lastRequestMessageCount = 0;
     this.lastToolBatchMs = 0;
@@ -265,7 +263,7 @@ export class AgentLoop {
     if (this.abort) throw new Error('AgentLoop is already running');
     const { events, hooks, provider, tools, context } = this.opts;
     this.abort = new AbortController();
-    this.activeRunId = randomUUID();
+    const runId = this.activeRunId = randomUUID();
     const signal = this.abort.signal;
     let release!: () => void;
     this.idle = new Promise<void>((resolve) => { release = resolve; });
@@ -281,7 +279,6 @@ export class AgentLoop {
 
     try {
       await this.notify('UserPromptSubmit', { input: userInput }, signal);
-      this.currentUserRequest = userInput;
       this.messages.push({ role: 'user', content: userInput });
       await this.maybeCompact(signal);
 
@@ -328,7 +325,7 @@ export class AgentLoop {
 
         // --- 执行工具，回填结果 ---
         const toolStarted = Date.now();
-        const results = await this.executeTools(toolUses, signal);
+        const results = await this.executeTools(toolUses, { signal, runId, userRequest: userInput, messages: structuredClone(this.messages) });
         this.lastToolBatchMs = Date.now() - toolStarted;
         this.messages.push({ role: 'user', content: results });
         signal.throwIfAborted();
@@ -415,7 +412,7 @@ export class AgentLoop {
   }
 
   /** 执行一轮中的所有 tool_use：连续的只读工具并行，写/执行类串行 */
-  private async executeTools(toolUses: ToolUseBlock[], signal: AbortSignal): Promise<ToolResultBlock[]> {
+  private async executeTools(toolUses: ToolUseBlock[], context: ToolInvocationContext): Promise<ToolResultBlock[]> {
     const results: ToolResultBlock[] = [];
     let i = 0;
     while (i < toolUses.length) {
@@ -427,18 +424,14 @@ export class AgentLoop {
           batch.push(toolUses[i]);
           i++;
         }
-        const batchResults = await Promise.all(batch.map((tu) => this.runOneTool(tu, signal)));
+        const batchResults = await Promise.all(batch.map((tu) => this.executor.execute(tu, context)));
         results.push(...batchResults);
       } else {
-        results.push(await this.runOneTool(toolUses[i], signal));
+        results.push(await this.executor.execute(toolUses[i], context));
         i++;
       }
     }
     return results;
-  }
-
-  private async runOneTool(toolUse: ToolUseBlock, signal: AbortSignal): Promise<ToolResultBlock> {
-    return this.executor.execute(toolUse, { signal, runId: this.activeRunId, userRequest: this.currentUserRequest, messages: this.messages });
   }
 }
 

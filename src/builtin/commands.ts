@@ -2,6 +2,7 @@
 import { definePlugin, type CommandContext, type CommandResult, type PermissionController, type SettingsSection } from '../sdk/index.js';
 import type { ThinkingLevel } from '../core/provider.js';
 import type { SessionManager } from '../core/session/coordinator.js';
+import { resolveAgentPaths } from '../core/paths.js';
 export interface BuiltinCommandServices {
   model(): string;
   setModel(value: string): void;
@@ -31,11 +32,12 @@ export function modelCommandsPlugin(services: BuiltinCommandServices) {
       services.setThinking(selected as ThinkingLevel); return text(`思考等级: ${selected}`);
     } });
     for (const [id, title, read] of [['model', '模型', services.model], ['think', '思考', services.thinking]] as const) {
-      ctx.provide.settings(id, { title, order: id === 'model' ? 0 : 1, description: '本次会话；下一次请求生效。', schema: { type: 'string' }, applyMode: 'nextRequest', read });
+      ctx.provide.settings(id, { title, order: id === 'model' ? 0 : 1, description: '本次会话；下一次请求生效，不修改全局或项目默认。', scopeTargets: [{ scope: 'session' }], schema: { type: 'string' }, applyMode: 'nextRequest', read });
     }
   } });
 }
-export function permissionCommandsPlugin(services: BuiltinCommandServices) {
+export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd = process.cwd()) {
+  const paths = resolveAgentPaths(cwd);
   return definePlugin({ manifest: { id: 'agentlab.permission-commands', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
     ctx.provide.command('mode', { description: '查看/切换权限模式', async handler(input, context) {
       const selected = args(input) || await pick('mode', '选择权限模式', ['ask', 'auto', 'yolo'].map(id => ({ id, label: id })), context);
@@ -51,7 +53,9 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices) {
     ctx.provide.command('permissions', { description: '权限设置与决策日志', handler(input) {
       return args(input) === 'audit' ? { type: 'data', data: services.permission().getAuditLog() } : { type: 'data', data: { mode: services.permission().mode, sessionRules: services.permission().getSessionRules() } };
     } });
-    ctx.provide.settings('permissions', { title: '权限', order: 2, description: '会话规则即时生效；项目默认在新会话生效。', schema: { type: 'object' }, applyMode: 'new-session', read: () => ({ mode: services.permission().mode, rules: services.permission().getSessionRules() }) });
+    ctx.provide.settings('permissions', { title: '权限', order: 2, description: '本次会话规则即时生效；本项目/全局默认需明确选择并保存，重启生效。', schema: { type: 'object' }, applyMode: 'new-session',
+      scopeTargets: [{ scope: 'session' }, { scope: 'project', path: paths.projectConfigPath }, { scope: 'global', path: paths.globalConfigPath }],
+      read: () => ({ mode: services.permission().mode, rules: services.permission().getSessionRules() }) });
   } });
 }
 export function sessionCommandsPlugin(services: BuiltinCommandServices) {

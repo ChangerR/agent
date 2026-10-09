@@ -37,7 +37,7 @@ cp .env.example .env   # 然后在 .env 里填入你的 ANTHROPIC_API_KEY
 pnpm dev
 ```
 
-程序启动时会自动加载工作目录下的 `.env`（Node 原生支持，无需 dotenv）。也可以用传统方式 `export ANTHROPIC_API_KEY=sk-...`。
+程序启动时会自动加载规范化项目根目录下的 `.env`（Node 原生支持，无需 dotenv）。也可以用传统方式 `export ANTHROPIC_API_KEY=sk-...`。
 
 OpenAI 兼容端点示例（`agent.config.json`）：
 
@@ -58,6 +58,20 @@ OpenAI 兼容端点示例（`agent.config.json`）：
 
 可用 `judgeModel` 指定兼容同一 provider / endpoint 的独立审批模型。项目未写该字段时继承全局配置，最终未指定时跟随当前模型；`"judgeModel": ""` 则明确跟随当前模型并覆盖全局指定值。跟随模式会随 `/model` 和恢复会话更新，显式指定的审批模型保持不变。`/permissions` 可查看实际加载的审批模型及来源；需要未命中规则的操作都询问时使用 `ask` 模式。
 
+## 配置目录与作用域
+
+- 全局默认：`~/.agent/config.json`；项目只保留需要覆盖的 `<项目根>/agent.config.json`。
+- 向上寻找最近的项目边界：`agent.config.json`、`.git`（含 worktree 的文件形式）或 `package.json`。内层项目不会被外层 Git 仓库吞并；不会越过用户目录、系统临时目录或文件系统根来推断项目（直接在这些目录启动除外）；没有标记则使用启动目录。路径会解析符号链接，同一项目从子目录启动仍共用配置和会话，工具执行目录统一为该项目根。
+- 用户运行状态：`~/.agent/state/projects/<规范化项目路径的 SHA-256>/sessions/` 和 `logs/`。不同项目即使会话 ID 相同也互不相通；移动项目得到新的身份。启动不会迁移或导入旧目录。
+- 优先级：内置默认 → 全局 → 项目 → 程序调用时的会话覆盖。全局与项目权限列表拼接；SDK 显式传入会话 `permissions` 时替换该合并列表。插件参数和能力选择逐字段合并；普通数组替换。省略某层字段表示继承，不能靠保存合并结果把其他层授权复制过来。
+- `modelsFile`、`mcpConfig`、`plugins`、`pluginEntries` 的相对路径按声明它们的配置文件目录解析，绝对路径保持。默认模型/MCP 文件为 `~/.agent/models.json`、`~/.agent/mcp.json`。项目使用本地文件时显式配置 `"modelsFile": "./models.json"`、`"mcpConfig": "./mcp.json"`。
+
+`/settings` 中可持久化的实现选择、严格 reviewer 参数可明确选择“本项目”或“全局”，并显示真实保存文件；`/permissions` 同样提供独立的全局/项目草稿。先查看更改，再确认 Save；取消不写盘。项目设置不会自动提升到全局，`writeRoots` 的目录授权仍只提供本项目编辑，也拒绝从全局配置加载。保存配置在重启时生效，当前运行中的能力不会热替换。
+
+`/model`、`/think`、`/mode` 修改本次会话，保存/恢复会话可保留这些选择，但不会修改全局或项目默认。要设启动默认，可在对应配置文件写 `model`、`thinking`、`permissionMode`。SDK 的 `agent.paths`、`agent.configSources` 和 `loadConfigWithSources()` 可诊断真实路径和字段来源；界面同时显示启动来源与保存目标。
+
+API key 仍通过 `apiKeyEnv` 指定环境变量（或 provider 默认变量）；插件声明的敏感字段只接受 `env:NAME` 引用。配置编辑器不会把环境变量值展开后保存。MCP 的 `env`/`headers` 仍是 MCP 独立配置内容，请不要将密钥写进共享的项目文件。本实现未增加 XDG、`AGENT_HOME`、`--config` 或 `--cwd` 开关。
+
 ## TUI 命令
 
 `/help` `/model`（不带参数弹出选择器）`/mode`（同上）`/think off|low|medium|high`（思考等级）`/permissions` `/skills` `/tools` `/exit`。
@@ -66,11 +80,11 @@ OpenAI 兼容端点示例（`agent.config.json`）：
 
 如果希望沿用终端原生滚动历史，可使用 `AGENTLAB_SCREEN=main pnpm dev`。画面残留时可输入 `/redraw`，或用 `AGENTLAB_FULL_REDRAW=1 pnpm dev` 启用全量重绘。
 
-思考等级的映射：Anthropic → `thinking.budget_tokens`（low 2048 / medium 8192 / high 32768，`max_tokens` 自动抬到 budget 之上）；OpenAI 系 → `reasoning_effort`。配置默认值用 `agent.config.json` 的 `thinking` 字段。
+思考等级的映射：Anthropic → `thinking.budget_tokens`（low 2048 / medium 8192 / high 32768，`max_tokens` 自动抬到 budget 之上）；OpenAI 系 → `reasoning_effort`。启动默认值可用全局或项目配置的 `thinking` 字段。
 
 ## MCP
 
-在项目根目录创建 `mcp.json`（参考 [examples/mcp-server.ts](examples/mcp-server.ts)）：
+默认读取 `~/.agent/mcp.json`。若使用项目 MCP，在项目配置中写 `"mcpConfig": "./mcp.json"`，并在项目根目录创建 `mcp.json`（参考 [examples/mcp-server.ts](examples/mcp-server.ts)）：
 
 ```json
 {
@@ -80,7 +94,7 @@ OpenAI 兼容端点示例（`agent.config.json`）：
 }
 ```
 
-启动后 `/tools` 可见 `mcp__demo__add` 等工具。
+MCP stdio 子进程工作目录为实际 MCP 配置文件所在目录；相对脚本参数按该目录解释，不受启动目录影响。启动后 `/tools` 可见 `mcp__demo__add` 等工具。
 
 ## Skill
 
@@ -131,7 +145,7 @@ try {
 }
 ```
 
-`reason` 区分正常结束、轮数上限、输出截断、中断和错误；正常结束不等于任务评测通过。每个会话的 `.agentlab/logs/*.jsonl` 记录请求快照和用量，`model_request` / `model_usage` 用 `requestId` 关联，`purpose` 区分主模型（`agent`）、压缩（`compact`）与审批（`judge`）。累计用量包含辅助调用，便于比较运行成本。请求记录包含对话和工具参数。
+`reason` 区分正常结束、轮数上限、输出截断、中断和错误；正常结束不等于任务评测通过。每个会话的 `~/.agent/state/projects/<项目 ID>/logs/*.jsonl` 默认记录请求元数据和用量，`model_request` / `model_usage` 用 `requestId` 关联，`purpose` 区分主模型（`agent`）、压缩（`compact`）与审批（`judge`）。累计用量包含辅助调用，便于比较运行成本。仅显式启用 `pluginConfig["agentlab.telemetry-jsonl"].includeBodies` 才记录对话正文和工具参数。
 
 ## 开发
 

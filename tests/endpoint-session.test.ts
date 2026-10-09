@@ -1,5 +1,6 @@
+import { mkdtempProject } from './helpers/project.js';
 /** 端点身份回归：SDK 使用假实现，不访问网络，也不需要真实密钥。 */
-import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -12,11 +13,11 @@ vi.mock('openai', () => ({ default: class {
     yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
   } } };
 } }));
-import { createAgent, loadSession, type Agent } from '../src/index.js';
+import { createAgent, loadSession, sessionPath, type Agent } from '../src/index.js';
 let cwd: string;
 const agents: Agent[] = [];
 beforeEach(async () => {
-  cwd = await mkdtemp(join(tmpdir(), 'agent-endpoint-regression-'));
+  cwd = await mkdtempProject(join(tmpdir(), 'agent-endpoint-regression-'));
   sdk.endpoints.length = 0;
   vi.stubEnv('OPENAI_API_KEY', 'fake-never-sent');
   vi.stubEnv('ANTHROPIC_API_KEY', 'fake-never-sent');
@@ -53,7 +54,7 @@ it('同一环境变量端点可恢复，落盘仅存指纹', async () => {
   const first = await agent(); const id = await save(first);
   const file = await loadSession(cwd, id);
   expect(file.endpointKey).toBe(createHash('sha256').update(endpoint).digest('hex'));
-  const text = await readFile(join(cwd, '.agentlab', 'sessions', `${id}.json`), 'utf8');
+  const text = await readFile(sessionPath(cwd, id), 'utf8');
   for (const secret of ['fake-secret', 'fake-token', 'a.invalid']) expect(text).not.toContain(secret);
   const second = await agent(); await expect(second.session.resume(id)).resolves.toMatchObject({ id });
 });
@@ -102,7 +103,7 @@ it.each(['', '   '])('显式端点 %j 与真实 SDK 的默认回退行为一致'
 it('旧环境变量会话的 default 标记不能被当作已验证端点，legacy 开关也不绕过', async () => {
   vi.stubEnv('OPENAI_BASE_URL', 'https://old-env.invalid/v1');
   const first = await agent(); const id = await save(first);
-  const path = join(cwd, '.agentlab', 'sessions', `${id}.json`);
+  const path = sessionPath(cwd, id);
   // 模拟修复前版本将环境变量端点错误保存为 default 的格式。
   const old = JSON.parse(await readFile(path, 'utf8'));
   old.endpointKey = 'default'; await writeFile(path, JSON.stringify(old));

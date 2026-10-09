@@ -30,7 +30,8 @@ export async function loadPlugins(plugins: LegacyPlugin[], context: PluginContex
       throw new Error('Transactional legacy hook registration requires hooks.prepareBatch; pass hookRunner.registrationSink() or the HookRunner instance to loadPlugins');
     }
     batches.push(context.providers.prepareBatch(host.list('provider').filter(record => record.ownerPlugin !== SEED_ID).map(record => record.implementation)));
-    batches.push(context.tools.prepareBatch(host.list('tool').filter(record => record.ownerPlugin !== SEED_ID).map(record => record.implementation)));
+    const tools = host.list('tool').filter(record => record.ownerPlugin !== SEED_ID);
+    batches.push(context.tools.prepareBatch(tools.map(record => record.implementation), tools.flatMap(record => record.aliases.map(name => ({ name, target: record.implementation.name })))));
     if (hooks.length) batches.push(context.hooks.prepareBatch!(hooks));
     for (const batch of batches) batch.validate();
     for (const batch of batches) batch.commit();

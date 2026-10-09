@@ -97,7 +97,7 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 `run()` 返回 `AgentRunResult`：`reason` 区分 `completed / max_turns / max_tokens / aborted / error`，同时提供模型轮数、累计用量和错误信息。`completed` 只代表循环正常结束，研究中的任务成功率应由外部评测器判断。没有 UI 或 `error` 事件订阅者时，模型失败也能返回 `error` 终态。
 
-每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `.agentlab/logs/*.jsonl`。
+每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `~/.agent/state/projects/<项目 ID>/logs/*.jsonl`。
 
 ## 5. 权限引擎 `src/core/permission/engine.ts`（重点）
 
@@ -213,7 +213,7 @@ interface Plugin {
 
 ## 12. 会话持久化 `src/core/session/`
 
-一个会话是当前项目目录下的一段可继续对话，落在 `<cwd>/.agentlab/sessions/<id>.json`。id 用本地时间加 4 位十六进制（`s-YYYYMMDD-HHmmss-xxxx`），避开 Windows 文件名里的冒号。没有 index，列表就是扫目录里的 `*.json`，坏文件进 `broken` 但不删。
+一个会话属于规范化的项目根，落在 `~/.agent/state/projects/<项目根路径的 SHA-256>/sessions/<id>.json`。配置与状态分开；子目录和符号链接入口解析到相同项目身份，其他项目不能通过相同 id 访问该会话。不扫描或迁移旧目录。id 用本地时间加 4 位十六进制（`s-YYYYMMDD-HHmmss-xxxx`），避开 Windows 文件名里的冒号。没有 index，列表就是扫目录里的 `*.json`，坏文件进 `broken` 但不删。
 
 文件里只放压缩后的当前历史、模型、思考等级、会话级权限规则、权限模式、累计用量和统计。不放进行中的 run、`toolsSnapshot`、MCP / skill、system prompt 全文、项目配置里的权限、审计日志、半截流式块，也不放 API key。恢复后 system prompt 仍由 `buildSystemPrompt` 现装，工具列表在下一轮按当前注册表重新快照。
 

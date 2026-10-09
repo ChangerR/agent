@@ -6,12 +6,12 @@ import { errnoCode, SessionError } from './errors.js';
 export async function withSessionLock<T>(path: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted();
   const lockPath = `${path}.lock`;
-  await fs.mkdir(dirname(path), { recursive: true });
+  await fs.mkdir(dirname(path), { recursive: true, mode: 0o700 });
   let handle;
   for (let attempt = 0; ; attempt++) {
     signal?.throwIfAborted();
     try {
-      handle = await fs.open(lockPath, 'wx');
+      handle = await fs.open(lockPath, 'wx', 0o600);
       break;
     } catch (error) {
       if (errnoCode(error) !== 'EEXIST') throw new SessionError('io', `创建会话锁失败: ${lockPath}`, { cause: error, path: lockPath });

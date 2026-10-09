@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,11 +11,11 @@ import type { Agent } from '../src/index.js';
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
-function setup() {
-  const cwd = mkdtempSync(join(tmpdir(), 'agent-permissions-ui-')); dirs.push(cwd);
-  const globalConfigPath = join(cwd, 'global.json');
+function setup(options: { missingGlobal?: boolean } = {}) {
+  const cwd = mkdtempSync(join(tmpdir(), 'agent-permissions-ui-')); dirs.push(cwd); mkdirSync(join(cwd, '.git'));
+  const globalConfigPath = options.missingGlobal ? join(cwd, 'home', '.agent', 'config.json') : join(cwd, 'global.json');
   const path = join(cwd, 'agent.config.json');
-  writeFileSync(globalConfigPath, JSON.stringify({ permissions: { deny: ['bash(rm *)'] } }));
+  if (!options.missingGlobal) writeFileSync(globalConfigPath, JSON.stringify({ permissions: { deny: ['bash(rm *)'] } }));
   writeFileSync(path, JSON.stringify({ permissionMode: 'ask', permissions: { allow: ['read_file'] }, unknownSecret: 'not-in-ui' }));
   const config = AgentConfigSchema.parse({ permissionMode: 'ask', permissions: { allow: ['read_file'], deny: ['bash(rm *)'] } });
   const permission = new PermissionEngine({ mode: 'ask', rules: config.permissions });
@@ -34,6 +34,75 @@ function setup() {
 }
 
 describe('TUI 权限中心', () => {
+  it('清楚显示本次会话、本项目、全局及真实文件；项目继承查看始终只读', () => {
+    const h = setup(); h.settings.open();
+    expect(h.picker.items.find(item => item.value === 'mode')?.label).toContain('本次会话');
+    expect(h.picker.items.find(item => item.value === 'project')).toMatchObject({ label: expect.stringContaining('本项目'), description: expect.stringContaining(h.path) });
+    expect(h.picker.items.find(item => item.value === 'global')?.description).toContain(h.globalConfigPath);
+    h.pick('project'); h.pick('global');
+    expect(h.detail.title).toContain('只读'); expect(h.detail.body()).toContain(h.globalConfigPath);
+  });
+
+  it('全局只编辑原始全局层；保存不提升项目权限、审批模型、writeRoots或运行时默认值', () => {
+    const h = setup(); const projectBefore = readFileSync(h.path, 'utf8');
+    writeFileSync(h.globalConfigPath, '{"custom":{"keep":true},"permissions":{"deny":["bash(rm *)"]}}');
+    h.config.permissionMode = 'yolo'; h.config.judgeModel = 'project-only-reviewer';
+    h.config.pluginConfig['agentlab.policy-deterministic-v2'] = { writeRoots: ['project-output'] };
+    h.permission.addSessionRule('allow', 'session_only');
+    h.settings.open(); h.pick('global');
+    expect(h.picker.body?.()).toContain('内置默认 ask');
+    expect(h.picker.body?.()).toContain('allow: 0 条');
+    expect(h.picker.body?.()).not.toContain('project-only-reviewer');
+    h.pick('mode'); h.pick('auto'); h.pick('review');
+    expect(h.detail.body()).toContain('作用范围: 全局'); expect(h.detail.body()).toContain(h.globalConfigPath);
+    expect(h.detail.body()).not.toContain('read_file'); expect(h.detail.body()).not.toContain('session_only');
+    h.detail.onBack(); h.pick('save'); expect(h.picker.requireSelection).toBe(true); h.pick('cancel');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).not.toHaveProperty('permissionMode');
+    h.pick('save'); h.pick('confirm');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).toEqual({ custom: { keep: true }, permissionMode: 'auto', permissions: { deny: ['bash(rm *)'] } });
+    expect(readFileSync(h.path, 'utf8')).toBe(projectBefore);
+    expect(h.permission.mode).toBe('ask'); expect(h.config.judgeModel).toBe('project-only-reviewer');
+  });
+
+  it('首次全局编辑取消、review和放弃均不建目录；只有明确Save才落盘', () => {
+    const h = setup({ missingGlobal: true }); const globalDirectory = join(h.cwd, 'home');
+    h.settings.open(); h.pick('global'); h.picker.onCancel();
+    expect(existsSync(globalDirectory)).toBe(false);
+    h.pick('global'); h.pick('mode'); h.pick('auto'); h.pick('review'); h.detail.onBack();
+    h.pick('save'); h.pick('cancel'); expect(existsSync(globalDirectory)).toBe(false);
+    h.pick('back'); expect(h.picker.title).toContain('放弃'); h.pick('confirm');
+    expect(existsSync(globalDirectory)).toBe(false);
+    h.pick('global'); expect(h.picker.body?.()).toContain('内置默认 ask');
+    h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('confirm');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).toEqual({ permissionMode: 'auto' });
+  });
+
+  it('全局规则和optional字段可编辑删除，namespace别名不造成新旧冲突', () => {
+    const h = setup(); writeFileSync(h.globalConfigPath, JSON.stringify({ pluginConfig: {
+      'agentlab.policy-legacy': { permissionMode: 'auto', permissions: { allow: ['glob'] } },
+      'agentlab.reviewer-model': { judgeModel: 'global-reviewer' },
+    } }));
+    h.settings.open(); h.pick('global'); expect(h.picker.body?.()).toContain('global-reviewer');
+    h.pick('mode'); h.pick('inherit'); h.pick('judge'); h.pick('inherit');
+    h.pick('rules'); h.pick('allow'); h.pick('0'); h.pick('delete'); h.pick('confirm');
+    h.pick('add'); h.input.onSubmit('read_file'); h.picker.onCancel(); h.picker.onCancel();
+    h.pick('save'); h.pick('confirm');
+    const raw = JSON.parse(readFileSync(h.globalConfigPath, 'utf8'));
+    expect(raw).not.toHaveProperty('permissionMode'); expect(raw).not.toHaveProperty('judgeModel'); expect(raw).not.toHaveProperty('permissions');
+    expect(raw.pluginConfig['agentlab.policy-legacy']).toEqual({ permissions: { allow: ['read_file'], ask: [], deny: [] } });
+    expect(raw.pluginConfig['agentlab.reviewer-model']).toEqual({});
+  });
+
+  it('全局并发冲突保留草稿，项目编辑与会话模式不变', () => {
+    const h = setup(); h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('yolo');
+    writeFileSync(h.globalConfigPath, '{"custom":"external-global"}');
+    h.pick('save'); h.pick('confirm');
+    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe('{"custom":"external-global"}');
+    expect(h.picker.title).toContain('未保存'); expect(h.picker.body?.()).toContain('yolo');
+    expect(h.picker.context).toContain('草稿保留'); expect(h.permission.mode).toBe('ask');
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('ask');
+  });
+
   it('按实际运行状态显示审批模型与来源，不以 judgeModel 配置推断是否加载', () => {
     const h = setup();
     expect(h.config.judgeModel).toBeUndefined();
@@ -99,7 +168,7 @@ describe('TUI 权限中心', () => {
 
   it('配置规则只读，有可核验全局/项目标签，精确目标与工具全范围含义不同', () => {
     const h = setup(); h.settings.open(); h.pick('effective');
-    expect(h.detail.body()).toContain('全局 ~/.agent/config.json'); expect(h.detail.body()).toContain('项目 agent.config.json');
+    expect(h.detail.body()).toContain(`全局配置 ${h.globalConfigPath}`); expect(h.detail.body()).toContain(`项目配置 ${h.path}`);
     expect(h.detail.body()).not.toContain('not-in-ui'); expect(h.detail.body()).toContain('启动时加载的快照');
     expect(describePermissionRule('read_file')).toContain('全部调用');
     expect(describePermissionRule('bash(="npm test")')).toContain('精确目标');

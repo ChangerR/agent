@@ -1,3 +1,4 @@
+import { mkdtempProject } from './helpers/project.js';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,7 +15,7 @@ import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fa
 import { definePlugin } from '../src/sdk/index.js';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true }))); });
-async function directory() { const dir = await fs.mkdtemp(join(tmpdir(), 'agent-plugin-replacement-')); dirs.push(dir); return dir; }
+async function directory() { const dir = await mkdtempProject(join(tmpdir(), 'agent-plugin-replacement-')); dirs.push(dir); return dir; }
 const example = resolve('plugins/architecture-example/plugin.mjs');
 describe('只改配置即可替换默认能力', () => {
   it('从独立 ESM 入口替换策略/noop/store，并贡献工具、命令、设置和上下文', async () => {
@@ -35,7 +36,7 @@ describe('只改配置即可替换默认能力', () => {
       const state = await agent.settings.find(record => record.id === 'example-state')!.section.read!(new AbortController().signal) as { compactions: number; decisions: number; tools: number };
       expect(state.compactions).toBeGreaterThan(0); expect(state.decisions).toBe(3); expect(state.tools).toBe(2);
       const saved = await agent.session.save(); expect(saved?.path.startsWith('memory:')).toBe(true);
-      expect(await fs.stat(join(cwd, '.agentlab', 'sessions')).then(() => true, () => false)).toBe(false);
+      expect(await fs.stat(agent.paths.sessionsDir).then(() => true, () => false)).toBe(false);
       await agent.session.resume(agent.session.id);
       expect((await agent.session.list()).sessions).toHaveLength(1);
       off();
