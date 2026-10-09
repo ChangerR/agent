@@ -21,10 +21,12 @@ function demoScript(): ScriptedResponse {
 export function providerPlugins(config: AgentConfig) {
   return [
     definePlugin({ manifest: { id: 'agentlab.provider-anthropic', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-      ctx.provide.provider('anthropic', new AnthropicProvider({ apiKey: process.env[config.apiKeyEnv ?? 'ANTHROPIC_API_KEY'], baseURL: config.provider === 'anthropic' ? config.baseURL : undefined, cacheControl: config.cache.enabled }));
+      const apiKeyEnv = config.provider === 'anthropic' ? config.apiKeyEnv : undefined;
+      ctx.provide.provider('anthropic', new AnthropicProvider({ apiKeyEnv, apiKey: process.env[apiKeyEnv ?? 'ANTHROPIC_API_KEY'], baseURL: config.provider === 'anthropic' ? config.baseURL : undefined, cacheControl: config.cache.enabled }));
     } }),
     definePlugin({ manifest: { id: 'agentlab.provider-openai', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-      ctx.provide.provider('openai', new OpenAIProvider({ apiKey: process.env[config.apiKeyEnv ?? 'OPENAI_API_KEY'], baseURL: config.provider === 'openai' ? config.baseURL : undefined }));
+      const apiKeyEnv = config.provider === 'openai' ? config.apiKeyEnv : undefined;
+      ctx.provide.provider('openai', new OpenAIProvider({ apiKeyEnv, apiKey: process.env[apiKeyEnv ?? 'OPENAI_API_KEY'], baseURL: config.provider === 'openai' ? config.baseURL : undefined }));
     } }),
     definePlugin({ manifest: { id: 'agentlab.provider-fake', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
       ctx.provide.provider('fake', new FakeProvider([demoScript()]));

@@ -262,10 +262,10 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b');
       ui.send('/permissions'); down(); down(); down(); down(); enter();
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));
-      enter(); down(); enter(); // auto -> yolo，仍只是项目草稿
+      down(); enter(); down(); enter(); // Save 入口前置；默认模式 auto -> yolo，仍只是项目草稿
       expect(await readFile(file, 'utf8')).toBe(before);
       expect(ui.agent.permission.mode).toBe('auto');
-      for (let i = 0; i < 5; i++) down(); enter();
+      enter(); // 返回草稿后首项即 Save
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('确认 Save'));
       enter(); enter(); // 未重新选择不能保存
       expect(await readFile(file, 'utf8')).toBe(before);

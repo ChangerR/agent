@@ -7,7 +7,7 @@
     "agentlab": "dist/cli/index.js"
   },
   "scripts": {
-    "dev": "tsx src/cli/index.ts",
+    "dev": "node --import tsx src/cli/index.ts",
     "build": "tsup src/cli/index.ts src/index.ts src/sdk/index.ts --format esm --no-dts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -40,5 +40,8 @@
       "types": "./src/sdk/index.ts",
       "import": "./dist/sdk/index.js"
     }
+  },
+  "engines": {
+    "node": ">=22.19.0"
   }
 }

@@ -7,6 +7,7 @@
  * - 流式 tool_calls 按 index 增量下发，需要自己拼装 id/name/arguments
  */
 import OpenAI from 'openai';
+import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
 import type {
   ChatCompletionChunk,
   ChatCompletionMessageParam,
@@ -175,12 +176,12 @@ export class OpenAIProvider implements Provider {
   readonly capabilities = { thinking: true, streaming: true };
   private client: OpenAI | null = null;
 
-  constructor(private opts: { apiKey?: string; baseURL?: string } = {}) {}
+  constructor(private opts: ApiKeyOptions & { baseURL?: string } = {}) {}
 
   private getClient(): OpenAI {
     if (!this.client) {
       this.client = new OpenAI({
-        apiKey: this.opts.apiKey ?? process.env.OPENAI_API_KEY ?? 'EMPTY',
+        apiKey: resolveApiKey(this.opts, 'OPENAI_API_KEY') ?? 'EMPTY',
         baseURL: this.opts.baseURL ?? process.env.OPENAI_BASE_URL,
       });
     }

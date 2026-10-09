@@ -18,13 +18,35 @@
 ## 常用命令
 
 ```bash
-pnpm dev        # tsx 直接跑 TUI（需 .env 里的 ANTHROPIC_API_KEY）
+pnpm dev        # Node + tsx loader 跑 TUI（按 provider 配 key；fake 可离线运行）
 pnpm test       # vitest run
 pnpm typecheck  # tsc --noEmit
 pnpm build      # tsup → dist/
 ```
 
 改完代码至少跑一遍 `pnpm typecheck` 和 `pnpm test`，再声称完成。
+
+## 本机模型配置
+
+- 使用 Node.js 22.19.0+（当前 TUI 依赖的最低要求）。先复制 `.env.example` 为 `.env`、`agent.config.example.json` 为
+  `agent.config.json`；已有配置只做必要字段修改，不覆盖整份文件。配套步骤见 README 的“快速开始”。
+- `.env` 只保存 key 等环境变量。`provider`、`model`、`baseURL`、`apiKeyEnv` 写在 JSON；
+  `apiKeyEnv` 是变量名，不是 key。默认 Anthropic 读 `ANTHROPIC_API_KEY`，OpenAI 兼容
+  适配器读 `OPENAI_API_KEY`。DeepSeek 可使用 `provider: "openai"`、
+  `baseURL: "https://api.deepseek.com"`、`apiKeyEnv: "DEEPSEEK_API_KEY"`，
+  搭配 `.env` 的 `DEEPSEEK_API_KEY`。模型 ID 按对应官方文档/账户确认，不从“Flash”等简称猜测。
+- JSON 字段优先级：内置默认 < `~/.agent/config.json` < 项目 `agent.config.json` < SDK 会话覆盖。
+  字段逐项继承；切换 provider 要同时核对 model、baseURL、apiKeyEnv，避免继承另一厂商的设置。
+- runtime 装配 provider 前，只加载规范化项目根 `.env`；不加载子目录 `.env`、`.env.local` 或
+  `~/.agent/.env`。已有进程变量优先，空字符串也会覆盖文件值。显式 JSON baseURL 优先于
+  对应 provider 的 `*_BASE_URL` 环境变量。纯 `loadConfigWithSources()` 不加载 `.env`。
+- `.env` 缺省正常；其他读取错误应明确报告路径/安全错误码，不吞掉，也不输出原始内容或 key。
+  修改环境变量或 provider/key/端点配置后必须退出进程重新启动；`/model` 只改当前会话模型。
+- 权限默认草稿的 Save 区分“仅保存启动默认”与“保存并应用模式”。后者必须再次精确确认，
+  只应用本项目/全局合并后的有效 mode；规则、审批模型和插件实现仍需重启。不要把全局草稿值
+  直接当作本项目有效模式，也不要在保存失败时先改当前会话。
+- 回归使用隔离 HOME、临时项目、固定假 key 和 mock SDK；绝不探测用户真实 key 或发送真实模型请求。
+  `.env` 加载回归见 `tests/environment.test.ts`，启动和端点身份回归见对应测试文件。
 
 ## 目录
 

@@ -39,7 +39,8 @@ const rulesCount = (rules: SessionRules) => kinds.reduce((sum, kind) => sum + ru
 const sameRules = (left: SessionRules, right: SessionRules) => kinds.every(kind => JSON.stringify(left[kind]) === JSON.stringify(right[kind]));
 const modeLabel = (mode?: PermissionMode, scope: PermissionConfigScope = 'project') => mode ?? (scope === 'global' ? '内置默认 ask' : '继承全局 / 内置 ask');
 const judgeLabel = (model?: string, scope: PermissionConfigScope = 'project') => model === undefined ? scope === 'global' ? '内置默认：跟随当前模型' : '继承全局 / 默认跟随当前模型' : model.trim() === '' ? scope === 'global' ? '跟随当前模型' : '跟随当前模型（覆盖全局）' : safeText(model.trim());
-const restartNotice = '重启后新会话生效；当前会话的模式、规则和审批模型不变。恢复旧会话时可能还原它保存的模式与会话规则。';
+const restartNotice = '启动默认在重启后新会话生效；Save 时可另行确认应用有效模式到当前会话。规则和审批模型仍需重启。恢复旧会话时可能还原它保存的模式与会话规则。';
+const saveOnlyNotice = '仅保存启动默认；当前会话的模式、规则和审批模型不变。重启后新会话生效；恢复旧会话时可能还原它保存的模式与会话规则。';
 
 /** 显示已装配的运行状态，不能从配置字段推断审批员是否存在。 */
 export function describeJudgeStatus(status: ReturnType<Agent['loop']['getJudgeStatus']>): string {
@@ -112,7 +113,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   let modeBack: () => void = () => {};
   function reopenRoot(): void {
     showPicker({
-      title: '权限设置', context: `本次会话: ${agent.permission.mode} · 本项目 / 全局设置需 Save 后重启`,
+      title: '权限设置', context: `本次会话: ${agent.permission.mode} · Save 可仅保存默认，或确认应用模式`,
       items: [
         { value: 'mode', label: `本次会话模式 · ${agent.permission.mode}`, description: `${modeDescription(agent.permission.mode)}\n${guard()}\n只改变后续权限检查；不会处理已弹出的审批。` },
         { value: 'judge', label: `auto 审批模型 · ${describeJudgeStatus(agent.loop.getJudgeStatus())}`, description: '查看实际加载的模型与来源。仅 auto 模式使用；跟随当前模型时会随 /model 和会话恢复更新。' },
@@ -191,24 +192,38 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     const isGlobal = scope === 'global';
     const label = isGlobal ? '全局' : '项目';
     let global: PermissionConfigSnapshot;
-    try { global = readGlobalPermissionConfig(globalPath); snapshot = isGlobal ? global : readPermissionConfig(paths.projectConfigPath, 'project'); }
+    let project: PermissionConfigSnapshot;
+    try { global = readGlobalPermissionConfig(globalPath); project = readPermissionConfig(paths.projectConfigPath, 'project'); snapshot = isGlobal ? global : project; }
     catch (error) { reportError(error); reopenRoot(); return; }
     let draft = copyPermissionDraft(snapshot);
     let saveError = '';
+    let inheritedUnavailable = false;
     const dirty = () => JSON.stringify(draft) !== JSON.stringify(copyPermissionDraft(snapshot));
-    const draftSummary = () => `作用范围: ${isGlobal ? '全局（所有项目的新会话；项目覆盖优先）' : '本项目'}\n文件: ${safeText(snapshot.path)}\n默认模式: ${modeLabel(draft.permissionMode, scope)}\n审批模型: ${judgeLabel(draft.judgeModel, scope)}\n${kinds.map(kind => `${kind}: ${draft.permissions[kind].length} 条`).join(' · ')}\n${restartNotice}`;
+    // 两层读取器已处理同层 legacy / namespace 别名；只合并原始磁盘层，不能拿运行时或会话覆盖写回默认。
+    const globalMode = () => (isGlobal ? draft : global).permissionMode ?? 'ask';
+    const projectMode = () => (isGlobal ? project : draft).permissionMode;
+    const effectiveMode = (): PermissionMode => projectMode() ?? globalMode();
+    const modeSummary = () => `当前会话模式: ${agent.permission.mode}\n重启后本项目新会话模式: ${inheritedUnavailable ? '无法核验（继承配置读取失败）' : `${effectiveMode()}${dirty() ? '（草稿保存后）' : '（按配置快照）'}`}\n${inheritedUnavailable ? '请修复继承配置后重新 Save 核验。' : projectMode() === undefined ? `本项目继承全局 / 内置默认 ${globalMode()}` : `全局默认 ${globalMode()} 被本项目 ${projectMode()} 覆盖`}`;
+    const refreshInherited = () => {
+      try {
+        if (isGlobal) project = readPermissionConfig(paths.projectConfigPath, 'project');
+        else global = readGlobalPermissionConfig(globalPath);
+        inheritedUnavailable = false;
+      } catch (error) { inheritedUnavailable = true; throw error; }
+    };
+    const draftSummary = () => `${modeSummary()}\n作用范围: ${isGlobal ? '全局（所有项目的新会话；项目覆盖优先）' : '本项目'}\n文件: ${safeText(snapshot.path)}\n默认模式: ${modeLabel(draft.permissionMode, scope)}\n审批模型: ${judgeLabel(draft.judgeModel, scope)}\n${kinds.map(kind => `${kind}: ${draft.permissions[kind].length} 条`).join(' · ')}\n${restartNotice}`;
     const back = () => dirty()
       ? confirm(`放弃未保存的${label}草稿？`, `${label}草稿尚未保存。\n${draftSummary()}\n\n放弃后磁盘文件与当前会话不变。`, '放弃草稿并返回', reopenRoot, renderScope)
       : reopenRoot();
     const renderScope = () => showPicker({
-      title: `${label}默认设置${dirty() ? ' · 未保存' : ''}`, context: saveError || '只编辑草稿；Save 后重启生效', body: draftSummary,
+      title: `${label}默认设置${dirty() ? ' · 未保存' : ''}`, context: `${saveError ? `${saveError} · ` : ''}当前 ${agent.permission.mode} · 重启 ${inheritedUnavailable ? '无法核验' : effectiveMode()}${dirty() ? '（未保存）' : ''} · Save 选择应用方式`, body: draftSummary,
       items: [
+        { value: 'save', label: `Save · 保存${label}草稿 / 应用模式`, description: `${modeSummary()}\n选择仅保存启动默认，或保存后另行确认应用有效模式。写入 ${safeText(snapshot.path)}，保留其他配置字段。规则和审批模型仍需重启。` },
         { value: 'mode', label: `默认模式 · ${modeLabel(draft.permissionMode, scope)}`, description: `${isGlobal ? '内置默认: ask；项目可覆盖全局默认。' : `全局默认: ${global.permissionMode ?? 'ask（内置）'}。`}${restartNotice}` },
         { value: 'rules', label: `${label}规则 · ${rulesCount(draft.permissions)} 条`, description: isGlobal ? '添加 / 编辑 / 删除全局原始 allow、ask、deny；影响所有项目的新会话，不带入项目或会话规则。' : '添加 / 编辑 / 删除项目 allow、ask、deny；全局规则另外合并，不能在此删除。' },
         ...(!isGlobal ? [{ value: 'global', label: `全局继承规则 · ${rulesCount(global.permissions)} 条 · 只读`, description: `查看 ${safeText(global.path)} 中的规则；项目规则不会删除全局规则。` }] : []),
         { value: 'judge', label: `审批模型 · ${judgeLabel(draft.judgeModel, scope)}`, description: `${isGlobal ? '内置默认跟随当前模型；项目可覆盖。' : `全局: ${global.judgeModel ? safeText(global.judgeModel) : '跟随当前模型'}。`}模型复用主 provider 与 endpoint；输入名称需与其兼容。选择“跟随当前模型”会保存为空字符串。${restartNotice}` },
         { value: 'review', label: '查看完整草稿 / 更改', description: '核对模式、审批模型和各条规则。这里只显示权限设置，不展示配置中的其他字段。' },
-        { value: 'save', label: `Save · 保存${label}草稿`, description: `写入 ${safeText(snapshot.path)}。保留其他配置字段。${restartNotice}` },
         { value: 'back', label: '返回权限中心', description: dirty() ? '有未保存草稿，返回前会询问是否放弃。' : '没有未保存更改。' },
       ],
       onPick: value => {
@@ -227,12 +242,71 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     });
     const reviewText = () => `${draftSummary()}\n\n${kinds.map(kind => `${kind}:\n${draft.permissions[kind].map(rule => `  ${safeText(rule)}\n    ${describePermissionRule(rule)}`).join('\n') || '  (无)'}`).join('\n\n')}\n\n变更前模式: ${modeLabel(snapshot.permissionMode, scope)}\n变更前审批模型: ${judgeLabel(snapshot.judgeModel, scope)}\n${kinds.map(kind => `${kind} 原有: ${snapshot.permissions[kind].map(safeText).join('；') || '(无)'}`).join('\n')}\n\n${isGlobal ? '仅编辑全局原始配置；项目覆盖与项目/会话规则不写入全局。全局规则将在所有项目的新会话中合并。' : '全局规则保持只读并继续合并。'}deny 优先。dangerForceAsk 与 writeRoots 未在此编辑。`;
     const save = () => {
-      if (!dirty()) { notify(`没有需要保存的${label}更改。`); renderScope(); return; }
-      confirm(`确认 Save ${label}权限设置`, reviewText(), `Save · 确认写入${label}配置`, () => {
-        try { snapshot = savePermissionConfig(snapshot, draft); draft = copyPermissionDraft(snapshot); saveError = ''; notify(`${label}权限设置已保存。${restartNotice}`); }
-        catch (error) { saveError = '保存失败 · 草稿保留'; reportError(error); }
+      try { refreshInherited(); }
+      catch (error) { saveError = '无法核验有效模式 · 草稿保留'; reportError(error); renderScope(); return; }
+      // 保留旧 confirm 值的仅保存语义；即时应用使用独立确认，不能因多按一次 Enter 而扩大授权。
+      const body = reviewText();
+      showPicker({ title: `确认 Save ${label}权限设置`, context: '先选择保存方式，再 Enter；Esc 返回草稿', body: () => body, requireSelection: true,
+        items: [
+          { value: 'cancel', label: '取消', description: body },
+          { value: 'confirm', label: 'Save · 仅保存启动默认', description: `${saveOnlyNotice}\n\n${body}` },
+          { value: 'apply', label: `Save · 保存并应用模式 → ${effectiveMode()}`, description: `另行确认当前会话 ${agent.permission.mode} → ${effectiveMode()}。仅在保存成功后应用模式；规则和审批模型仍需重启。\n\n${body}` },
+        ], onPick: value => {
+          if (value === 'apply') confirmSaveAndApply();
+          else if (value === 'confirm') {
+            const changed = dirty();
+            if (persist()) {
+              // 仅保存不需重确认另一层，但完成后的摘要必须刷新；读取失败不能倒置已成功写盘的事实。
+              try {
+                refreshInherited();
+                notify(`${changed ? `${label}权限设置已保存。` : `没有需要保存的${label}更改。`}${saveOnlyNotice}`);
+              } catch {
+                saveError = '无法核验重启模式';
+                notify(`${changed ? `${label}权限设置已保存` : `没有需要保存的${label}更改`}，但无法核验重启有效模式；请修复继承配置后重新打开设置。当前会话不变。`, true);
+              }
+            }
+            renderScope();
+          } else renderScope();
+        }, onCancel: renderScope,
+      });
+    };
+    const persist = (): boolean => {
+      try {
+        if (dirty()) { snapshot = savePermissionConfig(snapshot, draft); draft = copyPermissionDraft(snapshot); }
+        else {
+          // 已保存草稿也可单独应用；不制造无意义写入，同时拒绝陈旧的磁盘默认确认。
+          const latest = readPermissionConfig(snapshot.path, scope);
+          if (JSON.stringify(copyPermissionDraft(latest)) !== JSON.stringify(draft)) throw new PermissionConfigError('conflict', '配置已变化，请重新打开对应范围的设置；未应用当前会话模式。');
+        }
+        saveError = ''; return true;
+      } catch (error) { saveError = '保存失败 · 草稿保留'; reportError(error); return false; }
+    };
+    const confirmSaveAndApply = () => {
+      const sessionId = agent.session.id;
+      const currentMode = agent.permission.mode;
+      const mode = effectiveMode();
+      const policy = policyId();
+      let pending = true;
+      const cancel = () => { pending = false; save(); };
+      confirm(`确认保存并应用模式 → ${mode}`, `${currentMode} → ${mode}\n${modeSummary()}\n\n${modeDescription(mode)}\n${guard()}\n\n先保存${label}草稿，成功后仅将合并后的有效模式应用到当前会话的后续权限检查，可能在本轮内生效。已弹出的审批不自动放行；已开始的工具不会被追溯取消。规则和审批模型仍需重启，当前运行中的规则与审批员保持不变。模式可能随会话保存和恢复。\n\n${reviewText()}`, `确认保存并应用 ${currentMode} → ${mode}`, () => {
+        if (!pending) return;
+        pending = false;
+        if (agent.session.id !== sessionId || agent.permission.mode !== currentMode || policyId() !== policy) {
+          notify('当前会话已变化，请重新确认保存与应用模式。草稿已保留。', true); renderScope(); return;
+        }
+        try { refreshInherited(); }
+        catch (error) { saveError = '无法核验有效模式 · 草稿保留'; reportError(error); renderScope(); return; }
+        if (effectiveMode() !== mode) {
+          notify('继承配置已变化，有效模式与确认时不同。请重新确认；草稿已保留，尚未保存或应用。', true); renderScope(); return;
+        }
+        const changed = dirty();
+        if (persist()) {
+          agent.permission.setMode(mode);
+          options.onModeChange(mode);
+          notify(`${label}${changed ? '权限设置已保存' : '启动默认未改写'}；当前会话模式已应用为 ${mode}。后续权限检查生效，已有审批仍需处理。规则和审批模型仍需重启。`);
+        }
         renderScope();
-      }, renderScope);
+      }, cancel);
     };
     const editJudge = () => showPicker({ title: `${label}审批模型 · 草稿`, items: [
       { value: 'name', label: '输入模型名称', description: '仅在 auto 模式使用；复用主 provider / endpoint。不会填写 API key。' },
