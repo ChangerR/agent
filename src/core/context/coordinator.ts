@@ -54,23 +54,24 @@ export class ContextManager implements ContextCoordinator {
   }
 }
 
-/** 摘要不能制造用户授权或工具证据。保留的工具块必须是原历史的有序子序列。 */
+/** 摘要不能制造用户授权或工具证据。保留的真实用户消息与工具块分别必须是原历史的有序子序列。 */
 function preserveProvenance(original: readonly Message[], candidate: Message[]): void {
-  const realUsers = new Map<string, number>();
+  const realUsers: string[] = [];
   const toolBlocks: string[] = [];
   for (const message of original) {
     if (message.role === 'user' && message.source !== 'summary') {
-      const key = JSON.stringify(message); realUsers.set(key, (realUsers.get(key) ?? 0) + 1);
+      realUsers.push(JSON.stringify(message));
     }
     if (typeof message.content !== 'string') for (const block of message.content) {
       if (block.type === 'tool_use' || block.type === 'tool_result') toolBlocks.push(JSON.stringify(block));
     }
   }
-  let toolCursor = 0;
+  let userCursor = 0; let toolCursor = 0;
   for (const message of candidate) {
     if (message.role === 'user' && (typeof message.content === 'string' || message.content.some(block => block.type === 'text'))) {
-      const key = JSON.stringify(message); const remaining = realUsers.get(key) ?? 0;
-      if (message.source !== 'summary' && remaining > 0) realUsers.set(key, remaining - 1);
+      // 重复原文逐次向后匹配，不能把较早的授权重排到较晚的撤销之后。
+      const found = message.source === 'summary' ? -1 : realUsers.indexOf(JSON.stringify(message), userCursor);
+      if (found >= 0) userCursor = found + 1;
       else message.source = 'summary';
     }
     if (typeof message.content !== 'string') for (const block of message.content) {

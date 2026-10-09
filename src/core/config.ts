@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { SINGLETON_CAPABILITY_KINDS } from '../sdk/capabilities.js';
 
 export const PermissionModeSchema = z.enum(['ask', 'auto', 'yolo']);
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;
@@ -82,7 +83,7 @@ export const AgentConfigSchema = z.object({
   /** 新插件入口与旧 plugins 分开；enabled=false 只在新会话生效。 */
   pluginEntries: z.array(z.union([z.string(), z.object({ entry: z.string(), enabled: z.boolean().default(true) })])).default([]),
   /** 显式选定单例能力；false 禁用可选能力，不隐式选下一个实现。 */
-  capabilities: z.record(z.union([z.string(), z.literal(false)])).default({}),
+  capabilities: z.record(z.enum(SINGLETON_CAPABILITY_KINDS), z.union([z.string(), z.literal(false)])).default({}),
   pluginConfig: z.record(z.record(z.unknown())).default({}),
   disabledPlugins: z.array(z.string()).default([]),
 });

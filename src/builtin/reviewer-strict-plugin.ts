@@ -13,9 +13,13 @@ const schema = z.object({
   maxOutputTokens: z.number().int().min(1).max(8192).default(256),
   prefixCache: z.object({ enabled: z.boolean().default(false), ttl: z.enum(['5m', '1h']).default('5m') }).default({ enabled: false, ttl: '5m' }),
 });
+const configDefinition = {
+  schema, ownedFields: ['provider', 'model', 'timeoutMs', 'maxRequestBytes', 'maxResponseBytes', 'maxOutputTokens', 'prefixCache'],
+  defaults: {}, applyMode: 'new-session' as const,
+};
 export function strictReviewerPlugin(input: PresetContext) {
   return definePlugin({ manifest: { id: 'agentlab.reviewer-strict', version: '2.0.0', apiVersion: 1, configVersion: 1 },
-    config: { schema, defaults: {}, applyMode: 'new-session' },
+    config: configDefinition,
     setup(ctx) {
       const value = schema.parse(ctx.config.value);
       const configuredModel = value.model ?? input.config.judgeModel;
@@ -27,10 +31,10 @@ export function strictReviewerPlugin(input: PresetContext) {
       const store = new PluginConfigStore(join(input.cwd, 'agent.config.json')); let base: ConfigSnapshot | undefined;
       const drafts = new WeakMap<object, ConfigSnapshot>();
       ctx.provide.settings('reviewer-strict-config', {
-        title: '严格审批模型配置', description: 'provider/model 可独立指定。这里显示下次启动配置；保存不热更新，实际加载状态见严格审批模型状态。空 model 跟随当前主模型。', applyMode: 'newSession', schema: { type: 'object' },
-        read(signal) { signal.throwIfAborted(); base = store.read('agentlab.reviewer-strict'); return { ...value, ...base.value }; },
+        title: '严格审批模型配置', description: 'provider/model 可独立指定。这里编辑项目配置；省略 provider/model 继承其他配置层或默认值。保存仅下次启动生效，实际加载状态见严格审批模型状态。空 model 跟随当前主模型。', applyMode: 'newSession', schema: { type: 'object' },
+        read(signal) { signal.throwIfAborted(); base = store.read('agentlab.reviewer-strict'); return structuredClone(base.value); },
         draft(raw, signal) { signal.throwIfAborted(); if (!base) throw new Error('请先打开设置'); const draft = Object.freeze(schema.parse(raw)); drafts.set(draft, base); return draft; },
-        commit(draft, signal) { signal.throwIfAborted(); if (!draft || typeof draft !== 'object' || !drafts.has(draft)) throw new Error('无效配置草稿'); base = store.commit('agentlab.reviewer-strict', drafts.get(draft)!, draft, { schema }); drafts.delete(draft); },
+        commit(draft, signal) { signal.throwIfAborted(); if (!draft || typeof draft !== 'object' || !drafts.has(draft)) throw new Error('无效配置草稿'); base = store.commit('agentlab.reviewer-strict', drafts.get(draft)!, draft, configDefinition); drafts.delete(draft); },
       });
     },
   });

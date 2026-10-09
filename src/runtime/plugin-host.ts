@@ -75,6 +75,7 @@ export class PluginHost {
   get<K extends CapabilityKind>(kind: K, id: string): CapabilityMap[K] | undefined { return this.graph.get(kind, id); }
   getRecord<K extends CapabilityKind>(kind: K, id: string): CapabilityRecord<K> | undefined { return this.graph.getRecord(kind, id); }
   list<K extends CapabilityKind>(kind: K): readonly CapabilityRecord<K>[] { return this.graph.list(kind); }
+  selectedRecord<K extends SingletonCapabilityKind>(kind: K): CapabilityRecord<K> | undefined { return this.graph.selectedRecord(kind, this.options.selections ?? {}); }
   selected<K extends SingletonCapabilityKind>(kind: K): CapabilityMap[K] | undefined { return this.graph.selected(kind, this.options.selections ?? {}); }
 
   /** 兼容 HookRunner 只在宿主成功后装配；失败插件没有外部写入。 */

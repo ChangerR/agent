@@ -147,7 +147,8 @@ export interface CapabilityMap {
 }
 export type CapabilityKind = keyof CapabilityMap;
 export const CAPABILITY_KINDS = ['provider', 'tool', 'analyzer', 'policy', 'reviewer', 'contextSource', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore', 'skillSource', 'command', 'settings', 'telemetry', 'tui'] as const satisfies readonly CapabilityKind[];
-export type SingletonCapabilityKind = 'policy' | 'reviewer' | 'compactor' | 'cacheStrategy' | 'modelCatalog' | 'sessionStore';
+export const SINGLETON_CAPABILITY_KINDS = ['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const;
+export type SingletonCapabilityKind = typeof SINGLETON_CAPABILITY_KINDS[number];
 export type CapabilitySelections = Partial<Record<SingletonCapabilityKind, string | false>>;
 export interface CapabilityOptions { version?: string; aliases?: readonly string[]; source?: string }
 export interface CapabilityRecord<K extends CapabilityKind = CapabilityKind> {

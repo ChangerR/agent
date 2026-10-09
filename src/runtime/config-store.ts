@@ -55,7 +55,13 @@ export class PluginConfigStore {
       const value = (parsed as Record<string, unknown>)[field];
       if (value !== undefined && (typeof value !== 'string' || !/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(value))) throw new Error(`敏感字段 ${field} 只允许 env:NAME 引用。`);
     }
-    const raw = { ...original.raw, pluginConfig: { ...(original.raw.pluginConfig as object ?? {}), [pluginId]: { ...((original.raw.pluginConfig as Record<string, object> | undefined)?.[pluginId] ?? {}), ...structuredClone(parsed) } } };
+    const previous = (original.raw.pluginConfig as Record<string, Record<string, unknown>> | undefined)?.[pluginId] ?? {};
+    const next = { ...previous, ...structuredClone(parsed) };
+    // schema 只承诺 parse；显式字段所有权区分“删除可选值”和“未知字段被 schema 丢弃”。
+    for (const field of definition.ownedFields ?? []) {
+      if (!Object.hasOwn(parsed, field) || (parsed as Record<string, unknown>)[field] === undefined) delete next[field];
+    }
+    const raw = { ...original.raw, pluginConfig: { ...(original.raw.pluginConfig as object ?? {}), [pluginId]: next } };
     return this.write(base, raw, pluginId);
   }
   private write(base: ConfigSnapshot, raw: Record<string, unknown>, pluginId?: string): ConfigSnapshot {

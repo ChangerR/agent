@@ -51,7 +51,7 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     session: () => agent!.session,
   };
   const preset = (options.preset ?? presetFactory)({ cwd, config: providerConfig, logPath, services,
-    provider: name => providers.get(name ?? config.provider), capabilityChoices: () => Object.fromEntries((['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const).map(kind => { const current = host.selected(kind); return [kind, { selected: host.list(kind).find(r => r.implementation === current)?.capabilityId ?? false, available: host.list(kind).map(r => r.capabilityId) }]; })), modelInfo: model => host?.selected('modelCatalog')?.get(model) });
+    provider: name => providers.get(name ?? config.provider), capabilityChoices: () => Object.fromEntries((['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const).map(kind => { const current = host.selectedRecord(kind); return [kind, { selected: current?.capabilityId ?? false, available: host.list(kind).map(r => r.capabilityId) }]; })), modelInfo: model => host?.selected('modelCatalog')?.get(model) });
   const plugins = [...preset.plugins, ...(options.plugins ?? [])].filter(plugin => !config.disabledPlugins.includes(plugin.manifest.id));
   for (const entry of [...config.plugins, ...config.pluginEntries]) {
     if (typeof entry !== 'string' && !entry.enabled) continue;
@@ -75,7 +75,8 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
       for (const alias of new Set([...(record.capabilityId !== tool.name ? [record.capabilityId] : []), ...record.aliases])) tools.alias(alias, tool.name);
     }
     providers.freeze(); tools.freeze();
-    const policy = host.selected('policy'); if (!policy) throw new Error('A permission policy must be selected');
+    const policyRecord = host.selectedRecord('policy');
+    const policy = policyRecord?.implementation; if (!policy || !policyRecord) throw new Error('A permission policy must be selected');
     const compactor = host.selected('compactor'); if (!compactor) throw new Error('A compactor must be selected');
     const store = host.selected('sessionStore'); if (!store) throw new Error('A session store must be selected');
     const catalog = host.selected('modelCatalog'); if (!catalog) throw new Error('A model catalog must be selected');
@@ -89,13 +90,13 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     const modelInfo = (model: string) => catalog.get(model);
     const knownModels = [...new Set([...Object.keys(catalog.list()), config.model])].map(name => ({ name, info: modelInfo(name) }));
     const loop = new AgentLoop({ provider: providers.get(config.provider), model: config.model, tools, permission: undefined,
-      policy, reviewer, analyzer: policy.analyzer, reviewTimeoutMs: selections.reviewer === 'model-v2' && typeof config.pluginConfig['agentlab.reviewer-strict']?.timeoutMs === 'number' ? config.pluginConfig['agentlab.reviewer-strict'].timeoutMs as number : undefined,
+      policy, policyIdentity: { id: policyRecord.capabilityId, version: policyRecord.version }, reviewer, analyzer: policy.analyzer, reviewTimeoutMs: selections.reviewer === 'model-v2' && typeof config.pluginConfig['agentlab.reviewer-strict']?.timeoutMs === 'number' ? config.pluginConfig['agentlab.reviewer-strict'].timeoutMs as number : undefined,
       hooks, events, context: new ContextManager({ compactThreshold: config.compactThreshold, compactor }), systemPrompt: contextText(segments),
       maxTurns: config.maxTurns, cwd, shutdownTimeoutMs: options.lifecycleTimeoutMs, modelInfo, thinking: config.thinking, cache: config.cache, cacheStrategy: host.selected('cacheStrategy') ?? null,
       toolIdentity: name => { const record = host.getRecord('tool', name) ?? host.list('tool').find(r => r.implementation.name === name); return record && { capabilityId: record.capabilityId, ownerPlugin: record.ownerPlugin, version: record.version }; },
       configRevision, sessionId: () => agent?.session.id ?? 'initializing' });
     const session = new SessionManager({ cwd, loop, permission, events, store,
-      restoreRequirements: { policy: { id: policy.id ?? selections.policy as string, version: policy.version ?? '1.0.0', stateSchemaVersion: 1 } },
+      restoreRequirements: { policy: { id: policy.id ?? policyRecord.capabilityId, version: policy.version ?? policyRecord.version, stateSchemaVersion: 1 } },
       autoSave: options.autoSaveSessions ?? true, persistenceTimeoutMs: options.lifecycleTimeoutMs, endpointKey: endpointURL ? createHash('sha256').update(endpointURL).digest('hex') : 'default' });
     detach.push(session.attach());
     for (const { implementation: sink } of host.list('telemetry')) detach.push(events.onAll(event => {

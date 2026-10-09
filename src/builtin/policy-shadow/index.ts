@@ -58,7 +58,7 @@ export interface PolicyShadowPluginOptions {
 export function createPolicyShadowPlugin(options: PolicyShadowPluginOptions) {
   return definePlugin({
     manifest: { id: 'agentlab.policy-shadow', version: '1.0.0', apiVersion: 1, configVersion: 1, requires: { 'agentlab.policy-legacy': '^1.0.0', 'agentlab.policy-deterministic-v2': '^2.0.0' } },
-    config: { schema: z.object({ timeoutMs: z.number().int().min(1).max(10000).default(1000), maxRecords: z.number().int().min(1).max(10000).default(500) }), defaults: { timeoutMs: 1000, maxRecords: 500 }, applyMode: 'new-session' },
+    config: { schema: z.object({ timeoutMs: z.number().int().min(1).max(10000).default(1000), maxRecords: z.number().int().min(1).max(10000).default(500) }), ownedFields: ['timeoutMs', 'maxRecords'], defaults: { timeoutMs: 1000, maxRecords: 500 }, applyMode: 'new-session' },
     setup(ctx) {
       const legacy = ctx.dependencies.get('agentlab.policy-legacy').get('policy', 'legacy-v1');
       const declaredCandidate = ctx.dependencies.get('agentlab.policy-deterministic-v2').get('policy', 'deterministic-v2');

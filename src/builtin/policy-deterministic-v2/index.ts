@@ -45,9 +45,9 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       signal.throwIfAborted();
       const session = controller.getSessionRules();
       const target = ruleTarget(input);
-      const matched = (kind: keyof SessionRules, targets: readonly string[] = [target]) => {
+      const matched = (kind: keyof SessionRules, targets: readonly string[] = [target], eligible: (rule: ParsedRule) => boolean = () => true) => {
         for (const [source, rules] of [['session', session[kind]], ['config', options.rules[kind]]] as const) {
-          for (const raw of rules) { const rule = parseRule(raw); if (targets.some((candidate) => matchRule(rule, input.tool.name, candidate))) return { raw, rule, source }; }
+          for (const raw of rules) { const rule = parseRule(raw); if (eligible(rule) && targets.some((candidate) => matchRule(rule, input.tool.name, candidate))) return { raw, rule, source }; }
         }
         return undefined;
       };
@@ -82,8 +82,9 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       if (asked) return decision('ask', 'v2_explicit_ask', `命中 ask 规则 "${asked.raw}"（v2 中优先于 allow）`, asked.source, asked.raw);
       const complete = analysis.completeness === 'complete' && analysis.effects.length > 0
         && analysis.effects.every((effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind));
-      const allowed = matched('allow', targets);
-      if (allowed && literalTarget(allowed.rule) !== undefined && complete) {
+      // 宽规则没有放行资格，也不能遮挡同来源或后续来源的精确目标授权。
+      const allowed = matched('allow', targets, (rule) => literalTarget(rule) !== undefined);
+      if (allowed && complete) {
         return decision('allow', 'v2_exact_allow', `命中精确目标 allow 规则 "${allowed.raw}"`, allowed.source, allowed.raw);
       }
       if (controller.mode === 'ask') return decision('ask', 'v2_ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
@@ -125,7 +126,7 @@ export function createDeterministicPolicyPlugin({ config, cwd }: { config: Agent
   const entries = [...config.plugins, ...config.pluginEntries.filter((entry) => typeof entry === 'string' || entry.enabled)
     .map((entry) => typeof entry === 'string' ? entry : entry.entry)];
   return definePlugin({ manifest: { id: 'agentlab.policy-deterministic-v2', version: '2.0.0', apiVersion: 1, configVersion: 1 },
-    config: { schema, defaults: { writeRoots: [] }, applyMode: 'new-session' },
+    config: { schema, defaults: { writeRoots: [] }, ownedFields: ['writeRoots'], applyMode: 'new-session' },
     async setup(ctx) {
       const value = schema.parse(ctx.config.value);
       await validateWriteRoots(cwd, value.writeRoots, entries);
@@ -144,7 +145,7 @@ export function createDeterministicPolicyPlugin({ config, cwd }: { config: Agent
           await validateWriteRoots(cwd, draft.writeRoots, entries, signal); drafts.set(draft, base); return draft; },
         async commit(draft, signal) { signal.throwIfAborted(); if (!draft || typeof draft !== 'object' || !drafts.has(draft)) throw new Error('无效授权目录草稿');
           const parsed = schema.parse(draft); await validateWriteRoots(cwd, parsed.writeRoots, entries, signal);
-          base = store.commit('agentlab.policy-deterministic-v2', drafts.get(draft)!, parsed, { schema }); drafts.delete(draft); },
+          base = store.commit('agentlab.policy-deterministic-v2', drafts.get(draft)!, parsed, { schema, ownedFields: ['writeRoots'] }); drafts.delete(draft); },
       });
     },
   });

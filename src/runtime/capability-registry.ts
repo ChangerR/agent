@@ -1,5 +1,5 @@
 /** 类型化能力图。注册先整批验证，拥有者和别名不受加载先后顺序影响。 */
-import { CAPABILITY_KINDS, type CapabilityKind, type CapabilityMap, type CapabilityRecord, type CapabilitySelections, type SingletonCapabilityKind } from '../sdk/capabilities.js';
+import { CAPABILITY_KINDS, SINGLETON_CAPABILITY_KINDS, type CapabilityKind, type CapabilityMap, type CapabilityRecord, type CapabilitySelections, type SingletonCapabilityKind } from '../sdk/capabilities.js';
 
 export class CapabilityRegistry {
   private records = new Map<CapabilityKind, Map<string, CapabilityRecord>>();
@@ -43,20 +43,26 @@ export class CapabilityRegistry {
   freeze(): void { this.locked = true; }
   get frozen(): boolean { return this.locked; }
   validateSelections(selections: CapabilitySelections): void {
-    for (const kind of ['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const) {
+    for (const key of Object.keys(selections)) {
+      if (!(SINGLETON_CAPABILITY_KINDS as readonly string[]).includes(key)) throw new Error(`Unknown capability selection key: ${key}`);
+    }
+    for (const kind of SINGLETON_CAPABILITY_KINDS) {
       this.selected(kind, selections);
     }
   }
   selected<K extends SingletonCapabilityKind>(kind: K, selections: CapabilitySelections): CapabilityMap[K] | undefined {
+    return this.selectedRecord(kind, selections)?.implementation;
+  }
+  selectedRecord<K extends SingletonCapabilityKind>(kind: K, selections: CapabilitySelections): CapabilityRecord<K> | undefined {
     const selected = selections[kind];
     if (selected === false) return undefined;
     if (selected !== undefined) {
-      const capability = this.get(kind, selected);
+      const capability = this.getRecord(kind, selected);
       if (!capability) throw new Error(`Selected ${kind} capability not found: ${selected}`);
       return capability;
     }
     const records = this.list(kind);
     if (records.length > 1) throw new Error(`Multiple ${kind} capabilities registered; select one explicitly: ${records.map((record) => record.capabilityId).join(', ')}`);
-    return records[0]?.implementation;
+    return records[0];
   }
 }
