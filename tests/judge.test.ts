@@ -4,7 +4,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContextManager } from '../src/core/context/manager.js';
 import { EventBus, type AgentEvent } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
@@ -26,6 +26,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -89,9 +90,9 @@ describe('LLM 审批员', () => {
       ...commands.map((command, i) => toolUseResponse([{ id: `pr-${i}`, name: 'bash', input: { command } }])),
       textResponse('PR created'),
     ] });
-    tools.register({ ...tools.get('bash')!, execute: async (input) => input.command === commands[1]
+    vi.spyOn(tools.get('bash')!, 'execute').mockImplementation(async (input) => input.command === commands[1]
       ? { content: 'ParserError: MissingFileSpecification; command did not execute', isError: true }
-      : { content: input.command === commands[0] ? 'new branch pushed' : 'PR created' } });
+      : { content: input.command === commands[0] ? 'new branch pushed' : 'PR created' });
     const decisions: Array<Extract<AgentEvent, { type: 'permission_decision' }>> = [];
     const notices: string[] = [];
     let asks = 0;
@@ -120,7 +121,7 @@ describe('LLM 审批员', () => {
       toolUseResponse([{ id: 'original', name: 'bash', input: { command: original } }]),
       toolUseResponse([{ id: 'retry', name: 'bash', input: { command: retry } }]), textResponse('ok'),
     ] });
-    tools.register({ ...tools.get('bash')!, execute: async (input) => input.command === original ? { content: 'shell syntax error; no remote operation', isError: true } : { content: 'PR created' } });
+    vi.spyOn(tools.get('bash')!, 'execute').mockImplementation(async (input) => input.command === original ? { content: 'shell syntax error; no remote operation', isError: true } : { content: 'PR created' });
     let asks = 0;
     const phases: string[] = [];
     events.on('permission_request', (e) => { asks++; e.resolve({ allow: true }); });
@@ -139,7 +140,7 @@ describe('LLM 审批员', () => {
       toolUseResponse([{ id: 'force', name: 'bash', input: { command: 'git push origin main --force' } }]), textResponse('ok'),
     ] });
     let executed = false;
-    tools.register({ ...tools.get('bash')!, execute: async () => { executed = true; return { content: 'pushed' }; } });
+    vi.spyOn(tools.get('bash')!, 'execute').mockImplementation(async () => { executed = true; return { content: 'pushed' }; });
     events.on('permission_request', (e) => e.resolve({ allow: false }));
     await loop.run('帮我创建 PR');
     expect(executed).toBe(false);
@@ -213,7 +214,7 @@ describe('LLM 审批员', () => {
       toolUseResponse([{ id: 'a', name: 'write_file', input: { path: 'x', content: 'old' } }]),
       toolUseResponse([{ id: 'b', name: 'write_file', input: { path: 'x', content: 'new' } }]), textResponse('done'),
     ] });
-    tools.register({ name: 'write_file', description: '写入', risk: 'write', inputSchema: {}, execute: async () => { throw new Error('disk full'); } });
+    vi.spyOn(tools.get('write_file')!, 'execute').mockImplementation(async () => { throw new Error('disk full'); });
     await loop.run('写文件');
     expect(payload(judgeProvider.requests[1]).context.previousReviews[0]).toMatchObject({
       sameOperation: false, input: { path: 'x', content: 'old' }, outcome: 'error', result: 'disk full', decision: { source: 'judge' },

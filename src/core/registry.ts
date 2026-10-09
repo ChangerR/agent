@@ -4,14 +4,27 @@
  * 插件架构的核心机制 —— core 不 import 任何具体 provider/tool，
  * 一切通过 register() 挂进来，loop 只面向注册表编程。
  */
+import { prepareRegistration, type RegistrationBatch } from './registration.js';
 import type { Provider } from './provider.js';
 import type { ToolDefinition, ToolResult } from './protocol/types.js';
 
 export class ProviderRegistry {
   private providers = new Map<string, Provider>();
+  private frozen = false;
+  freeze(): void { this.frozen = true; }
 
   register(provider: Provider): void {
-    this.providers.set(provider.name, provider);
+    const batch = this.prepareBatch([provider]); batch.commit(); batch.seal();
+  }
+  prepareBatch(providers: readonly Provider[]): RegistrationBatch {
+    const assertMutable = () => { if (this.frozen) throw new Error('Provider registry is frozen; select replacements before session startup'); };
+    assertMutable();
+    const next = new Map(this.providers);
+    for (const provider of providers) {
+      if (next.has(provider.name)) throw new Error(`Duplicate provider: ${provider.name}`);
+      next.set(provider.name, provider);
+    }
+    return prepareRegistration(this.providers, next, () => this.providers, value => { this.providers = value; }, assertMutable);
   }
 
   get(name: string): Provider {
@@ -34,10 +47,15 @@ export type ToolRisk = 'read' | 'write' | 'execute';
 export interface ToolContext {
   cwd: string;
   signal: AbortSignal;
+  /** 子工具和命令必须经过相同的最终授权门；不暴露注册表执行快捷方式。 */
+  invokeTool?(name: string, input: Record<string, unknown>): Promise<ToolResult>;
 }
 
 export interface Tool {
   name: string;
+  version?: string;
+  /** 宿主装配时填写的来源；工具自行声明不能覆盖实际所有者。 */
+  ownerPlugin?: string;
   description: string;
   /** JSON Schema */
   inputSchema: Record<string, unknown>;
@@ -61,13 +79,36 @@ export interface Tool {
 
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
-
-  register(tool: Tool): void {
-    this.tools.set(tool.name, tool);
+  private aliases = new Map<string, string>();
+  private frozen = false;
+  freeze(): void { this.frozen = true; }
+  alias(name: string, target: string): void {
+    if (this.frozen || this.tools.has(name) || this.aliases.has(name) || !this.tools.has(target)) throw new Error(`Invalid or conflicting tool alias: ${name}`);
+    this.aliases = new Map(this.aliases).set(name, target);
   }
 
+  register(tool: Tool): void {
+    const batch = this.prepareBatch([tool]); batch.commit(); batch.seal();
+  }
+  /** 保留既有 alias，整批重复检查后再允许单次提交。 */
+  prepareBatch(tools: readonly Tool[]): RegistrationBatch {
+    const aliases = this.aliases;
+    const assertMutable = () => {
+      if (this.frozen) throw new Error('Tool registry is frozen; select replacements before session startup');
+      if (this.aliases !== aliases) throw new Error('Tool aliases changed before registration');
+    };
+    assertMutable();
+    const next = new Map(this.tools);
+    for (const tool of tools) {
+      if (next.has(tool.name) || aliases.has(tool.name)) throw new Error(`Duplicate tool: ${tool.name}`);
+      next.set(tool.name, tool);
+    }
+    return prepareRegistration(this.tools, next, () => this.tools, value => { this.tools = value; }, assertMutable);
+  }
+  aliasesFor(name: string): readonly string[] { return Object.freeze([...this.aliases].filter(([, target]) => target === name).map(([alias]) => alias)); }
+
   get(name: string): Tool | undefined {
-    return this.tools.get(name);
+    return this.tools.get(this.aliases.get(name) ?? name);
   }
 
   list(): Tool[] {

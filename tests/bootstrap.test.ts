@@ -97,7 +97,9 @@ await writeFile(new URL('./disposed.txt', import.meta.url), 'released');
     await writeFile(join(tmp, 'plugin.mjs'), `import { writeFile } from 'node:fs/promises';
 export default { name: 'rollback-test', register() { return () => writeFile(new URL('./rollback.txt', import.meta.url), 'released'); } };`);
     await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ provider: 'fake', plugins: ['plugin.mjs'] }));
-    await writeFile(join(tmp, 'models.json'), '{invalid');
+    // 清单/配置预校验现在在 setup 前完成；选中不存在的 provider 在组装阶段失败。
+    const config = JSON.parse(await readFile(join(tmp, 'agent.config.json'), 'utf8'));
+    await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({ ...config, provider: 'missing-provider' }));
     await expect(createAgent(tmp)).rejects.toThrow();
     expect(await readFile(join(tmp, 'rollback.txt'), 'utf8')).toBe('released');
   });

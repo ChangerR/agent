@@ -239,6 +239,23 @@ function isCacheControlRejection(err: unknown): boolean {
   return /cache_control|unexpected|unknown field/i.test(message);
 }
 
+/** 请求内跟踪块类型；文本/思考结束不是工具调用结束。 */
+export class AnthropicStreamTranslator {
+  private readonly blocks = new Map<number, { type: string; id?: string }>();
+  push(event: MessageStreamEvent): StreamEvent[] {
+    if (event.type === 'message_start') this.blocks.clear();
+    if (event.type === 'content_block_start') {
+      const block = event.content_block as { type: string; id?: string };
+      this.blocks.set(event.index, { type: block.type, id: block.id });
+    }
+    if (event.type === 'content_block_stop') {
+      const block = this.blocks.get(event.index); this.blocks.delete(event.index);
+      return block?.type === 'tool_use' ? [{ type: 'tool_use_stop', ...(block.id ? { id: block.id } : {}) }] : [];
+    }
+    return fromAnthropicEvent(event);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -286,12 +303,13 @@ export class AnthropicProvider implements Provider {
       throw err;
     }
 
+    const translator = new AnthropicStreamTranslator();
     if (!first.done) {
-      for (const out of fromAnthropicEvent(first.value)) yield out;
+      for (const out of translator.push(first.value)) yield out;
     }
     let next = await iter.next();
     while (!next.done) {
-      for (const out of fromAnthropicEvent(next.value)) yield out;
+      for (const out of translator.push(next.value)) yield out;
       next = await iter.next();
     }
   }

@@ -1,5 +1,18 @@
 # AgentLab
 
+## 插件架构与可选 v2
+
+默认仍是 `legacy-v1`、`model-v1` 和 `ask` 模式。新插件使用 `agentlab/sdk`，通过 `pluginEntries` 加载，`capabilities` 明确选择实现。
+
+- [插件 API、配置、生命周期和迁移](docs/PLUGINS.md)
+- [确定性 v2 与显式目录写入授权](docs/POLICY-V2.md)
+- [严格模型审批与用途统计](docs/REVIEWER.md)
+- [只读 shadow、迁移预览和离线复现](docs/POLICY-SHADOW.md)
+- [外部替换示例](plugins/architecture-example/README.md)
+
+`/settings` 可浏览插件设置与下一会话实现选择；`/policy-migrate preview` 只读展示 v1/v2 差异。`pnpm exec tsx scripts/policy-shadow.ts --cwd .` 不执行工具或调用模型。原始 Shell 不做确定性放行；原生 Windows 的 v2 文件系统授予暂时保守询问。插件是受信任进程内代码，不是 OS 沙箱。
+
+
 仿 Claude Code 的**插件式 coding agent 教学实现**（TypeScript + Node.js）。
 
 核心设计：一切皆为插件 —— provider、工具、MCP、skill 都通过统一的 `Plugin` 接口挂载到 core 的注册表上。详细原理讲解见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。

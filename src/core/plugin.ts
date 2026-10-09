@@ -5,16 +5,22 @@
  * 这就是「一切皆为插件」的落点。
  */
 import type { AgentConfig } from './config.js';
-import type { HookPoint, HookHandler } from './hooks.js';
+import type { HookPoint, HookHandler, RegisteredHook } from './hooks.js';
 import type { ProviderRegistry, ToolRegistry } from './registry.js';
+import type { RegistrationBatch } from './registration.js';
+import type { PluginSetupContext } from '../sdk/plugin.js';
 
 export interface PluginContext {
   providers: ProviderRegistry;
   tools: ToolRegistry;
   hooks: {
     register(point: HookPoint, handler: HookHandler): void;
+    prepareBatch?(hooks: readonly RegisteredHook[]): RegistrationBatch;
   };
   config: AgentConfig;
+  /** 事务适配器提供；旧插件在分配资源后可立即登记，setup 抛错仍清理。 */
+  onDispose?: PluginSetupContext['onDispose'];
+  withResource?: PluginSetupContext['withResource'];
 }
 
 export interface Plugin {
@@ -25,25 +31,5 @@ export interface Plugin {
 
 export type PluginDisposer = () => void | Promise<void>;
 
-export async function loadPlugins(plugins: Plugin[], ctx: PluginContext): Promise<() => Promise<void>> {
-  const disposers: PluginDisposer[] = [];
-  let disposal: Promise<void> | undefined;
-  const dispose = () => disposal ??= (async () => {
-    const errors: unknown[] = [];
-    for (const cleanup of disposers.reverse()) {
-      try { await cleanup(); } catch (error) { errors.push(error); }
-    }
-    if (errors.length) throw new AggregateError(errors, 'Plugin cleanup failed');
-  })();
-  try {
-    for (const plugin of plugins) {
-      const cleanup = await plugin.register(ctx);
-      if (cleanup) disposers.push(cleanup);
-    }
-  } catch (error) {
-    try { await dispose(); }
-    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Plugin initialization and cleanup failed'); }
-    throw error;
-  }
-  return dispose;
-}
+/** @deprecated 新代码使用 PluginHost；旧入口也使用同一事务宿主。 */
+export { loadPlugins } from '../compat/legacy-loader.js';

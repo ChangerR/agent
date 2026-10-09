@@ -79,6 +79,12 @@ export const AgentConfigSchema = z.object({
   mcpConfig: z.string().default('./mcp.json'),
   /** 外部插件入口（ESM 模块路径，默认导出 Plugin） */
   plugins: z.array(z.string()).default([]),
+  /** 新插件入口与旧 plugins 分开；enabled=false 只在新会话生效。 */
+  pluginEntries: z.array(z.union([z.string(), z.object({ entry: z.string(), enabled: z.boolean().default(true) })])).default([]),
+  /** 显式选定单例能力；false 禁用可选能力，不隐式选下一个实现。 */
+  capabilities: z.record(z.union([z.string(), z.literal(false)])).default({}),
+  pluginConfig: z.record(z.record(z.unknown())).default({}),
+  disabledPlugins: z.array(z.string()).default([]),
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
@@ -106,6 +112,8 @@ export function loadConfig(cwd: string): AgentConfig {
   const merged = {
     ...globalCfg,
     ...projectCfg,
+    capabilities: { ...((globalCfg.capabilities as object) ?? {}), ...((projectCfg.capabilities as object) ?? {}) },
+    pluginConfig: mergePluginConfig(globalCfg.pluginConfig, projectCfg.pluginConfig),
     permissions: {
       allow: [
         ...(((globalCfg.permissions as Record<string, string[]>)?.allow) ?? []),
@@ -121,5 +129,34 @@ export function loadConfig(cwd: string): AgentConfig {
       ],
     },
   };
-  return AgentConfigSchema.parse(merged);
+  return AgentConfigSchema.parse(applyPluginConfigAliases(merged, globalCfg, projectCfg));
+}
+
+/** 命名空间逐字段合并；数组默认替换。领域特殊合并由插件 schema 显式处理。 */
+function mergePluginConfig(global: unknown, project: unknown): Record<string, unknown> {
+  const g = global && typeof global === 'object' && !Array.isArray(global) ? global as Record<string, unknown> : {};
+  const p = project && typeof project === 'object' && !Array.isArray(project) ? project as Record<string, unknown> : {};
+  return Object.fromEntries([...new Set([...Object.keys(g), ...Object.keys(p)])].map(id => [id,
+    { ...(g[id] as object ?? {}), ...(p[id] as object ?? {}) }]));
+}
+
+/** 新旧写法同时指定不同值时拒绝猜测。这里只做内存适配，不重写配置文件。 */
+function applyPluginConfigAliases(merged: Record<string, unknown>, global: Record<string, unknown>, project: Record<string, unknown>): Record<string, unknown> {
+  const namespaces = merged.pluginConfig as Record<string, Record<string, unknown>>;
+  const aliases: Array<[string, string, string]> = [
+    ['agentlab.policy-legacy', 'permissionMode', 'permissionMode'],
+    ['agentlab.policy-legacy', 'dangerForceAsk', 'dangerForceAsk'],
+    ['agentlab.policy-legacy', 'permissions', 'permissions'],
+    ['agentlab.reviewer-model', 'judgeModel', 'judgeModel'],
+    ['agentlab.compaction-summary', 'compactThreshold', 'compactThreshold'],
+  ];
+  for (const [id, field, legacy] of aliases) {
+    const value = namespaces[id]?.[field];
+    if (value === undefined) continue;
+    if ((Object.hasOwn(global, legacy) || Object.hasOwn(project, legacy)) && JSON.stringify(merged[legacy]) !== JSON.stringify(value)) {
+      throw new Error(`Configuration conflict: ${legacy} and pluginConfig["${id}"].${field}; choose one representation.`);
+    }
+    merged[legacy] = value;
+  }
+  return merged;
 }

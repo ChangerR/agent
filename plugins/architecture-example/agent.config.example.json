@@ -1,0 +1,14 @@
+{
+  "provider": "architecture-demo",
+  "model": "architecture-demo",
+  "pluginEntries": ["./plugins/architecture-example/plugin.mjs"],
+  "capabilities": {
+    "policy": "example-policy",
+    "reviewer": false,
+    "compactor": "example-noop",
+    "sessionStore": "example-memory"
+  },
+  "pluginConfig": {
+    "example.replace-capabilities": { "prefix": "configured" }
+  }
+}
