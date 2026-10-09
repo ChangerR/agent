@@ -1,23 +1,31 @@
 /** 宿主实现选择的统一草稿入口。保存只影响下一会话，不热替换活动能力。 */
-import { join } from 'node:path';
-import { definePlugin } from '../sdk/index.js';
-import { PluginConfigStore, type ConfigSnapshot } from '../runtime/config-store.js';
+import { definePlugin, type SettingsScope } from '../sdk/index.js';
+import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import type { PresetContext } from '../runtime/preset.js';
-export function runtimeSettingsPlugin(input: Pick<PresetContext, 'cwd' | 'capabilityChoices'>) {
+import { resolveAgentPaths } from '../core/paths.js';
+import type { ConfigValueSource } from '../core/config.js';
+
+function sourceMetadata(source: ConfigValueSource): ConfigValueSource {
+  return { scope: source.scope, ...(source.path ? { path: source.path } : {}), directory: source.directory,
+    ...(source.contributors ? { contributors: source.contributors.map(sourceMetadata) } : {}) };
+}
+export function runtimeSettingsPlugin(input: Pick<PresetContext, 'cwd' | 'capabilityChoices'> & Partial<Pick<PresetContext, 'paths' | 'configSources' | 'logPath'>>) {
   return definePlugin({ manifest: { id: 'agentlab.runtime-settings', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-    const store = new PluginConfigStore(join(input.cwd, 'agent.config.json'));
-    let base: ConfigSnapshot | undefined;
-    const drafts = new WeakMap<object, { base: ConfigSnapshot; selections: Record<string, string | false> }>();
+    const stores = createScopedConfigStores(input.cwd);
+    const bases = new Map<SettingsScope, ConfigSnapshot>();
+    const drafts = new WeakMap<object, { scope: SettingsScope; base: ConfigSnapshot; selections: Record<string, string | false> }>();
     ctx.provide.settings('capability-selection', {
       title: '插件实现与权限策略', order: 3,
-      description: '显式选择下一会话使用的实现。deterministic-v2 的 ask 优先于 allow；切换策略前运行 /policy-migrate 查看差异。model-v2 是严格审批协议，独立选择。旧策略会话不能自动跨策略恢复。',
+      get description() { return '只编辑所选层的覆盖值；省略字段即删除本层选择并继承。deterministic-v2 的 ask 优先于 allow；切换前运行 /policy-migrate。model-v2 为独立严格审批协议。当前会话已加载实现：' + JSON.stringify(input.capabilityChoices()); },
       applyMode: 'newSession', schema: { type: 'object', additionalProperties: { type: ['string', 'boolean'] } },
-      read(signal) {
-        signal.throwIfAborted(); base = store.readCapabilities();
-        return { ...Object.fromEntries(Object.entries(input.capabilityChoices()).map(([kind, value]) => [kind, value.selected])), ...base.value };
+      scopeTargets: stores.scopeTargets,
+      read(signal, scope = 'project') {
+        signal.throwIfAborted(); const base = stores.store(scope).readCapabilities(); bases.set(scope, base);
+        return structuredClone(base.value);
       },
-      draft(value, signal) {
+      draft(value, signal, scope = 'project') {
         signal.throwIfAborted();
+        stores.store(scope); const base = bases.get(scope);
         if (!base) throw new Error('请先打开设置，再建立草稿。');
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('能力选择必须是 JSON 对象。');
         const choices = input.capabilityChoices(); const selections: Record<string, string | false> = {};
@@ -28,13 +36,27 @@ export function runtimeSettingsPlugin(input: Pick<PresetContext, 'cwd' | 'capabi
           } else if (typeof selected !== 'string' || !choices[kind].available.includes(selected)) throw new Error(`未加载的 ${kind} 实现: ${String(selected)}`);
           selections[kind] = selected;
         }
-        const result = Object.freeze({ selections: Object.freeze(selections), changes: Object.entries(selections).filter(([kind, selected]) => choices[kind]?.selected !== selected).map(([kind, selected]) => `${kind}: ${choices[kind]?.selected} → ${selected}`), warning: '只在重启/新会话生效；不会改变当前批准或自动迁移旧会话。v2 改变 ask/allow 优先级。' });
-        drafts.set(result, { base, selections }); return result;
+        const changes = [...new Set([...Object.keys(base.value), ...Object.keys(selections)])]
+          .filter(kind => base.value[kind] !== selections[kind])
+          .map(kind => `${kind}: ${base.value[kind] ?? '继承'} → ${selections[kind] ?? '继承'}`);
+        const result = Object.freeze({ selections: Object.freeze(selections), changes, warning: '只在重启/新会话生效；不会改变当前批准或自动迁移旧会话。v2 改变 ask/allow 优先级。' });
+        drafts.set(result, { scope, base, selections }); return result;
       },
-      commit(draft, signal) {
+      commit(draft, signal, scope = 'project') {
         signal.throwIfAborted();
         if (!draft || typeof draft !== 'object' || !drafts.has(draft)) throw new Error('无效草稿，请重新打开设置。');
-        const saved = drafts.get(draft)!; base = store.commitCapabilities(saved.base, saved.selections); drafts.delete(draft);
+        const saved = drafts.get(draft)!;
+        if (saved.scope !== scope) throw new Error('草稿作用域不匹配，请重新打开设置。');
+        bases.set(scope, stores.store(scope).commitCapabilities(saved.base, saved.selections)); drafts.delete(draft);
+      },
+    });
+    ctx.provide.settings('config-paths', {
+      title: '配置路径与来源', order: 4, applyMode: 'newSession', schema: { type: 'object' },
+      description: '启动时只读诊断。默认值 < 全局 < 本项目 < 本次会话；权限规则合并、能力按字段合并，插件参数按命名空间字段合并。这里不展示配置值或环境变量。',
+      read(signal) {
+        signal.throwIfAborted();
+        return { precedence: ['default', 'global', 'project', 'session'], paths: { ...(input.paths ?? resolveAgentPaths(input.cwd)), ...(input.logPath ? { logPath: input.logPath } : {}) },
+          sources: Object.fromEntries(Object.entries(input.configSources ?? {}).map(([key, value]) => [key, sourceMetadata(value)])) };
       },
     });
   } });

@@ -1,5 +1,6 @@
+import { mkdtempProject as mkdtemp } from './helpers/project.js';
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adaptLegacyPlugin } from '../src/compat/legacy-plugin.js';

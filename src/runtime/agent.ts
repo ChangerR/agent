@@ -1,4 +1,5 @@
-import type { AgentConfig, ModelInfo } from '../core/config.js';
+import type { AgentConfig, ConfigSources, ModelInfo } from '../core/config.js';
+import type { AgentPaths } from '../core/paths.js';
 import type { EventBus } from '../core/events.js';
 import type { AgentLoop } from '../core/loop.js';
 import type { ProviderRegistry, ToolRegistry } from '../core/registry.js';
@@ -8,6 +9,8 @@ import type { PluginInspection } from './plugin-inspection.js';
 import type { CommandRegistry, SettingsRecord } from './commands.js';
 export interface Agent {
   readonly cwd: string;
+  readonly paths: AgentPaths;
+  readonly configSources: ConfigSources;
   loop: AgentLoop;
   events: EventBus;
   permission: PermissionController;

@@ -33,9 +33,9 @@ export function createJsonlTelemetry(options: JsonlTelemetryOptions): Telemetry 
     onEvent(event) {
       if (!active) return;
       try {
-        if (!initialized) { mkdirSync(dirname(options.path), { recursive: true }); initialized = true; }
+        if (!initialized) { mkdirSync(dirname(options.path), { recursive: true, mode: 0o700 }); initialized = true; }
         const value = options.includeBodies ? event : redactedEvent(event);
-        appendFileSync(options.path, `${JSON.stringify({ at: new Date().toISOString(), ...value })}\n`);
+        appendFileSync(options.path, `${JSON.stringify({ at: new Date().toISOString(), ...value })}\n`, { mode: 0o600 });
       } catch (error) { if (options.onError) options.onError(error); else throw error; }
     },
     dispose() { active = false; },

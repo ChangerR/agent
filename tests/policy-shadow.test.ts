@@ -1,3 +1,4 @@
+import { mkdtempProject } from './helpers/project.js';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,7 +21,7 @@ const rules = () => ({ allow: [] as string[], ask: [] as string[], deny: [] as s
 const input = (): PolicyInput => ({ cwd: '/project', tool: { name: 'sample', description: 'metadata', risk: 'write', inputSchema: { type: 'object' } }, input: { path: 'src/file.ts', content: 'private body' }, runId: 'run', toolCallId: 'tool', configRevision: 'c1', policyRevision: 'p1' });
 const decision = (kind: PolicyDecision['kind']): PolicyDecision => ({ kind, source: 'mode', reason: `fixture ${kind}`, reasonCode: `fixture_${kind}` });
 const policy = (kind: PolicyDecision['kind'], id = 'fixture'): Policy => ({ id, version: '1.0.0', decide: () => decision(kind) });
-async function directory() { const cwd = await fs.mkdtemp(join(tmpdir(), 'policy-shadow-')); dirs.push(cwd); await fs.writeFile(join(cwd, 'package.json'), '{}'); await fs.mkdir(join(cwd, 'src')); return cwd; }
+async function directory() { const cwd = await mkdtempProject(join(tmpdir(), 'policy-shadow-')); dirs.push(cwd); await fs.writeFile(join(cwd, 'package.json'), '{}'); await fs.mkdir(join(cwd, 'src')); return cwd; }
 describe('只观察的策略 Shadow', () => {
   it('每个 v2 allow / v1 非 allow 都有解释和待人工审核标签，没有执行许可', async () => {
     const record = await comparePolicies({ id: 'expansion', input: input(), legacy: policy('review', 'legacy'), candidate: policy('allow', 'v2'), annotation: { source: 'curated-fixture', rationale: 'explicit scoped grant fixture' } });

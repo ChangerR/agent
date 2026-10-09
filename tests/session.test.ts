@@ -1,3 +1,4 @@
+import { mkdtempProject } from './helpers/project.js';
 /**
  * 会话保存 / 恢复。FakeProvider + 临时目录，不碰仓库自己的 .agentlab，不打网络。
  */
@@ -44,7 +45,7 @@ let tmp: string;
 const detaches: Array<() => void> = [];
 
 beforeEach(async () => {
-  tmp = await fs.mkdtemp(join(tmpdir(), 'agentlab-session-'));
+  tmp = await mkdtempProject(join(tmpdir(), 'agentlab-session-'));
 });
 
 afterEach(async () => {
@@ -309,6 +310,7 @@ describe('恢复边界', () => {
     loop.importSession({ messages: [{ role: 'user', content: '留在内存里' }] });
     permission.addSessionRule('allow', 'read_file');
     permission.setMode('auto');
+    await fs.mkdir(resolve(tmp, 'elsewhere', '.git'), { recursive: true });
     const file = buildFile(tmp, { id: 'mismatch1', cwd: resolve(tmp, 'elsewhere'), messages: [{ role: 'user', content: '别的项目' }] });
     await fs.mkdir(sessionsDir(tmp), { recursive: true });
     await fs.writeFile(sessionPath(tmp, file.id), `${JSON.stringify(file, null, 2)}\n`);

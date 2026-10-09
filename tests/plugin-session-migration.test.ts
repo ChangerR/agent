@@ -1,15 +1,16 @@
+import { mkdtempProject } from './helpers/project.js';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadSession, saveSessionVersioned, sessionPath, deleteSessionVersioned } from '../src/builtin/session-file/implementation.js';
 import type { SessionFile } from '../src/core/session/types.js';
 const dirs: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true }))); });
 async function fixture() {
-  const cwd = await fs.mkdtemp(join(tmpdir(), 'session-v1-upgrade-')); dirs.push(cwd);
+  const cwd = await mkdtempProject(join(tmpdir(), 'session-v1-upgrade-')); dirs.push(cwd);
   const legacy: SessionFile = { schemaVersion: 1, id: 'legacy', title: 'original', revision: 4, createdAt: '2026-10-08T00:00:00Z', updatedAt: '2026-10-08T00:00:00Z', cwd, provider: 'fake', endpointKey: 'default', model: 'fake', thinking: 'off', permissionMode: 'ask', sessionRules: { allow: [], ask: [], deny: [] }, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, stats: { messages: 1, estimatedTokens: 1, runs: 0 }, messages: [{ role: 'user', content: 'original text' }] };
-  const path = sessionPath(cwd, legacy.id); await fs.mkdir(join(cwd, '.agentlab', 'sessions'), { recursive: true });
+  const path = sessionPath(cwd, legacy.id); await fs.mkdir(dirname(path), { recursive: true });
   const bytes = Buffer.from(`\t${JSON.stringify(legacy, null, 4)}\r\n  `); await fs.writeFile(path, bytes);
   const next: SessionFile = { ...legacy, schemaVersion: 2, runtime: { schemaVersion: 1 }, policy: { id: 'legacy-v1', version: '1.0.0', stateSchemaVersion: 1 }, pluginStates: {} };
   return { cwd, legacy, next, path, bytes };

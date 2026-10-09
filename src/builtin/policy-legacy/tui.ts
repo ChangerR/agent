@@ -1,7 +1,8 @@
-/** TUI 权限中心：会话操作即时生效；项目草稿只有显式 Save 才落盘。 */
-import { GLOBAL_CONFIG, type PermissionMode } from '../../core/config.js';
-import { copyPermissionDraft, PermissionConfigError, readPermissionConfig, readProjectPermissionConfig, saveProjectPermissionConfig, validatePermissionRule,
-  type PermissionConfigDraft, type PermissionConfigSnapshot } from '../../core/permission-config.js';
+/** TUI 权限中心：会话操作即时生效；项目/全局原始层草稿只有显式 Save 才落盘。 */
+import type { PermissionMode } from '../../core/config.js';
+import { resolveAgentPaths } from '../../core/paths.js';
+import { copyPermissionDraft, PermissionConfigError, readGlobalPermissionConfig, readPermissionConfig, savePermissionConfig, validatePermissionRule,
+  type PermissionConfigScope, type PermissionConfigSnapshot } from '../../core/permission-config.js';
 import { parseRule, type DecisionKind, type SessionRules } from '../../core/permission/engine.js';
 import type { Agent } from '../../runtime/agent.js';
 import type { PanelItem } from '../../cli/interaction-panel.js';
@@ -26,7 +27,7 @@ export interface PermissionSettingsOptions {
   showInput: (request: SettingsInputRequest) => void;
   notify: (text: string, error?: boolean) => void;
   onModeChange: (mode: PermissionMode) => void;
-  /** 测试使用独立的临时全局配置；实际应用使用 GLOBAL_CONFIG。 */
+  /** 测试使用独立的临时全局配置；实际应用由统一路径解析器提供。 */
   globalConfigPath?: string;
 }
 
@@ -36,8 +37,8 @@ const kindLabels = { allow: '允许', ask: '询问', deny: '拒绝' };
 const safeText = (value: string): string => value.replace(/[\u0000-\u001f\u007f-\u009f]/gu, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
 const rulesCount = (rules: SessionRules) => kinds.reduce((sum, kind) => sum + rules[kind].length, 0);
 const sameRules = (left: SessionRules, right: SessionRules) => kinds.every(kind => JSON.stringify(left[kind]) === JSON.stringify(right[kind]));
-const modeLabel = (mode?: PermissionMode) => mode ?? '继承全局 / 内置 ask';
-const judgeLabel = (model?: string) => model === undefined ? '继承全局 / 默认跟随当前模型' : model.trim() === '' ? '跟随当前模型（覆盖全局）' : safeText(model.trim());
+const modeLabel = (mode?: PermissionMode, scope: PermissionConfigScope = 'project') => mode ?? (scope === 'global' ? '内置默认 ask' : '继承全局 / 内置 ask');
+const judgeLabel = (model?: string, scope: PermissionConfigScope = 'project') => model === undefined ? scope === 'global' ? '内置默认：跟随当前模型' : '继承全局 / 默认跟随当前模型' : model.trim() === '' ? scope === 'global' ? '跟随当前模型' : '跟随当前模型（覆盖全局）' : safeText(model.trim());
 const restartNotice = '重启后新会话生效；当前会话的模式、规则和审批模型不变。恢复旧会话时可能还原它保存的模式与会话规则。';
 
 /** 显示已装配的运行状态，不能从配置字段推断审批员是否存在。 */
@@ -58,7 +59,8 @@ export function describePermissionRule(raw: string): string {
 export function createPermissionSettings(options: PermissionSettingsOptions) {
   const { agent, showPicker, showDetails, showInput, notify } = options;
   const cwd = options.cwd ?? agent.cwd;
-  const globalPath = options.globalConfigPath ?? GLOBAL_CONFIG;
+  const paths = options.cwd === undefined && agent.paths ? agent.paths : resolveAgentPaths(cwd);
+  const globalPath = options.globalConfigPath ?? paths.globalConfigPath;
   const policyId = () => agent.plugins?.selected('policy')?.id ?? 'legacy-v1';
   const isV2 = () => policyId() === 'deterministic-v2';
   const isLegacy = () => ['legacy-v1', 'legacy-shadow'].includes(policyId());
@@ -93,13 +95,13 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   // 只有能逐项核对启动时的合并列表，才标注全局 / 项目来源。
   const sourceRows: string[] = [];
   try {
-    const global = readPermissionConfig(globalPath);
-    const project = readProjectPermissionConfig(cwd);
+    const global = readGlobalPermissionConfig(globalPath);
+    const project = readPermissionConfig(paths.projectConfigPath, 'project');
     for (const kind of kinds) {
       const merged = [...global.permissions[kind], ...project.permissions[kind]];
       const verified = JSON.stringify(merged) === JSON.stringify(agent.config.permissions[kind]);
       agent.config.permissions[kind].forEach((rule, index) => sourceRows.push(
-        `[${kind}] ${safeText(rule)}\n  来源: ${verified ? index < global.permissions[kind].length ? '全局 ~/.agent/config.json' : '项目 agent.config.json' : '启动时合并配置（来源无法核验）'}\n  ${describePermissionRule(rule)}`,
+        `[${kind}] ${safeText(rule)}\n  来源: ${verified ? index < global.permissions[kind].length ? `全局配置 ${safeText(global.path)}` : `项目配置 ${safeText(project.path)}` : '启动时合并配置（来源无法核验）'}\n  ${describePermissionRule(rule)}`,
       ));
     }
   } catch {
@@ -110,17 +112,18 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   let modeBack: () => void = () => {};
   function reopenRoot(): void {
     showPicker({
-      title: '权限设置', context: `当前会话: ${agent.permission.mode} · 项目设置需 Save 后重启`,
+      title: '权限设置', context: `本次会话: ${agent.permission.mode} · 本项目 / 全局设置需 Save 后重启`,
       items: [
-        { value: 'mode', label: `当前会话模式 · ${agent.permission.mode}`, description: `${modeDescription(agent.permission.mode)}\n${guard()}\n只改变后续权限检查；不会处理已弹出的审批。` },
+        { value: 'mode', label: `本次会话模式 · ${agent.permission.mode}`, description: `${modeDescription(agent.permission.mode)}\n${guard()}\n只改变后续权限检查；不会处理已弹出的审批。` },
         { value: 'judge', label: `auto 审批模型 · ${describeJudgeStatus(agent.loop.getJudgeStatus())}`, description: '查看实际加载的模型与来源。仅 auto 模式使用；跟随当前模型时会随 /model 和会话恢复更新。' },
         { value: 'session', label: `已记住的会话规则 · ${rulesCount(agent.permission.getSessionRules())} 条`, description: '查看准确匹配范围并逐条移除。规则可能随会话保存和恢复。' },
         { value: 'effective', label: '当前生效的配置规则 · 只读', description: '启动时已加载的全局与项目规则；在此查看来源与优先级。' },
-        { value: 'project', label: '项目默认设置 · 编辑 / Save', description: `编辑默认模式、项目 allow / ask / deny 与审批模型。${restartNotice}` },
+        { value: 'project', label: '本项目默认设置 · 编辑 / Save', description: `作用范围: 本项目。文件: ${safeText(paths.projectConfigPath)}。编辑原始项目层默认模式、allow / ask / deny 与审批模型。${restartNotice}` },
+        { value: 'global', label: '全局默认设置 · 编辑 / Save', description: `作用范围: 所有项目的新会话，项目覆盖仍优先。文件: ${safeText(globalPath)}。只编辑全局原始层，不带入项目规则或运行时默认值。${restartNotice}` },
         { value: 'audit', label: '权限决策日志', description: '查看本进程中的实际判定、原因与来源。' },
       ],
       onPick: value => {
-        const actions: Record<string, () => void> = { mode: () => { modeBack = reopenRoot; reopenModes(); }, judge: openJudgeStatus, session: openSessionRules, effective: openEffectiveRules, project: openProject, audit: openAudit };
+        const actions: Record<string, () => void> = { mode: () => { modeBack = reopenRoot; reopenModes(); }, judge: openJudgeStatus, session: openSessionRules, effective: openEffectiveRules, project: () => openScope('project'), global: () => openScope('global'), audit: openAudit };
         actions[value]?.();
       },
       onCancel: () => rootBack(),
@@ -128,14 +131,14 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   function openJudgeStatus(): void {
-    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n${isV2() ? '仅 v2 策略返回 review 的操作交给审批员；明确 ask/deny 不会交模型降级。' : '仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。'}\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型；model-v2 可独立选择已注册 provider，实际来源以上方运行状态为准。\n\n${guard()}\n项目草稿与磁盘配置不代表当前已加载的审批员。`, reopenRoot);
+    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n${isV2() ? '仅 v2 策略返回 review 的操作交给审批员；明确 ask/deny 不会交模型降级。' : '仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。'}\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型；model-v2 可独立选择已注册 provider，实际来源以上方运行状态为准。\n\n${guard()}\n项目/全局草稿与磁盘配置不代表当前已加载的审批员。`, reopenRoot);
   }
 
   function reopenModes(): void {
     showPicker({ title: '当前会话权限模式', initialValue: agent.permission.mode,
       context: `当前: ${agent.permission.mode} · 选择后查看确认范围`,
       items: modes.map(mode => ({ value: mode, label: mode, current: mode === agent.permission.mode,
-        description: `${modeDescription(mode)}\n${guard()}\n只改变当前会话后续权限检查，可能在本轮内；已弹出的审批仍需处理。模式可能随会话保存和恢复，不修改项目默认。` })),
+        description: `${modeDescription(mode)}\n${guard()}\n只改变当前会话后续权限检查，可能在本轮内；已弹出的审批仍需处理。模式可能随会话保存和恢复，不修改项目或全局默认。` })),
       onPick: value => confirmMode(value as PermissionMode), onCancel: () => modeBack(),
     });
   }
@@ -143,7 +146,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   function confirmMode(mode: PermissionMode): void {
     if (!modes.includes(mode)) return;
     const sessionId = agent.session.id;
-    confirm(`确认会话模式 → ${mode}`, `${agent.permission.mode} → ${mode}\n${modeDescription(mode)}\n${guard()}\n\n作用范围: 当前会话的后续权限检查，可能在本轮内生效。已弹出的审批不自动放行；已开始的工具不会被追溯取消。模式可能随会话保存和恢复，不修改项目配置。`, `确认切换为 ${mode}`, () => {
+    confirm(`确认会话模式 → ${mode}`, `${agent.permission.mode} → ${mode}\n${modeDescription(mode)}\n${guard()}\n\n作用范围: 当前会话的后续权限检查，可能在本轮内生效。已弹出的审批不自动放行；已开始的工具不会被追溯取消。模式可能随会话保存和恢复，不修改项目或全局配置。`, `确认切换为 ${mode}`, () => {
       if (agent.session.id !== sessionId) { notify('当前会话已变化，请重新选择模式。', true); reopenRoot(); return; }
       agent.permission.setMode(mode);
       options.onModeChange(mode);
@@ -174,7 +177,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   function openEffectiveRules(): void {
-    showDetails('当前生效的配置规则 · 只读', () => `${guard()}\n判定顺序: ${isV2() ? 'deny → 不可降级约束/明确 ask → 精确 allow/确定性范围 → review/人工回退。' : isLegacy() ? 'deny → 危险检测（启用时）→ allow → ask → 模式默认。' : '由当前策略插件定义。'}\n同类中会话规则优先于配置；配置内部为全局规则后接项目规则。\n这里是启动时加载的快照，项目 Save 后要重启才能更新。\n\n${sourceRows.join('\n\n') || '(没有配置规则)'}`, reopenRoot);
+    showDetails('当前生效的配置规则 · 只读', () => `${guard()}\n判定顺序: ${isV2() ? 'deny → 不可降级约束/明确 ask → 精确 allow/确定性范围 → review/人工回退。' : isLegacy() ? 'deny → 危险检测（启用时）→ allow → ask → 模式默认。' : '由当前策略插件定义。'}\n同类中会话规则优先于配置；配置内部为全局规则后接项目规则。\n这里是启动时加载的快照，项目或全局 Save 后要重启才能更新。\n\n${sourceRows.join('\n\n') || '(没有配置规则)'}`, reopenRoot);
   }
 
   function openAudit(): void {
@@ -183,83 +186,85 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     ).join('\n\n') || '(暂无决策记录)', reopenRoot);
   }
 
-  function openProject(): void {
+  function openScope(scope: PermissionConfigScope): void {
     let snapshot: PermissionConfigSnapshot;
+    const isGlobal = scope === 'global';
+    const label = isGlobal ? '全局' : '项目';
     let global: PermissionConfigSnapshot;
-    try { snapshot = readProjectPermissionConfig(cwd); global = readPermissionConfig(globalPath); }
+    try { global = readGlobalPermissionConfig(globalPath); snapshot = isGlobal ? global : readPermissionConfig(paths.projectConfigPath, 'project'); }
     catch (error) { reportError(error); reopenRoot(); return; }
     let draft = copyPermissionDraft(snapshot);
     let saveError = '';
     const dirty = () => JSON.stringify(draft) !== JSON.stringify(copyPermissionDraft(snapshot));
-    const draftSummary = () => `文件: ${safeText(snapshot.path)}\n默认模式: ${modeLabel(draft.permissionMode)}\n审批模型: ${judgeLabel(draft.judgeModel)}\n${kinds.map(kind => `${kind}: ${draft.permissions[kind].length} 条`).join(' · ')}\n${restartNotice}`;
+    const draftSummary = () => `作用范围: ${isGlobal ? '全局（所有项目的新会话；项目覆盖优先）' : '本项目'}\n文件: ${safeText(snapshot.path)}\n默认模式: ${modeLabel(draft.permissionMode, scope)}\n审批模型: ${judgeLabel(draft.judgeModel, scope)}\n${kinds.map(kind => `${kind}: ${draft.permissions[kind].length} 条`).join(' · ')}\n${restartNotice}`;
     const back = () => dirty()
-      ? confirm('放弃未保存的项目草稿？', `项目草稿尚未保存。\n${draftSummary()}\n\n放弃后磁盘文件与当前会话不变。`, '放弃草稿并返回', reopenRoot, renderProject)
+      ? confirm(`放弃未保存的${label}草稿？`, `${label}草稿尚未保存。\n${draftSummary()}\n\n放弃后磁盘文件与当前会话不变。`, '放弃草稿并返回', reopenRoot, renderScope)
       : reopenRoot();
-    const renderProject = () => showPicker({
-      title: `项目默认设置${dirty() ? ' · 未保存' : ''}`, context: saveError || '只编辑草稿；Save 后重启生效', body: draftSummary,
+    const renderScope = () => showPicker({
+      title: `${label}默认设置${dirty() ? ' · 未保存' : ''}`, context: saveError || '只编辑草稿；Save 后重启生效', body: draftSummary,
       items: [
-        { value: 'mode', label: `默认模式 · ${modeLabel(draft.permissionMode)}`, description: `全局默认: ${global.permissionMode ?? 'ask（内置）'}。${restartNotice}` },
-        { value: 'rules', label: `项目规则 · ${rulesCount(draft.permissions)} 条`, description: '添加 / 编辑 / 删除项目 allow、ask、deny；全局规则另外合并，不能在此删除。' },
-        { value: 'global', label: `全局继承规则 · ${rulesCount(global.permissions)} 条 · 只读`, description: '查看 ~/.agent/config.json 中的规则；项目规则不会删除全局规则。' },
-        { value: 'judge', label: `审批模型 · ${judgeLabel(draft.judgeModel)}`, description: `全局: ${global.judgeModel ? safeText(global.judgeModel) : '跟随当前模型'}。模型复用主 provider 与 endpoint；输入名称需与其兼容。选择“跟随当前模型”会保存为空字符串。${restartNotice}` },
+        { value: 'mode', label: `默认模式 · ${modeLabel(draft.permissionMode, scope)}`, description: `${isGlobal ? '内置默认: ask；项目可覆盖全局默认。' : `全局默认: ${global.permissionMode ?? 'ask（内置）'}。`}${restartNotice}` },
+        { value: 'rules', label: `${label}规则 · ${rulesCount(draft.permissions)} 条`, description: isGlobal ? '添加 / 编辑 / 删除全局原始 allow、ask、deny；影响所有项目的新会话，不带入项目或会话规则。' : '添加 / 编辑 / 删除项目 allow、ask、deny；全局规则另外合并，不能在此删除。' },
+        ...(!isGlobal ? [{ value: 'global', label: `全局继承规则 · ${rulesCount(global.permissions)} 条 · 只读`, description: `查看 ${safeText(global.path)} 中的规则；项目规则不会删除全局规则。` }] : []),
+        { value: 'judge', label: `审批模型 · ${judgeLabel(draft.judgeModel, scope)}`, description: `${isGlobal ? '内置默认跟随当前模型；项目可覆盖。' : `全局: ${global.judgeModel ? safeText(global.judgeModel) : '跟随当前模型'}。`}模型复用主 provider 与 endpoint；输入名称需与其兼容。选择“跟随当前模型”会保存为空字符串。${restartNotice}` },
         { value: 'review', label: '查看完整草稿 / 更改', description: '核对模式、审批模型和各条规则。这里只显示权限设置，不展示配置中的其他字段。' },
-        { value: 'save', label: 'Save · 保存项目草稿', description: `写入 ${safeText(snapshot.path)}。保留其他配置字段。${restartNotice}` },
+        { value: 'save', label: `Save · 保存${label}草稿`, description: `写入 ${safeText(snapshot.path)}。保留其他配置字段。${restartNotice}` },
         { value: 'back', label: '返回权限中心', description: dirty() ? '有未保存草稿，返回前会询问是否放弃。' : '没有未保存更改。' },
       ],
       onPick: value => {
-        if (value === 'mode') showPicker({ title: '项目默认模式 · 草稿', initialValue: draft.permissionMode ?? 'inherit',
-          items: [{ value: 'inherit', label: `继承全局 / 内置（${global.permissionMode ?? 'ask'}）`, description: restartNotice },
+        if (value === 'mode') showPicker({ title: `${label}默认模式 · 草稿`, initialValue: draft.permissionMode ?? 'inherit',
+          items: [{ value: 'inherit', label: isGlobal ? '使用内置默认（ask）' : `继承全局 / 内置（${global.permissionMode ?? 'ask'}）`, description: restartNotice },
             ...modes.map(mode => ({ value: mode, label: mode, description: `${modeDescription(mode)}\n${guard()}\n以上审批模型/危险检测说明基于当前运行配置。${restartNotice}` }))],
-          onPick: mode => { draft.permissionMode = mode === 'inherit' ? undefined : mode as PermissionMode; renderProject(); }, onCancel: renderProject,
+          onPick: mode => { draft.permissionMode = mode === 'inherit' ? undefined : mode as PermissionMode; renderScope(); }, onCancel: renderScope,
         });
         else if (value === 'rules') ruleKinds();
-        else if (value === 'global') showDetails('全局继承规则 · 磁盘快照 · 只读', () => kinds.flatMap(kind => global.permissions[kind].map(rule => `[${kind}] ${safeText(rule)}\n${describePermissionRule(rule)}`)).join('\n\n') || '(没有全局规则)', renderProject);
+        else if (value === 'global' && !isGlobal) showDetails('全局继承规则 · 磁盘快照 · 只读', () => `文件: ${safeText(global.path)}\n\n${kinds.flatMap(kind => global.permissions[kind].map(rule => `[${kind}] ${safeText(rule)}\n${describePermissionRule(rule)}`)).join('\n\n') || '(没有全局规则)'}`, renderScope);
         else if (value === 'judge') editJudge();
-        else if (value === 'review') showDetails('项目权限草稿 / 更改', reviewText, renderProject);
+        else if (value === 'review') showDetails(`${label}权限草稿 / 更改`, reviewText, renderScope);
         else if (value === 'save') save();
         else if (value === 'back') back();
       }, onCancel: back,
     });
-    const reviewText = () => `${draftSummary()}\n\n${kinds.map(kind => `${kind}:\n${draft.permissions[kind].map(rule => `  ${safeText(rule)}\n    ${describePermissionRule(rule)}`).join('\n') || '  (无)'}`).join('\n\n')}\n\n变更前模式: ${modeLabel(snapshot.permissionMode)}\n变更前审批模型: ${judgeLabel(snapshot.judgeModel)}\n${kinds.map(kind => `${kind} 原有: ${snapshot.permissions[kind].map(safeText).join('；') || '(无)'}`).join('\n')}\n\n全局规则保持只读并继续合并；deny 优先。dangerForceAsk 未在此编辑。`;
+    const reviewText = () => `${draftSummary()}\n\n${kinds.map(kind => `${kind}:\n${draft.permissions[kind].map(rule => `  ${safeText(rule)}\n    ${describePermissionRule(rule)}`).join('\n') || '  (无)'}`).join('\n\n')}\n\n变更前模式: ${modeLabel(snapshot.permissionMode, scope)}\n变更前审批模型: ${judgeLabel(snapshot.judgeModel, scope)}\n${kinds.map(kind => `${kind} 原有: ${snapshot.permissions[kind].map(safeText).join('；') || '(无)'}`).join('\n')}\n\n${isGlobal ? '仅编辑全局原始配置；项目覆盖与项目/会话规则不写入全局。全局规则将在所有项目的新会话中合并。' : '全局规则保持只读并继续合并。'}deny 优先。dangerForceAsk 与 writeRoots 未在此编辑。`;
     const save = () => {
-      if (!dirty()) { notify('没有需要保存的项目更改。'); renderProject(); return; }
-      confirm('确认 Save 项目权限设置', reviewText(), 'Save · 确认写入项目配置', () => {
-        try { snapshot = saveProjectPermissionConfig(snapshot, draft); draft = copyPermissionDraft(snapshot); saveError = ''; notify(`项目权限设置已保存。${restartNotice}`); }
+      if (!dirty()) { notify(`没有需要保存的${label}更改。`); renderScope(); return; }
+      confirm(`确认 Save ${label}权限设置`, reviewText(), `Save · 确认写入${label}配置`, () => {
+        try { snapshot = savePermissionConfig(snapshot, draft); draft = copyPermissionDraft(snapshot); saveError = ''; notify(`${label}权限设置已保存。${restartNotice}`); }
         catch (error) { saveError = '保存失败 · 草稿保留'; reportError(error); }
-        renderProject();
-      }, renderProject);
+        renderScope();
+      }, renderScope);
     };
-    const editJudge = () => showPicker({ title: '项目审批模型 · 草稿', items: [
+    const editJudge = () => showPicker({ title: `${label}审批模型 · 草稿`, items: [
       { value: 'name', label: '输入模型名称', description: '仅在 auto 模式使用；复用主 provider / endpoint。不会填写 API key。' },
-      { value: 'inherit', label: `继承全局（${global.judgeModel ? safeText(global.judgeModel) : '默认跟随当前模型'}）`, description: '移除项目 judgeModel；全局未指定模型时跟随当前模型。' },
-      { value: 'current', label: '跟随当前模型', description: '保存为空字符串，覆盖全局审批模型；/model 切换和恢复会话时随主模型更新。需要逐次询问时可选择 ask 模式。' },
+      { value: 'inherit', label: isGlobal ? '使用内置默认（跟随当前模型）' : `继承全局（${global.judgeModel ? safeText(global.judgeModel) : '默认跟随当前模型'}）`, description: isGlobal ? '移除全局 judgeModel；未另行指定时跟随当前模型。' : '移除项目 judgeModel；全局未指定模型时跟随当前模型。' },
+      { value: 'current', label: '跟随当前模型', description: `保存为空字符串${isGlobal ? '' : '，覆盖全局审批模型'}；/model 切换和恢复会话时随主模型更新。需要逐次询问时可选择 ask 模式。` },
     ], onPick: value => {
       if (value === 'name') showInput({ title: '审批模型名称 · 草稿', value: draft.judgeModel || '', description: restartNotice,
         validate: name => !name.trim() || /[\s\u0000-\u001f\u007f-\u009f]/u.test(name) ? '请输入不含空白或控制字符的模型名称。' : undefined,
-        onSubmit: name => { draft.judgeModel = name; renderProject(); }, onCancel: editJudge });
-      else { draft.judgeModel = value === 'inherit' ? undefined : ''; renderProject(); }
-    }, onCancel: renderProject });
-    const ruleKinds = () => showPicker({ title: '项目权限规则 · 草稿', items: kinds.map(kind => ({ value: kind, label: `${kind} · ${kindLabels[kind]} · ${draft.permissions[kind].length} 条`, description: '选择类型后添加或编辑。匹配顺序是 deny、危险检测、allow、ask、模式默认；仍需 Save 才保存。' })),
-      onPick: kind => ruleList(kind as DecisionKind), onCancel: renderProject });
-    const ruleList = (kind: DecisionKind): void => showPicker({ title: `项目 ${kind} 规则 · 草稿`,
+        onSubmit: name => { draft.judgeModel = name; renderScope(); }, onCancel: editJudge });
+      else { draft.judgeModel = value === 'inherit' ? undefined : ''; renderScope(); }
+    }, onCancel: renderScope });
+    const ruleKinds = () => showPicker({ title: `${label}权限规则 · 草稿`, items: kinds.map(kind => ({ value: kind, label: `${kind} · ${kindLabels[kind]} · ${draft.permissions[kind].length} 条`, description: '选择类型后添加或编辑。匹配顺序是 deny、危险检测、allow、ask、模式默认；仍需 Save 才保存。' })),
+      onPick: kind => ruleList(kind as DecisionKind), onCancel: renderScope });
+    const ruleList = (kind: DecisionKind): void => showPicker({ title: `${label} ${kind} 规则 · 草稿`,
       items: [{ value: 'add', label: '+ 添加规则', description: '规则示例：read_file、edit_file(src/**)、bash(="npm test")。工具名本身表示该工具的所有调用。' },
         ...draft.permissions[kind].map((raw, i) => ({ value: String(i), label: safeText(raw), description: describePermissionRule(raw) }))],
       onPick: value => {
         if (value === 'add') editRule(kind);
         else {
           const index = Number(value); const raw = draft.permissions[kind][index]; if (raw === undefined) return;
-          showPicker({ title: `项目 ${kind} 规则 · 草稿`, body: () => `${safeText(raw)}\n${describePermissionRule(raw)}`,
-            items: [{ value: 'edit', label: '编辑规则', description: `${safeText(raw)}\n${describePermissionRule(raw)}` }, { value: 'delete', label: '从草稿删除', description: '只删除项目草稿中的这一条，Save 后重启生效。全局和会话规则不变。' }],
+          showPicker({ title: `${label} ${kind} 规则 · 草稿`, body: () => `${safeText(raw)}\n${describePermissionRule(raw)}`,
+            items: [{ value: 'edit', label: '编辑规则', description: `${safeText(raw)}\n${describePermissionRule(raw)}` }, { value: 'delete', label: '从草稿删除', description: `只删除${label}草稿中的这一条，Save 后重启生效。${isGlobal ? '项目' : '全局'}和会话规则不变。` }],
             onPick: action => {
               if (action === 'edit') editRule(kind, index);
-              else confirm('从项目草稿删除规则？', `[${kind}] ${safeText(raw)}\n${describePermissionRule(raw)}\n\n只更改草稿，仍需 Save 才写入配置。`, '确认从草稿删除', () => { draft.permissions[kind].splice(index, 1); ruleList(kind); }, () => ruleList(kind));
+              else confirm(`从${label}草稿删除规则？`, `[${kind}] ${safeText(raw)}\n${describePermissionRule(raw)}\n\n只更改草稿，仍需 Save 才写入配置。`, '确认从草稿删除', () => { draft.permissions[kind].splice(index, 1); ruleList(kind); }, () => ruleList(kind));
             }, onCancel: () => ruleList(kind) });
         }
       }, onCancel: ruleKinds });
-    const editRule = (kind: DecisionKind, index?: number) => showInput({ title: `${index === undefined ? '添加' : '编辑'}项目 ${kind} 规则 · 草稿`, value: index === undefined ? '' : draft.permissions[kind][index],
+    const editRule = (kind: DecisionKind, index?: number) => showInput({ title: `${index === undefined ? '添加' : '编辑'}${label} ${kind} 规则 · 草稿`, value: index === undefined ? '' : draft.permissions[kind][index],
       description: '示例 read_file、edit_file(src/**)、bash(="npm test")。匹配工具提供的目标，其他参数可能不同。Enter 更新草稿，Save 后重启生效。', validate: validatePermissionRule,
       onSubmit: value => { const rule = value.trim(); if (index === undefined) draft.permissions[kind].push(rule); else draft.permissions[kind][index] = rule; ruleList(kind); }, onCancel: () => ruleList(kind) });
-    renderProject();
+    renderScope();
   }
   return {
     open: (onBack?: () => void) => { rootBack = onBack ?? (() => {}); reopenRoot(); },

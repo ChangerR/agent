@@ -2,8 +2,10 @@
  * 配置系统：`agent.config.json`（项目级）+ `~/.agent/config.json`（全局级）。
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { resolveAgentPaths, type AgentPaths } from './paths.js';
+export { PROJECT_CONFIG, getGlobalConfigPath } from './paths.js';
 import { z } from 'zod';
 import { SINGLETON_CAPABILITY_KINDS } from '../sdk/capabilities.js';
 
@@ -98,39 +100,79 @@ export function loadModelsFile(path: string): Record<string, ModelInfo> {
   return ModelsFileSchema.parse(JSON.parse(readFileSync(path, 'utf-8')));
 }
 
-export const PROJECT_CONFIG = 'agent.config.json';
-export const GLOBAL_CONFIG = join(homedir(), '.agent', 'config.json');
-
-function readJson(path: string): unknown {
-  if (!existsSync(path)) return {};
-  return JSON.parse(readFileSync(path, 'utf-8'));
+export type ConfigScope = 'default' | 'global' | 'project' | 'session';
+export interface ConfigValueSource {
+  readonly scope: ConfigScope;
+  readonly path?: string;
+  readonly directory: string;
+  /** permissions / capabilities / pluginConfig 可由多个层共同贡献。 */
+  readonly contributors?: readonly ConfigValueSource[];
+}
+export type ConfigSources = Readonly<Record<keyof AgentConfig, ConfigValueSource>>;
+export interface LoadedConfig {
+  config: AgentConfig;
+  paths: AgentPaths;
+  sources: ConfigSources;
+  /** 文件原始层用于插件配置校验和逐字段来源；绝不改写输入文件。 */
+  layers: { global: Record<string, unknown>; project: Record<string, unknown>; session: Partial<AgentConfig> };
 }
 
-/** 项目级覆盖全局级，均覆盖默认值 */
+function readJson(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  const value: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`配置必须是 JSON 对象: ${path}`);
+  return value as Record<string, unknown>;
+}
+
+/** 项目级覆盖全局级，均覆盖默认值；路径依据声明它的配置层解析。 */
 export function loadConfig(cwd: string): AgentConfig {
-  const globalCfg = readJson(GLOBAL_CONFIG) as Record<string, unknown>;
-  const projectCfg = readJson(join(cwd, PROJECT_CONFIG)) as Record<string, unknown>;
+  return loadConfigWithSources(cwd).config;
+}
+
+export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfig> = {}): LoadedConfig {
+  const paths = resolveAgentPaths(cwd);
+  const globalRaw = readJson(paths.globalConfigPath);
+  const projectRaw = readJson(paths.projectConfigPath);
+  // 别名冲突只在同一层判断；项目新写法可以覆盖全局旧写法，反之亦然。
+  const globalCfg = applyPluginConfigAliases(globalRaw);
+  const projectCfg = applyPluginConfigAliases(projectRaw);
+  const sessionCfg = applyPluginConfigAliases(overrides);
   const merged = {
     ...globalCfg,
     ...projectCfg,
-    capabilities: { ...((globalCfg.capabilities as object) ?? {}), ...((projectCfg.capabilities as object) ?? {}) },
-    pluginConfig: mergePluginConfig(globalCfg.pluginConfig, projectCfg.pluginConfig),
-    permissions: {
-      allow: [
-        ...(((globalCfg.permissions as Record<string, string[]>)?.allow) ?? []),
-        ...(((projectCfg.permissions as Record<string, string[]>)?.allow) ?? []),
-      ],
-      ask: [
-        ...(((globalCfg.permissions as Record<string, string[]>)?.ask) ?? []),
-        ...(((projectCfg.permissions as Record<string, string[]>)?.ask) ?? []),
-      ],
-      deny: [
-        ...(((globalCfg.permissions as Record<string, string[]>)?.deny) ?? []),
-        ...(((projectCfg.permissions as Record<string, string[]>)?.deny) ?? []),
-      ],
-    },
+    permissions: Object.fromEntries(['allow', 'ask', 'deny'].map(kind => [kind, [
+      ...(((globalCfg.permissions as Record<string, string[]>)?.[kind]) ?? []),
+      ...(((projectCfg.permissions as Record<string, string[]>)?.[kind]) ?? []),
+    ]])),
+    ...sessionCfg,
+    capabilities: { ...((globalCfg.capabilities as object) ?? {}), ...((projectCfg.capabilities as object) ?? {}), ...((sessionCfg.capabilities as object) ?? {}) },
+    pluginConfig: mergePluginConfig(mergePluginConfig(globalCfg.pluginConfig, projectCfg.pluginConfig), sessionCfg.pluginConfig),
   };
-  return AgentConfigSchema.parse(applyPluginConfigAliases(merged, globalCfg, projectCfg));
+  const config = AgentConfigSchema.parse(merged);
+  // 有效配置快照中的两种写法须一致；来源层和磁盘文件仍保留原始表达。
+  for (const [id, field, legacy] of CONFIG_ALIASES) {
+    if (Object.hasOwn(config.pluginConfig[id] ?? {}, field)) config.pluginConfig[id][field] = structuredClone(config[legacy]);
+  }
+  const scopeSources = {
+    default: { scope: 'default', directory: paths.agentHome },
+    global: { scope: 'global', path: paths.globalConfigPath, directory: paths.agentHome },
+    project: { scope: 'project', path: paths.projectConfigPath, directory: paths.projectRoot },
+    session: { scope: 'session', directory: paths.projectRoot },
+  } as const;
+  const sources = Object.fromEntries(Object.keys(AgentConfigSchema.shape).map(key => {
+    const scopes = (['global', 'project', 'session'] as const).filter(scope => Object.hasOwn({ global: globalCfg, project: projectCfg, session: sessionCfg }[scope], key));
+    const source: ConfigValueSource = scopeSources[scopes.at(-1) ?? 'default'];
+    const contributors = ['capabilities', 'pluginConfig'].includes(key) || key === 'permissions' && !Object.hasOwn(sessionCfg, key)
+      ? scopes.map(scope => scopeSources[scope]) : undefined;
+    return [key, Object.freeze({ ...source, ...(contributors?.length ? { contributors: Object.freeze(contributors) } : {}) })];
+  })) as Record<keyof AgentConfig, ConfigValueSource>;
+  const fromSource = (value: string, key: keyof AgentConfig) => isAbsolute(value) ? value : resolve(sources[key].directory, value);
+  config.modelsFile = fromSource(config.modelsFile, 'modelsFile');
+  config.mcpConfig = fromSource(config.mcpConfig, 'mcpConfig');
+  config.plugins = config.plugins.map(entry => fromSource(entry, 'plugins'));
+  config.pluginEntries = config.pluginEntries.map(entry => typeof entry === 'string'
+    ? fromSource(entry, 'pluginEntries') : { ...entry, entry: fromSource(entry.entry, 'pluginEntries') });
+  return { config, paths, sources: Object.freeze(sources), layers: { global: globalRaw, project: projectRaw, session: overrides } };
 }
 
 /** 命名空间逐字段合并；数组默认替换。领域特殊合并由插件 schema 显式处理。 */
@@ -141,23 +183,25 @@ function mergePluginConfig(global: unknown, project: unknown): Record<string, un
     { ...(g[id] as object ?? {}), ...(p[id] as object ?? {}) }]));
 }
 
-/** 新旧写法同时指定不同值时拒绝猜测。这里只做内存适配，不重写配置文件。 */
-function applyPluginConfigAliases(merged: Record<string, unknown>, global: Record<string, unknown>, project: Record<string, unknown>): Record<string, unknown> {
-  const namespaces = merged.pluginConfig as Record<string, Record<string, unknown>>;
-  const aliases: Array<[string, string, string]> = [
-    ['agentlab.policy-legacy', 'permissionMode', 'permissionMode'],
-    ['agentlab.policy-legacy', 'dangerForceAsk', 'dangerForceAsk'],
-    ['agentlab.policy-legacy', 'permissions', 'permissions'],
-    ['agentlab.reviewer-model', 'judgeModel', 'judgeModel'],
-    ['agentlab.compaction-summary', 'compactThreshold', 'compactThreshold'],
-  ];
-  for (const [id, field, legacy] of aliases) {
-    const value = namespaces[id]?.[field];
+const CONFIG_ALIASES: Array<[string, string, keyof AgentConfig]> = [
+  ['agentlab.policy-legacy', 'permissionMode', 'permissionMode'],
+  ['agentlab.policy-legacy', 'dangerForceAsk', 'dangerForceAsk'],
+  ['agentlab.policy-legacy', 'permissions', 'permissions'],
+  ['agentlab.reviewer-model', 'judgeModel', 'judgeModel'],
+  ['agentlab.compaction-summary', 'compactThreshold', 'compactThreshold'],
+];
+
+/** 同层新旧写法同时指定不同值时拒绝猜测；这里只做内存适配。 */
+function applyPluginConfigAliases(layer: Record<string, unknown>): Record<string, unknown> {
+  const adapted = { ...layer };
+  const namespaces = layer.pluginConfig as Record<string, Record<string, unknown>> | undefined;
+  for (const [id, field, legacy] of CONFIG_ALIASES) {
+    const value = namespaces?.[id]?.[field];
     if (value === undefined) continue;
-    if ((Object.hasOwn(global, legacy) || Object.hasOwn(project, legacy)) && JSON.stringify(merged[legacy]) !== JSON.stringify(value)) {
+    if (Object.hasOwn(layer, legacy) && !isDeepStrictEqual(layer[legacy], value)) {
       throw new Error(`Configuration conflict: ${legacy} and pluginConfig["${id}"].${field}; choose one representation.`);
     }
-    merged[legacy] = value;
+    adapted[legacy] = value;
   }
-  return merged;
+  return adapted;
 }

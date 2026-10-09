@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -6,8 +6,9 @@ import { z } from 'zod';
 import { PluginConfigStore, ConfigConflictError } from '../src/runtime/config-store.js';
 import { loadConfig } from '../src/core/config.js';
 import { createAgent } from '../src/index.js';
+import { mkdtempProjectSync } from './helpers/project.js';
 const dirs: string[] = [];
-const dir = () => { const p = mkdtempSync(join(tmpdir(), 'plugin-config-')); dirs.push(p); return p; };
+const dir = () => { const p = mkdtempProjectSync(join(tmpdir(), 'plugin-config-')); dirs.push(p); return p; };
 afterEach(() => dirs.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })));
 describe('插件配置保存和旧配置兼容', () => {
   it('仅有 parse 的 schema 通过 ownedFields 删除可选字段，保留未知字段和其他命名空间', () => {

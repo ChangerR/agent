@@ -5,6 +5,7 @@
  * 与 Claude Code 的命名约定一致 —— 从权限规则的角度它们与普通工具完全同构，
  * 例如 allow 规则 "mcp__filesystem(read_file)" 可以精细控制到 server 级。
  */
+import { dirname, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -23,12 +24,13 @@ export class McpClientManager {
   private servers: ConnectedServer[] = [];
   private closing?: Promise<void>;
 
-  async connect(name: string, config: McpServerConfig): Promise<Client> {
+  async connect(name: string, config: McpServerConfig, options: { cwd?: string } = {}): Promise<Client> {
     const client = new Client({ name: 'agentlab', version: '0.1.0' });
 
     if ('command' in config) {
       const transport = new StdioClientTransport({
         command: config.command,
+        cwd: options.cwd,
         args: config.args,
         env: { ...process.env, ...config.env } as Record<string, string>,
         stderr: 'pipe',
@@ -121,7 +123,7 @@ export function mcpPlugin(configPath: string): Plugin {
       for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
         let client: Client | undefined;
         try {
-          client = await manager.connect(name, serverConfig);
+          client = await manager.connect(name, serverConfig, { cwd: dirname(resolve(configPath)) });
           const tools = await manager.bridgeTools(name, client);
           for (const tool of tools) ctx.tools.register(tool);
         } catch (err) {

@@ -1,11 +1,12 @@
 /** 显式可选的 v2；不会改写或静默替代默认 legacy-v1。 */
 import type { AgentConfig, PermissionMode } from '../../core/config.js';
-import { join, isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import type { Decision, ParsedRule, SessionRules } from '../../core/permission/contracts.js';
 import { definePlugin, type ApprovalTool, type Policy, type PolicyDecision, type PolicyInput, type ToolAnalysis } from '../../sdk/index.js';
 import { PermissionEngine, parseRule, matchRule } from '../policy-legacy/engine.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
+import { resolveAgentPaths } from '../../core/paths.js';
 import { ANALYZER_ID, ANALYZER_VERSION, createDeterministicAnalyzer, hash, operationKey, validateWriteRoots } from './analyzer.js';
 export { createDeterministicAnalyzer, parseLiteralShell, validateWriteRoots, nativeFilesystemAnalysisSupported, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
 export interface DeterministicPolicyOptions { cwd: string; mode: PermissionMode; rules: SessionRules; pluginEntries?: readonly string[]; writeRoots?: readonly string[] }
@@ -126,7 +127,7 @@ export function createDeterministicPolicyPlugin({ config, cwd }: { config: Agent
   const entries = [...config.plugins, ...config.pluginEntries.filter((entry) => typeof entry === 'string' || entry.enabled)
     .map((entry) => typeof entry === 'string' ? entry : entry.entry)];
   return definePlugin({ manifest: { id: 'agentlab.policy-deterministic-v2', version: '2.0.0', apiVersion: 1, configVersion: 1 },
-    config: { schema, defaults: { writeRoots: [] }, ownedFields: ['writeRoots'], applyMode: 'new-session' },
+    config: { schema, defaults: { writeRoots: [] }, ownedFields: ['writeRoots'], scopes: ['project', 'session', 'cli'], applyMode: 'new-session' },
     async setup(ctx) {
       const value = schema.parse(ctx.config.value);
       await validateWriteRoots(cwd, value.writeRoots, entries);
@@ -135,16 +136,18 @@ export function createDeterministicPolicyPlugin({ config, cwd }: { config: Agent
       ctx.provide.policy('deterministic-v2', policy, { version: '2.0.0' });
       ctx.provide.settings('policy-deterministic-v2', { title: '确定性策略 v2（可选）', description: 'ask 优先于 allow；未知 Shell/MCP 不会因 risk 声明放行。选择后新会话生效。',
         schema: { type: 'object' }, applyMode: 'new-session', read: () => ({ selectedBy: 'capabilities.policy = deterministic-v2', writeRoots: [...value.writeRoots], conflicts: previewRuleConflicts(config.permissions) }) });
-      const store = new PluginConfigStore(join(cwd, 'agent.config.json')); let base: ConfigSnapshot | undefined;
+      const store = new PluginConfigStore(resolveAgentPaths(cwd).projectConfigPath); let base: ConfigSnapshot | undefined;
+      const assertScope = (scope = 'project') => { if (scope !== 'project') throw new Error('writeRoots 只支持本项目授权，不能保存为全局。'); };
       const drafts = new WeakMap<object, ConfigSnapshot>();
       ctx.provide.settings('policy-deterministic-v2-config', { title: 'v2 明确写入目录授权',
-        description: 'writeRoots 默认空。保存 src 等目录即明确授权下次 v2 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。',
+        description: 'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次 v2 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。',
         schema: { type: 'object', properties: { writeRoots: { type: 'array', items: { type: 'string' } } } }, applyMode: 'new-session',
-        read(signal) { signal.throwIfAborted(); base = store.read('agentlab.policy-deterministic-v2'); return structuredClone({ ...value, ...base.value }); },
-        async draft(raw, signal) { signal.throwIfAborted(); if (!base) throw new Error('请先打开设置'); const draft = Object.freeze(schema.parse(raw));
-          await validateWriteRoots(cwd, draft.writeRoots, entries, signal); drafts.set(draft, base); return draft; },
-        async commit(draft, signal) { signal.throwIfAborted(); if (!draft || typeof draft !== 'object' || !drafts.has(draft)) throw new Error('无效授权目录草稿');
-          const parsed = schema.parse(draft); await validateWriteRoots(cwd, parsed.writeRoots, entries, signal);
+        scopeTargets: [{ scope: 'project', path: store.path }],
+        read(signal, scope = 'project') { signal.throwIfAborted(); assertScope(scope); base = store.read('agentlab.policy-deterministic-v2'); return structuredClone(base.value); },
+        async draft(raw, signal, scope = 'project') { signal.throwIfAborted(); assertScope(scope); if (!base) throw new Error('请先打开设置'); const snapshot = base; const draft = Object.freeze(schema.parse(raw));
+          await validateWriteRoots(cwd, draft.writeRoots, entries, signal); signal.throwIfAborted(); drafts.set(draft, snapshot); return draft; },
+        async commit(draft, signal, scope = 'project') { signal.throwIfAborted(); assertScope(scope); if (!draft || typeof draft !== 'object' || !drafts.has(draft)) throw new Error('无效授权目录草稿');
+          const parsed = schema.parse(draft); await validateWriteRoots(cwd, parsed.writeRoots, entries, signal); signal.throwIfAborted();
           base = store.commit('agentlab.policy-deterministic-v2', drafts.get(draft)!, parsed, { schema, ownedFields: ['writeRoots'] }); drafts.delete(draft); },
       });
     },

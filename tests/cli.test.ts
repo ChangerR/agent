@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtempProject as mkdtemp } from './helpers/project.js';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -257,7 +258,7 @@ describe('真实 TUI 离线交互', () => {
       ui.send('/settings'); down(); enter();
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('思考等级'));
       ui.terminal.input?.('\x1b');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('设置 · 当前会话'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('设置 · 本次会话 / 本项目 / 全局'));
       ui.terminal.input?.('\x1b');
       ui.send('/permissions'); down(); down(); down(); down(); enter();
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));

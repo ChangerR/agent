@@ -1,13 +1,33 @@
 /** 设置提交边界：快照、草稿、schema、文件身份/CAS 与原子提交。未知字段原样保留。 */
 import * as fs from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { PluginConfigDefinition } from '../sdk/plugin.js';
+import type { SettingsScope, SettingsScopeTarget } from '../sdk/capabilities.js';
+import { resolveAgentPaths } from '../core/paths.js';
+
+export type PersistentSettingsScope = Exclude<SettingsScope, 'session'>;
+/** 只解析路径，不创建目录；打开设置与放弃草稿不能产生磁盘副作用。 */
+export function createScopedConfigStores(cwd: string) {
+  const paths = resolveAgentPaths(cwd);
+  const stores = { project: new PluginConfigStore(paths.projectConfigPath), global: new PluginConfigStore(paths.globalConfigPath) };
+  const scopeTargets: readonly SettingsScopeTarget[] = Object.freeze([
+    Object.freeze({ scope: 'project' as const, path: stores.project.path }),
+    Object.freeze({ scope: 'global' as const, path: stores.global.path }),
+  ]);
+  return { scopeTargets, store(scope: SettingsScope = 'project'): PluginConfigStore {
+    if (scope !== 'project' && scope !== 'global') throw new Error('此设置仅支持本项目或全局配置。');
+    return stores[scope];
+  } };
+}
 
 export interface ConfigSnapshot { readonly path: string; readonly revision: string; readonly value: Readonly<Record<string, unknown>> }
 interface State { raw: Record<string, unknown>; bytes?: Buffer; dev?: number; ino?: number; mode?: number }
 export class ConfigConflictError extends Error { constructor(message = '配置已变化，请重新打开草稿。') { super(message); this.name = 'ConfigConflictError'; } }
 const records = new WeakMap<ConfigSnapshot, State>();
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
+}
 function read(path: string): State {
   let fd: number | undefined;
   try {
@@ -20,7 +40,7 @@ function read(path: string): State {
     const after = fs.lstatSync(path);
     if (after.isSymbolicLink() || after.dev !== stat.dev || after.ino !== stat.ino) throw new ConfigConflictError();
     const raw: unknown = JSON.parse(bytes.toString('utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('配置必须为 JSON 对象。');
+    if (!isRecord(raw)) throw new Error('配置必须为 JSON 对象。');
     return { raw: raw as Record<string, unknown>, bytes, dev: stat.dev, ino: stat.ino, mode: stat.mode & 0o7777 };
   } catch (error) {
     if (fd === undefined && (error as NodeJS.ErrnoException).code === 'ENOENT') return { raw: {} };
@@ -32,8 +52,11 @@ function unchanged(path: string, old: State): void {
   if (now.dev !== old.dev || now.ino !== old.ino || now.mode !== old.mode || Boolean(now.bytes) !== Boolean(old.bytes) || (now.bytes && old.bytes && !now.bytes.equals(old.bytes))) throw new ConfigConflictError();
 }
 function snapshot(path: string, state: State, pluginId?: string): ConfigSnapshot {
-  const all = state.raw.pluginConfig as Record<string, unknown> | undefined;
-  const value = structuredClone(pluginId === undefined ? state.raw.capabilities ?? {} : all?.[pluginId] ?? {}) as Record<string, unknown>;
+  const all = state.raw.pluginConfig;
+  if (all !== undefined && !isRecord(all)) throw new Error('pluginConfig 必须为 JSON 对象。');
+  const configured = pluginId === undefined ? state.raw.capabilities ?? {} : all && Object.hasOwn(all, pluginId) ? all[pluginId] : {};
+  if (!isRecord(configured)) throw new Error('配置命名空间必须为 JSON 对象。');
+  const value = structuredClone(configured);
   const result = Object.freeze({ path, revision: createHash('sha256').update(state.bytes ?? '').digest('hex'), value: Object.freeze(value) });
   records.set(result, state);
   return result;
@@ -50,7 +73,7 @@ export class PluginConfigStore {
     if (base.path !== this.path || !records.has(base)) throw new Error('无效配置快照。');
     const original = records.get(base)!;
     const parsed = definition.schema ? definition.schema.parse(draft) : draft;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('插件配置必须是对象。');
+    if (!isRecord(parsed)) throw new Error('插件配置必须是普通对象。');
     for (const field of definition.sensitiveFields ?? []) {
       const value = (parsed as Record<string, unknown>)[field];
       if (value !== undefined && (typeof value !== 'string' || !/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(value))) throw new Error(`敏感字段 ${field} 只允许 env:NAME 引用。`);
@@ -71,6 +94,7 @@ export class PluginConfigStore {
     const temporary = this.path + '.' + randomUUID() + '.tmp';
     let lockFd: number | undefined; let fd: number | undefined; let created = false;
     try {
+      fs.mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
       try { lockFd = fs.openSync(lock, 'wx', 0o600); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new ConfigConflictError('另一个设置保存正在进行。'); throw error; }
       unchanged(this.path, original);
       fd = fs.openSync(temporary, 'wx', 0o600); created = true;

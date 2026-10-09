@@ -1,5 +1,6 @@
+import { mkdtempProject as mkdtemp } from './helpers/project.js';
 /** auto 审批默认跟随当前模型；全部使用假 provider，不连接真实服务。 */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

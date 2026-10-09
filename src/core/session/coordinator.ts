@@ -3,7 +3,8 @@
  * 先校验再改内存。自动保存发生在 loop_end 回调里，此时 running 仍为 true，不能因此拒绝写入。
  */
 import { bounded, CapabilityTimeout } from '../permission/async.js';
-import { resolve, parse } from 'node:path';
+import { resolve } from 'node:path';
+import { resolveProjectRoot } from '../paths.js';
 import { estimateTokens } from '../context/tokens.js';
 import type { EventBus } from '../events.js';
 import type { AgentLoop, SessionSnapshot } from '../loop.js';
@@ -288,7 +289,7 @@ export class SessionManager {
     if (snapshot.messages.length === 0) return Promise.resolve(undefined);
     if (!this.titleValue) this.titleValue = makeTitle(snapshot.messages);
     const updatedAt = this.now().toISOString();
-    const cwd = resolve(this.opts.cwd);
+    const cwd = resolveProjectRoot(this.opts.cwd);
     const file: SessionFile = {
       schemaVersion: SESSION_SCHEMA_VERSION,
       runtime: { schemaVersion: 1 },
@@ -404,10 +405,8 @@ function normalizeRules(rules: Partial<SessionRules> | undefined): SessionRules 
   };
 }
 
-/** resolve 后去掉结尾分隔符（根目录除外）；Windows 再忽略大小写。不做 realpath。 */
+/** 存储桶与恢复校验使用同一项目身份，子目录及符号链接不产生另一个项目。 */
 function canonicalCwd(cwd: string): string {
-  const resolved = resolve(cwd);
-  const root = parse(resolved).root;
-  const trimmed = resolved.length > root.length ? resolved.replace(/[\\/]+$/, '') : resolved;
-  return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
+  const root = resolveProjectRoot(cwd);
+  return process.platform === 'win32' ? root.toLowerCase() : root;
 }

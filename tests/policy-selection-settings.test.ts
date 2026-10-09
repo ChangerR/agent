@@ -1,18 +1,20 @@
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { createAgent } from '../src/index.js';
+import { mkdtempProject } from './helpers/project.js';
 const signal = () => new AbortController().signal;
 it('实现选择只在明确 Save 后写项目配置，下次启动生效，保持当前审批实现', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'agent-policy-selection-'));
+  const cwd = await mkdtempProject(join(tmpdir(), 'agent-policy-selection-'));
   const path = join(cwd, 'agent.config.json');
   const original = JSON.stringify({ provider: 'fake', custom: { keep: true } }); await writeFile(path, original);
   let agent = await createAgent(cwd, { autoSaveSessions: false });
   try {
     const section = agent.settings.find(s => s.id === 'capability-selection')!.section;
     const values = await section.read!(signal()) as Record<string, unknown>;
-    expect(values.policy).toBe('legacy-v1'); expect(values.reviewer).toBe('model-v1');
+    expect(values).toEqual({});
+    expect(section.description).toContain('legacy-v1'); expect(section.description).toContain('model-v1');
     const draft = await section.draft!({ ...values, reviewer: 'model-v2' }, signal());
     expect(await readFile(path, 'utf8')).toBe(original);
     await section.commit!(draft, signal());
@@ -24,7 +26,7 @@ it('实现选择只在明确 Save 后写项目配置，下次启动生效，保�
   } finally { await agent.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });
 it('未加载实现、必需能力禁用、过期草稿均拒绝，不损坏配置', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'agent-policy-selection-'));
+  const cwd = await mkdtempProject(join(tmpdir(), 'agent-policy-selection-'));
   const path = join(cwd, 'agent.config.json'); await writeFile(path, '{"provider":"fake"}');
   const agent = await createAgent(cwd, { autoSaveSessions: false });
   try {
@@ -40,7 +42,7 @@ it('未加载实现、必需能力禁用、过期草稿均拒绝，不损坏配�
 });
 
 it('显式关闭 cacheStrategy 不会偷偷回退到内核旧缓存建议', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'agent-disable-cache-'));
+  const cwd = await mkdtempProject(join(tmpdir(), 'agent-disable-cache-'));
   const agent = await createAgent(cwd, { autoSaveSessions: false, config: { provider: 'fake', capabilities: { cacheStrategy: false } } });
   let request: unknown;
   agent.events.on('model_request', event => { if (event.purpose === 'agent') request = event.request; });

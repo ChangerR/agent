@@ -1,8 +1,10 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 /**
  * MCP 桥接端到端测试：用 examples/mcp-server.ts 起一个真实 stdio MCP server，
  * 验证 connect → listTools → 桥接 → callTool 全链路。
  */
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { PermissionEngine } from '../src/core/permission/engine.js';
@@ -63,4 +65,16 @@ describe('MCP 桥接', () => {
       await manager.closeAll();
     }
   });
+});
+
+it('MCP stdio 相对脚本按显式配置目录启动，不依赖父进程 cwd', { timeout: 60_000 }, async () => {
+  const manager = new McpClientManager();
+  try {
+    const client = await manager.connect('relative', {
+      command: process.execPath,
+      args: ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href, './mcp-server.ts'],
+    }, { cwd: dirname(serverEntry) });
+    const names = (await manager.bridgeTools('relative', client)).map(tool => tool.name);
+    expect(names).toContain('mcp__relative__add');
+  } finally { await manager.closeAll(); }
 });

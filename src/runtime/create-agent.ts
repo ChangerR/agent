@@ -1,9 +1,9 @@
 /** 通用 runtime 装配；默认实现由入口传入 preset，不导入 builtin/CLI。 */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadConfig, GLOBAL_CONFIG, PROJECT_CONFIG, type AgentConfig } from '../core/config.js';
+import { loadConfigWithSources, type AgentConfig } from '../core/config.js';
 import { EventBus } from '../core/events.js';
 import { HookRunner } from '../core/hooks.js';
 import { AgentLoop } from '../core/loop.js';
@@ -26,19 +26,22 @@ function unavailableController(config: AgentConfig): PermissionController {
 }
 export async function createRuntime(cwd: string, presetFactory: (input: PresetContext) => Preset, options: CreateAgentOptions = {}): Promise<Agent> {
   if (options.lifecycleTimeoutMs !== undefined && (!Number.isFinite(options.lifecycleTimeoutMs) || options.lifecycleTimeoutMs <= 0)) throw new Error('lifecycleTimeoutMs must be a positive finite number');
+  const loaded = loadConfigWithSources(cwd, options.config);
+  const { config, paths, sources: configSources } = loaded;
+  // 同项目启动使用同一工具/权限/上下文基准；原始启动位置保留在 paths.cwd。
+  cwd = paths.projectRoot;
   try { process.loadEnvFile(join(cwd, '.env')); } catch { /* 兼容现有缺省环境行为 */ }
-  const config = { ...loadConfig(cwd), ...options.config } as AgentConfig;
   const endpoint = config.baseURL ?? (config.provider === 'openai' ? process.env.OPENAI_BASE_URL : undefined);
   const endpointURL = config.provider === 'openai' ? endpoint || undefined : endpoint;
   const providerConfig = config.provider === 'openai' ? { ...config, baseURL: endpointURL ?? 'https://api.openai.com/v1' } : config;
   const configRevision = () => {
     const hash = createHash('sha256').update(JSON.stringify(config));
-    for (const path of [GLOBAL_CONFIG, join(cwd, PROJECT_CONFIG)]) hash.update(existsSync(path) ? readFileSync(path) : '<missing>');
+    for (const path of [paths.globalConfigPath, paths.projectConfigPath]) hash.update(existsSync(path) ? readFileSync(path) : '<missing>');
     return hash.digest('hex');
   };
   const events = new EventBus(); const hooks = new HookRunner();
   const providers = new ProviderRegistry(); const tools = new ToolRegistry();
-  const logPath = join(cwd, '.agentlab', 'logs', `session-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
+  const logPath = join(paths.logsDir, `session-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.jsonl`);
   let agent: Agent | undefined;
   let host: PluginHost;
   const services: PresetContext['services'] = {
@@ -50,19 +53,19 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     permission: () => agent!.permission,
     session: () => agent!.session,
   };
-  const preset = (options.preset ?? presetFactory)({ cwd, config: providerConfig, logPath, services,
+  const preset = (options.preset ?? presetFactory)({ cwd, paths, configSources, config: providerConfig, logPath, services,
     provider: name => providers.get(name ?? config.provider), capabilityChoices: () => Object.fromEntries((['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const).map(kind => { const current = host.selectedRecord(kind); return [kind, { selected: current?.capabilityId ?? false, available: host.list(kind).map(r => r.capabilityId) }]; })), modelInfo: model => host?.selected('modelCatalog')?.get(model) });
   const plugins = [...preset.plugins, ...(options.plugins ?? [])].filter(plugin => !config.disabledPlugins.includes(plugin.manifest.id));
   for (const entry of [...config.plugins, ...config.pluginEntries]) {
     if (typeof entry !== 'string' && !entry.enabled) continue;
     const path = typeof entry === 'string' ? entry : entry.entry;
-    const imported = (await import(pathToFileURL(resolve(cwd, path)).href)) as { default: Plugin | LegacyPlugin };
+    const imported = (await import(pathToFileURL(path).href)) as { default: Plugin | LegacyPlugin };
     const plugin = 'manifest' in imported.default ? imported.default : adaptLegacyPlugin(imported.default, { config, requires: Object.fromEntries(plugins.map(p => [p.manifest.id, p.manifest.version])) });
     if (!config.disabledPlugins.includes(plugin.manifest.id)) plugins.push(plugin);
   }
   const selections = { ...preset.selections, ...config.capabilities } as CapabilitySelections;
-  const layer = (path: string) => existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { pluginConfig?: Record<string, Record<string, unknown>> }).pluginConfig ?? {} : {};
-  host = new PluginHost({ config, pluginConfig: config.pluginConfig, pluginConfigLayers: { global: layer(GLOBAL_CONFIG), project: layer(join(cwd, PROJECT_CONFIG)), session: options.config?.pluginConfig }, selections, events, configRevision: configRevision() });
+  const layer = (value: Record<string, unknown>) => value.pluginConfig as Record<string, Record<string, unknown>> | undefined;
+  host = new PluginHost({ config, pluginConfig: config.pluginConfig, pluginConfigLayers: { global: layer(loaded.layers.global), project: layer(loaded.layers.project), session: options.config?.pluginConfig }, selections, events, configRevision: configRevision() });
   await host.load(plugins);
   const detach: Array<() => void> = [];
   try {
@@ -137,7 +140,7 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     })(); };
     const descriptor = (tool: ReturnType<ToolRegistry['get']>) => { if (!tool) return undefined; const { execute: _execute, ...rest } = tool; return Object.freeze(rest); };
     const toolCatalog: Agent['tools'] = Object.freeze({ get: (name: string) => descriptor(tools.get(name)), list: () => tools.list().map(tool => descriptor(tool)!), definitions: () => tools.definitions() });
-    agent = { cwd, loop, events, permission, session, config, tools: toolCatalog, invokeTool: (name, input, signal) => loop.invokeTool(name, input, signal), providers, skillLoader, modelInfo, knownModels, logPath, plugins: inspectPlugins(host), commands, settings,
+    agent = { cwd, paths, configSources, loop, events, permission, session, config, tools: toolCatalog, invokeTool: (name, input, signal) => loop.invokeTool(name, input, signal), providers, skillLoader, modelInfo, knownModels, logPath, plugins: inspectPlugins(host), commands, settings,
       dispatchCommand: (line, options = {}) => { if (closing) return Promise.reject(new Error('Agent runtime is disposing or disposed')); const signal = options.signal ? AbortSignal.any([options.signal, commandAbort.signal]) : commandAbort.signal; return commands.dispatch(line, { cwd, signal, interact: options.interact, inspect: () => observationSnapshot({ commands: commands.list(), settings: settings.map(s => ({ id: s.id, ownerPlugin: s.ownerPlugin, title: s.section.title, description: s.section.description, applyMode: s.section.applyMode })), plugins: host.manifests.map(p => ({ id: p.id, version: p.version })), tools: tools.list().map(t => ({ name: t.name, risk: t.risk })) }), invokeTool: (name, input) => loop.invokeTool(name, input, signal) }); }, dispose };
     return agent;
   } catch (error) {

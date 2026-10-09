@@ -25,8 +25,8 @@ function delay(ms: number): Promise<void> {
 export async function writeFileAtomic(path: string, data: string): Promise<void> {
   const tmp = `${path}.${process.pid}-${randomUUID().slice(0, 8)}.tmp`;
   try {
-    await fs.mkdir(dirname(path), { recursive: true });
-    await fs.writeFile(tmp, data, 'utf8');
+    await fs.mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await fs.writeFile(tmp, data, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     let attempt = 0;
     for (;;) {
       try {

@@ -116,15 +116,20 @@ export interface Command {
   requiredCapabilities?: readonly { kind: CapabilityKind; id: string }[];
   handler(input: Record<string, unknown>, context: CommandContext): MaybePromise<CommandResult>;
 }
+export type SettingsScope = 'session' | 'project' | 'global';
+/** 持久化目标必须明确给出实际文件；旧插件未声明目标时由其自行管理保存位置。 */
+export type SettingsScopeTarget = { readonly scope: 'session' } | { readonly scope: 'project' | 'global'; readonly path: string };
 export interface SettingsSection {
   order?: number;
   title: string;
   description?: string;
   schema: Record<string, unknown>;
   applyMode: 'immediate' | 'new-session' | 'restart' | 'nextRequest' | 'idleBoundary' | 'newSession';
-  read?(signal: AbortSignal): MaybePromise<unknown>;
-  draft?(value: unknown, signal: AbortSignal): MaybePromise<unknown>;
-  commit?(draft: unknown, signal: AbortSignal): MaybePromise<void>;
+  /** 每层独立读取、起草和提交；切勿把合并后的运行值当作全局编辑初值。 */
+  scopeTargets?: readonly SettingsScopeTarget[];
+  read?(signal: AbortSignal, scope?: SettingsScope): MaybePromise<unknown>;
+  draft?(value: unknown, signal: AbortSignal, scope?: SettingsScope): MaybePromise<unknown>;
+  commit?(draft: unknown, signal: AbortSignal, scope?: SettingsScope): MaybePromise<void>;
 }
 /** 纯数据可选 TUI 描述；实现包由终端适配器选择加载，headless 不会 import。 */
 export interface TuiDescriptor { entry: string; kind: 'tool-renderer' | 'status' | 'editor'; capabilityId?: string; title?: string }

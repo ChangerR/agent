@@ -1,5 +1,6 @@
+import { mkdtempProject as mkdtemp } from './helpers/project.js';
 /** 同一真实 runtime 的模型调用计数；全部 FakeProvider 与临时文件。 */
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
