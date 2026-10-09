@@ -153,6 +153,7 @@ describe('TUI 权限中心', () => {
     h.pick('cancel'); expect(h.permission.mode).toBe('ask'); h.pick('auto'); h.pick('confirm');
     expect(h.permission.mode).toBe('auto'); expect(h.onModeChange).toHaveBeenCalledWith('auto'); expect(h.config.permissionMode).toBe('ask');
     expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('ask');
+    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('启动默认，请在 /permissions 的本项目或全局默认设置中 Save'));
   });
 
   it('会话移除不扩大到其他规则，取消和陈旧确认均不修改', () => {

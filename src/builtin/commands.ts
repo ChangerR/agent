@@ -39,8 +39,8 @@ export function modelCommandsPlugin(services: BuiltinCommandServices) {
 export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd = process.cwd()) {
   const paths = resolveAgentPaths(cwd);
   return definePlugin({ manifest: { id: 'agentlab.permission-commands', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-    ctx.provide.command('mode', { description: '查看/切换权限模式', async handler(input, context) {
-      const selected = args(input) || await pick('mode', '选择权限模式', ['ask', 'auto', 'yolo'].map(id => ({ id, label: id })), context);
+    ctx.provide.command('mode', { description: '切换本次会话权限模式；启动默认请在 /permissions 本项目/全局设置中 Save', async handler(input, context) {
+      const selected = args(input) || await pick('mode', '选择本次会话权限模式', ['ask', 'auto', 'yolo'].map(id => ({ id, label: id })), context);
       if (typeof selected !== 'string') return selected;
       if (!['ask', 'auto', 'yolo'].includes(selected)) throw new Error('用法: /mode ask|auto|yolo');
       if (selected === 'yolo') {
@@ -48,7 +48,8 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
         if (!context.interact) return confirmation;
         if (await context.interact(confirmation) !== 'confirm') return text('已取消');
       }
-      services.permission().setMode(selected as 'ask' | 'auto' | 'yolo'); return text(`权限模式: ${selected}`);
+      services.permission().setMode(selected as 'ask' | 'auto' | 'yolo');
+      return text(`本次会话权限模式: ${selected}。如需作为启动默认，请在 /permissions 的本项目或全局默认设置中 Save。`);
     } });
     ctx.provide.command('permissions', { description: '权限设置与决策日志', handler(input) {
       return args(input) === 'audit' ? { type: 'data', data: services.permission().getAuditLog() } : { type: 'data', data: { mode: services.permission().mode, sessionRules: services.permission().getSessionRules() } };

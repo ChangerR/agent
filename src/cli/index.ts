@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { createAgent } from '../index.js';
+import { initializeCliHome } from './initialize.js';
 
 const help = `AgentLab
 
@@ -27,6 +28,9 @@ try {
 if (values.help) { console.log(help); process.exit(0); }
 if (values.command && (values.resume || values.sessions)) { console.error('--command 不能与 --resume 或 --sessions 同时使用'); process.exit(1); }
 
+// SDK 配置读取仍保持只读；实际 CLI 在装配 provider 前准备用户目录。
+try { initializeCliHome(process.cwd()); }
+catch (error) { console.error(`无法初始化用户配置/状态目录: ${error instanceof Error ? error.message : String(error)}`); process.exit(1); }
 const agent = await createAgent(process.cwd());
 if (values.command !== undefined) {
   const controller = new AbortController(); const abort = () => controller.abort(); process.once('SIGINT', abort);
