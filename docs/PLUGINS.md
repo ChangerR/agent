@@ -86,7 +86,7 @@ export default definePlugin({
 
 插件可声明 defaults、schema、configVersion、允许 scopes、敏感字段、字段 merge 和 applyMode。默认数组替换；明确的 append 才拼接。层级是 defaults → global → project → session/CLI。`$version` 可声明配置格式版本；不兼容版本明确拒绝并要求迁移，不自动猜测。敏感字段只接受 `env:NAME` 引用，不保存明文密钥。
 
-SettingsSection 是可发现的元数据与 read/draft/commit API。`scopeTargets` 声明实际支持的作用域及保存路径；read/draft/commit 的可选 scope 参数选择原始配置层，草稿与该层绑定，不能跨层提交。内置持久化设置的默认 API 作用域仍为项目层；未声明 scope 的第三方设置保持原调用合同，界面标为“插件定义（未声明保存目标）”，不推断其是否持久化。通用 TUI 先明确选择作用域，显示真实路径，读取原始层值；不会把已合并的项目权限或能力选择自动存入全局。TUI 的通用编辑器先建立独立草稿，只有明确 Save 才 commit；复杂权限编辑器复用同一注册入口。`PluginConfigStore` 提供 schema 校验、未知字段保留、文件身份/CAS、符号链接保护和原子写。插件仍需选择适合自己领域的提交语义，不能把 applyMode 标签误当作自动热更新。
+SettingsSection 是可发现的元数据与 read/draft/commit API。`scopeTargets` 声明实际支持的作用域及保存路径；read/draft/commit 的可选 scope 参数选择原始配置层，草稿与该层绑定，不能跨层提交。内置持久化设置的默认 API 作用域仍为项目层；未声明 scope 的第三方设置保持原调用合同，界面标为“插件定义（未声明保存目标）”，不推断其是否持久化。通用 TUI 默认项目作用域，允许明确切换到全局，显示真实路径，读取原始层值；不会把已合并的项目权限或能力选择自动存入全局。TUI 的通用编辑器在一次有效 JSON 提交中依次执行 draft 和 commit，没有独立 Save 或重复确认，Esc 未提交不写；复杂权限编辑器复用同一注册入口。`PluginConfigStore` 提供 schema 校验、未知字段保留、文件身份/CAS、符号链接保护和原子写。插件仍需选择适合自己领域的提交语义，不能把 applyMode 标签误当作自动热更新。
 
 配置定义可用 `ownedFields` 明确声明插件管理的顶层字段，提交时须把同一定义传给 `store.commit`。解析结果中省略或为 `undefined` 的已声明字段会从该插件当前选定作用域的配置删除（例如删掉严格 reviewer 的 `provider` 后恢复继承）；schema 提供默认值的字段则保存其解析后的默认值。其他旧字段、其他插件命名空间和顶层未知配置保持不变。不声明 `ownedFields` 时沿用补丁合并，省略字段不删除。schema 只需实现 `parse`，宿主不会依赖 zod 的 `shape` 或其他实现细节；嵌套对象仍按顶层字段整体替换。
 

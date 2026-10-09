@@ -64,45 +64,51 @@ async function editor() {
   return { agent, settings, pick, get picker() { return picker; } };
 }
 
-describe('权限模式跨进程重启', () => {
-  it('命令帮助与无参数选择明确标注会话范围和默认设置的保存入口', async () => {
+describe('权限模式自动保存后跨进程重启', () => {
+  it('帮助与无参数选择说明本项目自动保存，不执行额外确认', async () => {
     const h = await editor();
-    expect(h.agent.commands.list().find(command => command.id === 'mode')?.description)
-      .toBe('切换本次会话权限模式；启动默认请在 /permissions 本项目/全局设置中 Save');
-    expect(await h.agent.dispatchCommand('/mode')).toMatchObject({ type: 'interaction', prompt: '选择本次会话权限模式' });
-    expect(h.agent.permission.mode).toBe('ask');
+    expect(h.agent.commands.list().find(command => command.id === 'mode')?.description).toContain('自动保存');
+    expect(await h.agent.dispatchCommand('/mode')).toMatchObject({ type: 'interaction', prompt: '选择本项目权限模式 · 自动保存并应用' });
+    expect(h.agent.permission.mode).toBe('ask'); expect(readFileSync(projectPath, 'utf8')).toBe('{}');
   });
 
-  it('/mode auto 只改变该进程的会话，不静默写入项目或全局默认', async () => {
+  it('/mode auto 保存到项目，新进程为 auto，全局不变', async () => {
     const globalBefore = readFileSync(globalPath, 'utf8');
-    const projectBefore = readFileSync(projectPath, 'utf8');
-    expect(await runCli('/mode auto')).toEqual({ type: 'text', text: '本次会话权限模式: auto。如需作为启动默认，请在 /permissions 的本项目或全局默认设置中 Save。' });
+    expect(await runCli('/mode auto')).toMatchObject({ type: 'text', text: expect.stringContaining('已保存本项目') });
     expect(readFileSync(globalPath, 'utf8')).toBe(globalBefore);
-    expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore);
-    expect(await runCli()).toMatchObject({ type: 'data', data: { mode: 'ask' } });
+    expect(JSON.parse(readFileSync(projectPath, 'utf8')).permissionMode).toBe('auto');
+    expect(await runCli()).toMatchObject({ type: 'data', data: { mode: 'auto' } });
   });
 
-  it('全局草稿取消与放弃不落盘；明确 Save 后新进程使用 auto', async () => {
-    const h = await editor();
-    const before = readFileSync(globalPath, 'utf8');
-    h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('auto');
-    h.pick('save'); h.pick('cancel');
-    expect(readFileSync(globalPath, 'utf8')).toBe(before);
-    h.pick('back'); h.pick('confirm');
-    expect(await runCli()).toMatchObject({ data: { mode: 'ask' } });
-    h.pick('global'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('confirm');
-    expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({ provider: 'fake', permissionMode: 'auto' });
-    expect(readFileSync(projectPath, 'utf8')).toBe('{}');
-    expect(h.agent.permission.mode).toBe('ask');
-    await h.agent.dispose();
-    expect(await runCli()).toMatchObject({ data: { mode: 'auto' } });
+  it('headless yolo 直接保存并应用，无二次确认', async () => {
+    const h = await editor(); expect(await h.agent.dispatchCommand('/mode yolo')).toMatchObject({ type: 'text' });
+    expect(h.agent.permission.mode).toBe('yolo'); expect(await runCli()).toMatchObject({ data: { mode: 'yolo' } });
   });
 
-  it('本项目 Save 在子目录重启仍生效，其他项目继续继承全局默认', async () => {
-    const h = await editor();
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('confirm');
-    expect(h.agent.permission.mode).toBe('ask');
-    await h.agent.dispose();
+  it('headless 模式选择只调用一次交互，取消不写，外部冲突不改当前模式', async () => {
+    const h = await editor(); const interact = vi.fn(async () => 'auto'); await h.agent.dispatchCommand('/mode', { interact });
+    expect(interact).toHaveBeenCalledOnce(); expect(h.agent.permission.mode).toBe('auto');
+    const before = readFileSync(projectPath, 'utf8'); await h.agent.dispatchCommand('/mode', { interact: async () => undefined });
+    expect(readFileSync(projectPath, 'utf8')).toBe(before);
+    await expect(h.agent.dispatchCommand('/mode', { interact: async () => { json(projectPath, { permissionMode: 'ask' }); return 'yolo'; } })).rejects.toThrow(/其他程序修改/);
+    expect(h.agent.permission.mode).toBe('auto'); expect(JSON.parse(readFileSync(projectPath, 'utf8')).permissionMode).toBe('ask');
+  });
+
+  it('headless 选择期间会话模式变化使回调失效', async () => {
+    const h = await editor(); const before = readFileSync(projectPath, 'utf8');
+    await expect(h.agent.dispatchCommand('/mode', { interact: async () => { h.agent.permission.setMode('yolo'); return 'auto'; } })).rejects.toThrow(/会话已变化/);
+    expect(h.agent.permission.mode).toBe('yolo'); expect(readFileSync(projectPath, 'utf8')).toBe(before);
+  });
+
+  it('模式控制器提交后抛错，headless 准确报告已保存但未应用', async () => {
+    const h = await editor(); vi.spyOn(h.agent.permission, 'setMode').mockImplementation(() => { throw new Error('private detail'); });
+    await expect(h.agent.dispatchCommand('/mode auto')).rejects.toThrow('已保存，但当前策略应用失败');
+    expect(JSON.parse(readFileSync(projectPath, 'utf8')).permissionMode).toBe('auto'); expect(h.agent.permission.mode).toBe('ask');
+  });
+
+  it('本项目直接选 auto 后立即生效，子目录重启仍为 auto，其他项目保持 ask', async () => {
+    const h = await editor(); h.settings.open(); h.pick('mode'); h.pick('auto');
+    expect(h.agent.permission.mode).toBe('auto');
     const nested = join(project, 'src', 'nested'); mkdirSync(nested, { recursive: true });
     expect(await runCli('/permissions', nested)).toMatchObject({ data: { mode: 'auto' } });
     const other = join(fixture, 'other-project'); mkdirSync(join(other, '.git'), { recursive: true });
@@ -110,16 +116,13 @@ describe('权限模式跨进程重启', () => {
     expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({ provider: 'fake' });
   });
 
-  it.each(['legacy', 'namespace'])('全局 auto 被项目 %s ask 覆盖；项目明确恢复继承并 Save 后重启为 auto', async representation => {
-    json(projectPath, representation === 'legacy' ? { permissionMode: 'ask' }
-      : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } });
-    const projectBefore = readFileSync(projectPath, 'utf8');
-    const h = await editor();
-    h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('confirm');
-    expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore);
+  it.each(['legacy', 'namespace'])('全局 auto 被项目 %s ask 覆盖，项目恢复继承后立即与重启一致', async representation => {
+    json(projectPath, representation === 'legacy' ? { permissionMode: 'ask' } : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } });
+    const projectBefore = readFileSync(projectPath, 'utf8'); const h = await editor();
+    h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('auto');
+    expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore); expect(h.agent.permission.mode).toBe('ask');
     expect(await runCli()).toMatchObject({ data: { mode: 'ask' } });
-    h.pick('back'); h.pick('project'); h.pick('mode'); h.pick('inherit'); h.pick('save'); h.pick('confirm');
-    await h.agent.dispose();
+    h.pick('back'); h.pick('mode'); h.pick('inherit'); expect(h.agent.permission.mode).toBe('auto');
     expect(await runCli()).toMatchObject({ data: { mode: 'auto' } });
     expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({ provider: 'fake', permissionMode: 'auto' });
   });
