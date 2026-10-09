@@ -5,6 +5,7 @@
  * 转换函数单独导出，便于脱离网络做单元测试。
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
 import type { CacheTtl, ChatRequest, Provider } from '../core/provider.js';
 import type { Message, StopReason, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
 
@@ -268,13 +269,15 @@ export class AnthropicProvider implements Provider {
   /** 兼容端点拒绝 cache_control 之后，本会话不再发送 */
   private cacheDisabled = false;
 
-  constructor(private opts: { apiKey?: string; baseURL?: string; cacheControl?: boolean } = {}) {}
+  constructor(private opts: ApiKeyOptions & { baseURL?: string; cacheControl?: boolean } = {}) {}
 
   /** 惰性初始化：缺 API key 只在真正调用时才报错，不影响装配与测试 */
   private getClient(): Anthropic {
     if (!this.client) {
       this.client = new Anthropic({
-        apiKey: this.opts.apiKey ?? process.env.ANTHROPIC_API_KEY,
+        apiKey: resolveApiKey(this.opts, 'ANTHROPIC_API_KEY'),
+        // 显式变量只发送选中的 key，避免 SDK 同时添加默认 bearer 凭据。
+        ...(this.opts.apiKeyEnv !== undefined ? { authToken: null } : {}),
         baseURL: this.opts.baseURL,
       });
     }

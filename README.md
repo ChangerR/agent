@@ -31,28 +31,83 @@
 
 ## 快速开始
 
+需要 Node.js 22.19.0 或更新版本（当前 TUI 依赖的最低要求；`.env` 使用 Node 原生加载）和 pnpm。在项目根目录执行：
+
 ```bash
 pnpm install
-cp .env.example .env   # 然后在 .env 里填入你的 ANTHROPIC_API_KEY
-pnpm dev
+cp .env.example .env
+cp agent.config.example.json agent.config.json
 ```
 
-程序启动时会自动加载规范化项目根目录下的 `.env`（Node 原生支持，无需 dotenv）。也可以用传统方式 `export ANTHROPIC_API_KEY=sk-...`。
+已有这两个文件时直接编辑，不要覆盖。`.env` 放密钥，`agent.config.json` 放 provider、模型和端点；根据实际服务选择下面一种配套配置。示例里的 key 和模型占位符必须替换后才能发送消息。
 
-OpenAI 兼容端点示例（`agent.config.json`）：
+### Anthropic 官方
+
+在 `.env` 中取消注释并填写：
+
+```dotenv
+ANTHROPIC_API_KEY=replace-with-your-anthropic-key
+```
+
+在 `agent.config.json` 中设置（与其他需要保留的配置字段合并）：
+
+```json
+{
+  "provider": "anthropic",
+  "model": "替换为该账户可用的完整模型ID",
+  "apiKeyEnv": "ANTHROPIC_API_KEY",
+  "baseURL": "https://api.anthropic.com",
+  "permissionMode": "ask"
+}
+```
+
+仓库内置默认模型为 `claude-sonnet-4-5`；这只是代码默认值，不保证你的账户仍可使用。若使用代理或兼容服务，端点、key 和模型 ID 必须属于同一服务。
+
+### DeepSeek 官方（OpenAI 兼容接口）
+
+在 `.env` 中取消注释并填写：
+
+```dotenv
+DEEPSEEK_API_KEY=replace-with-your-deepseek-key
+```
+
+在 `agent.config.json` 中设置：
 
 ```json
 {
   "provider": "openai",
-  "model": "deepseek-chat",
+  "model": "替换为DeepSeek实际支持的完整模型ID",
   "baseURL": "https://api.deepseek.com",
-  "permissionMode": "auto",
-  "permissions": {
-    "allow": ["bash(npm test *)", "read_file"],
-    "deny": ["bash(git push *)"]
-  }
+  "apiKeyEnv": "DEEPSEEK_API_KEY",
+  "permissionMode": "ask"
 }
 ```
+
+这里的 `openai` 是协议适配器名称，实际请求发送到 `baseURL` 指向的 DeepSeek 官方端点。端点已对照 [DeepSeek 官方接入文档](https://api-docs.deepseek.com/) 核验（2026-10-09）；模型 ID 请从该官方文档或你账户的模型列表确认，不能凭“Flash”等简称推断，也不要照搬其他厂商的模型名。上面的模型字段是明确的待替换占位符。
+
+### OpenAI 或其他 OpenAI 兼容服务
+
+使用 `provider: "openai"`，并填写该服务的完整 `model` 和 `baseURL`。默认 key 变量名是 `OPENAI_API_KEY`；若使用 `.env` 中的 `MY_MODEL_KEY=...`，JSON 里就写 `"apiKeyEnv": "MY_MODEL_KEY"`。`apiKeyEnv` 填变量名，不填密钥本身。OpenAI 官方默认端点为 `https://api.openai.com/v1`；其他服务应显式填写其接入文档要求的地址，不要让兼容服务的 key 误发到默认端点。
+
+### 启动与检查
+
+配置完成后运行 `pnpm dev`。修改 `.env`、provider、baseURL、apiKeyEnv 或启动默认 model 后，退出当前进程再重新运行。只在界面中切换 `/model` 不会重新加载 key 或切换 provider/端点。
+
+排查“填了 key 仍不生效”时按顺序检查：
+
+1. 文件名确实是项目根的 `.env`，不是 `.env.example`、`.env.txt`、`.env.local` 或 `~/.agent/.env`。从项目子目录启动时仍加载规范化项目根的 `.env`，不加载子目录中的同名文件。
+2. JSON 的 `apiKeyEnv` 与 `.env` 左侧变量名完全一致。省略 `apiKeyEnv` 时，`anthropic` 默认用 `ANTHROPIC_API_KEY`，`openai` 默认用 `OPENAI_API_KEY`。仅设置 `DEEPSEEK_API_KEY` 而没有对应 `apiKeyEnv` 不会被自动识别；key 也不会自动选择 provider/model。
+3. 已有进程环境变量优先于 `.env`，包括空字符串。若 shell 中已 export 同名变量，更新或取消那个变量，再重新启动。项目 JSON 中显式 `baseURL` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`；未配置时才使用环境变量或 SDK 默认端点。
+4. 全局配置可能仍有其他厂商的 `apiKeyEnv`、`baseURL` 或 `model`。字段逐项继承，改 provider 不会清除其他字段；切换服务时请一起核对这四项，并确认模型 ID 与端点匹配。
+5. `.env` 可缺省，允许只用 shell 环境变量；如果存在但不可读取，启动会显示应检查的文件路径和错误码，不回显密钥。不要把 `.env` 内容、完整环境变量或真实 key 粘贴到日志/聊天中。
+
+显式设置 `apiKeyEnv` 后，首次使用该 provider 发请求前会检查变量名和 key：变量名为空/纯空白，或对应变量缺失、为空/纯空白，都会明确报错；不会回退到默认 key。错误只提示配置项和修复步骤，不回显变量名原值或 key。先核对配置中的变量名，再在项目根 `.env` 或 shell 中设置对应的非空值，并重新启动。该检查不会阻止无 key 启动或打开配置菜单，`fake` 也不需要真实 key。
+
+`apiKeyEnv` 和 `baseURL` 只配置 JSON 中 `provider` 对应的内置适配器。审批插件等若实际调用另一个内置 provider，它仍使用自己的默认 key 变量与端点，不会继承主 provider 的自定义 key。显式为 Anthropic 设置 `apiKeyEnv` 时，只发送该 key，不会同时附带默认 `ANTHROPIC_AUTH_TOKEN`；省略 `apiKeyEnv` 时保留 SDK 原有默认认证行为。
+
+配置加载与菜单检查不需要模型请求：`node --import tsx src/cli/index.ts --command /permissions --json` 会查看本机权限配置，不能验证 key 是否有效。要完整试用离线界面，可在独立测试项目中设置 `"provider": "fake", "model": "demo"`，无需填写 key。发送真实模型消息才会调用 API；这不是免费连通性检查。
+
+### 可选：自动审批
 
 `auto` 模式默认使用当前主模型审核未命中规则的写入与执行操作，无需另配审批模型；普通只读操作仍直接放行。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
 
@@ -66,7 +121,14 @@ OpenAI 兼容端点示例（`agent.config.json`）：
 - 优先级：内置默认 → 全局 → 项目 → 程序调用时的会话覆盖。全局与项目权限列表拼接；SDK 显式传入会话 `permissions` 时替换该合并列表。插件参数和能力选择逐字段合并；普通数组替换。省略某层字段表示继承，不能靠保存合并结果把其他层授权复制过来。
 - `modelsFile`、`mcpConfig`、`plugins`、`pluginEntries` 的相对路径按声明它们的配置文件目录解析，绝对路径保持。默认模型/MCP 文件为 `~/.agent/models.json`、`~/.agent/mcp.json`。项目使用本地文件时显式配置 `"modelsFile": "./models.json"`、`"mcpConfig": "./mcp.json"`。
 
-`/settings` 中可持久化的实现选择、严格 reviewer 参数可明确选择“本项目”或“全局”，并显示真实保存文件；`/permissions` 同样提供独立的全局/项目草稿。先查看更改，再确认 Save；取消不写盘。项目设置不会自动提升到全局，`writeRoots` 的目录授权仍只提供本项目编辑，也拒绝从全局配置加载。保存配置在重启时生效，当前运行中的能力不会热替换。
+`/settings` 中可持久化的实现选择、严格 reviewer 参数可明确选择“本项目”或“全局”，并显示真实保存文件；`/permissions` 同样提供独立的全局/项目草稿。项目设置不会自动提升到全局，`writeRoots` 的目录授权仍只提供本项目编辑，也拒绝从全局配置加载。插件实现、规则和审批模型在重启后生效，当前运行中的能力不会热替换。
+
+在权限菜单中进入“本项目”或“全局”默认设置后，先编辑草稿，再选择第一项“Save · 保存项目/全局草稿 / 应用模式”：
+
+- “Save · 仅保存启动默认”：确认后写入所选配置文件，当前会话模式保持不变。
+- “Save · 保存并应用模式 → …”：再确认显示的“当前模式 → 有效模式”，保存成功后只将有效权限模式应用到当前会话。规则和审批模型仍需重启。
+- 有效模式按本项目覆盖全局的结果计算。例如全局改为 `auto`、本项目仍有 `ask`，菜单会说明“全局默认 auto 被本项目 ask 覆盖”，应用结果也是 `ask`。要取消覆盖，应在本项目模式中选择恢复继承后再保存。
+- 界面同时显示当前模式、重启后的本项目模式和未保存状态。取消不写盘；保存失败会显示“保存失败 · 草稿保留”，不应用新模式。选择“仅保存”后仍可再次打开 Save 并确认应用已保存的有效模式，无需再改一次配置。
 
 `/model`、`/think`、`/mode` 修改本次会话，保存/恢复会话可保留这些选择，但不会修改全局或项目默认。要设启动默认，可在对应配置文件写 `model`、`thinking`、`permissionMode`。SDK 的 `agent.paths`、`agent.configSources` 和 `loadConfigWithSources()` 可诊断真实路径和字段来源；界面同时显示启动来源与保存目标。
 
@@ -150,8 +212,17 @@ try {
 ## 开发
 
 ```bash
-pnpm dev          # tsx 直接跑 TUI
+pnpm dev          # Node + tsx loader 跑 TUI
 pnpm test         # vitest（含 FakeProvider 全链路、内存终端交互与真实 MCP 桥接）
 pnpm typecheck
 pnpm build        # tsup → dist/
 ```
+
+真实键盘验收（Linux/macOS，Python 3，先安装上述依赖）：
+
+```bash
+python3 scripts/settings-e2e.py
+python3 scripts/settings-e2e.py --cols 80 --rows 24
+```
+
+脚本创建隔离的临时 HOME 与测试项目，通过真实 `pnpm dev` 和键盘操作 `/settings`、`/permissions`、`/mode`，使用 fake provider 验证保存、即时应用、取消、重启与项目覆盖。无需 key，不发送外部模型请求。输出目录保留原始终端字节、按键步骤和文本回放；文本回放不是终端截图。

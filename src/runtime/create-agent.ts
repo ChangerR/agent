@@ -19,6 +19,7 @@ import { PluginHost, observationSnapshot } from './plugin-host.js';
 import { inspectPlugins } from './plugin-inspection.js';
 import { CommandRegistry, settingsRecords } from './commands.js';
 import type { Agent } from './agent.js';
+import { loadProjectEnv } from './environment.js';
 export interface CreateAgentOptions { lifecycleTimeoutMs?: number; autoSaveSessions?: boolean; plugins?: readonly Plugin[]; preset?: (input: PresetContext) => Preset; config?: Partial<AgentConfig> }
 function unavailableController(config: AgentConfig): PermissionController {
   const unavailable = () => { throw new Error('当前权限策略没有提供可编辑的权限控制器。'); };
@@ -30,7 +31,7 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
   const { config, paths, sources: configSources } = loaded;
   // 同项目启动使用同一工具/权限/上下文基准；原始启动位置保留在 paths.cwd。
   cwd = paths.projectRoot;
-  try { process.loadEnvFile(join(cwd, '.env')); } catch { /* 兼容现有缺省环境行为 */ }
+  loadProjectEnv(cwd);
   const endpoint = config.baseURL ?? (config.provider === 'openai' ? process.env.OPENAI_BASE_URL : undefined);
   const endpointURL = config.provider === 'openai' ? endpoint || undefined : endpoint;
   const providerConfig = config.provider === 'openai' ? { ...config, baseURL: endpointURL ?? 'https://api.openai.com/v1' } : config;
