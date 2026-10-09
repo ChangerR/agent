@@ -1,13 +1,12 @@
 /**
- * 权限引擎测试：决策管线全分支。
+ * 权限规则与控制器测试：状态管理不执行策略判定。
  */
-import { describe, expect, it } from 'vitest';
-import { PermissionEngine, matchRule, parseRule } from '../src/core/permission/engine.js';
+import { describe, expect, it, vi } from 'vitest';
+import { PermissionController, matchRule, parseRule } from '../src/builtin/policy/controller.js';
 import { analyzeCommand, bashTool } from '../src/tools/bash.js';
-import { readFileTool } from '../src/tools/read.js';
-import { writeFileTool } from '../src/tools/write.js';
+import type { Decision, SessionRules } from '../src/core/permission/contracts.js';
 
-const noRules = { allow: [], ask: [], deny: [] };
+const noRules = (): SessionRules => ({ allow: [], ask: [], deny: [] });
 
 describe('规则解析与匹配', () => {
   it('解析整工具规则', () => {
@@ -23,6 +22,18 @@ describe('规则解析与匹配', () => {
     expect(matchRule(parseRule('bash(npm test *)'), 'bash', 'npm build')).toBe(false);
     expect(matchRule(parseRule('edit_file(src/**)'), 'edit_file', 'src/a/b.ts')).toBe(true);
     expect(matchRule(parseRule('read_file'), 'bash', 'anything')).toBe(false);
+  });
+
+  it('字面量授权保留 glob 字符，不扩大匹配范围', () => {
+    const raw = 'write_file(="a*.txt")';
+    expect(parseRule(raw)).toEqual({ raw, tool: 'write_file', exact: 'a*.txt' });
+    expect(matchRule(parseRule(raw), 'write_file', 'a*.txt')).toBe(true);
+    expect(matchRule(parseRule(raw), 'write_file', 'ab.txt')).toBe(false);
+    expect(matchRule(parseRule(raw), 'read_file', 'a*.txt')).toBe(false);
+  });
+
+  it.each(['', 'invalid rule', 'bash(="unterminated)', 'bash(="x" false)'])('拒绝无效规则 %j', rule => {
+    expect(() => parseRule(rule)).toThrow();
   });
 });
 
@@ -47,86 +58,65 @@ describe('危险命令检测', () => {
   });
 });
 
-describe('决策管线', () => {
-  it('deny 规则最高优先级，yolo 也不可逾越', () => {
-    const engine = new PermissionEngine({
-      mode: 'yolo',
-      rules: { ...noRules, deny: ['bash(git push *)'] },
-    });
-    const d = engine.check(bashTool, { command: 'git push origin main' });
-    expect(d.kind).toBe('deny');
-    expect(d.matchedRule).toBe('bash(git push *)');
+describe('权限控制器', () => {
+  it('模式与规则变化更新 revision，读取状态不产生变化', () => {
+    const rules = noRules();
+    const controller = new PermissionController({ mode: 'auto', rules });
+    const original = controller.revision;
+    expect(controller.mode).toBe('auto');
+    expect(controller.getSessionRules()).toEqual(noRules());
+    expect(controller.revision).toBe(original);
+    controller.setMode('ask');
+    const afterMode = controller.revision;
+    expect(controller.mode).toBe('ask');
+    expect(afterMode).not.toBe(original);
+    controller.addSessionRule('deny', 'bash(npm publish)');
+    const afterSession = controller.revision;
+    expect(afterSession).not.toBe(afterMode);
+    rules.ask.push('write_file');
+    expect(controller.revision).not.toBe(afterSession);
   });
 
-  it('危险命令检测在 allow 规则之前：命中 allow 仍强制 ask', () => {
-    const engine = new PermissionEngine({
-      mode: 'ask',
-      rules: { ...noRules, allow: ['bash(rm *)'] },
-    });
-    const d = engine.check(bashTool, { command: 'rm -rf /' });
-    expect(d.kind).toBe('ask');
-    expect(d.source).toBe('danger');
+  it('会话规则快照隔离外部修改，清空后回到配置状态', () => {
+    const controller = new PermissionController({ mode: 'auto', rules: noRules() });
+    const original = controller.revision;
+    controller.addSessionRule('allow', 'read_file');
+    controller.addSessionRule('ask', 'bash');
+    controller.addSessionRule('deny', 'write_file(.env)');
+    const saved = controller.getSessionRules();
+    saved.allow.push('write_file');
+    saved.ask.length = 0;
+    expect(controller.getSessionRules()).toEqual({ allow: ['read_file'], ask: ['bash'], deny: ['write_file(.env)'] });
+    controller.clearSessionRules();
+    expect(controller.getSessionRules()).toEqual(noRules());
+    expect(controller.revision).toBe(original);
   });
 
-  it('dangerForceAsk 关闭后危险命令回落到正常管线', () => {
-    const engine = new PermissionEngine({
-      mode: 'yolo',
-      rules: noRules,
-      dangerForceAsk: false,
-    });
-    expect(engine.check(bashTool, { command: 'sudo ls' }).kind).toBe('allow');
+  it('批量恢复先完整校验，任何无效规则都不会部分改写状态', () => {
+    const controller = new PermissionController({ mode: 'ask', rules: noRules() });
+    controller.addSessionRule('deny', 'bash(npm publish)');
+    const before = controller.getSessionRules(); const revision = controller.revision;
+    expect(() => controller.setSessionRules({ allow: ['read_file'], ask: ['invalid rule'] })).toThrow();
+    expect(() => controller.validateSessionRules({ allow: ['write_file'], deny: ['!invalid'] })).toThrow();
+    expect(controller.getSessionRules()).toEqual(before);
+    expect(controller.revision).toBe(revision);
+    const next = { allow: ['read_file'], ask: ['bash'] };
+    controller.setSessionRules(next);
+    next.allow.push('write_file');
+    expect(controller.getSessionRules()).toEqual({ allow: ['read_file'], ask: ['bash'], deny: [] });
   });
 
-  it('allow 规则命中即静默放行（自动审批主力）', () => {
-    const engine = new PermissionEngine({
-      mode: 'ask',
-      rules: { ...noRules, allow: ['bash(npm test *)'] },
-    });
-    expect(engine.check(bashTool, { command: 'npm test unit' }).kind).toBe('allow');
-    expect(engine.check(bashTool, { command: 'npm publish' }).kind).toBe('ask');
-  });
-
-  it('ask 规则优先于模式默认值（yolo 下仍询问）', () => {
-    const engine = new PermissionEngine({
-      mode: 'yolo',
-      rules: { ...noRules, ask: ['write_file'] },
-    });
-    expect(engine.check(writeFileTool, { path: 'a.txt', content: 'x' }).kind).toBe('ask');
-    expect(engine.check(readFileTool, { path: 'x' }).kind).toBe('allow'); // 其余仍按 yolo 放行
-  });
-
-  it('auto 模式：只读放行，写/执行询问', () => {
-    const engine = new PermissionEngine({ mode: 'auto', rules: noRules });
-    expect(engine.check(readFileTool, { path: 'a.ts' }).kind).toBe('allow');
-    expect(engine.check(bashTool, { command: 'ls' }).kind).toBe('ask');
-  });
-
-  it('ask 模式：全部询问', () => {
-    const engine = new PermissionEngine({ mode: 'ask', rules: noRules });
-    expect(engine.check(readFileTool, { path: 'a.ts' }).kind).toBe('ask');
-  });
-
-  it('yolo 模式：全部放行', () => {
-    const engine = new PermissionEngine({ mode: 'yolo', rules: noRules });
-    expect(engine.check(bashTool, { command: 'npm test' }).kind).toBe('allow');
-  });
-
-  it('会话级规则覆盖配置级', () => {
-    const engine = new PermissionEngine({
-      mode: 'ask',
-      rules: { ...noRules, deny: ['bash(npm *)'] },
-    });
-    engine.addSessionRule('deny', 'bash(npm test)');
-    const d = engine.check(bashTool, { command: 'npm test' });
-    expect(d.kind).toBe('deny');
-    expect(d.source).toBe('session'); // 会话级规则排在前
-  });
-
-  it('审计日志记录每次判定', () => {
-    const engine = new PermissionEngine({ mode: 'yolo', rules: noRules });
-    engine.check(bashTool, { command: 'ls' });
-    engine.check(readFileTool, { path: 'a' });
-    expect(engine.getAuditLog()).toHaveLength(2);
-    expect(engine.getAuditLog()[0].toolName).toBe('bash');
+  it('审计只记录显式判定，不调用工具声明的分析回调', () => {
+    const controller = new PermissionController({ mode: 'auto', rules: noRules() });
+    const analyzeInput = vi.fn(() => { throw new Error('untrusted callback'); });
+    const tool = { ...bashTool, analyzeInput };
+    const decision: Decision = { kind: 'ask', source: 'danger', reason: '需要人工确认', reasonCode: 'danger_constraint' };
+    controller.recordDecision(tool, { command: 'unsafe' }, decision);
+    controller.recordDecision(tool, { command: 'unsafe' }, { kind: 'deny', source: 'user', reason: '用户拒绝' });
+    expect(analyzeInput).not.toHaveBeenCalled();
+    expect(controller.getAuditLog()).toEqual([
+      { toolName: 'bash', summary: 'bash', decision, at: expect.any(Number) },
+      { toolName: 'bash', summary: 'bash', decision: { kind: 'deny', source: 'user', reason: '用户拒绝' }, at: expect.any(Number) },
+    ]);
   });
 });

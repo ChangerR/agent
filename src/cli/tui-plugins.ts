@@ -2,7 +2,7 @@
 import type { Agent } from '../runtime/agent.js';
 import type { CommandInspection } from '../sdk/index.js';
 import type { PanelItem } from './interaction-panel.js';
-import type { PermissionSettingsPicker } from '../builtin/policy-legacy/tui.js';
+import type { PermissionSettingsPicker } from '../builtin/policy/tui.js';
 import type { SettingsInputRequest } from './settings-input.js';
 import type { ToolResult, TokenUsage } from '../core/protocol/types.js';
 export interface TuiPluginContext {

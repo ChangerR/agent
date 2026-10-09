@@ -9,7 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Plugin } from '../core/plugin.js';
+import type { Plugin } from '../sdk/plugin.js';
 import type { Tool } from '../core/registry.js';
 import type { McpServerConfig } from './config.js';
 import { loadMcpConfig } from './config.js';
@@ -116,17 +116,21 @@ export class McpClientManager {
  */
 export function mcpPlugin(configPath: string): Plugin {
   return {
-    name: 'mcp',
-    async register(ctx) {
+    manifest: { id: 'agentlab.mcp-client', version: '1.0.0', apiVersion: 1 },
+    async setup(ctx) {
       const config = loadMcpConfig(configPath);
       const manager = new McpClientManager();
+      ctx.onDispose(() => manager.closeAll());
       for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
         let client: Client | undefined;
+        let connected = false;
         try {
           client = await manager.connect(name, serverConfig, { cwd: dirname(resolve(configPath)) });
           const tools = await manager.bridgeTools(name, client);
-          for (const tool of tools) ctx.tools.register(tool);
+          connected = true;
+          for (const tool of tools) ctx.provide.tool(tool.name, tool);
         } catch (err) {
+          if (connected) throw err;
           if (client) {
             try { await manager.disconnect(client); }
             catch (cleanupError) { console.error(`[mcp] server "${name}" 清理失败: ${String(cleanupError)}`); }
@@ -134,7 +138,6 @@ export function mcpPlugin(configPath: string): Plugin {
           console.error(`[mcp] server "${name}" 连接失败: ${err instanceof Error ? err.message : err}`);
         }
       }
-      return () => manager.closeAll();
     },
   };
 }

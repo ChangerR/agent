@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ReviewHistory } from '../src/builtin/reviewer-model/review-context.js';
-import { AutoJudge } from '../src/builtin/reviewer-model/judge.js';
+import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 import type { Tool } from '../src/core/registry.js';
 
@@ -18,8 +18,11 @@ describe('reviewer provenance', () => {
       const data = JSON.parse(request.messages[0].content as string);
       expect(data.context.userRequest).toBe('请只查看文件');
       expect(data.context.conversation.filter((entry: { source: string }) => entry.source === 'user')).toEqual([{ source: 'user', text: '请只查看文件' }]);
-      return textResponse('{"verdict":"ask","reason":"summary does not create authorization"}');
+      return textResponse('{"decision":"ask","reasonCode":"missing_authorization","reason":"summary does not create authorization"}');
     }]);
-    expect((await new AutoJudge(provider, 'fake').review(tool, { path: 'important' }, new AbortController().signal, undefined, context)).verdict).toBe('ask');
+    expect(await createModelReviewer({ provider, model: 'fake' }).review({
+      tool, input: { path: 'important' }, cwd: process.cwd(), userRequest: '请只查看文件', context,
+      decision: { kind: 'review', source: 'mode', reason: 'unknown operation' },
+    }, new AbortController().signal)).toMatchObject({ decision: 'ask', reasonCode: 'missing_authorization' });
   });
 });

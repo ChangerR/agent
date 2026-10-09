@@ -78,7 +78,7 @@ export class PluginHost {
   selectedRecord<K extends SingletonCapabilityKind>(kind: K): CapabilityRecord<K> | undefined { return this.graph.selectedRecord(kind, this.options.selections ?? {}); }
   selected<K extends SingletonCapabilityKind>(kind: K): CapabilityMap[K] | undefined { return this.graph.selected(kind, this.options.selections ?? {}); }
 
-  /** 兼容 HookRunner 只在宿主成功后装配；失败插件没有外部写入。 */
+  /** HookRunner 只在宿主成功后装配；失败插件没有外部写入。 */
   installHooks(runner: Pick<HookRunner, 'register'>): void {
     if (this.state !== 'ready') throw new Error('Plugins must be loaded before installing hooks');
     for (const transaction of this.transactions) for (const hook of transaction.hooks) runner.register(hook.point, hook.handler);
@@ -169,9 +169,7 @@ export class PluginHost {
       : [['provided', this.options.pluginConfig?.[plugin.manifest.id] ?? {}] as const];
     for (const [scope, configured] of layers) {
       if (scope !== 'provided' && Object.keys(configured).length && plugin.config?.scopes && !plugin.config.scopes.includes(scope)) throw new Error(`Plugin ${plugin.manifest.id} configuration is not allowed in ${scope} scope`);
-      if (configured.$version !== undefined && configured.$version !== (plugin.manifest.configVersion ?? 1)) throw new Error(`Plugin ${plugin.manifest.id} config version requires explicit migration`);
       for (const [key, value] of Object.entries(configured)) {
-        if (key === '$version') continue;
         merged[key] = plugin.config?.merge?.[key] === 'append' && Array.isArray(merged[key]) && Array.isArray(value) ? [...merged[key], ...value] : value;
         sources[key] = scope;
       }
@@ -290,7 +288,6 @@ function orderPlugins(plugins: readonly Plugin[], diagnostic: (diagnostic: Plugi
     if (!manifest || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(manifest.id)) throw new Error('Plugin manifest has an invalid ID');
     if (manifest.apiVersion !== 1) throw new Error(`Plugin ${manifest.id} has unsupported API version ${manifest.apiVersion}`);
     versionTuple(manifest.version);
-    if (manifest.configVersion !== undefined && (!Number.isInteger(manifest.configVersion) || manifest.configVersion < 1)) throw new Error(`Plugin ${manifest.id} has invalid configVersion`);
     if (byId.has(manifest.id)) throw new Error(`Duplicate plugin ID: ${manifest.id}`);
     if (typeof plugin.setup !== 'function') throw new Error(`Plugin ${manifest.id} has no setup function`);
     byId.set(manifest.id, plugin);
@@ -348,7 +345,7 @@ function validateImplementation(kind: CapabilityKind, id: string, value: unknown
   if (kind === 'settings') {
     if (!object.schema || typeof object.schema !== 'object') invalid('missing schema');
     if (Boolean(object.draft) !== Boolean(object.commit)) invalid('draft and commit must be supplied together');
-    if (!['immediate', 'new-session', 'restart', 'nextRequest', 'idleBoundary', 'newSession'].includes(object.applyMode as string)) invalid('unsupported applyMode');
+    if (!['immediate', 'nextRequest', 'idleBoundary', 'newSession'].includes(object.applyMode as string)) invalid('unsupported applyMode');
   }
   if (kind === 'tui' && !['tool-renderer', 'status', 'editor'].includes(object.kind as string)) invalid('unsupported TUI kind');
 }

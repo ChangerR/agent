@@ -1,4 +1,4 @@
-/** 配置和运行状态的唯一目录约定；只计算路径，不创建目录或迁移旧文件。 */
+/** 配置和运行状态的唯一目录约定；只计算路径，不创建目录。 */
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';

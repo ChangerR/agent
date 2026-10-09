@@ -5,7 +5,7 @@ import { expect, it } from 'vitest';
 import { createAgent } from '../src/index.js';
 import { mkdtempProject } from './helpers/project.js';
 const signal = () => new AbortController().signal;
-it('实现选择只在明确 Save 后写项目配置，下次启动生效，保持当前审批实现', async () => {
+it('实现选择提交后写项目配置，下次启动生效，保持当前审批实现', async () => {
   const cwd = await mkdtempProject(join(tmpdir(), 'agent-policy-selection-'));
   const path = join(cwd, 'agent.config.json');
   const original = JSON.stringify({ provider: 'fake', custom: { keep: true } }); await writeFile(path, original);
@@ -14,14 +14,14 @@ it('实现选择只在明确 Save 后写项目配置，下次启动生效，保�
     const section = agent.settings.find(s => s.id === 'capability-selection')!.section;
     const values = await section.read!(signal()) as Record<string, unknown>;
     expect(values).toEqual({});
-    expect(section.description).toContain('legacy-v1'); expect(section.description).toContain('model-v1');
-    const draft = await section.draft!({ ...values, reviewer: 'model-v2' }, signal());
+    expect(section.description).toContain('deterministic'); expect(section.description).toContain('model');
+    const draft = await section.draft!({ ...values, reviewer: 'model' }, signal());
     expect(await readFile(path, 'utf8')).toBe(original);
     await section.commit!(draft, signal());
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ custom: { keep: true }, capabilities: { reviewer: 'model-v2' } });
-    expect(agent.plugins.selected('reviewer')?.id).toBe('model-v1');
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ custom: { keep: true }, capabilities: { reviewer: 'model' } });
+    expect(agent.plugins.selected('reviewer')?.id).toBe('model');
     await agent.dispose(); agent = await createAgent(cwd, { autoSaveSessions: false });
-    expect(agent.plugins.selected('reviewer')?.id).toBe('model-v2');
+    expect(agent.plugins.selected('reviewer')?.id).toBe('model');
     expect(agent.loop.getJudgeStatus()).toMatchObject({ loaded: true, provider: 'fake', source: 'current' });
   } finally { await agent.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });

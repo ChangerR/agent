@@ -43,8 +43,8 @@ export function createJsonlTelemetry(options: JsonlTelemetryOptions): Telemetry 
 }
 export function createTelemetryJsonlPlugin(options: JsonlTelemetryOptions) {
   return definePlugin({
-    manifest: { id: 'agentlab.telemetry-jsonl', version: '1.0.0', apiVersion: 1, configVersion: 1 },
-    config: { schema: z.object({ includeBodies: z.boolean().default(false) }).passthrough(), ownedFields: ['includeBodies'], defaults: { includeBodies: options.includeBodies ?? false }, applyMode: 'new-session' },
+    manifest: { id: 'agentlab.telemetry-jsonl', version: '1.0.0', apiVersion: 1 },
+    config: { schema: z.object({ includeBodies: z.boolean().default(false) }).passthrough(), ownedFields: ['includeBodies'], defaults: { includeBodies: options.includeBodies ?? false }, applyMode: 'newSession' },
     setup(ctx) {
       const telemetry = createJsonlTelemetry({ ...options, includeBodies: ctx.config.value.includeBodies === true });
       ctx.onDispose(() => telemetry.dispose?.());

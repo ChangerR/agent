@@ -31,8 +31,8 @@ export function toolUseResponse(calls: Array<{ id: string; name: string; input: 
   for (const c of calls) {
     events.push(
       { type: 'tool_use_start', id: c.id, name: c.name },
-      { type: 'tool_use_delta', input: JSON.stringify(c.input) },
-      { type: 'tool_use_stop' },
+      { type: 'tool_use_delta', id: c.id, input: JSON.stringify(c.input) },
+      { type: 'tool_use_stop', id: c.id },
     );
   }
   events.push(

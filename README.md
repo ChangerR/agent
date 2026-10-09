@@ -1,16 +1,15 @@
 # AgentLab
 
-## 插件架构与可选 v2
+## 插件架构与确定性策略
 
-默认仍是 `legacy-v1`、`model-v1` 和 `ask` 模式。新插件使用 `agentlab/sdk`，通过 `pluginEntries` 加载，`capabilities` 明确选择实现。
+默认使用 `deterministic` 策略、严格 `model` 审批员和 `ask` 模式。插件使用 `agentlab/sdk`，通过 `pluginEntries` 加载，`capabilities` 明确选择实现。
 
-- [插件 API、配置、生命周期和迁移](docs/PLUGINS.md)
-- [确定性 v2 与显式目录写入授权](docs/POLICY-V2.md)
+- [插件 API、配置和生命周期](docs/PLUGINS.md)
+- [确定性策略与显式目录写入授权](docs/POLICY.md)
 - [严格模型审批与用途统计](docs/REVIEWER.md)
-- [只读 shadow、迁移预览和离线复现](docs/POLICY-SHADOW.md)
 - [外部替换示例](plugins/architecture-example/README.md)
 
-`/settings` 可浏览插件设置与下一会话实现选择；`/policy-migrate preview` 只读展示 v1/v2 差异。`pnpm exec tsx scripts/policy-shadow.ts --cwd .` 不执行工具或调用模型。原始 Shell 不做确定性放行；原生 Windows 的 v2 文件系统授予暂时保守询问。插件是受信任进程内代码，不是 OS 沙箱。
+`/settings` 可浏览插件设置与下一会话实现选择。原始 Shell 不做确定性放行；原生 Windows 的文件系统授予保守要求人工确认。插件是受信任进程内代码，不是 OS 沙箱。
 
 
 仿 Claude Code 的**插件式 coding agent 教学实现**（TypeScript + Node.js）。
@@ -22,7 +21,7 @@
 - 事件驱动的 **agent loop**（core 不碰 UI，TUI 只是事件订阅者）
 - **规范化协议层** + 两个 provider 参考实现：Anthropic Messages API、OpenAI 兼容 API（DeepSeek/Kimi/通义/vLLM…）
 - **工具系统**：read_file / write_file / edit_file / bash / glob / grep，只读工具并行执行
-- **权限引擎**：deny → 危险检测 → allow → ask → 模式默认值的决策管线；ask/auto/yolo 三模式；"始终允许"会话规则；审计日志
+- **权限引擎**：deny → 不可降级约束 → ask → 已验证精确授权 → 模式默认值的决策管线；ask/auto/yolo 三模式；"始终允许"会话规则；审计日志
 - **钩子**：PreToolUse / PostToolUse / UserPromptSubmit / TurnEnd
 - **MCP**：stdio + streamable-http，工具以 `mcp__server__tool` 桥接
 - **Skill**：渐进式披露（清单进 system prompt，全文按需 `use_skill` 加载）
@@ -109,7 +108,7 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 
 ### 可选：自动审批
 
-`auto` 模式默认使用当前主模型审核未命中规则的写入与执行操作，无需另配审批模型；普通只读操作仍直接放行。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
+`auto` 模式默认使用当前主模型审核未命中规则的写入与执行操作，无需另配审批模型；已完整验证的普通项目文件读取直接放行。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
 
 可用 `judgeModel` 指定兼容同一 provider / endpoint 的独立审批模型。项目未写该字段时继承全局配置，最终未指定时跟随当前模型；`"judgeModel": ""` 则明确跟随当前模型并覆盖全局指定值。跟随模式会随 `/model` 和恢复会话更新，显式指定的审批模型保持不变。`/permissions` 可查看实际加载的审批模型及来源；需要未命中规则的操作都询问时使用 `ask` 模式。
 
@@ -119,7 +118,7 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 - 向上寻找最近的项目边界：`agent.config.json`、`.git`（含 worktree 的文件形式）或 `package.json`。内层项目不会被外层 Git 仓库吞并；不会越过用户目录、系统临时目录或文件系统根来推断项目（直接在这些目录启动除外）；没有标记则使用启动目录。路径会解析符号链接，同一项目从子目录启动仍共用配置和会话，工具执行目录统一为该项目根。
 - 用户运行状态：`~/.agent/state/projects/<规范化项目路径的 SHA-256>/sessions/` 和 `logs/`。不同项目即使会话 ID 相同也互不相通；移动项目得到新的身份。启动不会迁移或导入旧目录。
 - 优先级：内置默认 → 全局 → 项目 → 程序调用时的会话覆盖。全局与项目权限列表拼接；SDK 显式传入会话 `permissions` 时替换该合并列表。插件参数和能力选择逐字段合并；普通数组替换。省略某层字段表示继承，不能靠保存合并结果把其他层授权复制过来。
-- `modelsFile`、`mcpConfig`、`plugins`、`pluginEntries` 的相对路径按声明它们的配置文件目录解析，绝对路径保持。默认模型/MCP 文件为 `~/.agent/models.json`、`~/.agent/mcp.json`。项目使用本地文件时显式配置 `"modelsFile": "./models.json"`、`"mcpConfig": "./mcp.json"`。
+- `modelsFile`、`mcpConfig`、`pluginEntries` 的相对路径按声明它们的配置文件目录解析，绝对路径保持。默认模型/MCP 文件为 `~/.agent/models.json`、`~/.agent/mcp.json`。项目使用本地文件时显式配置 `"modelsFile": "./models.json"`、`"mcpConfig": "./mcp.json"`。
 
 `/settings` 默认编辑本项目，界面显示实际配置文件。选择模式后自动保存并立即用于后续权限检查；没有独立 Save 页面或二次确认。也可以直接输入 `/mode auto`，当前模式和项目启动默认一起改变，退出重启后仍保留。已经弹出的工具审批仍需处理，deny、危险检测等执行保护不会因此移除。
 
@@ -129,7 +128,7 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 - 只有明确进入“全局”才修改全局文件。全局值仍可能被项目值覆盖，界面显示有效模式和覆盖关系；项目模式选择“继承”会删除本层覆盖并应用继承后的模式。不会把合并后的规则或项目授权复制进全局。`writeRoots` 仍仅支持项目层。
 - 写入错误或配置被外部修改时明确报错，不显示虚假成功，也不先修改当前模式。修复问题后重新打开设置重做选择。
 
-恢复旧会话仍可能还原该会话保存的模型、思考等级、模式与会话规则。SDK 的 `agent.paths`、`agent.configSources` 和 `loadConfigWithSources()` 可诊断真实路径和字段来源；配置来源描述启动时读取的快照，设置菜单显示当前保存目标。
+恢复当前格式的已保存会话可能还原该会话保存的模型、思考等级、模式与会话规则。SDK 的 `agent.paths`、`agent.configSources` 和 `loadConfigWithSources()` 可诊断真实路径和字段来源；配置来源描述启动时读取的快照，设置菜单显示当前保存目标。
 
 API key 仍通过 `apiKeyEnv` 指定环境变量（或 provider 默认变量）；插件声明的敏感字段只接受 `env:NAME` 引用。配置编辑器不会把环境变量值展开后保存。MCP 的 `env`/`headers` 仍是 MCP 独立配置内容，请不要将密钥写进共享的项目文件。本实现未增加 XDG、`AGENT_HOME`、`--config` 或 `--cwd` 开关。
 
@@ -175,20 +174,23 @@ description: 部署应用到生产环境
 ## 外部插件
 
 ```ts
-// plugins/my-plugin/index.ts
-import type { Plugin } from '../../src/index.js';
-export default {
-  name: 'my-plugin',
-  register(ctx) {
-    ctx.tools.register(/* ... */);
-    ctx.hooks.register('PreToolUse', (payload) => { /* ... */ });
+import { definePlugin } from 'agentlab/sdk';
+
+export default definePlugin({
+  manifest: { id: 'example.hello', version: '1.0.0', apiVersion: 1 },
+  setup(ctx) {
+    ctx.provide.command('hello', {
+      description: '显示问候',
+      inputSchema: { type: 'object', properties: {} },
+      handler() { return { type: 'text', text: 'hello' }; },
+    });
   },
-} satisfies Plugin;
+});
 ```
 
-`agent.config.json` 里加 `"plugins": ["plugins/my-plugin/index.ts"]`。完整示例：[plugins/example/index.ts](plugins/example/index.ts)。
+编译为本地 ESM 后，在 `agent.config.json` 中添加 `"pluginEntries": ["./plugins/my-plugin/index.js"]`。完整示例见 [插件文档](docs/PLUGINS.md) 和 [plugins/example/index.ts](plugins/example/index.ts)。
 
-有连接或后台任务的插件可在 `register()` 返回清理函数（支持 async），agent 退出时会按注册逆序等待清理。
+资源清理通过 `ctx.onDispose()` 登记；宿主按逆依赖顺序等待清理，setup 失败也会释放已经登记的资源。
 
 ## 程序化运行与研究记录
 

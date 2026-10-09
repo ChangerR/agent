@@ -157,7 +157,7 @@ export class SessionManager {
     if (errors.length) throw new AggregateError(errors, '退出时会话保存失败');
   }
 
-  async resume(id: string, options: { allowLegacyProvider?: boolean; signal?: AbortSignal } = {}): Promise<SessionSummary> {
+  async resume(id: string, options: { signal?: AbortSignal } = {}): Promise<SessionSummary> {
     options.signal?.throwIfAborted();
     if (this.opts.loop.running) {
       throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
@@ -183,16 +183,11 @@ export class SessionManager {
     }
     const provider = this.opts.loop.providerName;
     const endpointKey = this.opts.endpointKey ?? 'default';
-    if (!file.provider || !file.endpointKey) {
-      if (!options.allowLegacyProvider) {
-        throw new SessionError('provider_mismatch', '旧会话缺少 provider / endpoint 身份，不能自动确认兼容性。确认当前配置后使用 /resume <id> --legacy 或 --allow-legacy-session 显式迁移。');
-      }
-      this.opts.events.emit({ type: 'notice', text: '按显式选择将旧会话迁移到当前 provider / endpoint；请先确认模型与历史兼容。下次保存会记录当前身份。' });
-    } else if (file.provider !== provider || file.endpointKey !== endpointKey) {
+    if (file.provider !== provider || file.endpointKey !== endpointKey) {
       throw new SessionError('provider_mismatch', '保存的 provider / endpoint 与当前配置不同。请切换回原配置后恢复；未修改当前会话。');
     }
     assertSafeHistory(file.messages);
-    const rules = normalizeRules(file.sessionRules);
+    const rules = structuredClone(file.sessionRules);
     try {
       if (this.opts.validateSessionRules) this.opts.validateSessionRules(rules);
       else this.opts.permission.validateSessionRules?.(rules);
@@ -242,7 +237,7 @@ export class SessionManager {
       });
     }
     this.pluginStates = copyPluginStates(file.pluginStates);
-    this.revisions.set(resolved, file.revision ?? 0);
+    this.revisions.set(resolved, file.revision);
     this.recreate.delete(resolved);
     this.idValue = resolved;
     this.createdAtValue = file.createdAt;
@@ -297,6 +292,7 @@ export class SessionManager {
       pluginStates: copyPluginStates(this.pluginStates),
       id: this.idValue,
       title: this.titleValue,
+      revision: 0,
       createdAt: this.createdAtValue,
       updatedAt,
       cwd,
@@ -323,7 +319,7 @@ export class SessionManager {
       file.revision = this.revisions.get(file.id) ?? 0;
       return this.opts.store.save(structuredClone(file), { recreate: recreateRevision !== undefined, recreateRevision }, signal);
     }).then((commit) => {
-      if (!commit || typeof commit.path !== 'string' || !commit.path || !Number.isSafeInteger(commit.revision) || commit.revision <= (file.revision ?? 0)) throw new SessionError('invalid_schema', '会话存储返回了无效的提交版本');
+      if (!commit || typeof commit.path !== 'string' || !commit.path || !Number.isSafeInteger(commit.revision) || commit.revision <= file.revision) throw new SessionError('invalid_schema', '会话存储返回了无效的提交版本');
       return commit;
     });
     const pending = saving.then(
@@ -395,14 +391,6 @@ export class SessionManager {
       path,
     };
   }
-}
-
-function normalizeRules(rules: Partial<SessionRules> | undefined): SessionRules {
-  return {
-    allow: rules?.allow ?? [],
-    ask: rules?.ask ?? [],
-    deny: rules?.deny ?? [],
-  };
 }
 
 /** 存储桶与恢复校验使用同一项目身份，子目录及符号链接不产生另一个项目。 */

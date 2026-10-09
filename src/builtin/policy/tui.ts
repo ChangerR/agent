@@ -2,8 +2,8 @@
 import type { PermissionMode } from '../../core/config.js';
 import { resolveAgentPaths } from '../../core/paths.js';
 import { assertPermissionConfigUnchanged, copyPermissionDraft, PermissionConfigError, readGlobalPermissionConfig, readPermissionConfig, savePermissionConfig, validatePermissionRule,
-  type PermissionConfigDraft, type PermissionConfigScope, type PermissionConfigSnapshot } from '../../core/permission-config.js';
-import { parseRule, type DecisionKind, type SessionRules } from '../../core/permission/engine.js';
+  type PermissionConfigDraft, type PermissionConfigScope, type PermissionConfigSnapshot } from './config.js';
+import { parseRule, type DecisionKind, type SessionRules } from './controller.js';
 import type { Agent } from '../../runtime/agent.js';
 import type { PanelItem } from '../../cli/interaction-panel.js';
 import type { SettingsInputRequest } from '../../cli/settings-input.js';
@@ -39,7 +39,7 @@ const rulesCount = (rules: SessionRules) => kinds.reduce((sum, kind) => sum + ru
 const sameRules = (left: SessionRules, right: SessionRules) => kinds.every(kind => JSON.stringify(left[kind]) === JSON.stringify(right[kind]));
 const modeLabel = (mode?: PermissionMode, scope: PermissionConfigScope = 'project') => mode ?? (scope === 'global' ? '内置默认 ask' : '继承全局 / 内置 ask');
 const judgeLabel = (model?: string, scope: PermissionConfigScope = 'project') => model === undefined ? scope === 'global' ? '内置默认：跟随当前模型' : '继承全局 / 默认跟随当前模型' : model.trim() === '' ? scope === 'global' ? '跟随当前模型' : '跟随当前模型（覆盖全局）' : safeText(model.trim());
-const restartNotice = '选择或 Enter 后自动保存。规则和审批模型重启后生效；模式立即应用到后续检查，已有审批仍需处理。恢复旧会话时可能还原它保存的模式与会话规则。';
+const restartNotice = '选择或 Enter 后自动保存。规则和审批模型重启后生效；模式立即应用到后续检查，已有审批仍需处理。恢复已保存会话时可能还原它保存的模式与会话规则。';
 
 /** 显示已装配的运行状态，不能从配置字段推断审批员是否存在。 */
 export function describeJudgeStatus(status: ReturnType<Agent['loop']['getJudgeStatus']>): string {
@@ -61,28 +61,17 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   const cwd = options.cwd ?? agent.cwd;
   const paths = options.cwd === undefined && agent.paths ? agent.paths : resolveAgentPaths(cwd);
   const globalPath = options.globalConfigPath ?? paths.globalConfigPath;
-  const policyId = () => agent.plugins?.selected('policy')?.id ?? 'legacy-v1';
-  const isV2 = () => policyId() === 'deterministic-v2';
-  const isLegacy = () => ['legacy-v1', 'legacy-shadow'].includes(policyId());
-  const guard = () => isV2() ? 'v2: deny 与明确 ask 优先；敏感、项目外、未知 Shell/MCP 不因 writeRoots 或 yolo 放行。'
-    : !isLegacy() ? `当前策略: ${safeText(policyId())}；具体模式语义由该插件定义。`
-    : agent.config.dangerForceAsk
-    ? 'deny 规则最高优先；危险操作仍强制询问；allow 与 ask 规则继续生效。'
-    : 'deny 规则最高优先；当前启动配置已关闭危险操作强制询问；allow 与 ask 规则继续生效。';
+  const policyId = () => agent.plugins?.selected('policy')?.id ?? 'deterministic';
+  const isDeterministic = () => policyId() === 'deterministic';
+  const guard = () => isDeterministic()
+    ? 'deny 与明确 ask 优先；敏感、项目外、未知 Shell/MCP 不因 writeRoots 或 yolo 放行。'
+    : `当前策略: ${safeText(policyId())}；具体模式语义由该插件定义。`;
   const modeDescription = (mode: PermissionMode): string => {
-    const judge = agent.loop.getJudgeStatus();
-    if (isV2()) return {
-      ask: 'v2 ask: 除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
-      auto: `v2 auto: 只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy-deterministic-v2']?.writeRoots ?? []))}）。剩余可审查操作才交 reviewer；原始 Shell 不作确定性放行。`,
-      yolo: 'v2 yolo: 仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
-    }[mode];
-    if (!isLegacy()) return `${safeText(policyId())} 的 ${mode} 模式；请查看该策略设置与说明，宿主不假定其放行规则。`;
+    if (!isDeterministic()) return `${safeText(policyId())} 的 ${mode} 模式；请查看该策略设置与说明，宿主不假定其放行规则。`;
     return {
-      ask: '未命中规则的操作均询问。',
-      auto: judge.loaded
-        ? `未命中规则的普通只读操作放行；写入/执行由审批模型检查（${describeJudgeStatus(judge)}），只有明确安全才放行；不确定或审批失败时询问。`
-        : '未命中规则的普通只读操作放行；写入/执行仍询问（当前未加载审批模型）。',
-      yolo: '未命中规则的普通操作自动放行，包括写入与执行。仅建议在隔离沙箱中使用。',
+      ask: '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
+      auto: `只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy']?.writeRoots ?? []))}）。剩余可审查操作才交审批模型；原始 Shell 不作确定性放行。`,
+      yolo: '仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
     }[mode];
   };
   const reportError = (error: unknown) => notify(error instanceof PermissionConfigError ? error.message : '权限设置操作失败，未保存更改。', true);
@@ -145,7 +134,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     try { agent.permission.setMode(mode); }
     catch { notify(`权限配置已保存，但当前策略应用失败；当前模式为 ${agent.permission.mode}。请重新选择或重启后核对。`, true); return; }
     options.onModeChange(mode);
-    notify(`${scope === 'project' ? '本项目' : '全局'}权限模式已保存；当前会话模式为 ${mode}。后续权限检查生效，已有审批仍需处理。${!isLegacy() && !isV2() ? '通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。' : ''}`);
+    notify(`${scope === 'project' ? '本项目' : '全局'}权限模式已保存；当前会话模式为 ${mode}。后续权限检查生效，已有审批仍需处理。${!isDeterministic() ? '通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。' : ''}`);
   };
 
   function reopenModes(): void {
@@ -172,7 +161,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   function openJudgeStatus(back = reopenRoot): void {
-    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n${isV2() ? '仅 v2 策略返回 review 的操作交给审批员；明确 ask/deny 不会交模型降级。' : '仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。'}\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型；model-v2 可独立选择已注册 provider，实际来源以上方运行状态为准。\n\n${guard()}\n已保存的审批模型配置重启后生效；不代表当前已加载的审批员。`, back);
+    showDetails('当前 auto 审批模型 · 只读', () => `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n${isDeterministic() ? '仅策略返回 review 的操作交给审批员；明确 ask/deny 不会交模型降级。' : '仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。'}\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型；审批模型可独立选择已注册 provider，实际来源以上方运行状态为准。\n\n${guard()}\n已保存的审批模型配置重启后生效；不代表当前已加载的审批员。`, back);
   }
 
   function openSessionRules(back = reopenRoot): void {
@@ -192,7 +181,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   function openEffectiveRules(back = reopenRoot): void {
-    showDetails('当前生效的配置规则 · 只读', () => `${guard()}\n判定顺序: ${isV2() ? 'deny → 不可降级约束/明确 ask → 精确 allow/确定性范围 → review/人工回退。' : isLegacy() ? 'deny → 危险检测（启用时）→ allow → ask → 模式默认。' : '由当前策略插件定义。'}\n同类中会话规则优先于配置；配置内部为全局规则后接项目规则。\n这里是启动时加载的快照，配置规则自动保存后仍需重启才能更新。\n\n${sourceRows.join('\n\n') || '(没有配置规则)'}`, back);
+    showDetails('当前生效的配置规则 · 只读', () => `${guard()}\n判定顺序: ${isDeterministic() ? 'deny → 不可降级约束/明确 ask → 精确 allow/确定性范围 → review/人工回退。' : '由当前策略插件定义。'}\n同类中会话规则优先于配置；配置内部为全局规则后接项目规则。\n这里是启动时加载的快照，配置规则自动保存后仍需重启才能更新。\n\n${sourceRows.join('\n\n') || '(没有配置规则)'}`, back);
   }
 
   function openAudit(back = reopenRoot): void {
@@ -212,7 +201,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     let snapshot = isGlobal ? global : project;
     let errorText = '';
     const effectiveMode = () => project.permissionMode ?? global.permissionMode ?? 'ask';
-    const modeSummary = () => `当前会话模式: ${agent.permission.mode}\n${!isLegacy() && !isV2() ? '通用启动默认（是否采用由插件决定）' : '本项目启动模式'}: ${effectiveMode()}\n${project.permissionMode === undefined ? `本项目继承全局 / 内置默认 ${global.permissionMode ?? 'ask'}` : `全局默认 ${global.permissionMode ?? 'ask'} 被本项目 ${project.permissionMode} 覆盖`}`;
+    const modeSummary = () => `当前会话模式: ${agent.permission.mode}\n${!isDeterministic() ? '通用启动默认（是否采用由插件决定）' : '本项目启动模式'}: ${effectiveMode()}\n${project.permissionMode === undefined ? `本项目继承全局 / 内置默认 ${global.permissionMode ?? 'ask'}` : `全局默认 ${global.permissionMode ?? 'ask'} 被本项目 ${project.permissionMode} 覆盖`}`;
     const summary = () => `${modeSummary()}\n作用范围: ${isGlobal ? '全局（所有项目，项目覆盖优先）' : '本项目'}\n文件: ${safeText(snapshot.path)}\n审批模型: ${judgeLabel(snapshot.judgeModel, scope)}\n${restartNotice}`;
     const back = () => isGlobal ? reopenRoot() : rootBack();
     const commit = (next: PermissionConfigDraft, applyMode = false): boolean => {

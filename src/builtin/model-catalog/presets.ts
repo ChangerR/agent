@@ -1,5 +1,5 @@
 import type { ModelInfo } from '../../core/config.js';
-/** 既有模型参数原样迁移；接入能力不表示厂商当前规格已验证。 */
+/** 内置模型规格；可由模型目录配置覆盖。 */
 export const MODEL_PRESETS: Record<string, ModelInfo> = {
   'claude-sonnet-4-5': { contextWindow: 200_000, maxOutputTokens: 64_000 },
   'claude-opus-4-5': { contextWindow: 200_000, maxOutputTokens: 64_000 },

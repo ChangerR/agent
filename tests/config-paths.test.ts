@@ -119,15 +119,14 @@ describe('配置层来源与相对路径', () => {
     const child = directory(join(project, 'src'));
     const absolute = join(fixture, 'absolute-models.json');
     json(getGlobalConfigPath(), { provider: 'fake', model: 'global-model', modelsFile: absolute, mcpConfig: 'servers/global.json',
-      plugins: ['./plugins/global.mjs'], pluginEntries: ['old-global.mjs'], permissions: { allow: ['read_file'], deny: ['bash(rm *)'] },
+      pluginEntries: ['./plugins/global.mjs'], permissions: { allow: ['read_file'], deny: ['bash(rm *)'] },
       capabilities: { reviewer: false }, pluginConfig: { demo: { first: 1, keep: true } } });
     json(join(project, 'agent.config.json'), { model: 'project-model', pluginEntries: [{ entry: 'local.mjs', enabled: false }],
       permissions: { allow: ['glob'] }, pluginConfig: { demo: { first: 2 } } });
     const loaded = loadConfigWithSources(child);
     expect(loaded.config).toMatchObject({ model: 'project-model', modelsFile: absolute, mcpConfig: join(home, '.agent', 'servers', 'global.json'),
-      plugins: [join(home, '.agent', 'plugins', 'global.mjs')], pluginEntries: [{ entry: join(project, 'local.mjs'), enabled: false }],
+      pluginEntries: [{ entry: join(project, 'local.mjs'), enabled: false }],
       permissions: { allow: ['read_file', 'glob'], ask: [], deny: ['bash(rm *)'] }, capabilities: { reviewer: false }, pluginConfig: { demo: { first: 2, keep: true } } });
-    expect(loaded.sources.plugins).toMatchObject({ scope: 'global', path: getGlobalConfigPath() });
     expect(loaded.sources.pluginEntries).toMatchObject({ scope: 'project', path: join(project, 'agent.config.json') });
     expect(loaded.sources.permissions.contributors?.map(source => source.scope)).toEqual(['global', 'project']);
     const session = loadConfigWithSources(child, { modelsFile: 'override.json' });
@@ -141,22 +140,15 @@ describe('配置层来源与相对路径', () => {
   it('项目显式相对模型/MCP 覆盖全局配置，绝对入口保持绝对路径', () => {
     const project = directory(join(fixture, 'project')); const absolute = join(fixture, 'plugin.mjs');
     json(getGlobalConfigPath(), { modelsFile: 'global-models.json', mcpConfig: 'global-mcp.json' });
-    json(join(project, 'agent.config.json'), { modelsFile: './local/models.json', mcpConfig: './local/mcp.json', plugins: [absolute] });
-    expect(loadConfig(project)).toMatchObject({ modelsFile: join(project, 'local', 'models.json'), mcpConfig: join(project, 'local', 'mcp.json'), plugins: [absolute] });
+    json(join(project, 'agent.config.json'), { modelsFile: './local/models.json', mcpConfig: './local/mcp.json', pluginEntries: [absolute] });
+    expect(loadConfig(project)).toMatchObject({ modelsFile: join(project, 'local', 'models.json'), mcpConfig: join(project, 'local', 'mcp.json'), pluginEntries: [absolute] });
   });
-  it.each(['', 'project-judge'])('跨层新旧 judge 写法正常覆盖且空值跟随主模型（%j）', value => {
+  it.each(['', 'project-judge'])('项目 judgeModel 覆盖全局且空值跟随主模型（%j）', value => {
     const project = directory(join(fixture, 'project'));
     json(getGlobalConfigPath(), { judgeModel: 'global-judge' });
-    json(join(project, 'agent.config.json'), { pluginConfig: { 'agentlab.reviewer-model': { judgeModel: value } } });
-    expect(loadConfig(project).judgeModel).toBe(value);
-    json(getGlobalConfigPath(), { pluginConfig: { 'agentlab.reviewer-model': { judgeModel: 'global-judge' } } });
     json(join(project, 'agent.config.json'), { judgeModel: value });
     expect(loadConfig(project).judgeModel).toBe(value);
-    expect(loadConfig(project).pluginConfig['agentlab.reviewer-model'].judgeModel).toBe(value);
-    // 内存快照同步不改写原始来源层。
-    expect(loadConfigWithSources(project).layers.global.pluginConfig).toEqual({ 'agentlab.reviewer-model': { judgeModel: 'global-judge' } });
-    json(join(project, 'agent.config.json'), { judgeModel: 'one', pluginConfig: { 'agentlab.reviewer-model': { judgeModel: 'two' } } });
-    expect(() => loadConfig(project)).toThrow(/Configuration conflict/);
+    expect(loadConfigWithSources(project).sources.judgeModel.scope).toBe('project');
   });
 });
 
@@ -166,7 +158,7 @@ describe('runtime 使用统一路径', () => {
     const project = directory(join(fixture, 'project'));
     const child = directory(join(project, 'src'));
     directory(join(project, '.git'));
-    json(getGlobalConfigPath(), { provider: 'fake', model: 'fixture-model', modelsFile: './catalog.json', plugins: ['./global-plugin.mjs'] });
+    json(getGlobalConfigPath(), { provider: 'fake', model: 'fixture-model', modelsFile: './catalog.json', pluginEntries: ['./global-plugin.mjs'] });
     json(join(home, '.agent', 'catalog.json'), { 'fixture-model': { contextWindow: 10000, maxOutputTokens: 500 } });
     writeFileSync(join(home, '.agent', 'global-plugin.mjs'), 'export default { manifest: { id: "test.global-path", version: "1.0.0", apiVersion: 1 }, setup() {} };');
     const first = await runtime(child);

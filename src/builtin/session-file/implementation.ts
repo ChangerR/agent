@@ -11,7 +11,7 @@ import { enqueueWrite, writeFileAtomic } from '../../core/session/atomic.js';
 import { errnoCode, invalidIdMessage, SessionError } from '../../core/session/errors.js';
 import { withSessionLock } from '../../core/session/locking.js';
 import { assertSafeHistory } from '../../core/session/history.js';
-import { formatInvalidSchema, SessionFileSchema, SessionFileV1Schema, SessionMetaSchema } from '../../core/session/schema.js';
+import { formatInvalidSchema, SessionFileSchema, SessionMetaSchema } from '../../core/session/schema.js';
 import { SESSION_SCHEMA_VERSION, type SessionFile, type SessionListing, type SessionSummary } from '../../core/session/types.js';
 
 export function sessionsDir(cwd: string): string {
@@ -52,7 +52,7 @@ export async function saveSessionVersioned(file: SessionFile, options: SaveSessi
   return enqueueWrite(path, () => withSessionLock(path, async () => {
     signal?.throwIfAborted();
     const state = await diskRevision(snapshot.cwd, snapshot.id, signal);
-    const expected = snapshot.revision ?? 0;
+    const expected = snapshot.revision;
     // 重建只能针对已知的那次删除，不能越过其他写入者后续的重建 / 删除。
     const canRecreate = recreate && !state.exists && state.deleted
       && state.revision === (recreateRevision ?? expected + 1);
@@ -64,7 +64,6 @@ export async function saveSessionVersioned(file: SessionFile, options: SaveSessi
     }
     const revision = state.revision + 1;
     if (!Number.isSafeInteger(revision)) throw new SessionError('conflict', '会话版本超出安全整数范围，未覆盖历史。', { path });
-    if (state.exists && state.schemaVersion === 1 && snapshot.schemaVersion === 2) await preserveV1Backup(path);
     signal?.throwIfAborted();
     // 提交边界：从原子写开始不再用取消覆盖成功结果。
     await writeFileAtomic(path, JSON.stringify({ ...snapshot, revision }, null, 2) + '\n');
@@ -96,7 +95,7 @@ export async function loadSession(cwd: string, id: string, signal?: AbortSignal)
   if (!parsed.success) {
     throw new SessionError('invalid_schema', formatInvalidSchema(path, parsed.error), { path });
   }
-  const file = hydrate(raw as SessionFile);
+  const file = raw as SessionFile;
   assertSafeHistory(file.messages);
   return file;
 }
@@ -124,6 +123,7 @@ export async function listSessions(cwd: string, signal?: AbortSignal): Promise<S
     try {
       const text = await fs.readFile(path, { encoding: 'utf8', signal });
       const raw = parseSessionJson(text, path);
+      assertSupportedVersion(raw, path);
       const meta = SessionMetaSchema.safeParse(raw);
       if (!meta.success) {
         broken.push({ id, path, error: new SessionError('invalid_schema', formatInvalidSchema(path, meta.error), { path }) });
@@ -189,11 +189,11 @@ export async function deleteSessionVersioned(cwd: string, id: string, signal?: A
   }, signal));
 }
 
-async function diskRevision(cwd: string, id: string, signal?: AbortSignal): Promise<{ exists: boolean; deleted: boolean; revision: number; schemaVersion?: number }> {
+async function diskRevision(cwd: string, id: string, signal?: AbortSignal): Promise<{ exists: boolean; deleted: boolean; revision: number }> {
   const path = sessionPath(cwd, id);
   try {
     const current = await loadSession(cwd, id, signal);
-    return { exists: true, deleted: false, revision: current.revision ?? 0, schemaVersion: current.schemaVersion };
+    return { exists: true, deleted: false, revision: current.revision };
   } catch (error) {
     if (!(error instanceof SessionError) || error.code !== 'not_found') throw error;
   }
@@ -229,55 +229,11 @@ function parseSessionJson(text: string, path: string): unknown {
 function assertSupportedVersion(raw: unknown, path: string): void {
   if (!raw || typeof raw !== 'object') return;
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
-  if (typeof version === 'number' && Number.isInteger(version) && (version > SESSION_SCHEMA_VERSION || (version === 2 && !('runtime' in raw)))) {
+  if (typeof version === 'number' && Number.isInteger(version) && version !== SESSION_SCHEMA_VERSION) {
     throw new SessionError(
       'unsupported_version',
-      `会话文件的 schemaVersion 是 ${version}，当前版本支持 v1 和带 runtime envelope 的 v2。请升级 AgentLab 后再加载: ${path}`,
+      `会话文件的 schemaVersion 是 ${version}，当前仅支持 schemaVersion=${SESSION_SCHEMA_VERSION} 且带完整身份和 runtime envelope 的会话，无法加载此格式: ${path}`,
       { path },
     );
   }
-}
-
-/** 把规则数组的缺省补到原对象上，不替换 messages，避免 zod 默认值另造一份历史。 */
-function hydrate(raw: SessionFile): SessionFile {
-  raw.sessionRules ??= { allow: [], ask: [], deny: [] };
-  raw.sessionRules.allow ??= [];
-  raw.sessionRules.ask ??= [];
-  raw.sessionRules.deny ??= [];
-  return raw;
-}
-
-/** 在原有会话锁内保存首次 v1 原始字节；任何备份故障都阻止格式升级。 */
-async function preserveV1Backup(path: string): Promise<void> {
-  const backupPath = `${path}.v1.bak`;
-  const original = await fs.readFile(path);
-  const originalFile = parseSessionJson(original.toString('utf8'), path) as SessionFile;
-  if (!SessionFileV1Schema.safeParse(originalFile).success) throw new SessionError('invalid_schema', '备份前的原会话不再是有效 v1，未覆盖原文件', { path });
-  let handle: Awaited<ReturnType<typeof fs.open>>;
-  try { handle = await fs.open(backupPath, 'wx', 0o600); }
-  catch (error) {
-    if (errnoCode(error) !== 'EEXIST') throw new SessionError('io', `创建 v1 迁移备份失败，未覆盖原会话: ${backupPath}`, { cause: error, path: backupPath });
-    const stat = await fs.lstat(backupPath);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new SessionError('io', `v1 迁移备份不是普通文件，未覆盖原会话: ${backupPath}`, { path: backupPath });
-    const existing: unknown = JSON.parse(await fs.readFile(backupPath, 'utf8'));
-    if (!SessionFileV1Schema.safeParse(existing).success) throw new SessionError('corrupt', `既有 v1 备份不完整，未覆盖原会话: ${backupPath}`, { path: backupPath });
-    const saved = existing as SessionFile;
-    const sameCwd = (value: string) => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
-    if (saved.id !== originalFile.id || sameCwd(saved.cwd) !== sameCwd(originalFile.cwd) || saved.createdAt !== originalFile.createdAt || saved.provider !== originalFile.provider || saved.endpointKey !== originalFile.endpointKey) {
-      throw new SessionError('conflict', `既有 v1 备份属于其他会话或 endpoint，未覆盖原会话: ${backupPath}`, { path: backupPath });
-    }
-    assertSafeHistory(saved.messages);
-    return;
-  }
-  try {
-    await handle.writeFile(original);
-    await handle.sync();
-    const copied = await fs.readFile(backupPath);
-    if (!copied.equals(original)) throw new Error('Backup verification failed');
-  } catch (error) {
-    await handle.close();
-    await fs.rm(backupPath, { force: true });
-    throw new SessionError('io', `v1 迁移备份未通过验证，未覆盖原会话: ${backupPath}`, { cause: error, path: backupPath });
-  }
-  await handle.close();
 }

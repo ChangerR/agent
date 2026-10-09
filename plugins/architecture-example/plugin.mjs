@@ -4,8 +4,8 @@
  * 此示例存储只存在于当前进程，退出后丢失，不能用于需要持久化的会话。
  */
 export default {
-  manifest: { id: 'example.replace-capabilities', version: '1.0.0', apiVersion: 1, configVersion: 1 },
-  config: { defaults: { prefix: 'example' }, applyMode: 'new-session' },
+  manifest: { id: 'example.replace-capabilities', version: '1.0.0', apiVersion: 1 },
+  config: { defaults: { prefix: 'example' }, applyMode: 'newSession' },
   setup(ctx) {
     const counters = { compactions: 0, decisions: 0, tools: 0, requests: 0 };
     const files = new Map();
@@ -66,7 +66,7 @@ export default {
       },
     });
     ctx.provide.settings('example-state', {
-      title: '插件替换验证', schema: { type: 'object' }, applyMode: 'new-session',
+      title: '插件替换验证', schema: { type: 'object' }, applyMode: 'newSession',
       read() { return { ...counters, storedSessions: files.size, prefix: ctx.config.value.prefix }; },
     });
     ctx.provide.contextSource('example-context', {
@@ -79,8 +79,8 @@ export default {
         yield { type: 'message_start' };
         if (typeof request.messages.at(-1)?.content === 'string') {
           yield { type: 'tool_use_start', id: `example-${counters.requests}`, name: 'example_echo' };
-          yield { type: 'tool_use_delta', input: JSON.stringify({ message: 'model invocation' }) };
-          yield { type: 'tool_use_stop' };
+          yield { type: 'tool_use_delta', id: `example-${counters.requests}`, input: JSON.stringify({ message: 'model invocation' }) };
+          yield { type: 'tool_use_stop', id: `example-${counters.requests}` };
           yield { type: 'message_stop', stopReason: 'tool_use' };
         } else {
           yield { type: 'text_delta', text: 'example complete' };

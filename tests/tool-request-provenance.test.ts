@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createAgent } from '../src/index.js';
-import { createStrictModelReviewer } from '../src/builtin/reviewer-model/index.js';
+import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
 import { definePlugin, type ReviewInput, type Reviewer, type Tool, type ToolContext } from '../src/sdk/index.js';
 import { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from '../src/providers/fake.js';
 
@@ -49,7 +49,7 @@ describe('工具调用的用户请求来源', () => {
     const userRequest = 'Only perform the model-requested probe in this run';
     const execute = vi.fn<Tool['execute']>(async () => ({ content: 'executed' }));
     const judge = new FakeProvider(Array.from({ length: 2 }, () => textResponse(JSON.stringify({ decision: 'allow', reason: 'current request authorizes this', reasonCode: 'authorized' }))));
-    const strictReview = vi.fn(createStrictModelReviewer({ provider: judge, model: 'test-reviewer' }).review);
+    const strictReview = vi.fn(createModelReviewer({ provider: judge, model: 'test-reviewer' }).review);
     const f = await fixture({
       script: [toolUseResponse([{ id: 'authorized-call', name: 'request-probe', input: {} }]), textResponse('done')],
       tools: [tool('request-probe', execute)],

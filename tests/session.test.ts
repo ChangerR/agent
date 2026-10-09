@@ -8,20 +8,19 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SUMMARY_MARKER } from '../src/core/context/manager.js';
-import { ContextManager } from '../src/core/context/manager.js';
+import { SUMMARY_MARKER, SummaryCompactor } from '../src/builtin/compaction-summary/implementation.js';
+import { ContextManager } from '../src/core/context/coordinator.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { AgentLoop } from '../src/core/loop.js';
-import { PermissionEngine } from '../src/core/permission/engine.js';
-import type { PluginContext } from '../src/core/plugin.js';
-import { MODEL_PRESETS } from '../src/core/config.js';
+import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
+import { MODEL_PRESETS } from '../src/builtin/model-catalog/presets.js';
 import type { Message } from '../src/core/protocol/types.js';
 import type { ChatRequest } from '../src/core/provider.js';
-import { ProviderRegistry, ToolRegistry } from '../src/core/registry.js';
+import { ToolRegistry } from '../src/core/registry.js';
 import { assertSafeHistory, findOrphanToolResults, makeTitle, trimToSafeTail } from '../src/core/session/history.js';
 import { enqueueWrite, flushWrites } from '../src/core/session/atomic.js';
-import { SessionManager } from '../src/core/session/manager.js';
+import { SessionManager } from '../src/core/session/coordinator.js';
 import {
   deleteSession,
   deleteSessionVersioned,
@@ -32,10 +31,11 @@ import {
   saveSession,
   sessionPath,
   sessionsDir,
-} from '../src/core/session/store.js';
+} from '../src/builtin/session-file/implementation.js';
+import { fileSessionStore } from '../src/builtin/session-file/index.js';
 import type { SessionFile } from '../src/core/session/types.js';
 import { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from '../src/providers/fake.js';
-import { builtinTools } from '../src/tools/index.js';
+import { builtinToolDefinitions } from '../src/tools/index.js';
 import { bashTool } from '../src/tools/bash.js';
 import { globTool } from '../src/tools/glob.js';
 import { readFileTool } from '../src/tools/read.js';
@@ -58,7 +58,11 @@ afterEach(async () => {
 function buildFile(cwd: string, patch: Partial<SessionFile> = {}): SessionFile {
   const messages = patch.messages ?? [{ role: 'user' as const, content: 'hello' }];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    runtime: { schemaVersion: 1 },
+    policy: { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 },
+    pluginStates: {},
+    revision: 0,
     id: 'sess-test',
     title: 'hello',
     createdAt: '2026-10-05T01:02:03.000Z',
@@ -89,28 +93,27 @@ function makeHarness(opts: {
   autoSave?: boolean;
   makeId?: () => string;
   events?: EventBus;
+  approveTools?: boolean;
 } = {}) {
   const events = opts.events ?? new EventBus();
   const tools = new ToolRegistry();
   const hooks = new HookRunner();
-  const ctx: PluginContext = {
-    providers: new ProviderRegistry(),
-    tools,
-    hooks: { register: (point, handler) => hooks.register(point, handler) },
-    config: {} as PluginContext['config'],
-  };
-  builtinTools.register(ctx);
-  const permission = new PermissionEngine({
+  for (const tool of builtinToolDefinitions) tools.register(tool);
+  const policy = createDeterministicPolicy({
+    cwd: tmp,
     mode: opts.mode ?? 'auto',
     rules: opts.rules ?? { allow: [], ask: [], deny: [] },
   });
+  const permission = policy.controller!;
   const provider = new FakeProvider(opts.script ?? []);
-  const context = new ContextManager({ compactThreshold: opts.compactThreshold ?? 1_000_000 });
+  const context = new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: opts.compactThreshold ?? 1_000_000 });
   const loop = new AgentLoop({
     provider,
     model: opts.model ?? 'fake',
     tools,
-    permission,
+    policy,
+    analyzer: policy.analyzer,
+    approvalResponder: opts.approveTools ? () => ({ allow: true }) : undefined,
     hooks,
     events,
     context,
@@ -121,6 +124,8 @@ function makeHarness(opts: {
     ...(opts.modelInfo ? { modelInfo: opts.modelInfo } : {}),
   });
   const manager = new SessionManager({
+    store: fileSessionStore,
+    restoreRequirements: { policy: { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 } },
     cwd: tmp,
     loop,
     permission,
@@ -129,7 +134,7 @@ function makeHarness(opts: {
     makeId: opts.makeId,
   });
   detaches.push(manager.attach());
-  return { loop, events, provider, permission, tools, context, manager };
+  return { loop, events, provider, policy, permission, tools, context, manager };
 }
 
 const roundTripMessages = [
@@ -179,7 +184,7 @@ describe('会话文件', () => {
     await saveSession(file);
     const loaded = await loadSession(tmp, 'header1');
     expect(loaded).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: 'header1',
       title: '标题',
       createdAt: file.createdAt,
@@ -234,7 +239,7 @@ describe('会话文件', () => {
     const invalidPath = sessionPath(tmp, 'invalid1');
     await fs.writeFile(corruptPath, '{');
     await fs.writeFile(futurePath, `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: 'future1',
       title: 'future',
       createdAt: '2026-10-05T00:00:00.000Z',
@@ -242,7 +247,7 @@ describe('会话文件', () => {
       cwd: resolve(tmp),
       model: 'fake',
     })}\n`);
-    await fs.writeFile(invalidPath, `${JSON.stringify({ schemaVersion: 1, id: 'invalid1' })}\n`);
+    await fs.writeFile(invalidPath, `${JSON.stringify({ schemaVersion: 2, id: 'invalid1' })}\n`);
 
     await expect(loadSession(tmp, 'corrupt1')).rejects.toMatchObject({ code: 'corrupt' });
     await expect(loadSession(tmp, 'future1')).rejects.toMatchObject({ code: 'unsupported_version' });
@@ -253,7 +258,7 @@ describe('会话文件', () => {
     await expect(loadSession(tmp, 'missing1')).rejects.toMatchObject({ code: 'not_found' });
 
     const listing = await listSessions(tmp);
-    expect(listing.broken.map((item) => item.id).sort()).toEqual(['corrupt1', 'invalid1']);
+    expect(listing.broken.map((item) => item.id).sort()).toEqual(['corrupt1', 'future1', 'invalid1']);
     expect(listing.broken.every((item) => item.error instanceof Error)).toBe(true);
     await expect(fs.access(corruptPath)).resolves.toBeUndefined();
     await expect(fs.access(invalidPath)).resolves.toBeUndefined();
@@ -262,7 +267,7 @@ describe('会话文件', () => {
 });
 
 describe('恢复边界', () => {
-  it('provider / endpoint 不一致拒绝恢复且不改状态，旧 v1 只能显式迁移', async () => {
+  it('provider / endpoint 不一致或缺失时拒绝恢复且不改状态', async () => {
     const { loop, permission, manager } = makeHarness({ autoSave: false });
     loop.importSession({ messages: [{ role: 'user', content: 'current' }] });
     const before = loop.exportSession();
@@ -273,11 +278,14 @@ describe('恢复边界', () => {
       expect(loop.exportSession()).toEqual(before);
       expect(permission.getSessionRules()).toEqual({ allow: [], ask: [], deny: [] });
     }
-    await saveSession(buildFile(tmp, { id: 'legacy', provider: undefined, endpointKey: undefined }));
-    await expect(manager.resume('legacy')).rejects.toMatchObject({ code: 'provider_mismatch' });
-    await manager.resume('legacy', { allowLegacyProvider: true });
-    await manager.save();
-    expect(await loadSession(tmp, 'legacy')).toMatchObject({ provider: 'fake', endpointKey: 'default' });
+    for (const field of ['provider', 'endpointKey']) {
+      const invalid: Record<string, unknown> = buildFile(tmp, { id: 'missing-identity' }) as unknown as Record<string, unknown>;
+      delete invalid[field];
+      await fs.writeFile(sessionPath(tmp, 'missing-identity'), JSON.stringify(invalid));
+      await expect(manager.resume('missing-identity')).rejects.toMatchObject({ code: 'invalid_schema' });
+      expect(loop.exportSession()).toEqual(before);
+      expect(permission.getSessionRules()).toEqual({ allow: [], ask: [], deny: [] });
+    }
   });
 
   it('历史按顺序一对一校验，重复、逆序或跨正文配对均拒绝', async () => {
@@ -360,8 +368,8 @@ describe('恢复边界', () => {
         [
           { type: 'message_start' },
           { type: 'tool_use_start', id: 'dangling', name: 'read_file' },
-          { type: 'tool_use_delta', input: '{}' },
-          { type: 'tool_use_stop' },
+          { type: 'tool_use_delta', id: 'dangling', input: '{}' },
+          { type: 'tool_use_stop', id: 'dangling' },
           { type: 'message_stop', stopReason: 'max_tokens' },
           { type: 'usage', inputTokens: 1, outputTokens: 1 },
         ],
@@ -437,13 +445,15 @@ describe('恢复边界', () => {
   });
 
   it('恢复后下一轮看到旧历史，工具重新快照，不重放 tool_call，已知模型联动压缩阈值', async () => {
+    await fs.writeFile(join(tmp, 'note.txt'), 'saved tool result');
     let seen: ChatRequest | undefined;
     const { loop, provider, tools, context, manager, events } = makeHarness({
+      approveTools: true,
       mode: 'auto',
       compactThreshold: 1_000_000,
       modelInfo: (model) => MODEL_PRESETS[model],
       script: [
-        toolUseResponse([{ id: 'old-tool', name: 'read_file', input: { path: 'missing.txt' } }]),
+        toolUseResponse([{ id: 'old-tool', name: 'read_file', input: { path: 'note.txt' } }]),
         textResponse('历史回复'),
         (req) => {
           seen = req;
@@ -458,7 +468,7 @@ describe('恢复边界', () => {
     await loop.run('你好');
     await manager.flush();
     const callsAfterFirst = toolCalls;
-    expect(callsAfterFirst).toBeGreaterThan(0);
+    expect(callsAfterFirst, JSON.stringify(loop.getMessages())).toBeGreaterThan(0);
     tools.register({
       name: 'extra_tool',
       description: '后注册的工具',
@@ -487,11 +497,12 @@ describe('恢复边界', () => {
 
 describe('权限与标题', () => {
   it('恢复时先清空再写入会话规则，配置规则仍在，非法规则不改状态', async () => {
-    const rules = { allow: ['glob'], ask: [] as string[], deny: [] as string[] };
-    const { loop, permission, manager } = makeHarness({ mode: 'ask', rules, autoSave: false });
+    const rules = { allow: [], ask: ['glob'], deny: [] as string[] };
+    const { loop, policy, permission, manager } = makeHarness({ mode: 'ask', rules, autoSave: false });
+    const decide = (tool: typeof readFileTool, input: Record<string, unknown>) => policy.decide({ tool, input, cwd: tmp }, new AbortController().signal);
     permission.addSessionRule('allow', 'edit_file');
     permission.addSessionRule('ask', 'write_file');
-    expect(permission.check(writeFileTool, { path: 'a.txt', content: 'b' }).source).toBe('session');
+    expect(await decide(writeFileTool, { path: 'a.txt', content: 'b' })).toMatchObject({ kind: 'ask', source: 'session' });
 
     const file = buildFile(tmp, {
       id: 'rules1',
@@ -502,11 +513,10 @@ describe('权限与标题', () => {
     await saveSession(file);
     await manager.resume('rules1');
     expect(permission.getSessionRules()).toEqual({ allow: ['read_file'], ask: ['write_file'], deny: ['bash'] });
-    expect(permission.check(readFileTool, { path: 'a.ts' })).toMatchObject({ kind: 'allow', source: 'session' });
-    expect(permission.check(bashTool, { command: 'ls' })).toMatchObject({ kind: 'deny', source: 'session' });
-    expect(permission.check(globTool, { pattern: '*' })).toMatchObject({ kind: 'allow', source: 'config' });
-    expect(permission.check(writeFileTool, { path: 'a.txt', content: 'b' })).toMatchObject({ kind: 'ask', source: 'session' });
-    expect(permission.check(readFileTool, { path: 'a.ts' }).kind).toBe('allow');
+    expect(await decide(readFileTool, { path: 'a.ts' })).toMatchObject({ kind: 'ask' });
+    expect(await decide(bashTool, { command: 'ls' })).toMatchObject({ kind: 'deny', source: 'session' });
+    expect(await decide(globTool, { pattern: '*' })).toMatchObject({ kind: 'ask', source: 'config' });
+    expect(await decide(writeFileTool, { path: 'a.txt', content: 'b' })).toMatchObject({ kind: 'ask', source: 'session' });
 
     const beforeRules = permission.getSessionRules();
     const beforeMessages = structuredClone(loop.getMessages());
@@ -717,12 +727,12 @@ describe('删除与跨进程版本冲突', () => {
     expect((await fs.readdir(sessionsDir(tmp))).some((name) => name.endsWith('.lock') || name.endsWith('.tmp'))).toBe(false);
   });
 
-  it('旧 v1 无版本历史删除后，旧写入拒绝；重建也不产生版本 ABA', async () => {
-    const file = buildFile(tmp, { id: 'legacy-deleted' });
+  it('当前格式的零版本历史删除后，旧写入拒绝；重建也不产生版本 ABA', async () => {
+    const file = buildFile(tmp, { id: 'zero-revision-deleted' });
     await fs.mkdir(sessionsDir(tmp), { recursive: true });
     await fs.writeFile(sessionPath(tmp, file.id), JSON.stringify(file));
     const stale = await loadSession(tmp, file.id);
-    expect(stale.revision).toBeUndefined();
+    expect(stale.revision).toBe(0);
     expect(await deleteSession(tmp, file.id)).toBe(true);
     await expect(saveSession(stale)).rejects.toMatchObject({ code: 'conflict' });
     await saveSession(stale, { recreate: true });
@@ -763,7 +773,7 @@ describe('删除与跨进程版本冲突', () => {
   it('底层布尔重建使用已加载版本，不修改或接受过期的初始快照', async () => {
     const original = buildFile(tmp, { id: 'loaded-recreate' });
     await saveSession(original);
-    expect(original.revision).toBeUndefined();
+    expect(original.revision).toBe(0);
     const loaded = await loadSession(tmp, original.id);
     expect(loaded.revision).toBe(1);
     expect(await deleteSession(tmp, original.id)).toBe(true);

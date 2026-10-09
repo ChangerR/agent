@@ -3,11 +3,12 @@
   "model": "claude-sonnet-4-5",
   "permissionMode": "ask",
   "judgeModel": "",
-  "dangerForceAsk": true,
   "permissions": {
-    "allow": ["bash(npm test *)"],
+    "allow": [],
     "ask": [],
-    "deny": ["bash(git push *)"]
+    "deny": [
+      "bash(git push *)"
+    ]
   },
   "maxTurns": 50,
   "compactThreshold": 120000,
@@ -17,5 +18,5 @@
     "escalateAfterMs": 0
   },
   "mcpConfig": "./mcp.json",
-  "plugins": []
+  "pluginEntries": []
 }

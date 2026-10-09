@@ -100,7 +100,7 @@ it.each(['', '   '])('显式端点 %j 与真实 SDK 的默认回退行为一致'
   const expectedKey = baseURL ? createHash('sha256').update(expectedEndpoint).digest('hex') : 'default';
   expect((await loadSession(cwd, first.session.id)).endpointKey).toBe(expectedKey);
 });
-it('旧环境变量会话的 default 标记不能被当作已验证端点，legacy 开关也不绕过', async () => {
+it('旧环境变量会话的 default 标记不能被当作已验证端点', async () => {
   vi.stubEnv('OPENAI_BASE_URL', 'https://old-env.invalid/v1');
   const first = await agent(); const id = await save(first);
   const path = sessionPath(cwd, id);
@@ -109,6 +109,6 @@ it('旧环境变量会话的 default 标记不能被当作已验证端点，lega
   old.endpointKey = 'default'; await writeFile(path, JSON.stringify(old));
   const second = await agent();
   await expect(second.session.resume(id)).rejects.toMatchObject({ code: 'provider_mismatch' });
-  await expect(second.session.resume(id, { allowLegacyProvider: true })).rejects.toMatchObject({ code: 'provider_mismatch' });
+  await expect(second.session.resume(id)).rejects.toMatchObject({ code: 'provider_mismatch' });
   expect(second.loop.getMessages()).toEqual([]);
 });

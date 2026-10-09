@@ -1,5 +1,5 @@
 /**
- * v1 不改变规则判断，仅为审批绑定已识别的本地环境前提。
+ * 为审批绑定已识别的本地环境前提。
  * 未覆盖的 Shell 语义仍标为 unknown；这不是确定性安全分析或沙箱。
  */
 import { createHash } from 'node:crypto';
@@ -7,13 +7,13 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { AnalysisInput, ToolAnalyzer } from '../../sdk/capabilities.js';
 
-export function createLegacyEnvironmentAnalyzer(): ToolAnalyzer {
+export function createEnvironmentAnalyzer(): ToolAnalyzer {
   return {
-    id: 'legacy-environment-v1', version: '1.0.0',
+    id: 'operation-environment', version: '1.0.0',
     async analyze(input, signal) {
       const environment = await snapshot(input, signal);
-      return { analyzerId: 'legacy-environment-v1', analyzerVersion: '1.0.0', completeness: 'unknown',
-        effects: [{ kind: 'unknown' }], environment, reasonCode: 'legacy_environment_snapshot' };
+      return { analyzerId: 'operation-environment', analyzerVersion: '1.0.0', completeness: 'unknown',
+        effects: [{ kind: 'unknown' }], environment, reasonCode: 'environment_snapshot' };
     },
     async revalidate(analysis, input, signal) {
       return JSON.stringify(analysis.environment) === JSON.stringify(await snapshot(input, signal));

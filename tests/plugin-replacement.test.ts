@@ -1,3 +1,4 @@
+import { SummaryCompactor } from '../src/builtin/compaction-summary/implementation.js';
 import { mkdtempProject } from './helpers/project.js';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,10 +10,9 @@ import { EventBus } from '../src/core/events.js';
 import { AgentLoop } from '../src/core/loop.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry } from '../src/core/registry.js';
-import { ContextManager } from '../src/compat/context.js';
-import { PermissionEngine } from '../src/builtin/policy-legacy/engine.js';
+import { ContextManager } from '../src/core/context/coordinator.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
-import { definePlugin } from '../src/sdk/index.js';
+import { definePlugin, type Policy } from '../src/sdk/index.js';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true }))); });
 async function directory() { const dir = await mkdtempProject(join(tmpdir(), 'agent-plugin-replacement-')); dirs.push(dir); return dir; }
@@ -42,20 +42,21 @@ describe('只改配置即可替换默认能力', () => {
       off();
     } finally { await agent.dispose(); }
   });
-  it('默认装配与兼容构造入口的规范化事件轨迹保持一致', async () => {
+  it('插件装配与直接构造使用同一策略时，规范化事件轨迹保持一致', async () => {
     const cwd = await directory();
     const script = () => [toolUseResponse([{ id: 'trace-tool', name: 'trace_read', input: { message: 'read' } }]), textResponse('done')];
     const tool = { name: 'trace_read', description: 'trace tool', risk: 'read' as const, inputSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] }, async execute() { return { content: 'read result' }; } };
     const events = new EventBus(); const tools = new ToolRegistry(); tools.register(tool);
-    const baseline = new AgentLoop({ cwd, provider: new FakeProvider(script()), model: 'fake', tools, permission: new PermissionEngine({ mode: 'auto', rules: { allow: [], ask: [], deny: [] } }), events, hooks: new HookRunner(), context: new ContextManager({ compactThreshold: 100000 }), systemPrompt: '', maxTurns: 5 });
-    const oldTrace: unknown[] = []; events.onAll(event => { const value = normalized(event); if (value) oldTrace.push(value); });
-    await baseline.run('hello');
+    const policy: Policy = { decide: () => ({ kind: 'allow', source: 'config', reason: 'isolated test policy' }) };
+    const baseline = new AgentLoop({ cwd, provider: new FakeProvider(script()), model: 'fake', tools, policy, events, hooks: new HookRunner(), context: new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 100000 }), systemPrompt: '', maxTurns: 5 });
+    const directTrace: unknown[] = []; events.onAll(event => { const value = normalized(event); if (value) directTrace.push(value); });
+    try { await baseline.run('hello'); } finally { await baseline.dispose(); }
     const provider = new FakeProvider(script());
-    const plugin = definePlugin({ manifest: { id: 'test.trace-provider', version: '1.0.0', apiVersion: 1 }, setup(ctx) { ctx.provide.provider('trace-provider', { name: 'trace-provider', capabilities: provider.capabilities, stream: provider.stream.bind(provider) }); ctx.provide.tool('trace_read', tool); } });
-    const agent = await createAgent(cwd, { autoSaveSessions: false, plugins: [plugin], config: { provider: 'trace-provider', model: 'fake', permissionMode: 'auto' } });
+    const plugin = definePlugin({ manifest: { id: 'test.trace-provider', version: '1.0.0', apiVersion: 1 }, setup(ctx) { ctx.provide.provider('trace-provider', { name: 'trace-provider', capabilities: provider.capabilities, stream: provider.stream.bind(provider) }); ctx.provide.tool('trace_read', tool); ctx.provide.policy('trace-policy', policy); } });
+    const agent = await createAgent(cwd, { autoSaveSessions: false, plugins: [plugin], config: { provider: 'trace-provider', model: 'fake', permissionMode: 'auto', capabilities: { policy: 'trace-policy', reviewer: false } } });
     try {
-      const newTrace: unknown[] = []; agent.events.onAll(event => { const value = normalized(event); if (value) newTrace.push(value); });
-      await agent.loop.run('hello'); expect(newTrace).toEqual(oldTrace);
+      const pluginTrace: unknown[] = []; agent.events.onAll(event => { const value = normalized(event); if (value) pluginTrace.push(value); });
+      await agent.loop.run('hello'); expect(pluginTrace).toEqual(directTrace);
     } finally { await agent.dispose(); }
   });
 });

@@ -13,7 +13,7 @@
  *         若无 tool_use → turn_end，结束
  *         对每个 tool_use：
  *           PreToolUse 钩子（可改写/否决）
- *           → PermissionEngine 决策管线（allow/ask/deny）
+ *           → 选定 Policy 决策管线（allow/ask/deny）
  *           → ask 时发 permission_request 事件，挂起等待 UI 决策
  *           → 执行工具（只读工具并行）
  *           → PostToolUse 钩子
@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 import { bounded } from './permission/async.js';
 import type { EventBus, LoopEndReason } from './events.js';
 import type { HookRunner } from './hooks.js';
-import type { LegacyPermission, LegacyReviewer, JudgeStatus } from './permission/contracts.js';
+import type { JudgeStatus } from './permission/contracts.js';
 import { ToolExecutor, type ToolExecutorOptions, type ToolInvocationContext } from './tool-executor.js';
 import type { ContextCoordinator, CacheStrategy } from '../sdk/runtime-capabilities.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../sdk/capabilities.js';
@@ -50,9 +50,7 @@ export interface AgentLoopOptions {
   provider: Provider;
   model: string;
   tools: ToolRegistry;
-  /** 旧构造入口；新 runtime 提供选定 policy/reviewer。 */
-  permission?: LegacyPermission;
-  policy?: Policy;
+  policy: Policy;
   policyIdentity?: ToolExecutorOptions['policyIdentity'];
   reviewer?: Reviewer;
   analyzer?: ToolAnalyzer;
@@ -80,11 +78,6 @@ export interface AgentLoopOptions {
    * setModel 时用它自动调整压缩阈值（窗口的 80%，不超过 compactThreshold 配置值）
    */
   modelInfo?: (model: string) => { contextWindow: number; maxOutputTokens: number } | undefined;
-  /**
-   * auto 模式的可选 LLM 审批员：确定性管线判定 ask（来源为模式默认值）时，
-   * 先让小模型判断"是否明显安全"，allow 才静默放行，其余回落询问用户。
-   */
-  autoJudge?: LegacyReviewer;
   /**
    * 提示缓存。不传时默认开启（ttl 5 分钟，不因工具耗时升级）。
    * enabled: false 时请求不带 cache 策略。

@@ -24,7 +24,7 @@ export class CommandRegistry {
     const entry = this.entries.get(name);
     if (!entry) throw new Error(`未知命令: /${name}，输入 /help 查看帮助`);
     let input: Record<string, unknown> = { args };
-    // JSON 参数支持插件的结构化脚本调用；普通参数保持兼容。
+    // JSON 参数支持插件的结构化脚本调用；普通参数保留原文。
     if (args.startsWith('{')) { const value: unknown = JSON.parse(args); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('命令参数必须是 JSON 对象'); input = value as Record<string, unknown>; }
     input = jsonInput(input, entry.command.inputSchema ?? { type: 'object' });
     const result = await entry.command.handler(Object.freeze(input), context);

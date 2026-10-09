@@ -1,23 +1,23 @@
+import { SummaryCompactor } from '../src/builtin/compaction-summary/implementation.js';
 /**
  * 模型规格联动测试：setModel 时压缩阈值与 maxTokens 应随模型窗口调整。
  */
 import { describe, expect, it } from 'vitest';
-import { ContextManager } from '../src/core/context/manager.js';
+import { ContextManager } from '../src/core/context/coordinator.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { AgentLoop } from '../src/core/loop.js';
-import { PermissionEngine } from '../src/core/permission/engine.js';
 import { ToolRegistry } from '../src/core/registry.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 
 function makeLoop(modelInfo?: (model: string) => { contextWindow: number; maxOutputTokens: number } | undefined) {
-  const context = new ContextManager({ compactThreshold: 120_000 });
+  const context = new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 120_000 });
   const provider = new FakeProvider([textResponse('ok')]);
   const loop = new AgentLoop({
     provider,
     model: 'unknown-model',
     tools: new ToolRegistry(),
-    permission: new PermissionEngine({ mode: 'yolo', rules: { allow: [], ask: [], deny: [] } }),
+    policy: { decide: () => ({ kind: 'allow', source: 'config', reason: 'isolated test policy' }) },
     hooks: new HookRunner(),
     events: new EventBus(),
     context,

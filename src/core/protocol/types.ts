@@ -106,8 +106,8 @@ export type StreamEvent =
   | { type: 'redacted_thinking'; data: string }
   | { type: 'tool_use_start'; id: string; name: string }
   /** input 为 JSON 字符串片段（与 Anthropic input_json_delta 对齐） */
-  | { type: 'tool_use_delta'; id?: string; input: string }
-  | { type: 'tool_use_stop'; id?: string }
+  | { type: 'tool_use_delta'; id: string; input: string }
+  | { type: 'tool_use_stop'; id: string }
   | { type: 'message_stop'; stopReason: StopReason }
   | ({ type: 'usage' } & Partial<TokenUsage>);
 
@@ -143,9 +143,8 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
   const blocks: ContentBlock[] = [];
   let stopReason: StopReason = 'end_turn';
   const usage = emptyUsage();
-  // 工具可交错输出，按 id 保留独立缓冲区；无 id 的旧事件仍关联最近开始的调用。
+  // 工具可交错输出；每个增量与结束事件必须明确指定调用 ID。
   const tools = new Map<string, { block: ToolUseBlock; json: string }>();
-  let activeToolId: string | undefined;
 
   // 当前正在累积的 block 状态
   let current:
@@ -175,7 +174,6 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
       throw new Error(`Invalid JSON for streamed tool: ${id}`);
     }
     tools.delete(id);
-    if (activeToolId === id) activeToolId = undefined;
   };
 
   for await (const ev of events) {
@@ -209,22 +207,21 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
         break;
       case 'tool_use_start':
         flush();
+        if (typeof ev.id !== 'string' || !ev.id) throw new Error('Streamed tool requires an ID');
         if (tools.has(ev.id)) throw new Error(`Duplicate streamed tool: ${ev.id}`);
         const block: ToolUseBlock = { type: 'tool_use', id: ev.id, name: ev.name, input: {} };
         blocks.push(block);
         tools.set(ev.id, { block, json: '' });
-        activeToolId = ev.id;
         break;
       case 'tool_use_delta': {
-        const id = ev.id ?? activeToolId;
-        const tool = id === undefined ? undefined : tools.get(id);
-        if (!tool) throw new Error('Tool delta without a matching start');
+        const tool = tools.get(ev.id);
+        if (!tool) throw new Error(`Unknown streamed tool: ${ev.id}`);
         tool.json += ev.input;
         break;
       }
       case 'tool_use_stop':
         flush();
-        if (ev.id ?? activeToolId) finishTool((ev.id ?? activeToolId)!);
+        finishTool(ev.id);
         break;
       case 'message_stop':
         stopReason = ev.stopReason;

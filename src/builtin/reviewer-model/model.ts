@@ -1,4 +1,4 @@
-/** 可选 model-v2：模型只审查 policy 委托的操作，不持有规则控制器、工具执行器或批准缓存。 */
+/** 内置模型审批员：模型只审查 policy 委托的操作，不持有规则控制器、工具执行器或批准缓存。 */
 import { randomUUID } from 'node:crypto';
 import { bounded, CapabilityTimeout } from '../../core/permission/async.js';
 import type { JudgeMetadata, JudgeReasonCode } from '../../core/permission/contracts.js';
@@ -124,7 +124,7 @@ function validateStreamEvent(value: unknown, started: boolean, ended: boolean): 
   return event as unknown as ReviewerStreamEvent;
 }
 
-export function createStrictModelReviewer(options: StrictModelReviewerOptions): StrictModelReviewer {
+export function createModelReviewer(options: StrictModelReviewerOptions): StrictModelReviewer {
   const providerOption = options.provider; const modelOption = options.model; const modelInfo = options.modelInfo;
   const providerSource = options.providerSource;
   if (providerSource !== undefined && providerSource !== 'current' && providerSource !== 'explicit') throw new Error('Invalid reviewer providerSource');
@@ -171,7 +171,7 @@ export function createStrictModelReviewer(options: StrictModelReviewerOptions): 
         const request: ChatRequest = {
           model, system: STRICT_REVIEWER_SYSTEM, tools: [], maxTokens: outputTokens,
           messages: [{ role: 'user', content: JSON.stringify({
-            operation: { toolName: input.tool.name, toolVersion: input.tool.version ?? 'legacy', ownerPlugin: input.tool.ownerPlugin ?? null, description: input.tool.description, risk: input.tool.risk, cwd: input.cwd, input: input.input },
+            operation: { toolName: input.tool.name, toolVersion: input.tool.version ?? 'unversioned', ownerPlugin: input.tool.ownerPlugin ?? null, description: input.tool.description, risk: input.tool.risk, cwd: input.cwd, input: input.input },
             currentUserRequest: { source: 'runtime_user_request', text: userRequest },
             analysis: input.analysis ?? null,
             policy: { decision: input.decision, policyRevision: input.policyRevision ?? null, configRevision: input.configRevision ?? null },

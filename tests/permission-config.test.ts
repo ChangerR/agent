@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync, chmodSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { copyPermissionDraft, readPermissionConfig, readProjectPermissionConfig, readGlobalPermissionConfig, savePermissionConfig, saveProjectPermissionConfig, validatePermissionRule } from '../src/core/permission-config.js';
+import { copyPermissionDraft, readPermissionConfig, readProjectPermissionConfig, readGlobalPermissionConfig, savePermissionConfig, validatePermissionRule } from '../src/builtin/policy/config.js';
 
 import { PluginConfigStore } from '../src/runtime/config-store.js';
 
@@ -23,7 +23,6 @@ describe('权限配置的安全草稿保存', () => {
     expect(snapshot).toMatchObject({ scope: 'global', exists: false, permissionMode: undefined, judgeModel: undefined });
     expect(existsSync(join(dir, 'home'))).toBe(false);
     const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'auto';
-    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('范围不匹配');
     const saved = savePermissionConfig(snapshot, draft);
     expect(saved.scope).toBe('global');
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ permissionMode: 'auto' });
@@ -42,56 +41,29 @@ describe('权限配置的安全草稿保存', () => {
     expect(existsSync(join(nested, 'agent.config.json'))).toBe(false);
   });
 
-  it('namespace别名按原始层编辑并保留未知字段，optional删除不留下旧值', () => {
+  it('权限字段单一路径保存，插件参数与未知字段保持原样', () => {
     const { path } = project();
-    writeFileSync(path, JSON.stringify({ custom: { keep: true }, pluginConfig: {
-      'agentlab.policy-legacy': { permissionMode: 'yolo', permissions: { allow: ['glob'], custom: 'keep-rule-metadata' }, unknown: 7 },
-      'agentlab.reviewer-model': { judgeModel: 'reviewer', unknown: true },
-      'agentlab.policy-deterministic-v2': { writeRoots: ['build'] },
-    } }));
+    writeFileSync(path, JSON.stringify({ permissionMode: 'yolo', judgeModel: 'reviewer', permissions: { allow: ['glob'], custom: 'keep' }, custom: { keep: true }, pluginConfig: { 'agentlab.policy': { writeRoots: ['build'] } } }));
     const snapshot = readGlobalPermissionConfig(path);
-    expect(snapshot).toMatchObject({ permissionMode: 'yolo', judgeModel: 'reviewer', permissions: { allow: ['glob'] } });
-    expect(JSON.stringify(snapshot)).not.toContain('writeRoots');
     const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'ask'; draft.judgeModel = undefined; draft.permissions.deny.push('bash(rm *)');
-    const saved = savePermissionConfig(snapshot, draft);
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    expect(raw).not.toHaveProperty('permissionMode'); expect(raw).not.toHaveProperty('permissions'); expect(raw).not.toHaveProperty('judgeModel');
-    expect(raw.pluginConfig['agentlab.policy-legacy']).toMatchObject({ permissionMode: 'ask', permissions: { allow: ['glob'], deny: ['bash(rm *)'], custom: 'keep-rule-metadata' }, unknown: 7 });
-    expect(raw.pluginConfig['agentlab.reviewer-model']).toEqual({ unknown: true });
-    expect(raw.pluginConfig['agentlab.policy-deterministic-v2']).toEqual({ writeRoots: ['build'] });
-    expect(raw.custom).toEqual({ keep: true });
-    expect(readGlobalPermissionConfig(path).permissionMode).toBe(saved.permissionMode);
-  });
-
-  it('同值新旧别名同步编辑或删除；冲突和无效namespace值拒绝读取', () => {
-    const { path } = project();
-    writeFileSync(path, JSON.stringify({ permissionMode: 'auto', judgeModel: 'reviewer', pluginConfig: {
-      'agentlab.policy-legacy': { permissionMode: 'auto' }, 'agentlab.reviewer-model': { judgeModel: 'reviewer' },
-    } }));
-    const snapshot = readGlobalPermissionConfig(path); const draft = copyPermissionDraft(snapshot);
-    draft.permissionMode = 'ask'; draft.judgeModel = undefined; savePermissionConfig(snapshot, draft);
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    expect(raw.permissionMode).toBe('ask'); expect(raw.pluginConfig['agentlab.policy-legacy'].permissionMode).toBe('ask');
-    expect(raw).not.toHaveProperty('judgeModel'); expect(raw.pluginConfig['agentlab.reviewer-model']).not.toHaveProperty('judgeModel');
-    raw.pluginConfig['agentlab.policy-legacy'].permissionMode = 'yolo'; writeFileSync(path, JSON.stringify(raw));
-    expect(() => readGlobalPermissionConfig(path)).toThrow('有效');
-    writeFileSync(path, JSON.stringify({ pluginConfig: { 'agentlab.policy-legacy': { permissions: { allow: ['invalid rule'] } } } }));
-    expect(() => readGlobalPermissionConfig(path)).toThrow('有效');
-    writeFileSync(path, JSON.stringify({ pluginConfig: { 'agentlab.policy-legacy': { permissionMode: null } } }));
-    expect(() => readGlobalPermissionConfig(path)).toThrow('有效');
-  });
-
-  it('相同权限别名允许字段顺序不同；只改全局mode不补写空默认规则', () => {
-    const { path } = project();
-    writeFileSync(path, JSON.stringify({ permissions: { allow: ['read_file'], deny: ['bash'] }, pluginConfig: {
-      'agentlab.policy-legacy': { permissions: { deny: ['bash'], allow: ['read_file'] } },
-    } }));
-    const snapshot = readGlobalPermissionConfig(path); const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'auto';
     savePermissionConfig(snapshot, draft);
     const raw = JSON.parse(readFileSync(path, 'utf8'));
-    expect(raw.permissions).toEqual({ allow: ['read_file'], deny: ['bash'] });
-    expect(raw.pluginConfig['agentlab.policy-legacy'].permissions).toEqual({ allow: ['read_file'], deny: ['bash'] });
-    expect(raw).not.toHaveProperty('judgeModel');
+    expect(raw.permissionMode).toBe('ask'); expect(raw).not.toHaveProperty('judgeModel');
+    expect(raw.permissions).toEqual({ allow: ['glob'], ask: [], deny: ['bash(rm *)'], custom: 'keep' });
+    expect(raw.pluginConfig).toEqual({ 'agentlab.policy': { writeRoots: ['build'] } });
+    expect(raw.custom).toEqual({ keep: true });
+  });
+
+  it.each([{ permissionMode: null }, { permissions: { allow: ['invalid rule'] } }])('无效当前权限字段拒绝读取: %j', value => {
+    const { path } = project(); writeFileSync(path, JSON.stringify(value));
+    expect(() => readGlobalPermissionConfig(path)).toThrow('有效');
+  });
+
+  it('只改全局模式不补写默认规则', () => {
+    const { path } = project(); writeFileSync(path, JSON.stringify({ permissions: { allow: ['read_file'], deny: ['bash'] } }));
+    const snapshot = readGlobalPermissionConfig(path); const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'auto';
+    savePermissionConfig(snapshot, draft);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ permissionMode: 'auto', permissions: { allow: ['read_file'], deny: ['bash'] } });
   });
 
   it('已提交全局快照不与旧草稿共享数组，后续mode保存不能带入旧草稿的额外规则', () => {
@@ -127,7 +99,7 @@ describe('权限配置的安全草稿保存', () => {
     expect(JSON.stringify(snapshot)).not.toContain('never-display-me');
     const draft = copyPermissionDraft(snapshot);
     draft.permissionMode = 'auto'; draft.judgeModel = 'review-model'; draft.permissions.deny.push('bash(rm *)');
-    const saved = saveProjectPermissionConfig(snapshot, draft);
+    const saved = savePermissionConfig(snapshot, draft);
     const raw = JSON.parse(readFileSync(path, 'utf8'));
     expect(raw).toMatchObject({ permissionMode: 'auto', judgeModel: 'review-model', customSecret: 'never-display-me', custom: { enabled: true }, permissions: { allow: ['read_file'], deny: ['bash(rm *)'], customPolicy: { v: 3 } } });
     expect(statSync(path).mode & 0o777).toBe(0o640);
@@ -135,17 +107,17 @@ describe('权限配置的安全草稿保存', () => {
     expect(snapshot.permissionMode).toBe('ask');
     expect(readdirSync(dir).filter(name => name !== '.git')).toEqual(['agent.config.json']);
     const second = copyPermissionDraft(saved); second.permissionMode = 'yolo';
-    expect(saveProjectPermissionConfig(saved, second).permissionMode).toBe('yolo');
+    expect(savePermissionConfig(saved, second).permissionMode).toBe('yolo');
   });
 
   it('新文件默认 0600，删除项目覆盖表示继承，空审批模型可明确关闭', () => {
     const { dir, path } = project(); const snapshot = readProjectPermissionConfig(dir);
     expect(snapshot.exists).toBe(false);
     const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'auto'; draft.judgeModel = '';
-    const saved = saveProjectPermissionConfig(snapshot, draft);
+    const saved = savePermissionConfig(snapshot, draft);
     expect(statSync(path).mode & 0o777).toBe(0o600);
     const next = copyPermissionDraft(saved); next.permissionMode = undefined; next.judgeModel = undefined;
-    saveProjectPermissionConfig(saved, next);
+    savePermissionConfig(saved, next);
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ permissions: { allow: [], ask: [], deny: [] } });
   });
 
@@ -153,13 +125,13 @@ describe('权限配置的安全草稿保存', () => {
     const { dir, path } = project(); writeFileSync(path, '{}');
     const snapshot = readProjectPermissionConfig(dir); const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'yolo';
     writeFileSync(path, '{ "provider": "fake" }');
-    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('其他程序修改');
+    expect(() => savePermissionConfig(snapshot, draft)).toThrow('其他程序修改');
     expect(readFileSync(path, 'utf8')).toBe('{ "provider": "fake" }');
-    rmSync(path); expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('其他程序修改');
+    rmSync(path); expect(() => savePermissionConfig(snapshot, draft)).toThrow('其他程序修改');
     const missing = readProjectPermissionConfig(dir); writeFileSync(path, '{}');
-    expect(() => saveProjectPermissionConfig(missing, draft)).toThrow('其他程序修改');
+    expect(() => savePermissionConfig(missing, draft)).toThrow('其他程序修改');
     writeFileSync(`${path}.settings.lock`, '');
-    expect(() => saveProjectPermissionConfig(readProjectPermissionConfig(dir), draft)).toThrow('保存锁');
+    expect(() => savePermissionConfig(readProjectPermissionConfig(dir), draft)).toThrow('保存锁');
     expect(readFileSync(path, 'utf8')).toBe('{}');
   });
 
@@ -176,19 +148,19 @@ describe('权限配置的安全草稿保存', () => {
     const { dir, path } = project(); writeFileSync(path, '{ "permissionMode": "ask" }');
     const snapshot = readProjectPermissionConfig(dir); const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'auto';
     vi.mocked(fs.renameSync).mockImplementationOnce(() => { throw new Error('SECRET IO DETAILS'); });
-    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('更改未保存');
+    expect(() => savePermissionConfig(snapshot, draft)).toThrow('更改未保存');
     expect(readFileSync(path, 'utf8')).toBe('{ "permissionMode": "ask" }'); expect(readdirSync(dir).filter(name => name !== '.git')).toEqual(['agent.config.json']);
     vi.mocked(fs.fsyncSync).mockImplementationOnce(() => { throw new Error('SECRET IO DETAILS'); });
-    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('更改未保存');
+    expect(() => savePermissionConfig(snapshot, draft)).toThrow('更改未保存');
     expect(readFileSync(path, 'utf8')).toBe('{ "permissionMode": "ask" }'); expect(readdirSync(dir).filter(name => name !== '.git')).toEqual(['agent.config.json']);
-    expect(saveProjectPermissionConfig(snapshot, draft).permissionMode).toBe('auto');
+    expect(savePermissionConfig(snapshot, draft).permissionMode).toBe('auto');
   });
 
   it('提交前重新校验，不接受无效规则或空文本/控制序列', () => {
     const { dir, path } = project(); writeFileSync(path, '{}'); const snapshot = readProjectPermissionConfig(dir); const draft = copyPermissionDraft(snapshot);
     expect(validatePermissionRule('bash(="npm test")')).toBeUndefined();
     expect(validatePermissionRule('  ')).toBeTruthy(); expect(validatePermissionRule('read_file\x1b[2J')).toBeTruthy();
-    draft.permissions.allow.push('invalid rule'); expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('规则无效');
+    draft.permissions.allow.push('invalid rule'); expect(() => savePermissionConfig(snapshot, draft)).toThrow('规则无效');
     expect(readFileSync(path, 'utf8')).toBe('{}');
   });
 });

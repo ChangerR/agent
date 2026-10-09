@@ -3,7 +3,7 @@ import { definePlugin, type CommandContext, type CommandResult, type PermissionC
 import type { ThinkingLevel } from '../core/provider.js';
 import type { SessionManager } from '../core/session/coordinator.js';
 import { resolveAgentPaths } from '../core/paths.js';
-import { assertPermissionConfigUnchanged, copyPermissionDraft, readPermissionConfig, savePermissionConfig } from './policy-legacy/config.js';
+import { assertPermissionConfigUnchanged, copyPermissionDraft, readPermissionConfig, savePermissionConfig } from './policy/config.js';
 import { createScopedConfigStores, settingsErrorMessage } from '../runtime/config-store.js';
 export interface BuiltinCommandServices {
   model(): string;
@@ -76,7 +76,7 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
     ctx.provide.command('permissions', { description: '权限设置与决策日志', handler(input) {
       return args(input) === 'audit' ? { type: 'data', data: services.permission().getAuditLog() } : { type: 'data', data: { mode: services.permission().mode, sessionRules: services.permission().getSessionRules() } };
     } });
-    ctx.provide.settings('permissions', { title: '权限', order: 2, description: '默认编辑本项目，选择或 Enter 自动保存。模式立即应用；规则与审批模型重启后生效。全局范围可选。', schema: { type: 'object' }, applyMode: 'new-session',
+    ctx.provide.settings('permissions', { title: '权限', order: 2, description: '默认编辑本项目，选择或 Enter 自动保存。模式立即应用；规则与审批模型重启后生效。全局范围可选。', schema: { type: 'object' }, applyMode: 'newSession',
       scopeTargets: [{ scope: 'project', path: paths.projectConfigPath }, { scope: 'global', path: paths.globalConfigPath }, { scope: 'session' }],
       read: () => ({ mode: services.permission().mode, rules: services.permission().getSessionRules() }) });
   } });
@@ -102,9 +102,9 @@ export function sessionCommandsPlugin(services: BuiltinCommandServices) {
         if (typeof selected !== 'string') return selected;
         arg = selected;
       }
-      const [id, flag, ...extra] = arg.split(/\s+/);
-      if (extra.length || (flag && flag !== '--legacy')) throw new Error('用法: /resume <id> [--legacy]');
-      await services.session().resume(id, { allowLegacyProvider: flag === '--legacy', signal: context.signal }); return text(`已恢复会话 ${id}`);
+      const [id, ...extra] = arg.split(/\s+/);
+      if (extra.length) throw new Error('用法: /resume <id>');
+      await services.session().resume(id, { signal: context.signal }); return text(`已恢复会话 ${id}`);
     } });
   } });
 }

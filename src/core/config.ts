@@ -3,7 +3,6 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 import { resolveAgentPaths, type AgentPaths } from './paths.js';
 export { PROJECT_CONFIG, getGlobalConfigPath } from './paths.js';
 import { z } from 'zod';
@@ -19,23 +18,6 @@ export const ModelInfoSchema = z.object({
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
-/**
- * 常见模型的内置规格（可在 agent.config.json 的 models 字段覆盖/补充）。
- * 数值以厂商文档为准，按需调整。
- */
-export const MODEL_PRESETS: Record<string, ModelInfo> = {
-  'claude-sonnet-4-5': { contextWindow: 200_000, maxOutputTokens: 64_000 },
-  'claude-opus-4-5': { contextWindow: 200_000, maxOutputTokens: 64_000 },
-  'claude-haiku-4-5': { contextWindow: 200_000, maxOutputTokens: 64_000 },
-  // DeepSeek API 官方模型名：deepseek-flash（即 V4.1-Flash）、deepseek-v4-pro
-  'deepseek-flash': { contextWindow: 1_000_000, maxOutputTokens: 384_000 },
-  'deepseek-v4-pro': { contextWindow: 1_000_000, maxOutputTokens: 384_000 },
-  'deepseek-chat': { contextWindow: 65_536, maxOutputTokens: 8192 },
-  'deepseek-reasoner': { contextWindow: 65_536, maxOutputTokens: 8192 },
-  'gpt-4o': { contextWindow: 128_000, maxOutputTokens: 16_384 },
-  'kimi-k2': { contextWindow: 131_072, maxOutputTokens: 8192 },
-};
-
 export const AgentConfigSchema = z.object({
   provider: z.string().default('anthropic'),
   model: z.string().default('claude-sonnet-4-5'),
@@ -44,8 +26,6 @@ export const AgentConfigSchema = z.object({
   /** API key 从哪个环境变量读，默认按 provider 推断 */
   apiKeyEnv: z.string().optional(),
   permissionMode: PermissionModeSchema.default('ask'),
-  /** 危险命令即使 yolo 模式也强制询问 */
-  dangerForceAsk: z.boolean().default(true),
   permissions: z
     .object({
       allow: z.array(z.string()).default([]),
@@ -60,7 +40,7 @@ export const AgentConfigSchema = z.object({
   modelsFile: z.string().default('./models.json'),
   /**
    * auto 模式的 LLM 审批员模型（如 deepseek-flash / claude-haiku-4-5）。
-   * auto 模式下写/执行操作先由它判断，明显安全才静默放行；失败或不确定则询问。
+   * 仅当规则优先策略返回 review 时调用；失败或不确定则询问。
    * 项目未设置时继承全局；最终未设置或为空字符串时跟随当前主模型。
    * 项目空字符串可覆盖全局指定的审批模型；切换/恢复主模型时同步跟随。
    */
@@ -80,9 +60,7 @@ export const AgentConfigSchema = z.object({
     })
     .default({ enabled: true, ttl: '5m', escalateAfterMs: 0 }),
   mcpConfig: z.string().default('./mcp.json'),
-  /** 外部插件入口（ESM 模块路径，默认导出 Plugin） */
-  plugins: z.array(z.string()).default([]),
-  /** 新插件入口与旧 plugins 分开；enabled=false 只在新会话生效。 */
+  /** 外部插件入口；默认导出 SDK Plugin，enabled=false 在重启后生效。 */
   pluginEntries: z.array(z.union([z.string(), z.object({ entry: z.string(), enabled: z.boolean().default(true) })])).default([]),
   /** 显式选定单例能力；false 禁用可选能力，不隐式选下一个实现。 */
   capabilities: z.record(z.enum(SINGLETON_CAPABILITY_KINDS), z.union([z.string(), z.literal(false)])).default({}),
@@ -133,10 +111,9 @@ export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfi
   const paths = resolveAgentPaths(cwd);
   const globalRaw = readJson(paths.globalConfigPath);
   const projectRaw = readJson(paths.projectConfigPath);
-  // 别名冲突只在同一层判断；项目新写法可以覆盖全局旧写法，反之亦然。
-  const globalCfg = applyPluginConfigAliases(globalRaw);
-  const projectCfg = applyPluginConfigAliases(projectRaw);
-  const sessionCfg = applyPluginConfigAliases(overrides);
+  const globalCfg = globalRaw;
+  const projectCfg = projectRaw;
+  const sessionCfg = overrides;
   const merged = {
     ...globalCfg,
     ...projectCfg,
@@ -149,10 +126,6 @@ export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfi
     pluginConfig: mergePluginConfig(mergePluginConfig(globalCfg.pluginConfig, projectCfg.pluginConfig), sessionCfg.pluginConfig),
   };
   const config = AgentConfigSchema.parse(merged);
-  // 有效配置快照中的两种写法须一致；来源层和磁盘文件仍保留原始表达。
-  for (const [id, field, legacy] of CONFIG_ALIASES) {
-    if (Object.hasOwn(config.pluginConfig[id] ?? {}, field)) config.pluginConfig[id][field] = structuredClone(config[legacy]);
-  }
   const scopeSources = {
     default: { scope: 'default', directory: paths.agentHome },
     global: { scope: 'global', path: paths.globalConfigPath, directory: paths.agentHome },
@@ -169,7 +142,6 @@ export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfi
   const fromSource = (value: string, key: keyof AgentConfig) => isAbsolute(value) ? value : resolve(sources[key].directory, value);
   config.modelsFile = fromSource(config.modelsFile, 'modelsFile');
   config.mcpConfig = fromSource(config.mcpConfig, 'mcpConfig');
-  config.plugins = config.plugins.map(entry => fromSource(entry, 'plugins'));
   config.pluginEntries = config.pluginEntries.map(entry => typeof entry === 'string'
     ? fromSource(entry, 'pluginEntries') : { ...entry, entry: fromSource(entry.entry, 'pluginEntries') });
   return { config, paths, sources: Object.freeze(sources), layers: { global: globalRaw, project: projectRaw, session: overrides } };
@@ -181,27 +153,4 @@ function mergePluginConfig(global: unknown, project: unknown): Record<string, un
   const p = project && typeof project === 'object' && !Array.isArray(project) ? project as Record<string, unknown> : {};
   return Object.fromEntries([...new Set([...Object.keys(g), ...Object.keys(p)])].map(id => [id,
     { ...(g[id] as object ?? {}), ...(p[id] as object ?? {}) }]));
-}
-
-const CONFIG_ALIASES: Array<[string, string, keyof AgentConfig]> = [
-  ['agentlab.policy-legacy', 'permissionMode', 'permissionMode'],
-  ['agentlab.policy-legacy', 'dangerForceAsk', 'dangerForceAsk'],
-  ['agentlab.policy-legacy', 'permissions', 'permissions'],
-  ['agentlab.reviewer-model', 'judgeModel', 'judgeModel'],
-  ['agentlab.compaction-summary', 'compactThreshold', 'compactThreshold'],
-];
-
-/** 同层新旧写法同时指定不同值时拒绝猜测；这里只做内存适配。 */
-function applyPluginConfigAliases(layer: Record<string, unknown>): Record<string, unknown> {
-  const adapted = { ...layer };
-  const namespaces = layer.pluginConfig as Record<string, Record<string, unknown>> | undefined;
-  for (const [id, field, legacy] of CONFIG_ALIASES) {
-    const value = namespaces?.[id]?.[field];
-    if (value === undefined) continue;
-    if (Object.hasOwn(layer, legacy) && !isDeepStrictEqual(layer[legacy], value)) {
-      throw new Error(`Configuration conflict: ${legacy} and pluginConfig["${id}"].${field}; choose one representation.`);
-    }
-    adapted[legacy] = value;
-  }
-  return adapted;
 }

@@ -110,7 +110,8 @@ export function toAnthropicSystem(
 // 入站：Anthropic 流事件 -> 规范化 StreamEvent
 // ---------------------------------------------------------------------------
 
-export function fromAnthropicEvent(ev: MessageStreamEvent): StreamEvent[] {
+/** 无状态消息级事件转换；内容块必须通过 AnthropicStreamTranslator 关联 wire index。 */
+export function fromAnthropicEvent(ev: Exclude<MessageStreamEvent, { type: 'content_block_start' | 'content_block_delta' | 'content_block_stop' }>): StreamEvent[] {
   switch (ev.type) {
     case 'message_start': {
       const u = ev.message.usage as Anthropic.Usage & {
@@ -128,34 +129,6 @@ export function fromAnthropicEvent(ev: MessageStreamEvent): StreamEvent[] {
         },
       ];
     }
-    case 'content_block_start': {
-      // SDK 0.32 的类型只有 text | tool_use；thinking / redacted_thinking 用结构收
-      const block = ev.content_block as { type: string; id?: string; name?: string; data?: string };
-      if (block.type === 'tool_use') {
-        return [{ type: 'tool_use_start', id: block.id ?? '', name: block.name ?? '' }];
-      }
-      if (block.type === 'redacted_thinking' && block.data) {
-        return [{ type: 'redacted_thinking', data: block.data }];
-      }
-      return [];
-    }
-    case 'content_block_delta': {
-      // 用宽松结构处理 delta：thinking 在不同 SDK 版本中类型形状有差异
-      const delta = ev.delta as {
-        type: string;
-        text?: string;
-        thinking?: string;
-        signature?: string;
-        partial_json?: string;
-      };
-      if (delta.type === 'text_delta') return [{ type: 'text_delta', text: delta.text ?? '' }];
-      if (delta.type === 'thinking_delta') return [{ type: 'thinking_delta', text: delta.thinking ?? '' }];
-      if (delta.type === 'signature_delta') return [{ type: 'signature_delta', signature: delta.signature ?? '' }];
-      if (delta.type === 'input_json_delta') return [{ type: 'tool_use_delta', input: delta.partial_json ?? '' }];
-      return [];
-    }
-    case 'content_block_stop':
-      return [{ type: 'tool_use_stop' }];
     case 'message_delta': {
       // 只补输出 token。不要带 inputTokens: 0，否则会把 message_start 的输入计数覆盖掉
       const u = ev.usage as Anthropic.MessageDeltaUsage & {
@@ -246,12 +219,36 @@ export class AnthropicStreamTranslator {
   push(event: MessageStreamEvent): StreamEvent[] {
     if (event.type === 'message_start') this.blocks.clear();
     if (event.type === 'content_block_start') {
-      const block = event.content_block as { type: string; id?: string };
-      this.blocks.set(event.index, { type: block.type, id: block.id });
+      if (this.blocks.has(event.index)) throw new Error(`Duplicate Anthropic content block: ${event.index}`);
+      const block = event.content_block;
+      if (block.type === 'tool_use') {
+        if (!block.id || !block.name) throw new Error('Anthropic tool block requires an ID and name');
+        this.blocks.set(event.index, { type: block.type, id: block.id });
+        return [{ type: 'tool_use_start', id: block.id, name: block.name }];
+      }
+      this.blocks.set(event.index, { type: block.type });
+      return block.type === 'redacted_thinking' ? [{ type: 'redacted_thinking', data: block.data }] : [];
+    }
+    if (event.type === 'content_block_delta') {
+      const block = this.blocks.get(event.index);
+      if (!block) throw new Error(`Unknown Anthropic content block: ${event.index}`);
+      const delta = event.delta;
+      if (delta.type === 'input_json_delta') {
+        if (block.type !== 'tool_use' || !block.id) throw new Error(`Anthropic tool delta targets a non-tool block: ${event.index}`);
+        return [{ type: 'tool_use_delta', id: block.id, input: delta.partial_json }];
+      }
+      if (delta.type === 'text_delta') return [{ type: 'text_delta', text: delta.text }];
+      if (delta.type === 'thinking_delta') return [{ type: 'thinking_delta', text: delta.thinking }];
+      if (delta.type === 'signature_delta') return [{ type: 'signature_delta', signature: delta.signature }];
+      return [];
     }
     if (event.type === 'content_block_stop') {
-      const block = this.blocks.get(event.index); this.blocks.delete(event.index);
-      return block?.type === 'tool_use' ? [{ type: 'tool_use_stop', ...(block.id ? { id: block.id } : {}) }] : [];
+      const block = this.blocks.get(event.index);
+      if (!block) throw new Error(`Unknown Anthropic content block: ${event.index}`);
+      this.blocks.delete(event.index);
+      if (block.type !== 'tool_use') return [];
+      if (!block.id) throw new Error('Anthropic tool block requires an ID');
+      return [{ type: 'tool_use_stop', id: block.id }];
     }
     return fromAnthropicEvent(event);
   }

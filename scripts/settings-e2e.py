@@ -2,7 +2,6 @@
 """权限设置真实键盘验收（Python 标准库；不调用保存函数或 UI 回调）。
 
 运行：python3 scripts/settings-e2e.py [--cols 80 --rows 24] [--output /tmp/settings-e2e]
-仅复现旧行为：加 --source-ref <旧提交> --scenario mode（完整冻结旧源码，预期失败）。
 半帧回归自测：python3 scripts/settings-e2e.py --self-test（不启动 CLI）。
 隔离 HOME 与项目，实际执行 pnpm dev，使用内置 fake provider 离线读取 sample.md。
 每一步均等待 PTY 屏幕重绘后检查，保留 ANSI 原始录制、按键日志和文本屏幕；文本
@@ -27,8 +26,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import tarfile
-import io
 import termios
 import time
 import unicodedata
@@ -152,8 +149,13 @@ class Terminal:
         self.step = 0
         self.snapshot_index = 0
         env = {"HOME": str(suite.home), "PATH": os.environ["PATH"], "TERM": "xterm-256color", "LANG": "C.UTF-8",
-               "pnpm_config_verify_deps_before_run": "false",
+               "pnpm_config_verify_deps_before_run": "false", "npm_config_verify_deps_before_run": "false",
+               "XDG_DATA_HOME": str(suite.home / ".local/share"), "XDG_CONFIG_HOME": str(suite.home / ".config"),
+               "XDG_CACHE_HOME": str(suite.home / ".cache"), "XDG_STATE_HOME": str(suite.home / ".local/state"),
+               "USERPROFILE": str(suite.home), "OPENAI_BASE_URL": "https://offline.invalid", "ANTHROPIC_BASE_URL": "https://offline.invalid",
                "ANTHROPIC_API_KEY": "settings-e2e-fake-key", "OPENAI_API_KEY": "settings-e2e-fake-key"}
+        for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+            Path(env[key]).mkdir(parents=True, exist_ok=True)
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(project)
@@ -302,7 +304,6 @@ class Terminal:
 class Suite:
     def __init__(self, args):
         self.root = Path(__file__).resolve().parent.parent
-        self.source_ref = args.source_ref
         self.scenario = args.scenario
         self.output = Path(args.output).resolve() if args.output else Path(tempfile.mkdtemp(prefix="agent-settings-e2e-"))
         self.output.mkdir(parents=True, exist_ok=False) if args.output else None
@@ -318,8 +319,6 @@ class Suite:
         (self.output / "settings-e2e.executed.py").write_bytes(script)
         self.metadata = {"git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.root, text=True).strip(),
                          "working_diff_sha256": hashlib.sha256(subprocess.check_output(["git", "diff", "HEAD", "--", "src", "package.json"], cwd=self.root)).hexdigest(),
-                         "source_ref": self.source_ref,
-                         "source_commit": subprocess.check_output(["git", "rev-parse", f"{self.source_ref}^{{commit}}"], cwd=self.root, text=True).strip() if self.source_ref else None,
                          "scenario": self.scenario,
                          "script_sha256": hashlib.sha256(script).hexdigest(),
                          "dev_script": json.loads((self.root / "package.json").read_text())["scripts"]["dev"],
@@ -330,13 +329,8 @@ class Suite:
         # 整轮验收从一个不可变源副本建立所有项目，避免其他改动污染重启和跨项目证据。
         self.source = self.output / "frozen-source"
         self.source.mkdir()
-        if self.source_ref:
-            archive = subprocess.check_output(["git", "archive", self.source_ref, "src", "package.json"], cwd=self.root)
-            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-                tar.extractall(self.source, filter="data")
-        else:
-            shutil.copytree(self.root / "src", self.source / "src")
-            shutil.copy2(self.root / "package.json", self.source / "package.json")
+        shutil.copytree(self.root / "src", self.source / "src")
+        shutil.copy2(self.root / "package.json", self.source / "package.json")
         manifest = {str(file.relative_to(self.source)): hashlib.sha256(file.read_bytes()).hexdigest() for file in sorted(self.source.rglob("*")) if file.is_file()}
         (self.output / "frozen-source-sha256.json").write_text(json.dumps(manifest, indent=2) + "\n")
         self.metadata["frozen_source_manifest_sha256"] = hashlib.sha256((self.output / "frozen-source-sha256.json").read_bytes()).hexdigest()
@@ -406,14 +400,77 @@ class Suite:
         terminal.key(b"\x1b" if cancel else b"\r", "Esc 放弃未提交输入" if cancel else "Enter 一次提交规则", lambda: terminal.visible(f"{label} {kind} 规则"))
         self.assert_no_confirmation(terminal, start)
 
+    def telemetry(self):
+        return {str(path): path.read_text().splitlines() for path in self.home.rglob("*.jsonl")}
+
+    def assert_rules_first(self, before, tool_name, label):
+        events = []
+        for path, rows in self.telemetry().items():
+            events.extend(json.loads(row) for row in rows[len(before.get(path, [])):])
+        self.check(f"{label}真实工具执行且无模型审批请求", any(event.get("type") == "tool_result" and event.get("toolName") == tool_name and not event.get("isError") for event in events)
+                   and not any(event.get("type") == "model_request" and event.get("purpose") == "judge" for event in events))
+        self.check(f"{label}经过唯一内置 deterministic 策略", any(event.get("type") == "tool_execution" and event.get("toolName") == tool_name and event.get("policyId") == "deterministic" and event.get("phase") == "policy" and event.get("decision") == "allow" for event in events))
+
+    def run_rules_first_write(self):
+        project = self.project("rules-first-write-project", mode="ask")
+        plugin = r'''export default {
+  manifest: { id: 'test.pty-rules-first', version: '1.0.0', apiVersion: 1 },
+  setup(ctx) {
+    ctx.provide.command('fixture-write', {
+      description: '离线验收经当前插件接口调用真实 write_file',
+      async handler(_input, context) {
+        const result = await context.invokeTool('write_file', { path: 'authorized.txt', content: 'PTY_RULES_FIRST_WRITE_OK\n' });
+        if (result.isError) throw new Error(result.content);
+        return { type: 'text', text: 'PTY_RULES_FIRST_WRITE_OK' };
+      },
+    });
+    ctx.provide.command('fixture-env', {
+      description: '只返回隔离环境校验结果，不暴露变量值',
+      handler() {
+        const isolated = process.env.PTY_ROOT_DOTENV === 'root-only-fake'
+          && process.env.PTY_NESTED_DOTENV === undefined
+          && process.env.OPENAI_API_KEY === 'settings-e2e-fake-key'
+          && process.env.ANTHROPIC_API_KEY === 'settings-e2e-fake-key';
+        return { type: 'text', text: isolated ? 'PTY_ENV_ISOLATED_OK' : 'PTY_ENV_ISOLATION_FAILED' };
+      },
+    });
+  },
+};
+'''
+        (project / "fixture-plugin.mjs").write_text(plugin)
+        (project / ".env").write_text("PTY_ROOT_DOTENV=root-only-fake\nOPENAI_API_KEY=dotenv-fake-should-not-override\n")
+        (project / "nested").mkdir()
+        (project / "nested/.env").write_text("PTY_NESTED_DOTENV=must-not-load\n")
+        config = self.config(project)
+        config["pluginEntries"] = ["./fixture-plugin.mjs"]
+        config["permissions"]["allow"] = ['write_file(="authorized.txt")']
+        (project / "agent.config.json").write_text(json.dumps(config, indent=2) + "\n")
+        (self.output / "rules-first-fixture-sha256.json").write_text(json.dumps({"plugin_sha256": hashlib.sha256(plugin.encode()).hexdigest()}, indent=2) + "\n")
+        terminal = Terminal(self, project, "16-rules-first-write", "ask")
+        terminal.key(b"/fixture-env", "输入隔离环境检查命令", lambda: "/fixture-env" in terminal.screen.text())
+        terminal.key(b"\r", "运行只返回布尔结果的环境检查", lambda: "PTY_ENV_ISOLATED_OK" in terminal.screen.text())
+        self.check("当前插件接口验证仅加载根 .env，现有假 key 优先且子目录 .env 不加载", True)
+        before = self.telemetry()
+        start = len(terminal.raw)
+        terminal.key(b"/fixture-write", "输入受精确规则授权的真实写入", lambda: "/fixture-write" in terminal.screen.text())
+        terminal.key(b"\r", "默认内置策略执行精确授权写入", lambda: "PTY_RULES_FIRST_WRITE_OK" in terminal.screen.text())
+        self.check("ask 模式精确 allow 经真实 write_file 写入唯一内容", (project / "authorized.txt").read_text() == "PTY_RULES_FIRST_WRITE_OK\n")
+        self.check("精确规则授权写入不弹人工审批", "Agent 正在请求权限" not in bytes(terminal.raw[start:]).decode("utf-8", "replace"))
+        self.assert_rules_first(before, "write_file", "精确 allow 写入")
+        terminal.close()
+
     def run_mode(self):
-        project = self.project("mode-project")
+        project = self.project("mode-project", mode=None)
         terminal = Terminal(self, project, "01-mode-command", "ask")
+        self.check("没有模式配置时默认 ask，未通过旧默认放宽权限", "permissionMode" not in self.config(project))
+        terminal.read_file(auto=False)
         start = len(terminal.raw)
         terminal.command("/mode auto", "auto · 思考")
         self.assert_no_confirmation(terminal, start)
         self.check("/mode auto 一次 Enter 已保存项目 auto", self.config(project)["permissionMode"] == "auto")
+        logs_before = self.telemetry()
         terminal.read_file(auto=True)
+        self.assert_rules_first(logs_before, "read_file", "默认 auto 项目内读取")
         self.check("/mode auto 同一进程真实 read_file 免审批", True)
         terminal.close()
         terminal = Terminal(self, project, "02-mode-restart-menu", "auto")
@@ -641,6 +698,8 @@ class Suite:
             self.run_generic_settings()
         if self.scenario in ("all", "failure"):
             self.run_write_failure()
+        if self.scenario in ("all", "rules-first"):
+            self.run_rules_first_write()
 
     def finish(self, error=None):
         for terminal in self.terminals:
@@ -681,8 +740,7 @@ def main():
     parser.add_argument("--output", help="保存证据的新目录（不得已存在）")
     parser.add_argument("--cols", type=int, default=100)
     parser.add_argument("--rows", type=int, default=30)
-    parser.add_argument("--source-ref", help="在隔离项目使用显式 Git 提交的完整 src + package.json；可用于旧版红灯复现")
-    parser.add_argument("--scenario", choices=("all", "mode", "settings", "inheritance", "runtime", "generic", "failure"), default="all")
+    parser.add_argument("--scenario", choices=("all", "mode", "settings", "inheritance", "runtime", "generic", "failure", "rules-first"), default="all")
     args = parser.parse_args()
     if args.self_test:
         return self_test()

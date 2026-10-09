@@ -41,6 +41,7 @@ it('初始化不把项目权限、插件授权、相对路径或环境配置提�
 });
 it('help 和无效参数不初始化，已有无效用户配置不会被覆盖', () => {
   const f = fixture(); f.run('--help'); expect(existsSync(f.config)).toBe(false);
+  expect(() => f.run('--allow-legacy-session')).toThrow(); expect(existsSync(f.config)).toBe(false);
   expect(() => f.run('--invalid-option')).toThrow(); expect(existsSync(f.config)).toBe(false);
   mkdirSync(join(f.home, '.agent')); writeFileSync(f.config, '{ invalid');
   expect(() => f.run('--sessions')).toThrow(); expect(readFileSync(f.config, 'utf8')).toBe('{ invalid');
@@ -68,4 +69,9 @@ it('SDK 配置读取保持只读；并发 CLI 首启不会覆盖或留下临时�
   })));
   expect(JSON.parse(readFileSync(f.config, 'utf8'))).toEqual(AgentConfigSchema.parse({}));
   expect(readdirSync(join(f.home, '.agent')).sort()).toEqual(['config.json', 'state']);
+});
+
+it('命令行 resume 不再接受历史迁移参数', () => {
+  const f = fixture();
+  expect(() => f.run('--command', '/resume saved --legacy')).toThrow(/用法: \/resume <id>/);
 });

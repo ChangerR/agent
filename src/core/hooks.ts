@@ -50,11 +50,6 @@ export class HookRunner {
     }
     return prepareRegistration(this.hooks, [...this.hooks, ...hooks], () => this.hooks, value => { this.hooks = value; }, assertMutable);
   }
-  /** 供旧 loadPlugins 的上下文使用；不要只传不可回滚的 register 包装。 */
-  registrationSink(): { register: HookRunner['register']; prepareBatch: HookRunner['prepareBatch'] } {
-    return Object.freeze({ register: this.register.bind(this), prepareBatch: this.prepareBatch.bind(this) });
-  }
-
   /** PreToolUse：依次执行，允许改写 input，任一钩子 veto 即短路 */
   async runPreToolUse(payload: PreToolUsePayload): Promise<PreToolUseResult> {
     let input = payload.input;

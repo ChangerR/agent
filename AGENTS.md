@@ -7,7 +7,7 @@
 ## 最核心的约定
 
 - **一切皆为插件。** core 不认识任何具体厂商、工具或 skill —— 所有能力都通过
-  `Plugin.register(ctx)` 挂到注册表上（内置的 6 个工具和外部插件走同一条路）。
+  `Plugin.setup(ctx)` 挂到注册表上（内置的 6 个工具和外部插件走同一条路）。
   不要在 `src/core/` 里 import 具体 provider 或工具。
 - **Provider 只做翻译，不做决策。** 厂商差异全部收敛在 `src/providers/`，
   对外只吐出规范化的 `StreamEvent`（`src/core/protocol/types.ts`）。
@@ -52,7 +52,9 @@ pnpm build      # tsup → dist/
 
 ## 目录
 
-- `src/core/` — loop、插件与注册表、协议层、权限引擎（`permission/`）、上下文（`context/`）、钩子
+- `src/core/` — loop、协议层、唯一 ToolExecutor、权限契约、上下文与会话协调、钩子
+- `src/sdk/`、`src/runtime/` — manifest/setup 插件契约、宿主与能力注册、配置与装配
+- `src/builtin/` — 确定性策略、严格审批员、上下文/存储等具体插件实现
 - `src/providers/` — anthropic / openai / fake 三个 provider；`fake.ts` 是脚本化假 provider
 - `src/tools/` — read_file / write_file / edit_file / bash / glob / grep
 - `src/mcp/`、`src/skills/` — MCP 桥接、skill 渐进式披露
@@ -72,8 +74,10 @@ pnpm build      # tsup → dist/
 
 ## 改动时的注意点
 
-- 权限判定走 `src/core/permission/engine.ts` 的管线：deny 规则与危险命令检测优先级最高，
-  yolo 也不能逾越；新增放行路径要挂进这条管线，不要绕开它。
+- 权限判定走 `src/builtin/policy/index.ts` 的管线：deny 规则与危险命令检测优先级最高，
+  yolo 也不能逾越，明确 ask 优先于 allow；新增放行路径要经唯一 ToolExecutor，不要绕开它。
+- 默认能力为 `deterministic` 策略与 `model` 审批员，模式默认 `ask`，保留 `auto` / `yolo`。
+  插件只用 SDK 的 manifest/setup，配置入口只用 `pluginEntries`；不增加历史兼容层或配置别名。
 - 模型规格（`contextWindow` / `maxOutputTokens`）声明在 `models.json` + 内置 `MODEL_PRESETS`，
   `loop.setModel()` 时联动压缩阈值和 `maxTokens`。
 - `agent.config.json` / `mcp.json` / `.env` 在 `.gitignore` 里（是本机配置），

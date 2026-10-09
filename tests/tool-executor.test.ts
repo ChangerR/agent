@@ -6,7 +6,7 @@ import { ToolExecutor, type ToolExecutorOptions } from '../src/core/tool-executo
 import { EventBus, type AgentEvent, type PermissionRequest, type UserDecision } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry, type Tool } from '../src/core/registry.js';
-import { PermissionEngine, createLegacyPolicy } from '../src/builtin/policy-legacy/index.js';
+import { PermissionController, createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../src/sdk/capabilities.js';
 import { emptyUsage } from '../src/core/protocol/types.js';
 
@@ -118,7 +118,7 @@ describe('ToolExecutor 唯一授权门', () => {
   });
 
   it('审计控制器改写收到的 decision 副本不能把 reviewer deny 变为 allow', async () => {
-    const controller = new PermissionEngine({ mode: 'auto', rules: { allow: [], ask: [], deny: [] } });
+    const controller = new PermissionController({ mode: 'auto', rules: { allow: [], ask: [], deny: [] } });
     controller.recordDecision = (_tool, _input, decision) => { decision.kind = 'allow'; };
     const f = fixture({ policy: { ...review, controller }, reviewer: { review: async () => ({ decision: 'deny', reason: 'out of scope', reasonCode: 'model_deny' }) } });
     expect((await f.run()).content).toContain('Permission denied'); expect(f.execute).not.toHaveBeenCalled();
@@ -278,9 +278,8 @@ describe('ToolExecutor 唯一授权门', () => {
     const cwd = await mkdtemp(join(tmpdir(), 'executor-script-')); folders.push(cwd);
     await writeFile(join(cwd, 'package.json'), JSON.stringify({ scripts: { test: 'node test.js' } }));
     await writeFile(join(cwd, 'test.js'), 'safe');
-    const permission = new PermissionEngine({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
     let requests = 0;
-    const f = fixture({ cwd, policy: createLegacyPolicy(permission), approvalResponder: async () => {
+    const f = fixture({ cwd, policy: createDeterministicPolicy({ cwd, mode: 'ask', rules: { allow: [], ask: [], deny: [] } }), approvalResponder: async () => {
       if (++requests === 1) { await writeFile(join(cwd, 'test.js'), 'changed script'); return { allow: true }; }
       return { allow: false };
     } });
@@ -293,9 +292,8 @@ describe('ToolExecutor 唯一授权门', () => {
   it('符号链接目标在审批期间切换后必须重新询问', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'executor-link-')); folders.push(cwd);
     await writeFile(join(cwd, 'a'), 'a'); await writeFile(join(cwd, 'b'), 'b'); await symlink('a', join(cwd, 'link'));
-    const permission = new PermissionEngine({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
     let requests = 0;
-    const f = fixture({ cwd, policy: createLegacyPolicy(permission), approvalResponder: async () => {
+    const f = fixture({ cwd, policy: createDeterministicPolicy({ cwd, mode: 'ask', rules: { allow: [], ask: [], deny: [] } }), approvalResponder: async () => {
       if (++requests === 1) { await unlink(join(cwd, 'link')); await symlink('b', join(cwd, 'link')); return { allow: true }; }
       return { allow: false };
     } });

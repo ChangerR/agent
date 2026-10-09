@@ -7,20 +7,19 @@ export interface PluginManifest {
   apiVersion: 1;
   requires?: Record<string, string>;
   optional?: Record<string, string>;
-  configVersion?: number;
 }
 export interface PluginConfigDefinition {
   /** 接受 zod 等具备 parse 的 schema；解析结果仍须为普通对象。 */
   schema?: { parse(input: unknown): unknown };
   /** 本插件管理的顶层字段；保存时用解析结果替换，省略或 undefined 表示删除。
-   * 未列出的旧字段保留；不声明时保持补丁式合并。无需从 schema 实现反射字段。
+   * 未列出的字段保留；不声明时保持补丁式合并。无需从 schema 实现反射字段。
    */
   ownedFields?: readonly string[];
   defaults?: Record<string, unknown>;
   scopes?: readonly ('global' | 'project' | 'session' | 'cli')[];
   sensitiveFields?: readonly string[];
   merge?: Readonly<Record<string, 'replace' | 'append'>>;
-  applyMode?: 'new-session' | 'restart';
+  applyMode?: 'newSession';
 }
 export type DependencyValue<K extends CapabilityKind> = K extends 'tool' ? ApprovalTool : CapabilityMap[K];
 export type DependencyRecord<K extends CapabilityKind> = Omit<CapabilityRecord<K>, 'implementation'> & { readonly implementation: DependencyValue<K> };
@@ -38,7 +37,7 @@ export interface PluginSetupContext {
   readonly provide: TypedCapabilityRegistrar;
   readonly dependencies: DeclaredDependencies;
   readonly events: ReadonlyEventSubscription;
-  /** 兼容阶段的变换钩子；通知观测优先使用 events。 */
+  /** 生命周期变换钩子；通知观测优先使用 events。 */
   readonly hooks: TypedHookRegistrar;
   onDispose(disposer: Disposer): void;
   onActivate(activate: (signal: AbortSignal) => MaybePromise<void>): void;

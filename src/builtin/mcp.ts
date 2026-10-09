@@ -22,6 +22,6 @@ export function builtinMcpPlugin(configPath: string) {
         console.error(`[mcp] server "${name}" unavailable: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    ctx.provide.settings('mcp', { title: 'MCP 服务', description: `配置文件: ${resolve(configPath)}；stdio 工作目录为该文件所在目录，修改在重启后生效。`, schema: { type: 'object' }, applyMode: 'restart', read: () => ({ ...states }) });
+    ctx.provide.settings('mcp', { title: 'MCP 服务', description: `配置文件: ${resolve(configPath)}；stdio 工作目录为该文件所在目录，修改在重启后生效。`, schema: { type: 'object' }, applyMode: 'newSession', read: () => ({ ...states }) });
   } });
 }

@@ -117,15 +117,15 @@ export class OpenAIStreamTranslator {
           name: tc.function?.name ?? 'unknown',
         });
         this.openToolIndex.set(tc.index, tc.id ?? `call_${tc.index}`);
-        if (tc.function?.arguments) out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index), input: tc.function.arguments });
+        if (tc.function?.arguments) out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index)!, input: tc.function.arguments });
       } else if (tc.function?.arguments) {
-        out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index), input: tc.function.arguments });
+        out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index)!, input: tc.function.arguments });
       }
     }
 
     if (choice.finish_reason) {
       for (const idx of this.openToolIndex.keys()) {
-        out.push({ type: 'tool_use_stop', id: this.openToolIndex.get(idx) });
+        out.push({ type: 'tool_use_stop', id: this.openToolIndex.get(idx)! });
         this.openToolIndex.delete(idx);
       }
       out.push({

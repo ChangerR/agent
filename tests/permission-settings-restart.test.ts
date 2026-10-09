@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPermissionSettings, type PermissionSettingsPicker } from '../src/cli/permission-settings.js';
+import { createPermissionSettings, type PermissionSettingsPicker } from '../src/builtin/policy/tui.js';
 import { createAgent, type Agent } from '../src/index.js';
 
 const exec = promisify(execFile);
@@ -116,8 +116,8 @@ describe('权限模式自动保存后跨进程重启', () => {
     expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({ provider: 'fake' });
   });
 
-  it.each(['legacy', 'namespace'])('全局 auto 被项目 %s ask 覆盖，项目恢复继承后立即与重启一致', async representation => {
-    json(projectPath, representation === 'legacy' ? { permissionMode: 'ask' } : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } });
+  it('全局 auto 被项目 ask 覆盖，项目恢复继承后立即与重启一致', async () => {
+    json(projectPath, { permissionMode: 'ask' });
     const projectBefore = readFileSync(projectPath, 'utf8'); const h = await editor();
     h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('auto');
     expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore); expect(h.agent.permission.mode).toBe('ask');

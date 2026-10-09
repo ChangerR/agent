@@ -1,6 +1,4 @@
 /** 审批协议：只包含结构化数据与接口，不依赖默认策略或模型实现。 */
-import type { PermissionMode } from '../config.js';
-import type { EventBus } from '../events.js';
 import type { Message, ToolResult } from '../protocol/types.js';
 import type { Tool } from '../registry.js';
 
@@ -8,7 +6,6 @@ export type DecisionKind = 'allow' | 'ask' | 'deny';
 export type JudgeReasonCode = 'model_allow' | 'model_ask' | 'model_deny' | 'invalid_response' | 'incomplete_response' | 'provider_error' | 'cancelled' | 'timeout' | 'input_budget' | 'user_request_budget' | 'request_budget';
 export interface JudgeMetadata { model: string; source: 'current' | 'explicit'; reasonCode: JudgeReasonCode }
 export interface JudgeStatus { provider?: string; providerSource?: 'current' | 'explicit'; loaded: boolean; model?: string; source?: 'current' | 'explicit' }
-export interface JudgeVerdict { verdict: 'allow' | 'ask' | 'deny' | 'unknown'; reason: string; judge?: JudgeMetadata }
 export interface Decision {
   kind: DecisionKind;
   reason: string;
@@ -44,18 +41,4 @@ export interface ReviewHistoryStore {
   build(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, cwd: string, userRequest: string, messages: readonly Message[]): ReviewContext;
   record(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, cwd: string, userRequest: string, decision: Decision): ReviewRecord;
   finish(record: ReviewRecord, result: ToolResult, cancelled: boolean): void;
-}
-/** 旧 AgentLoop 构造参数仍可用；内核只调用结构化契约。 */
-export interface LegacyPermission {
-  createAnalyzer?(): import('../../sdk/capabilities.js').ToolAnalyzer;
-  readonly mode: PermissionMode;
-  readonly revision?: string | number;
-  check(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>): Decision;
-  recordDecision(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, decision: Decision): void;
-  addSessionRule(kind: DecisionKind, rule: string): void;
-}
-export interface LegacyReviewer {
-  review(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, signal: AbortSignal, events?: EventBus, context?: ReviewContext): Promise<JudgeVerdict>;
-  getStatus(): JudgeStatus;
-  createHistory?(): ReviewHistoryStore;
 }

@@ -1,13 +1,13 @@
-/** v2 具体操作分析：只读取前提，不执行工具，不缓存环境或批准。 */
+/** 具体操作分析：只读取前提，不执行工具，不缓存环境或批准。 */
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readlink, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { AnalysisInput, ToolAnalysis, ToolAnalyzer } from '../../sdk/capabilities.js';
-import { createLegacyEnvironmentAnalyzer } from '../policy-legacy/environment.js';
+import { createEnvironmentAnalyzer } from './environment.js';
 import { analyzeCommand } from '../../tools/bash.js';
 import { jsonInput } from '../../core/permission/input-validation.js';
 
-export const ANALYZER_ID = 'deterministic-operations-v2';
+export const ANALYZER_ID = 'deterministic-operations';
 export const ANALYZER_VERSION = '2.0.0';
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(platform: NodeJS.Platform = process.platform): boolean { return platform !== 'win32'; }
@@ -60,7 +60,7 @@ export function parseLiteralShell(command: unknown): LiteralShellFacts {
 /** 可复用的是纯语法结果。完整输入、工具/分析版本、cwd 和 revision 都在键中。 */
 export function operationKey(input: AnalysisInput): string {
   const revisions = input as AnalysisInput & { configRevision?: string | number; policyRevision?: string | number };
-  return hash({ analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, tool: { name: input.tool.name, version: input.tool.version ?? 'legacy',
+  return hash({ analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, tool: { name: input.tool.name, version: input.tool.version ?? 'unversioned',
     ownerPlugin: input.tool.ownerPlugin ?? 'unknown', risk: input.tool.risk, inputSchema: input.tool.inputSchema }, input: input.input, cwd: input.cwd,
     configRevision: revisions.configRevision ?? 'unspecified', policyRevision: revisions.policyRevision ?? 'unspecified' });
 }
@@ -70,7 +70,7 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
   const pluginEntries = Object.freeze([...(options.pluginEntries ?? [])]);
   const cache = new Map<string, ParsedOperation>(); let hits = 0; let misses = 0;
   const limit = Math.max(0, Math.min(options.parseCacheSize ?? 128, 1024));
-  const checkpoint = createLegacyEnvironmentAnalyzer();
+  const checkpoint = createEnvironmentAnalyzer();
   const parse = (input: AnalysisInput): ParsedOperation => {
     const key = hash({ operation: operationKey(input), writeRoots, pluginEntries }); const cached = cache.get(key);
     if (cached) { hits++; return structuredClone(cached); }
@@ -106,11 +106,13 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     environment['$writeRoots'] = JSON.stringify(rootPaths);
     for (const path of writeRoots) environment[`writeRoot:${resolve(input.cwd, path)}`] = await pathFingerprint(resolve(input.cwd, path), signal);
     const base = { analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, environment };
+    if (parsed.kind === 'unknown' || parsed.kind === 'shell') {
+      const snapshot = await checkpoint.analyze(input, signal);
+      for (const [key, value] of Object.entries(snapshot.environment ?? {})) environment[`checkpoint:${key}`] = value;
+    }
     if (parsed.kind === 'unknown') return { ...base, completeness: 'unknown', effects: [{ kind: 'unknown', scope: 'unknown' }], reasonCode: parsed.reasonCode,
       evidence: [{ source: 'registered-semantics', detail: 'Tool.risk 声明不等价于已验证的具体副作用。' }] };
     if (parsed.kind === 'shell') {
-      const previous = await checkpoint.analyze(input, signal);
-      for (const [key, value] of Object.entries(previous.environment ?? {})) environment[`checkpoint:${key}`] = value;
       // 捕获会影响解释器行为的环境，不发送原值；每次重验，不作为安全认证。
       const variables = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(?:PATH|Path|BASH_ENV|ENV|BASHOPTS|SHELLOPTS|BASH_FUNC_.*|LD_.*|DYLD_.*|RIPGREP_CONFIG_PATH)$/.test(key)));
       environment['$shellEnvironment'] = hash(variables);
@@ -120,7 +122,7 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
       }
       return { ...base, completeness: parsed.facts.complete ? 'partial' : 'unknown', effects: [{ kind: 'execute', target: actualCwd, scope: 'unknown' }], targets: [actualCwd],
         reasonCode: parsed.dangerous ? 'shell_dangerous' : parsed.facts.complete ? 'shell_environment_unverified' : parsed.facts.reasonCode,
-        evidence: [{ source: 'literal-shell-parser-v2', detail: JSON.stringify(parsed.facts) },
+        evidence: [{ source: 'literal-shell-parser', detail: JSON.stringify(parsed.facts) },
           { source: 'execution-contract', detail: '字面量语法不足以验证解释器/PATH/BASH_ENV/继承函数；实际 bash 操作始终 defer。' }] };
     }
     const globEscape = parsed.kind === 'glob' && (isAbsolute(parsed.pattern) || parsed.pattern.replace(/\\/g, '/').split('/').includes('..'));

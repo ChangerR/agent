@@ -58,9 +58,9 @@ export const MessageSchema = z.union([
 ]);
 
 export const SessionRulesSchema = z.object({
-  allow: z.array(z.string()).default([]),
-  ask: z.array(z.string()).default([]),
-  deny: z.array(z.string()).default([]),
+  allow: z.array(z.string()),
+  ask: z.array(z.string()),
+  deny: z.array(z.string()),
 }).passthrough();
 
 const nonnegativeInt = z.number().int().nonnegative();
@@ -84,9 +84,9 @@ export const SessionMetaSchema = z.object({
 }).passthrough();
 
 const SessionBodySchema = SessionMetaSchema.extend({
-  revision: nonnegativeInt.safe().optional(),
-  provider: z.string().min(1).optional(),
-  endpointKey: z.string().min(1).optional(),
+  revision: nonnegativeInt.safe(),
+  provider: z.string().min(1),
+  endpointKey: z.string().min(1),
   thinking: z.enum(['off', 'low', 'medium', 'high']),
   permissionMode: z.enum(['ask', 'auto', 'yolo']),
   sessionRules: SessionRulesSchema,
@@ -99,14 +99,12 @@ const SessionBodySchema = SessionMetaSchema.extend({
   messages: z.array(MessageSchema).min(1),
 }).passthrough();
 
-export const SessionFileV1Schema = SessionBodySchema.extend({ schemaVersion: z.literal(1) });
-export const SessionFileV2Schema = SessionBodySchema.extend({
+export const SessionFileSchema = SessionBodySchema.extend({
   schemaVersion: z.literal(2),
   runtime: z.object({ schemaVersion: z.literal(1) }).passthrough(),
   policy: z.object({ id: z.string().min(1), version: z.string().min(1), stateSchemaVersion: z.number().int().positive() }).passthrough(),
   pluginStates: z.record(z.object({ schemaVersion: z.number().int().positive(), requiredForSafety: z.boolean().optional(), data: z.unknown() }).passthrough()),
 });
-export const SessionFileSchema = z.discriminatedUnion('schemaVersion', [SessionFileV1Schema, SessionFileV2Schema]);
 
 /** 最多展示 3 条 issue，其余用「…还有 N 处」收束。 */
 export function formatInvalidSchema(path: string, error: ZodError): string {

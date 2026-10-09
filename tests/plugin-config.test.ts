@@ -10,10 +10,10 @@ import { mkdtempProjectSync } from './helpers/project.js';
 const dirs: string[] = [];
 const dir = () => { const p = mkdtempProjectSync(join(tmpdir(), 'plugin-config-')); dirs.push(p); return p; };
 afterEach(() => dirs.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })));
-describe('插件配置保存和旧配置兼容', () => {
+describe('插件配置保存与字段所有权', () => {
   it('仅有 parse 的 schema 通过 ownedFields 删除可选字段，保留未知字段和其他命名空间', () => {
     const path = join(dir(), 'agent.config.json');
-    writeFileSync(path, JSON.stringify({ unknownRoot: true, capabilities: { reviewer: 'model-v2' }, pluginConfig: {
+    writeFileSync(path, JSON.stringify({ unknownRoot: true, capabilities: { reviewer: 'model' }, pluginConfig: {
       demo: { provider: 'fixed', count: 1, future: { keep: ['unknown'] } }, another: { provider: 'unchanged' },
     } }));
     const store = new PluginConfigStore(path); const base = store.read('demo'); const stale = store.read('demo');
@@ -24,12 +24,12 @@ describe('插件配置保存和旧配置兼容', () => {
     const saved = store.commit('demo', base, { count: 2 }, definition);
     expect(saved.value).toEqual({ count: 2, future: { keep: ['unknown'] } });
     expect(store.read('demo').value).toEqual(saved.value);
-    const expected = { unknownRoot: true, capabilities: { reviewer: 'model-v2' }, pluginConfig: { demo: saved.value, another: { provider: 'unchanged' } } };
+    const expected = { unknownRoot: true, capabilities: { reviewer: 'model' }, pluginConfig: { demo: saved.value, another: { provider: 'unchanged' } } };
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(expected);
     expect(() => store.commit('demo', stale, { count: 3, provider: 'stale' }, definition)).toThrow(ConfigConflictError);
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(expected);
   });
-  it('未声明 ownedFields 的旧配置提交保留补丁语义', () => {
+  it('未声明 ownedFields 的配置提交使用补丁语义', () => {
     const path = join(dir(), 'agent.config.json'); writeFileSync(path, JSON.stringify({ pluginConfig: { demo: { count: 1, provider: 'fixed' } } }));
     const store = new PluginConfigStore(path);
     expect(store.commit('demo', store.read('demo'), { count: 2 }).value).toEqual({ count: 2, provider: 'fixed' });
@@ -45,20 +45,20 @@ describe('插件配置保存和旧配置兼容', () => {
   });
   it('严格 reviewer 保存删除 provider/model 后重新打开及重启都保持继承', async () => {
     const cwd = dir(); const path = join(cwd, 'agent.config.json'); const signal = new AbortController().signal;
-    writeFileSync(path, JSON.stringify({ provider: 'fake', model: 'main-model', capabilities: { reviewer: 'model-v2' }, pluginConfig: {
-      'agentlab.reviewer-strict': { provider: 'fake', model: 'fixed-model', future: { keep: true } }, another: { untouched: true },
+    writeFileSync(path, JSON.stringify({ provider: 'fake', model: 'main-model', capabilities: { reviewer: 'model' }, pluginConfig: {
+      'agentlab.reviewer-model': { provider: 'fake', model: 'fixed-model', future: { keep: true } }, another: { untouched: true },
     } }));
     let agent = await createAgent(cwd, { autoSaveSessions: false });
     try {
-      const section = agent.settings.find(entry => entry.id === 'reviewer-strict-config')!.section;
+      const section = agent.settings.find(entry => entry.id === 'reviewer-model-config')!.section;
       const value = await section.read!(signal) as Record<string, unknown>;
       expect(value).toMatchObject({ provider: 'fake', model: 'fixed-model' });
       delete value.provider; delete value.model;
       const draft = await section.draft!(value, signal); await section.commit!(draft, signal);
       const raw = JSON.parse(readFileSync(path, 'utf8'));
-      expect(raw.pluginConfig['agentlab.reviewer-strict']).not.toHaveProperty('provider');
-      expect(raw.pluginConfig['agentlab.reviewer-strict']).not.toHaveProperty('model');
-      expect(raw.pluginConfig).toMatchObject({ 'agentlab.reviewer-strict': { future: { keep: true } }, another: { untouched: true } });
+      expect(raw.pluginConfig['agentlab.reviewer-model']).not.toHaveProperty('provider');
+      expect(raw.pluginConfig['agentlab.reviewer-model']).not.toHaveProperty('model');
+      expect(raw.pluginConfig).toMatchObject({ 'agentlab.reviewer-model': { future: { keep: true } }, another: { untouched: true } });
       const reopened = await section.read!(signal);
       expect(reopened).not.toHaveProperty('provider'); expect(reopened).not.toHaveProperty('model');
       expect(agent.loop.getJudgeStatus()).toMatchObject({ providerSource: 'explicit', model: 'fixed-model' });
@@ -89,12 +89,8 @@ describe('插件配置保存和旧配置兼容', () => {
     expect(() => new PluginConfigStore(path).read('demo')).toThrow(/普通文件/);
     expect(readFileSync(target, 'utf8')).toBe('{}');
   });
-  it.each([undefined, '', 'fixed-model'])('judgeModel 三态在新旧命名空间之间保持 %j', value => {
-    const cwd = dir(); writeFileSync(join(cwd, 'agent.config.json'), JSON.stringify({ pluginConfig: { 'agentlab.reviewer-model': { judgeModel: value } } }));
+  it.each([undefined, '', 'fixed-model'])('judgeModel 顶层配置三态保持 %j', value => {
+    const cwd = dir(); writeFileSync(join(cwd, 'agent.config.json'), JSON.stringify({ judgeModel: value }));
     expect(loadConfig(cwd).judgeModel).toBe(value);
-  });
-  it('新旧值冲突明确报错，启动不改文件', () => {
-    const cwd = dir(); const path = join(cwd, 'agent.config.json'); const source = JSON.stringify({ judgeModel: 'old', pluginConfig: { 'agentlab.reviewer-model': { judgeModel: 'new' } } }); writeFileSync(path, source);
-    expect(() => loadConfig(cwd)).toThrow(/Configuration conflict/); expect(readFileSync(path, 'utf8')).toBe(source);
   });
 });
