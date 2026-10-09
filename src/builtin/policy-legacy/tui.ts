@@ -150,7 +150,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
       if (agent.session.id !== sessionId) { notify('当前会话已变化，请重新选择模式。', true); reopenRoot(); return; }
       agent.permission.setMode(mode);
       options.onModeChange(mode);
-      notify(`当前会话模式已切换为 ${mode}；后续权限检查生效，已有审批仍需处理。`);
+      notify(`当前会话模式已切换为 ${mode}；后续权限检查生效，已有审批仍需处理。\n如需作为启动默认，请在 /permissions 的本项目或全局默认设置中 Save。`);
       modeBack();
     }, reopenModes);
   }
