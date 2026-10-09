@@ -8,9 +8,9 @@ import { startTui } from '../src/cli/app.js';
 import { DetailRegistry, renderHistory, StreamMessages, ToolMessage } from '../src/cli/messages.js';
 import { InteractionPanel } from '../src/cli/interaction-panel.js';
 import { TurnQueue } from '../src/cli/turn-queue.js';
-import { SUMMARY_MARKER } from '../src/core/context/manager.js';
+import { SUMMARY_MARKER } from '../src/builtin/compaction-summary/implementation.js';
 import type { Message } from '../src/core/protocol/types.js';
-import { saveSession } from '../src/core/session/store.js';
+import { saveSession } from '../src/builtin/session-file/implementation.js';
 import { createAgent } from '../src/index.js';
 import { FakeProvider } from '../src/providers/fake.js';
 
@@ -222,8 +222,8 @@ async function snapshot(name: string, lines: string[]) {
 
 describe('TUI 审批模型运行状态', () => {
   it.each([
-    { judgeModel: '', before: 'initial-model（跟随当前模型）', after: 'changed-model（跟随当前模型）' },
-    { judgeModel: 'fixed-reviewer', before: 'fixed-reviewer（显式指定）', after: 'fixed-reviewer（显式指定）' },
+    { judgeModel: '', before: 'fake / initial-model（跟随当前模型', after: 'fake / changed-model（跟随当前模型' },
+    { judgeModel: 'fixed-reviewer', before: 'fake / fixed-reviewer（显式指定', after: 'fake / fixed-reviewer（显式指定' },
   ])('auto 底栏展示实际加载模型，切换主模型时来源为 $judgeModel', async ({ judgeModel, before, after }) => {
     const ui = await mountTui({ model: 'initial-model', judgeModel });
     try {
@@ -335,18 +335,18 @@ describe('真实 TUI 离线交互', () => {
     } finally { controller.abort(); await ui.dispose(); }
   });
 
-  it('关闭危险操作强制询问时，模式和记忆范围不承诺仍会拦截', async () => {
-    const ui = await mountTui({ dangerForceAsk: false });
+  it('模式和记忆范围始终保留确定性安全约束', async () => {
+    const ui = await mountTui();
     const controller = new AbortController();
     try {
       ui.send('/mode'); ui.terminal.input?.('\x1b[B');
-      await vi.waitFor(() => expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('已关闭危险操作强制询问'));
+      await vi.waitFor(() => expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('deny'));
       ui.terminal.input?.('\x1b');
       ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve: vi.fn(),
         request: { toolName: 'custom_plugin', input: {}, summary: '插件调用', reason: '确认' } });
       ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\t');
       await vi.waitFor(() => expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('custom_plugin的所有调用'));
-      expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('已关闭危险操作强制询问');
+      expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('拒绝规则与危险检测仍优先');
     } finally { controller.abort(); await ui.dispose(); }
   });
 
@@ -684,7 +684,11 @@ describe('真实 TUI 离线交互', () => {
         { role: 'assistant', content: [{ type: 'text', text: '笔记已经看到了。' }] },
       ] as Message[];
       await saveSession({
-        schemaVersion: 1,
+        schemaVersion: 2,
+        runtime: { schemaVersion: 1 },
+        policy: { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 },
+        pluginStates: {},
+        revision: 0,
         id: 'resumecli01',
         title: '笔记',
         createdAt: '2026-10-05T01:02:03.000Z',

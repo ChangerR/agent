@@ -11,8 +11,6 @@ import { ProviderRegistry, ToolRegistry } from '../core/registry.js';
 import { ContextManager } from '../core/context/coordinator.js';
 import { collectContext, contextText } from '../core/context/sources.js';
 import { SessionManager } from '../core/session/coordinator.js';
-import { adaptLegacyPlugin } from '../compat/legacy-plugin.js';
-import type { Plugin as LegacyPlugin } from '../core/plugin.js';
 import type { CapabilitySelections, PermissionController, Plugin, SkillSource } from '../sdk/index.js';
 import type { Preset, PresetContext } from './preset.js';
 import { PluginHost, observationSnapshot } from './plugin-host.js';
@@ -57,11 +55,12 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
   const preset = (options.preset ?? presetFactory)({ cwd, paths, configSources, config: providerConfig, logPath, services,
     provider: name => providers.get(name ?? config.provider), capabilityChoices: () => Object.fromEntries((['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const).map(kind => { const current = host.selectedRecord(kind); return [kind, { selected: current?.capabilityId ?? false, available: host.list(kind).map(r => r.capabilityId) }]; })), modelInfo: model => host?.selected('modelCatalog')?.get(model) });
   const plugins = [...preset.plugins, ...(options.plugins ?? [])].filter(plugin => !config.disabledPlugins.includes(plugin.manifest.id));
-  for (const entry of [...config.plugins, ...config.pluginEntries]) {
+  for (const entry of config.pluginEntries) {
     if (typeof entry !== 'string' && !entry.enabled) continue;
     const path = typeof entry === 'string' ? entry : entry.entry;
-    const imported = (await import(pathToFileURL(path).href)) as { default: Plugin | LegacyPlugin };
-    const plugin = 'manifest' in imported.default ? imported.default : adaptLegacyPlugin(imported.default, { config, requires: Object.fromEntries(plugins.map(p => [p.manifest.id, p.manifest.version])) });
+    const imported = (await import(pathToFileURL(path).href)) as { default: Plugin };
+    const plugin = imported.default;
+    if (!plugin?.manifest || typeof plugin.setup !== 'function') throw new Error(`Invalid SDK plugin: ${path}`);
     if (!config.disabledPlugins.includes(plugin.manifest.id)) plugins.push(plugin);
   }
   const selections = { ...preset.selections, ...config.capabilities } as CapabilitySelections;
@@ -93,8 +92,8 @@ export async function createRuntime(cwd: string, presetFactory: (input: PresetCo
     const segments = await collectContext(host.list('contextSource').map(r => r.implementation), { cwd, tools: tools.list(), skills: skillLoader.list() }, new AbortController().signal);
     const modelInfo = (model: string) => catalog.get(model);
     const knownModels = [...new Set([...Object.keys(catalog.list()), config.model])].map(name => ({ name, info: modelInfo(name) }));
-    const loop = new AgentLoop({ provider: providers.get(config.provider), model: config.model, tools, permission: undefined,
-      policy, policyIdentity: { id: policyRecord.capabilityId, version: policyRecord.version }, reviewer, analyzer: policy.analyzer, reviewTimeoutMs: selections.reviewer === 'model-v2' && typeof config.pluginConfig['agentlab.reviewer-strict']?.timeoutMs === 'number' ? config.pluginConfig['agentlab.reviewer-strict'].timeoutMs as number : undefined,
+    const loop = new AgentLoop({ provider: providers.get(config.provider), model: config.model, tools,
+      policy, policyIdentity: { id: policyRecord.capabilityId, version: policyRecord.version }, reviewer, analyzer: policy.analyzer, reviewTimeoutMs: selections.reviewer === 'model' && typeof config.pluginConfig['agentlab.reviewer-model']?.timeoutMs === 'number' ? config.pluginConfig['agentlab.reviewer-model'].timeoutMs as number : undefined,
       hooks, events, context: new ContextManager({ compactThreshold: config.compactThreshold, compactor }), systemPrompt: contextText(segments),
       maxTurns: config.maxTurns, cwd, shutdownTimeoutMs: options.lifecycleTimeoutMs, modelInfo, thinking: config.thinking, cache: config.cache, cacheStrategy: host.selected('cacheStrategy') ?? null,
       toolIdentity: name => { const record = host.getRecord('tool', name) ?? host.list('tool').find(r => r.implementation.name === name); return record && { capabilityId: record.capabilityId, ownerPlugin: record.ownerPlugin, version: record.version }; },

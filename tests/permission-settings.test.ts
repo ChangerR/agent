@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stripTerminalSequences, visibleWidth } from '@earendil-works/pi-tui';
 import { AgentConfigSchema } from '../src/core/config.js';
-import { PermissionEngine } from '../src/core/permission/engine.js';
-import { createPermissionSettings, describeJudgeStatus, describePermissionRule, type PermissionSettingsPicker } from '../src/cli/permission-settings.js';
+import { PermissionController } from '../src/builtin/policy/controller.js';
+import { createPermissionSettings, describeJudgeStatus, describePermissionRule, type PermissionSettingsPicker } from '../src/builtin/policy/tui.js';
 import { SettingsInputPanel, type SettingsInputRequest } from '../src/cli/settings-input.js';
 import type { Agent } from '../src/index.js';
 
@@ -18,7 +18,7 @@ function setup(options: { missingGlobal?: boolean } = {}) {
   if (!options.missingGlobal) writeFileSync(globalConfigPath, JSON.stringify({ permissions: { deny: ['bash(rm *)'] } }));
   writeFileSync(path, JSON.stringify({ permissionMode: 'ask', permissions: { allow: ['read_file'] }, unknownSecret: 'not-in-ui' }));
   const config = AgentConfigSchema.parse({ permissionMode: 'ask', permissions: { allow: ['read_file'], deny: ['bash(rm *)'] } });
-  const permission = new PermissionEngine({ mode: 'ask', rules: config.permissions });
+  const permission = new PermissionController({ mode: 'ask', rules: config.permissions });
   const session = { id: 'session-one' };
   const getJudgeStatus = vi.fn<() => ReturnType<Agent['loop']['getJudgeStatus']>>(() => ({ loaded: true, model: config.model, source: 'current' }));
   const agent = { cwd, config, permission, session, loop: { getJudgeStatus } } as unknown as Agent;
@@ -56,8 +56,8 @@ describe('TUI 权限自动保存', () => {
     expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已有审批仍需处理'));
   });
 
-  it.each(['legacy', 'namespace'])('全局编辑保留项目 %s 覆盖，应用合并后的有效模式', representation => {
-    const h = setup(); writeFileSync(h.path, JSON.stringify(representation === 'legacy' ? { permissionMode: 'ask' } : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } }));
+  it('全局编辑保留项目覆盖，应用合并后的有效模式', () => {
+    const h = setup(); writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask' }));
     const before = readFileSync(h.path, 'utf8'); h.permission.setMode('auto');
     h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('yolo');
     expect(h.permission.mode).toBe('ask'); expect(readFileSync(h.path, 'utf8')).toBe(before);
@@ -65,12 +65,12 @@ describe('TUI 权限自动保存', () => {
     expect(h.picker.body?.()).toContain('全局默认 yolo 被本项目 ask 覆盖');
   });
 
-  it.each(['legacy', 'namespace'])('项目恢复继承立即保存并应用全局 %s 模式', representation => {
-    const h = setup(); writeFileSync(h.globalConfigPath, JSON.stringify(representation === 'legacy' ? { permissionMode: 'auto' } : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'auto' } } }));
-    writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask', pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } }));
+  it('项目恢复继承立即保存并应用全局模式', () => {
+    const h = setup(); writeFileSync(h.globalConfigPath, JSON.stringify({ permissionMode: 'auto' }));
+    writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask' }));
     h.settings.open(); h.pick('mode'); h.pick('inherit');
     expect(h.permission.mode).toBe('auto'); const raw = JSON.parse(readFileSync(h.path, 'utf8'));
-    expect(raw).not.toHaveProperty('permissionMode'); expect(raw.pluginConfig['agentlab.policy-legacy']).not.toHaveProperty('permissionMode');
+    expect(raw).not.toHaveProperty('permissionMode');
   });
 
   it('自动保存冲突不覆盖外部文件、不改当前模式或误报成功', () => {

@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createJsonlTelemetry } from '../src/builtin/telemetry-jsonl/index.js';
-import { attachDisposableDebugLogger } from '../src/core/debug-log.js';
 import { EventBus } from '../src/core/events.js';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { force: true, recursive: true }))); });
@@ -22,9 +21,11 @@ describe('telemetry-jsonl 脱敏与注销', () => {
     telemetry.onEvent({ type: 'notice', text: 'after disposal' });
     expect(await fs.readFile(target, 'utf8')).toBe(saved);
   });
-  it('完整正文只在显式选项开启，兼容订阅可注销两次', async () => {
+  it('完整正文只在显式选项开启，订阅可注销两次', async () => {
     const target = await path(); const events = new EventBus();
-    const subscription = attachDisposableDebugLogger(events, target, { includeBodies: true });
+    const telemetry = createJsonlTelemetry({ path: target, includeBodies: true });
+    const off = events.onAll(event => telemetry.onEvent(event as never));
+    const subscription = { dispose() { off(); void telemetry.dispose?.(); } };
     events.emit({ type: 'notice', text: 'explicit body' });
     const saved = await fs.readFile(target, 'utf8'); expect(saved).toContain('explicit body');
     subscription.dispose(); subscription.dispose(); events.emit({ type: 'notice', text: 'later' });

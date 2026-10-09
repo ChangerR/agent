@@ -6,7 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AnalysisInput, Policy, PolicyDecision, PolicyInput, Reviewer, ToolAnalysis, ToolAnalyzer } from '../sdk/capabilities.js';
 import { EventBus, type AgentEvent, type PermissionRequest, type UserDecision } from './events.js';
 import type { HookRunner } from './hooks.js';
-import type { Decision, JudgeStatus, LegacyPermission, LegacyReviewer, ReviewHistoryStore } from './permission/contracts.js';
+import type { Decision, JudgeStatus, ReviewHistoryStore } from './permission/contracts.js';
 import { jsonInput } from './permission/input-validation.js';
 import { bounded, CapabilityTimeout } from './permission/async.js';
 import type { Message, ToolResult, ToolResultBlock, ToolUseBlock } from './protocol/types.js';
@@ -24,14 +24,12 @@ export interface ToolExecutorOptions {
   hooks: HookRunner;
   events: EventBus;
   cwd: string;
-  policy?: Policy;
+  policy: Policy;
   /** 选中能力的 canonical 身份，供实现未声明身份时使用。 */
   policyIdentity?: Readonly<{ id: string; version: string }>;
   reviewer?: Reviewer;
   analyzer?: ToolAnalyzer;
-  /** 旧构造入口，完全通过结构化接口适配。 */
-  permission?: LegacyPermission;
-  autoJudge?: LegacyReviewer;
+  /** 可选的审批历史存储；默认由 reviewer 提供。 */
   reviewHistory?: ReviewHistoryStore;
   sessionId?: () => string;
   configRevision?: () => string | number;
@@ -57,7 +55,7 @@ interface Binding {
   inputHash: string;
   policyRevision: string | number;
   policyIdentityHash: string;
-  policyHandler: Policy['decide'] | LegacyPermission['check'];
+  policyHandler: Policy['decide'];
   configRevision: string | number;
   signal: AbortSignal;
 }
@@ -69,8 +67,8 @@ export class ToolExecutor {
   private readonly pending = new Set<Promise<ToolResultBlock>>();
 
   constructor(private readonly opts: ToolExecutorOptions) {
-    this.history = opts.reviewHistory ?? opts.reviewer?.createHistory?.() ?? opts.autoJudge?.createHistory?.();
-    if (!opts.policy && !opts.permission) throw new Error('ToolExecutor requires a selected policy');
+    this.history = opts.reviewHistory ?? opts.reviewer?.createHistory?.();
+    if (!opts.policy) throw new Error('ToolExecutor requires a selected policy');
   }
 
   clear(): void { this.history?.clear(); this.used.clear(); }
@@ -80,7 +78,7 @@ export class ToolExecutor {
   async whenSettled(): Promise<void> {
     while (this.pending.size) await Promise.allSettled([...this.pending]);
   }
-  getJudgeStatus(): JudgeStatus { return this.opts.reviewer?.getStatus?.() ?? this.opts.autoJudge?.getStatus() ?? { loaded: false }; }
+  getJudgeStatus(): JudgeStatus { return this.opts.reviewer?.getStatus?.() ?? { loaded: false }; }
 
   async invokeTool(name: string, input: Record<string, unknown>, context: ToolInvocationContext): Promise<ToolResult> {
     const result = await this.execute({ type: 'tool_use', id: randomUUID(), name, input }, context);
@@ -113,7 +111,7 @@ export class ToolExecutor {
     const audit = (phase: 'validation' | 'analysis' | 'policy' | 'reviewer' | 'human' | 'execution', reasonCode: string, decision?: PolicyDecision['kind'], binding?: Binding, durationMs?: number) => {
       events.emit({ type: 'tool_execution', runId: context.runId, toolCallId: toolUse.id, requestId,
         sessionId: binding?.sessionId ?? String(safeMetadata(() => this.sessionId())), toolName: toolUse.name,
-        toolVersion: binding?.toolVersion ?? tool?.version ?? 'legacy', policyId: this.policyIdentity().id,
+        toolVersion: binding?.toolVersion ?? tool?.version ?? 'unversioned', policyId: this.policyIdentity().id,
         toolOwner: binding?.toolOwner, capabilityId: binding?.capabilityId,
         policyVersion: this.policyIdentity().version, configRevision: binding?.configRevision ?? safeMetadata(() => this.configRevision()),
         policyRevision: binding?.policyRevision ?? safeMetadata(() => this.policyRevision()), inputHash: binding?.inputHash,
@@ -144,7 +142,7 @@ export class ToolExecutor {
         const binding = this.bind(tool, toolUse.id, requestId, input, context);
         const descriptor = approvalTool(tool);
         const analysisInput: AnalysisInput = { tool: descriptor, input, cwd, configRevision: binding.configRevision, policyRevision: binding.policyRevision };
-        const analyzer = this.opts.analyzer ?? this.opts.policy?.analyzer ?? this.opts.permission?.createAnalyzer?.();
+        const analyzer = this.opts.analyzer ?? this.opts.policy?.analyzer;
         let analysis: ToolAnalysis | undefined;
         let analysisFailed = false;
         if (analyzer) {
@@ -273,23 +271,17 @@ export class ToolExecutor {
   }
 
   private async decide(input: PolicyInput, signal: AbortSignal): Promise<PolicyDecision> {
-    if (this.opts.policy) return this.opts.policy.decide(input, signal);
-    const permission = this.opts.permission!;
-    const decision = permission.check(input.tool, input.input);
-    return decision.kind === 'ask' && decision.source === 'mode' && permission.mode === 'auto' && this.opts.autoJudge
-      ? { ...decision, kind: 'review' } : decision;
+    return this.opts.policy.decide(input, signal);
   }
 
   private async review(operation: PolicyInput, original: PolicyDecision, context: ToolInvocationContext, signal: AbortSignal, toolRequestId: string): Promise<Decision> {
     const fallback = (reasonCode: string, reason: string): Decision => ({ ...original, kind: 'ask', source: 'judge', reasonCode, reason });
-    if (!this.opts.reviewer && !this.opts.autoJudge) return fallback('reviewer_unavailable', '审批员未加载，需人工确认');
+    if (!this.opts.reviewer) return fallback('reviewer_unavailable', '审批员未加载，需人工确认');
     const events = new ReviewerEventBus(this.opts.events, { runId: context.runId, toolCallId: operation.toolCallId, toolRequestId });
     try {
       const result = structuredClone(await bounded(async (s) => {
-        if (this.opts.reviewer) return this.opts.reviewer.review({ ...operation, decision: freeze(structuredClone(original)), events,
+        return this.opts.reviewer!.review({ ...operation, decision: freeze(structuredClone(original)), events,
           userRequest: context.userRequest, messages: freeze(structuredClone(context.messages)) }, s);
-        const verdict = await this.opts.autoJudge!.review(operation.tool, operation.input, s, events, operation.context);
-        return { decision: verdict.verdict, reason: verdict.reason, reasonCode: verdict.judge?.reasonCode ?? `model_${verdict.verdict}`, judge: verdict.judge };
       }, signal, this.opts.reviewTimeoutMs ?? 30_000));
       if (!result || !['allow', 'ask', 'deny', 'unknown'].includes(result.decision) || typeof result.reason !== 'string' || typeof result.reasonCode !== 'string') {
         return fallback('invalid_response', '审批员返回无效结果，需人工确认');
@@ -333,34 +325,34 @@ export class ToolExecutor {
 
   private sessionId(): string { return this.opts.sessionId?.() ?? this.fallbackSession; }
   private configRevision(): string | number { return this.opts.configRevision?.() ?? 0; }
-  private policyRevision(): string | number { return this.opts.policy?.revision ?? this.opts.policy?.controller?.revision ?? this.opts.permission?.revision ?? 0; }
+  private policyRevision(): string | number { return this.opts.policy?.revision ?? this.opts.policy?.controller?.revision ?? 0; }
   private bind(tool: Tool, toolCallId: string, requestId: string, input: Record<string, unknown>, context: ToolInvocationContext): Binding {
     const identity = this.opts.toolIdentity?.(tool.name);
     return Object.freeze({ sessionId: this.sessionId(), runId: context.runId, toolCallId, requestId, tool, execute: tool.execute, analyzeInput: tool.analyzeInput,
-      toolVersion: identity?.version ?? tool.version ?? 'legacy', toolOwner: identity?.ownerPlugin, capabilityId: identity?.capabilityId,
+      toolVersion: identity?.version ?? tool.version ?? 'unversioned', toolOwner: identity?.ownerPlugin, capabilityId: identity?.capabilityId,
       toolIdentityHash: fingerprint(identity ?? null), toolDefinitionHash: definitionHash(tool), inputHash: fingerprint(input),
       policyRevision: this.policyRevision(), configRevision: this.configRevision(), signal: context.signal,
-      policyIdentityHash: this.policyIdentityHash(), policyHandler: this.opts.policy?.decide ?? this.opts.permission!.check });
+      policyIdentityHash: this.policyIdentityHash(), policyHandler: this.opts.policy.decide });
   }
   private bindingValid(binding: Binding, name: string, input: Record<string, unknown>): boolean {
     return !binding.signal.aborted && this.sessionId() === binding.sessionId && this.configRevision() === binding.configRevision
       && (this.opts.runActive?.(binding.runId) ?? true)
       && this.policyRevision() === binding.policyRevision && this.opts.tools.get(name) === binding.tool
-      && this.policyIdentityHash() === binding.policyIdentityHash && (this.opts.policy?.decide ?? this.opts.permission!.check) === binding.policyHandler
+      && this.policyIdentityHash() === binding.policyIdentityHash && (this.opts.policy.decide) === binding.policyHandler
       && binding.tool.execute === binding.execute && fingerprint(this.opts.toolIdentity?.(binding.tool.name) ?? null) === binding.toolIdentityHash
       && binding.tool.analyzeInput === binding.analyzeInput
       && definitionHash(binding.tool) === binding.toolDefinitionHash && fingerprint(input) === binding.inputHash;
   }
   private policyIdentity(): { id: string; version: string } {
-    return { id: this.opts.policy?.id ?? this.opts.policyIdentity?.id ?? 'legacy-v1',
+    return { id: this.opts.policy?.id ?? this.opts.policyIdentity?.id ?? 'unidentified',
       version: this.opts.policy?.version ?? this.opts.policyIdentity?.version ?? '1.0.0' };
   }
   private policyIdentityHash(): string { return fingerprint(this.policyIdentity()); }
   private recordDecision(tool: AnalysisInput['tool'], input: Record<string, unknown>, decision: Decision): void {
-    (this.opts.policy?.controller ?? this.opts.permission)?.recordDecision(tool, input, structuredClone(decision));
+    (this.opts.policy.controller)?.recordDecision(tool, input, structuredClone(decision));
   }
   private remember(tool: AnalysisInput['tool'], input: Record<string, unknown>, remember: 'session' | 'project'): void {
-    const controller = this.opts.policy?.controller ?? this.opts.permission;
+    const controller = this.opts.policy.controller;
     if (!controller) return;
     const target = tool.analyzeInput?.(input).patternTarget;
     const rule = target !== undefined ? `${tool.name}(=${JSON.stringify(target)})` : tool.name;
@@ -375,7 +367,7 @@ function approvalTool(tool: Tool): AnalysisInput['tool'] {
     ...(tool.analyzeInput ? { analyzeInput: tool.analyzeInput.bind(tool) } : {}) });
 }
 function definitionHash(tool: Tool): string {
-  return fingerprint({ name: tool.name, version: tool.version ?? 'legacy', ownerPlugin: tool.ownerPlugin, description: tool.description, risk: tool.risk, inputSchema: tool.inputSchema });
+  return fingerprint({ name: tool.name, version: tool.version ?? 'unversioned', ownerPlugin: tool.ownerPlugin, description: tool.description, risk: tool.risk, inputSchema: tool.inputSchema });
 }
 function fingerprint(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value, (_key, v: unknown) => v && typeof v === 'object' && !Array.isArray(v)

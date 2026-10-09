@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent } from '../src/core/events.js';
 import { AgentConfigSchema } from '../src/core/config.js';
-import { PermissionEngine } from '../src/builtin/policy-legacy/engine.js';
+import { PermissionController } from '../src/builtin/policy/controller.js';
 import { fileSessionStore } from '../src/builtin/session-file/index.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 import { PluginHost } from '../src/runtime/plugin-host.js';
@@ -15,7 +15,7 @@ function preset(version: string, selection?: string, explicit?: { id: string; ve
   return () => ({ selections: selection ? { policy: selection } : {}, plugins: [definePlugin({
     manifest: { id: 'test.custom-runtime', version: '9.0.0', apiVersion: 1 },
     setup(ctx) {
-      const controller = new PermissionEngine({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
+      const controller = new PermissionController({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
       const policy: Policy = { ...explicit, controller, decide: () => ({ kind: 'deny', source: 'config', reason: 'test' }) };
       ctx.provide.tool('identity-probe', { name: 'identity-probe', description: 'identity audit', risk: 'write', inputSchema: { type: 'object' }, async execute() { return { content: 'ok' }; } });
       ctx.provide.provider('fake', new FakeProvider([textResponse('ok')]));
@@ -95,7 +95,7 @@ describe('policy capability identity', () => {
 
 describe('capability selection validation', () => {
   it.each(['polciy', 'tool', 'constructor'])('rejects unknown/non-singleton key %s in schema and host', async key => {
-    const selections = { [key]: 'deterministic-v2' };
+    const selections = { [key]: 'deterministic' };
     expect(() => AgentConfigSchema.parse({ capabilities: selections })).toThrow(key);
     await expect(new PluginHost({ selections: selections as CapabilitySelections }).load([])).rejects.toThrow(key);
   });
@@ -107,7 +107,7 @@ describe('capability selection validation', () => {
   it('rejects typo+yolo passed directly via runtime options', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'policy-typo-'));
     try {
-      await expect(createRuntime(cwd, preset('2.3.0'), { config: { provider: 'fake', permissionMode: 'yolo', capabilities: { polciy: 'deterministic-v2' } as CapabilitySelections } })).rejects.toThrow('polciy');
+      await expect(createRuntime(cwd, preset('2.3.0'), { config: { provider: 'fake', permissionMode: 'yolo', capabilities: { polciy: 'deterministic' } as CapabilitySelections } })).rejects.toThrow('polciy');
     } finally { await rm(cwd, { recursive: true, force: true }); }
   });
 });

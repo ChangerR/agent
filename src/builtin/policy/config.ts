@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { AgentConfigSchema, PermissionModeSchema, type PermissionMode } from '../../core/config.js';
 import { getGlobalConfigPath, resolveAgentPaths } from '../../core/paths.js';
-import { parseRule, type SessionRules } from './engine.js';
+import { parseRule, type SessionRules } from './controller.js';
 
 export interface PermissionConfigDraft {
   /** undefined 表示继承全局/内置默认。 */
@@ -65,9 +65,9 @@ function decode(state: FileState | undefined): Record<string, unknown> {
     const value: unknown = JSON.parse(state.bytes.toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
     const raw = value as Record<string, unknown>;
-    const permissionMode = fieldValue(raw, 'permissionMode');
-    const judgeModel = fieldValue(raw, 'judgeModel');
-    const permissions = fieldValue(raw, 'permissions');
+    const permissionMode = raw.permissionMode;
+    const judgeModel = raw.judgeModel;
+    const permissions = raw.permissions;
     AgentConfigSchema.parse({ ...raw, permissionMode, judgeModel, permissions });
     const rules = permissions as Partial<SessionRules> | undefined;
     for (const kind of ['allow', 'ask', 'deny'] as const) for (const rule of rules?.[kind] ?? []) parseRule(rule);
@@ -78,29 +78,17 @@ function decode(state: FileState | undefined): Record<string, unknown> {
   }
 }
 
-const fieldNamespaces = { permissionMode: 'agentlab.policy-legacy', permissions: 'agentlab.policy-legacy', judgeModel: 'agentlab.reviewer-model' } as const;
-type PermissionField = keyof typeof fieldNamespaces;
-function namespace(raw: Record<string, unknown>, field: PermissionField): Record<string, unknown> | undefined {
-  return (raw.pluginConfig as Record<string, Record<string, unknown>> | undefined)?.[fieldNamespaces[field]];
-}
-/** 只解释当前文件中的别名，不读取另一层或把 schema 默认值放入草稿。 */
-function fieldValue(raw: Record<string, unknown>, field: PermissionField): unknown {
-  const namespaced = namespace(raw, field)?.[field];
-  if (namespaced !== undefined && Object.hasOwn(raw, field) && !isDeepStrictEqual(raw[field], namespaced)) throw new Error('conflicting permission aliases');
-  return namespaced !== undefined ? namespaced : raw[field];
-}
-
 export function readPermissionConfig(path: string, scope: PermissionConfigScope = 'project'): PermissionConfigSnapshot {
   path = resolve(path);
   const state = readFileState(path);
   const raw = decode(state);
-  const rules = fieldValue(raw, 'permissions') as Partial<SessionRules> | undefined;
+  const rules = raw.permissions as Partial<SessionRules> | undefined;
   const snapshot: PermissionConfigSnapshot = Object.freeze({
     path,
     exists: state !== undefined,
     scope,
-    permissionMode: fieldValue(raw, 'permissionMode') as PermissionMode | undefined,
-    judgeModel: fieldValue(raw, 'judgeModel') as string | undefined,
+    permissionMode: raw.permissionMode as PermissionMode | undefined,
+    judgeModel: raw.judgeModel as string | undefined,
     permissions: { allow: [...(rules?.allow ?? [])], ask: [...(rules?.ask ?? [])], deny: [...(rules?.deny ?? [])] },
   });
   snapshots.set(snapshot, { state, raw });
@@ -157,22 +145,9 @@ export function savePermissionConfig(snapshot: PermissionConfigSnapshot, draft: 
   for (const kind of ['allow', 'ask', 'deny'] as const) {
     if (!Array.isArray(draft.permissions[kind]) || draft.permissions[kind].some(rule => typeof rule !== 'string' || validatePermissionRule(rule))) throw new PermissionConfigError('invalid', '权限规则无效，未修改文件。');
   }
-  const writeField = (field: PermissionField, value: unknown): void => {
-    const priorNamespace = namespace(original.raw, field);
-    const hasNamespace = priorNamespace !== undefined && Object.hasOwn(priorNamespace, field);
-    const hasLegacy = Object.hasOwn(original.raw, field);
-    const update = (container: Record<string, unknown>) => {
-      if (value === undefined) delete container[field];
-      else container[field] = field === 'permissions' ? { ...(container[field] as object ?? {}), ...value as object } : value;
-    };
-    // 已有写法保持原位；同值双写同步更新。删除可选字段不留下旧别名。
-    if (hasLegacy || !hasNamespace) update(next);
-    if (hasNamespace) {
-      const all = { ...(next.pluginConfig as Record<string, unknown> ?? {}) };
-      const id = fieldNamespaces[field];
-      const layer = { ...all[id] as object };
-      update(layer); all[id] = layer; next.pluginConfig = all;
-    }
+  const writeField = (field: keyof PermissionConfigDraft, value: unknown): void => {
+    if (value === undefined) delete next[field];
+    else next[field] = field === 'permissions' ? { ...(next[field] as object ?? {}), ...value as object } : value;
   };
   writeField('permissionMode', draft.permissionMode);
   writeField('judgeModel', draft.judgeModel);
@@ -219,10 +194,4 @@ export function savePermissionConfig(snapshot: PermissionConfigSnapshot, draft: 
       try { fs.unlinkSync(lock); } catch { /* 下次保存会提示遗留锁，不误报未提交 */ }
     }
   }
-}
-
-/** 保留旧入口；新调用应使用带 scope 的快照与 savePermissionConfig。 */
-export function saveProjectPermissionConfig(snapshot: PermissionConfigSnapshot, draft: PermissionConfigDraft): PermissionConfigSnapshot {
-  if (snapshot.scope !== 'project') throw new PermissionConfigError('invalid', '保存范围不匹配，请重新打开项目设置。');
-  return savePermissionConfig(snapshot, draft);
 }

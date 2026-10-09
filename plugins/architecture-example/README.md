@@ -22,37 +22,19 @@
 ## 回归证据
 
 - `tests/plugin-replacement.test.ts` 真正从项目 JSON 配置加载此 ESM 文件，验证替代能力被 runtime 消费、保存/恢复不写会话文件、命令和模型共享工具执行路径。
-- 同文件比较兼容构造入口与默认 preset 的规范化事件轨迹，剔除随机请求 ID、耗时和新增审计事件，保留用量、正文、工具调用/结果、审批类别和结束原因。
 - `tests/plugin-context-capabilities.test.ts` 覆盖取消、过期/非法候选、不完整工具交换、深不可变输入与返回引用隔离。
-- `tests/plugin-session-capabilities.test.ts` 覆盖替代存储 CAS、v1 导入、v2 独立版本、未知可选状态保留、安全状态缺失拒绝和恢复失败回滚。
+- `tests/plugin-session-capabilities.test.ts` 覆盖替代存储 CAS、当前 schema 与独立版本、未知可选状态保留、安全状态缺失拒绝和恢复失败回滚。
 - `tests/plugin-architecture.test.ts` 检查 core/runtime 可执行依赖图，并在独立 Node 进程中拦截 TUI 包解析以验证 headless 导入。
 
-## 兼容门面范围
+## 当前架构与会话边界
 
-以下旧路径仅为已有调用者保留，生产 runtime 不经过这些路径；架构守卫对这十个文件作精确例外：
+上下文和存储使用 `core/context/coordinator.ts` 与 `core/session/coordinator.ts` 的注入式协调器。模型信息由选中的 `ModelCatalog` 提供；插件契约统一为 SDK 的 manifest/setup。
 
-- `src/core/context/manager.ts`
-- `src/core/context/system-prompt.ts`
-- `src/core/debug-log.ts`
-- `src/core/plugin.ts`
-- `src/core/permission/engine.ts`
-- `src/core/permission/judge.ts`
-- `src/core/permission/review-context.ts`
-- `src/core/permission-config.ts`
-- `src/core/session/manager.ts`
-- `src/core/session/store.ts`
+默认 preset 使用 `deterministic` 策略与严格 `model` 审批员。此示例通过显式能力选择替换默认策略，不改变默认产品语义。
 
-新上下文和存储使用 `core/context/coordinator.ts` 与 `core/session/coordinator.ts` 的注入式构造。`core/config.ts` 保留旧模型目录常量作为兼容导出；实际模型信息由选中的 `ModelCatalog` 提供。
+会话只接受当前 schema，并分别校验 runtime、policy 和 pluginStates 版本以及 provider/endpoint 身份。未知可选状态原样保存；未知或缺失的安全必需状态拒绝恢复。历史会话不导入、不升级，也不生成迁移备份。
 
-新会话使用 `schemaVersion: 2`，分别保存 runtime、policy 和 pluginStates 版本，旧 v1 二进制会明确拒绝。未知可选状态原样保存；未知/缺失的安全必需状态拒绝恢复，不执行其中内容。v1 权限规则只由兼容 legacy 策略导入，不隐式迁移到本示例策略。
-
-默认 JSONL 只写元数据。完整正文需显式设置 `pluginConfig["agentlab.telemetry-jsonl"].includeBodies: true`；旧 `attachDebugLogger` 是保留完整正文行为的兼容 API。
-
-## v1 迁移备份和恢复
-
-首次将已有 v1 会话保存为 v2 时，文件存储在原会话锁内先把原始字节保存到 `<会话>.json.v1.bak`，验证后才替换 `.json`。备份排他创建、后续保存不覆盖。已有备份必须是同一会话、项目及 provider/endpoint 的有效 v1 文件；创建或验证失败就停止升级，保留原文件。
-
-若必须使用旧版程序：先退出所有使用该项目的 agent，另行保留当前 v2 `.json`，再将对应 `.json.v1.bak` 复制回原 `.json` 路径，然后用原 provider/endpoint 启动旧版。备份是首次升级之前的历史，不包含升级之后的新消息。不要直接用旧版读写 v2 文件，也不要在 agent 运行时手工替换会话。
+默认 JSONL 只写元数据。完整正文需显式设置 `pluginConfig["agentlab.telemetry-jsonl"].includeBodies: true`。
 
 ## 取消与未确认写入
 

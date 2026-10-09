@@ -1,6 +1,6 @@
 /** 审批上下文：保留来源与执行结果，独立于可被压缩的模型历史。 */
 import { createHash } from 'node:crypto';
-import { SUMMARY_MARKER } from '../../core/context/manager.js';
+import { SUMMARY_MARKER } from '../compaction-summary/implementation.js';
 import type { Message, ToolResult } from '../../core/protocol/types.js';
 import type { Tool } from '../../core/registry.js';
 import type { Decision, ReviewRecord, ReviewContext } from '../../core/permission/contracts.js';

@@ -19,7 +19,9 @@ vi.mock('openai', () => ({ default: class {
 vi.mock('@anthropic-ai/sdk', () => ({ default: class {
   constructor(options: { apiKey?: string; baseURL?: string; authToken?: string | null }) { sdk.anthropicOptions.push(options); }
   messages = { stream: async function* () {
+    yield { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } };
     yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'offline fixture' } };
+    yield { type: 'content_block_stop', index: 0 };
     yield { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } };
   } };
 } }));

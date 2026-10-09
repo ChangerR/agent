@@ -2,7 +2,7 @@
  * 平台区分：系统提示、shell 选择、输出解码。
  */
 import { describe, expect, it } from 'vitest';
-import { buildSystemPrompt } from '../src/core/context/system-prompt.js';
+import { buildSystemPrompt } from '../src/builtin/context-default/implementation.js';
 import { decodeShellOutput, detectPlatform, powershellScript, shellInvocation } from '../src/core/platform.js';
 import { ToolRegistry, type Tool } from '../src/core/registry.js';
 

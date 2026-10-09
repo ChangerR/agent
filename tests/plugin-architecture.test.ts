@@ -6,19 +6,6 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 const root = resolve('.');
-/** 仅旧导入兼容入口可连接默认实现。实际 runtime 不得通过这些门面。 */
-export const LEGACY_CORE_FACADES = new Set([
-  'src/core/context/manager.ts',
-  'src/core/context/system-prompt.ts',
-  'src/core/debug-log.ts',
-  'src/core/plugin.ts',
-  'src/core/permission/engine.ts',
-  'src/core/permission/judge.ts',
-  'src/core/permission/review-context.ts',
-  'src/core/permission-config.ts',
-  'src/core/session/manager.ts',
-  'src/core/session/store.ts',
-]);
 async function files(directory: string): Promise<string[]> {
   const found = await fs.readdir(directory, { withFileTypes: true });
   return (await Promise.all(found.map(entry => entry.isDirectory() ? files(resolve(directory, entry.name)) : Promise.resolve(entry.name.endsWith('.ts') ? [resolve(directory, entry.name)] : [])))).flat();
@@ -46,24 +33,23 @@ const local = (file: string, specifier: string): string | undefined => specifier
 const short = (file: string): string => relative(root, file).replaceAll('\\', '/');
 const forbidden = (name: string): boolean => /(?:^|\/)(?:builtin|providers|tools|cli|mcp|skills)\//.test(name) || name === 'openai' || name.startsWith('@anthropic-ai/') || name.includes('pi-tui');
 describe('插件分层与 headless 入口架构守卫', () => {
-  it('真正的 core 实现不连接默认实现、兼容门面、厂商 SDK 或终端', async () => {
+  it('真正的 core 实现不连接默认实现、厂商 SDK 或终端', async () => {
     const violations: string[] = [];
     for (const file of await files(resolve('src/core'))) {
-      if (LEGACY_CORE_FACADES.has(short(file))) continue;
       for (const specifier of await runtimeImports(file)) {
         const target = local(file, specifier);
-        if (forbidden(target ? short(target) : specifier) || (target && LEGACY_CORE_FACADES.has(short(target))) || (target && short(target).startsWith('src/compat/'))) violations.push(`${short(file)} -> ${specifier}`);
+        if (forbidden(target ? short(target) : specifier) || (target && short(target).startsWith('src/compat/'))) violations.push(`${short(file)} -> ${specifier}`);
       }
     }
     expect(violations).toEqual([]);
   });
-  it('生产 runtime 的可执行依赖图不经过默认 preset 或 legacy core 门面', async () => {
+  it('生产 runtime 的可执行依赖图不经过默认 preset', async () => {
     const seen = new Set<string>(); const violations: string[] = [];
     async function walk(file: string): Promise<void> {
       if (seen.has(file)) return; seen.add(file);
       for (const specifier of await runtimeImports(file)) {
         const target = local(file, specifier);
-        if (forbidden(target ? short(target) : specifier) || (target && LEGACY_CORE_FACADES.has(short(target)))) { violations.push(`${short(file)} -> ${specifier}`); continue; }
+        if (forbidden(target ? short(target) : specifier)) { violations.push(`${short(file)} -> ${specifier}`); continue; }
         if (target) await walk(target);
       }
     }

@@ -117,14 +117,14 @@ export interface Command {
   handler(input: Record<string, unknown>, context: CommandContext): MaybePromise<CommandResult>;
 }
 export type SettingsScope = 'session' | 'project' | 'global';
-/** 持久化目标必须明确给出实际文件；旧插件未声明目标时由其自行管理保存位置。 */
+/** 持久化目标必须明确给出实际文件；未声明目标的插件自行管理保存位置。 */
 export type SettingsScopeTarget = { readonly scope: 'session' } | { readonly scope: 'project' | 'global'; readonly path: string };
 export interface SettingsSection {
   order?: number;
   title: string;
   description?: string;
   schema: Record<string, unknown>;
-  applyMode: 'immediate' | 'new-session' | 'restart' | 'nextRequest' | 'idleBoundary' | 'newSession';
+  applyMode: 'immediate' | 'nextRequest' | 'idleBoundary' | 'newSession';
   /** 每层独立读取、起草和提交；切勿把合并后的运行值当作全局编辑初值。 */
   scopeTargets?: readonly SettingsScopeTarget[];
   read?(signal: AbortSignal, scope?: SettingsScope): MaybePromise<unknown>;

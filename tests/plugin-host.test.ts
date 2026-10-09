@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { AgentConfigSchema } from '../src/core/config.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
-import { adaptLegacyPlugin } from '../src/compat/legacy-plugin.js';
 import { CapabilityRegistry } from '../src/runtime/capability-registry.js';
 import { PluginHost, satisfiesPluginVersion } from '../src/runtime/plugin-host.js';
 import { definePlugin, type Plugin, type PluginSetupContext, type Policy, type Tool } from '../src/sdk/index.js';
@@ -153,36 +152,14 @@ describe('CapabilityRegistry ownership and selection', () => {
     registry.commit([record]); registry.freeze(); expect(() => registry.commit([])).toThrow('frozen');
   });
   it('requires an explicit alternative when several singleton implementations exist', async () => {
-    const p = plugin('a', (ctx) => { ctx.provide.policy('legacy', policy); ctx.provide.policy('v2', policy); });
+    const p = plugin('a', (ctx) => { ctx.provide.policy('first', policy); ctx.provide.policy('second', policy); });
     await expect(new PluginHost().load([p])).rejects.toThrow('select one explicitly');
-    const host = new PluginHost({ selections: { policy: 'v2' } }); await host.load([p]); expect(host.selected('policy')).toBe(policy); await host.dispose();
+    const host = new PluginHost({ selections: { policy: 'second' } }); await host.load([p]); expect(host.selected('policy')).toBe(policy); await host.dispose();
     const disabled = new PluginHost({ selections: { policy: false } }); await disabled.load([p]); expect(disabled.selected('policy')).toBeUndefined(); await disabled.dispose();
   });
   it('rejects a missing selected implementation and missing command capability', async () => {
     await expect(new PluginHost({ selections: { policy: 'missing' } }).load([])).rejects.toThrow('not found');
     await expect(new PluginHost().load([plugin('a', (ctx) => { ctx.provide.command('test', { description: 'test', requiredCapabilities: [{ kind: 'tool', id: 'missing' }], handler() {} }); })])).rejects.toThrow('requires missing capability');
-  });
-});
-
-describe('legacy plugin adapter', () => {
-  it('preserves old tool names, command hooks and cleanup through the transaction', async () => {
-    const cleanup = vi.fn(); const host = new PluginHost();
-    await host.load([adaptLegacyPlugin({ name: 'old', register(ctx) {
-      ctx.tools.register(tool()); expect(ctx.tools.get('demo')?.name).toBe('demo');
-      ctx.hooks.register('PreToolUse', (payload) => ({ input: { ...payload.input, legacy: true } })); return cleanup;
-    } })]);
-    const hooks = new HookRunner(); host.installHooks(hooks);
-    expect(await hooks.runPreToolUse({ toolName: 'demo', input: {} })).toEqual({ input: { legacy: true } });
-    expect(host.get('tool', 'demo')?.name).toBe('demo'); await host.dispose(); expect(cleanup).toHaveBeenCalledOnce();
-  });
-  it('never leaves partial tool, provider or hook writes after a legacy failure', async () => {
-    const host = new PluginHost(); const hooks = new HookRunner(); const handler = vi.fn();
-    await expect(host.load([adaptLegacyPlugin({ name: 'bad', register(ctx) {
-      ctx.tools.register(tool()); ctx.providers.register({ name: 'demo', capabilities: { streaming: true, thinking: false }, async *stream() {} });
-      ctx.hooks.register('PreToolUse', handler); throw new Error('legacy fail');
-    } })])).rejects.toThrow('legacy fail');
-    expect(host.capabilities).toEqual([]); expect(() => host.installHooks(hooks)).toThrow('must be loaded');
-    await hooks.runPreToolUse({ toolName: 'demo', input: {} }); expect(handler).not.toHaveBeenCalled();
   });
 });
 
@@ -199,15 +176,14 @@ describe('legacy plugin adapter', () => {
   expect(host.diagnostics.some(d => d.code === 'cleanup_timeout')).toBe(true);
  });
 
-it('config layers honor scope, merge, source, schema version and secret references', async () => {
+it('config layers honor scope, merge, source and secret references', async () => {
   let snapshot: unknown;
-  const configured = definePlugin({ manifest: { id: 'configured', version: '1.0.0', apiVersion: 1, configVersion: 2 }, config: { defaults: { rules: ['default'], value: 0 }, scopes: ['global', 'project'] as const, merge: { rules: 'append' as const }, sensitiveFields: ['key'] }, setup(ctx) { snapshot = ctx.config; } });
-  const host = new PluginHost({ pluginConfigLayers: { global: { configured: { rules: ['global'], value: 1 } }, project: { configured: { $version: 2, rules: ['project'], value: 2, key: 'env:TEST_KEY' } } } });
+  const configured = definePlugin({ manifest: { id: 'configured', version: '1.0.0', apiVersion: 1 }, config: { defaults: { rules: ['default'], value: 0 }, scopes: ['global', 'project'] as const, merge: { rules: 'append' as const }, sensitiveFields: ['key'] }, setup(ctx) { snapshot = ctx.config; } });
+  const host = new PluginHost({ pluginConfigLayers: { global: { configured: { rules: ['global'], value: 1 } }, project: { configured: { rules: ['project'], value: 2, key: 'env:TEST_KEY' } } } });
   await host.load([configured]);
   expect(snapshot).toMatchObject({ value: { rules: ['default', 'global', 'project'], value: 2, key: 'env:TEST_KEY' }, sources: { rules: 'project', value: 'project', key: 'project' } });
   await host.dispose();
   await expect(new PluginHost({ pluginConfigLayers: { session: { configured: { value: 3 } } } }).load([configured])).rejects.toThrow('not allowed');
-  await expect(new PluginHost({ pluginConfig: { configured: { $version: 1 } } }).load([configured])).rejects.toThrow('explicit migration');
   await expect(new PluginHost({ pluginConfig: { configured: { key: 'secret' } } }).load([configured])).rejects.toThrow('env:NAME');
 });
 it('invalid capability methods fail before activation', async () => {

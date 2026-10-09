@@ -11,9 +11,10 @@ it('未结束的实际工具调用令退出报告故障，真实结束前不释�
   let finish!: (value: { content: string }) => void; let started = false; let disposed = 0;
   const plugin = definePlugin({ manifest: { id: 'test.pending-tool', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
     ctx.onDispose(() => { disposed++; });
+    ctx.provide.policy('test-allow', { decide: () => ({ kind: 'allow', source: 'config', reason: 'isolated lifecycle test' }) });
     ctx.provide.tool('pending-tool', { name: 'pending-tool', description: 'pending', risk: 'read', inputSchema: { type: 'object' }, execute() { started = true; return new Promise(resolve => { finish = resolve; }); } });
   } });
-  const agent = await createAgent(cwd, { plugins: [plugin], config: { provider: 'fake', permissionMode: 'auto' }, autoSaveSessions: false, lifecycleTimeoutMs: 10 });
+  const agent = await createAgent(cwd, { plugins: [plugin], config: { provider: 'fake', permissionMode: 'auto', capabilities: { policy: 'test-allow', reviewer: false } }, autoSaveSessions: false, lifecycleTimeoutMs: 10 });
   const invocation = agent.invokeTool('pending-tool', {});
   try {
     await vi.waitFor(() => expect(started).toBe(true));

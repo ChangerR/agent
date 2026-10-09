@@ -1,6 +1,6 @@
 /** 默认产品的可选终端交互。只由 CLI 加载；核心与 headless 不导入终端组件。 */
 import type { TuiAdapter, BuiltinTuiContext, TuiCommandHandler } from '../cli/tui-plugins.js';
-import { createPermissionSettings } from './policy-legacy/tui.js';
+import { createPermissionSettings } from './policy/tui.js';
 
 function formatUpdated(iso: string): string {
   const date = new Date(iso); if (Number.isNaN(date.getTime())) return iso;
@@ -86,7 +86,7 @@ export function createTuiAdapter(context: BuiltinTuiContext): TuiAdapter {
       for (const item of listing.broken) err(`[坏文件] ${item.id}: ${item.error.message}`);
     }),
     resume: arg => runAsync(async () => {
-      if (arg) { const [id, flag, ...extra] = arg.split(/\s+/); if (extra.length || (flag && flag !== '--legacy')) throw new Error('用法: /resume <id> [--legacy]'); await agent.session.resume(id, { allowLegacyProvider: flag === '--legacy' }); return; }
+      if (arg) { const [id, ...extra] = arg.split(/\s+/); if (extra.length) throw new Error('用法: /resume <id>'); await agent.session.resume(id); return; }
       const listing = await agent.session.list(); if (!listing.sessions.length) { say('(本项目还没有已保存的会话)'); return; }
       showPicker('恢复会话', listing.sessions.map(item => ({ value: item.id, label: item.title, description: `${item.id} · ${formatUpdated(item.updatedAt)} · ${item.messageCount} 条` })), value => runAsync(async () => { await agent.session.resume(value); }));
     }),

@@ -74,9 +74,9 @@ describe('generic plugin CLI capabilities', () => {
   it('多作用域只读设置默认本项目，仍可直接查看全局；单作用域继续直接展示详情', async () => {
     const read = vi.fn((_signal: AbortSignal, scope?: string) => ({ origin: scope }));
     const ui = await mount([definePlugin({ manifest: { id: 'test.readonly-scopes', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-      ctx.provide.settings('readonly-scopes', { title: '只读范围', order: -1, schema: {}, applyMode: 'restart',
+      ctx.provide.settings('readonly-scopes', { title: '只读范围', order: -1, schema: {}, applyMode: 'newSession',
         scopeTargets: [{ scope: 'project', path: '/project/config.json' }, { scope: 'global', path: '/global/config.json' }], read });
-      ctx.provide.settings('readonly-single', { title: '单范围只读', order: -0.5, schema: {}, applyMode: 'restart',
+      ctx.provide.settings('readonly-single', { title: '单范围只读', order: -0.5, schema: {}, applyMode: 'newSession',
         scopeTargets: [{ scope: 'project', path: '/project/config.json' }], read: () => ({ single: true }) });
     } })]);
     try {
@@ -104,7 +104,7 @@ describe('generic plugin CLI capabilities', () => {
   it('旧插件未声明scope保持undefined参数且不虚称只写会话', async () => {
     const read = vi.fn(() => ({ count: 1 }));
     const ui = await mount([definePlugin({ manifest: { id: 'test.old-settings', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-      ctx.provide.settings('old', { title: '旧设置', order: -1, schema: {}, applyMode: 'restart', read, draft: value => value, commit() {} });
+      ctx.provide.settings('old', { title: '旧设置', order: -1, schema: {}, applyMode: 'newSession', read, draft: value => value, commit() {} });
     } })]);
     try {
       ui.send('/settings'); ui.terminal.input?.('\r');
@@ -117,7 +117,7 @@ describe('generic plugin CLI capabilities', () => {
   it('返回后迟到的设置读取不会重新打开旧面板', async () => {
     let finish!: (value: unknown) => void;
     const ui = await mount([definePlugin({ manifest: { id: 'test.slow-settings', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-      ctx.provide.settings('slow', { title: '慢设置', order: -1, schema: {}, applyMode: 'restart', read: () => new Promise(resolve => { finish = resolve; }) });
+      ctx.provide.settings('slow', { title: '慢设置', order: -1, schema: {}, applyMode: 'newSession', read: () => new Promise(resolve => { finish = resolve; }) });
     } })]);
     try {
       ui.send('/settings'); ui.terminal.input?.('\r');
@@ -166,7 +166,7 @@ describe('generic plugin CLI capabilities', () => {
     }; }`);
     const ui = await mount([definePlugin({ manifest: { id: 'test.external-ui', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
       ctx.provide.command('custom_frontend', { description: '外部界面', handler: () => ({ type: 'text', text: 'headless command implementation' }) });
-      ctx.provide.settings('custom_frontend', { title: '外部插件设置', order: -1, schema: {}, applyMode: 'restart' });
+      ctx.provide.settings('custom_frontend', { title: '外部插件设置', order: -1, schema: {}, applyMode: 'newSession' });
       ctx.provide.tui('external-ui', { entry, kind: 'editor' });
     } })], cwd);
     try {
@@ -190,15 +190,15 @@ describe('generic plugin CLI capabilities', () => {
   });
 });
 
-it('真实 v2 模式选择器显示约束，选择 yolo 一次保存并应用，无二次确认', async () => {
-  const cwd = await mkdtempProject(join(tmpdir(), 'agent-v2-mode-ui-')); await mkdir(join(cwd, 'src'));
-  await writeFile(join(cwd, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto', capabilities: { policy: 'deterministic-v2' }, pluginConfig: { 'agentlab.policy-deterministic-v2': { writeRoots: ['src'] } } }));
+it('真实模式选择器显示约束，选择 yolo 一次保存并应用，无二次确认', async () => {
+  const cwd = await mkdtempProject(join(tmpdir(), 'agent-mode-ui-')); await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto', capabilities: { policy: 'deterministic' }, pluginConfig: { 'agentlab.policy': { writeRoots: ['src'] } } }));
   const ui = await mount([], cwd);
   try {
-    ui.send('/mode'); await vi.waitFor(() => expect(ui.screen()).toContain('v2 auto'));
+    ui.send('/mode'); await vi.waitFor(() => expect(ui.screen()).toContain('auto · 当前'));
     expect(ui.screen()).toContain('writeRoots'); expect(ui.screen()).toContain('src');
     ui.terminal.input?.('\u001b[B');
-    await vi.waitFor(() => expect(ui.screen()).toContain('v2 yolo'));
+    await vi.waitFor(() => expect(ui.screen()).toContain('> yolo'));
     expect(ui.screen()).toContain('未知 Shell/MCP');
     expect(ui.screen()).not.toContain('普通操作自动放行，包括写入与执行');
     expect(ui.agent.permission.mode).toBe('auto');

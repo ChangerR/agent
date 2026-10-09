@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { collectStreamAsync, type Message, type StreamEvent } from '../src/core/protocol/types.js';
-import { fromAnthropicEvent, toAnthropicMessages } from '../src/providers/anthropic.js';
+import { AnthropicStreamTranslator, toAnthropicMessages } from '../src/providers/anthropic.js';
 import { toOpenAIMessages, OpenAIStreamTranslator } from '../src/providers/openai.js';
 
 describe('Anthropic 消息转换', () => {
@@ -56,19 +56,21 @@ describe('Anthropic 消息转换', () => {
 
   it('流式思考：thinking_delta 与 signature_delta 合成带签名的块', async () => {
     const wire = [
-      { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '先看' } },
-      { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '路径' } },
-      { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'sig_' } },
-      { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'abc' } },
-      { type: 'content_block_stop' },
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '先看' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '路径' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig_' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'abc' } },
+      { type: 'content_block_stop', index: 0 },
       {
-        type: 'content_block_start',
+        type: 'content_block_start', index: 1,
         content_block: { type: 'redacted_thinking', data: 'opaque' },
       },
-      { type: 'content_block_stop' },
+      { type: 'content_block_stop', index: 1 },
       { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } },
     ];
-    const events: StreamEvent[] = wire.flatMap((ev) => fromAnthropicEvent(ev as never));
+    const translator = new AnthropicStreamTranslator();
+    const events: StreamEvent[] = wire.flatMap((ev) => translator.push(ev as never));
     const { message } = await collectStreamAsync(toAsync(events));
     expect(message.content).toEqual([
       { type: 'thinking', thinking: '先看路径', signature: 'sig_abc' },
@@ -158,3 +160,23 @@ describe('OpenAI 消息转换', () => {
 async function* toAsync<T>(items: T[]): AsyncIterable<T> {
   for (const i of items) yield i;
 }
+
+describe('规范化工具事件身份', () => {
+  it.each(['tool_use_delta', 'tool_use_stop'] as const)('%s 缺少或引用未知 ID 都拒绝，不能绑定最近开始的调用', async (type) => {
+    for (const id of [undefined, 'unknown']) {
+      const events = [
+        { type: 'tool_use_start', id: 'first', name: 'read_file' },
+        { type: 'tool_use_start', id: 'second', name: 'read_file' },
+        { type, ...(id ? { id } : {}), ...(type === 'tool_use_delta' ? { input: '{}' } : {}) },
+      ] as StreamEvent[];
+      await expect(collectStreamAsync(toAsync(events))).rejects.toThrow('Unknown streamed tool');
+    }
+  });
+  it('SDK 类型要求 delta 与 stop 都携带调用 ID', () => {
+    // @ts-expect-error 规范事件不能省略工具调用 ID
+    const delta: StreamEvent = { type: 'tool_use_delta', input: '{}' };
+    // @ts-expect-error 规范事件不能省略工具调用 ID
+    const stop: StreamEvent = { type: 'tool_use_stop' };
+    void delta; void stop;
+  });
+});

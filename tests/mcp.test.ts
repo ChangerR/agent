@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { PermissionEngine } from '../src/core/permission/engine.js';
+import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import { McpClientManager } from '../src/mcp/plugin.js';
 
 const serverEntry = join(__dirname, '..', 'examples', 'mcp-server.ts');
@@ -22,11 +22,12 @@ describe('MCP 桥接', () => {
     expect(target).toContain(first.path);
     expect(target).not.toBe(tool.analyzeInput!(second).patternTarget);
     expect(target).toBe(tool.analyzeInput!({ path: first.path, padding: first.padding }).patternTarget);
-    const permission = new PermissionEngine({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
-    permission.addSessionRule('allow', `${tool.name}(=${JSON.stringify(target)})`);
-    expect(permission.check(tool, first).kind).toBe('allow');
-    expect(permission.check(tool, second).kind).toBe('ask');
-    expect(permission.check(tool, { ...first, path: 'src/a123.ts' }).kind).toBe('ask');
+    const policy = createDeterministicPolicy({ cwd: process.cwd(), mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
+    policy.controller!.addSessionRule('deny', `${tool.name}(=${JSON.stringify(target)})`);
+    const check = (input: Record<string, unknown>) => policy.decide({ tool, input, cwd: process.cwd() }, new AbortController().signal);
+    expect((await check(first)).kind).toBe('deny');
+    expect((await check(second)).kind).toBe('ask');
+    expect((await check({ ...first, path: 'src/a123.ts' })).kind).toBe('ask');
   });
   it('工具调用传递轮次取消信号，已取消的调用不发往服务端', async () => {
     const controller = new AbortController();
@@ -77,4 +78,23 @@ it('MCP stdio 相对脚本按显式配置目录启动，不依赖父进程 cwd',
     const names = (await manager.bridgeTools('relative', client)).map(tool => tool.name);
     expect(names).toContain('mcp__relative__add');
   } finally { await manager.closeAll(); }
+});
+
+it('MCP 插件在工具注册冲突时回滚并释放已连接服务器', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { PluginHost } = await import('../src/runtime/plugin-host.js');
+  const { mcpPlugin } = await import('../src/mcp/plugin.js');
+  const cwd = await mkdtemp(join(tmpdir(), 'mcp-plugin-'));
+  const path = join(cwd, 'mcp.json');
+  await writeFile(path, JSON.stringify({ mcpServers: { demo: { command: 'unused' } } }));
+  const close = vi.spyOn(McpClientManager.prototype, 'closeAll').mockResolvedValue();
+  vi.spyOn(McpClientManager.prototype, 'connect').mockResolvedValue({} as Client);
+  const tool = { name: 'duplicate', description: 'duplicate', inputSchema: { type: 'object' }, risk: 'read' as const, async execute() { return { content: '' }; } };
+  vi.spyOn(McpClientManager.prototype, 'bridgeTools').mockResolvedValue([tool, tool]);
+  const host = new PluginHost();
+  try {
+    await expect(host.load([mcpPlugin(path)])).rejects.toThrow(/Duplicate/);
+    expect(host.capabilities).toEqual([]); expect(close).toHaveBeenCalledOnce();
+  } finally { vi.restoreAllMocks(); await rm(cwd, { recursive: true, force: true }); }
 });

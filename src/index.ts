@@ -12,14 +12,16 @@ export * from './core/protocol/types.js';
 export { EventBus, type AgentEvent, type LoopEndReason, type UserDecision, type PermissionRequest } from './core/events.js';
 export { HookRunner } from './core/hooks.js';
 export { AgentLoop, type AgentLoopOptions, type AgentRunResult, type SessionSnapshot } from './core/loop.js';
-export { PermissionEngine, parseRule, matchRule, type Decision, type SessionRules } from './core/permission/engine.js';
-export { AutoJudge, mergeJudgeDecision, type JudgeVerdict, type JudgeStatus, type JudgeMetadata, type JudgeReasonCode } from './core/permission/judge.js';
-export { loadPlugins, type Plugin, type PluginContext, type PluginDisposer } from './core/plugin.js';
+export { createDeterministicPolicy, PermissionController, parseRule, matchRule } from './builtin/policy/index.js';
+export { createModelReviewer } from './builtin/reviewer-model/index.js';
+export type { JudgeStatus, JudgeMetadata, JudgeReasonCode, Decision, SessionRules } from './core/permission/contracts.js';
+export type { Plugin, PluginSetupContext } from './sdk/index.js';
 export { ProviderRegistry, ToolRegistry, type Tool, type ToolContext, type ToolRisk } from './core/registry.js';
 export { complete, type ChatRequest, type Provider, type ThinkingLevel, type CachePolicy, type CacheTtl } from './core/provider.js';
-export { ContextManager, estimateTokens } from './core/context/manager.js';
-export { buildSystemPrompt } from './core/context/system-prompt.js';
-export { loadConfig, loadConfigWithSources, MODEL_PRESETS, type AgentConfig, type ModelInfo, type PermissionMode } from './core/config.js';
+export { ContextManager } from './core/context/coordinator.js';
+export { estimateTokens } from './core/context/tokens.js';
+export { buildSystemPrompt } from './builtin/context-default/implementation.js';
+export { loadConfig, loadConfigWithSources, type AgentConfig, type ModelInfo, type PermissionMode } from './core/config.js';
 export { AnthropicProvider, AnthropicStreamTranslator, toAnthropicMessages, toAnthropicTools, fromAnthropicEvent, buildAnthropicBody } from './providers/anthropic.js';
 export { OpenAIProvider, toOpenAIMessages, toOpenAITools, OpenAIStreamTranslator } from './providers/openai.js';
 export { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from './providers/fake.js';
@@ -50,7 +52,7 @@ export {
   deleteSession,
   deleteSessionVersioned,
   latestSessionId,
-} from './core/session/store.js';
+} from './builtin/session-file/implementation.js';
 export {
   findUnpairedToolUse,
   findOrphanToolResults,
@@ -60,6 +62,8 @@ export {
   type TrimResult,
 } from './core/session/history.js';
 export { writeFileAtomic, enqueueWrite, flushWrites } from './core/session/atomic.js';
-export { SessionManager, type SessionManagerOptions, type SessionSaveResult } from './core/session/manager.js';
+export { SessionManager, type SessionManagerOptions, type SessionSaveResult } from './core/session/coordinator.js';
 
 export { resolveAgentPaths, getGlobalConfigPath, type AgentPaths } from './core/paths.js';
+
+export { MODEL_PRESETS } from './builtin/model-catalog/presets.js';

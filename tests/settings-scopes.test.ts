@@ -45,12 +45,12 @@ describe('设置的全局 / 项目原始层隔离', () => {
 
   it('reviewer全局读取不带入项目值；各层草稿独立、跨层提交失败、省略字段恢复继承', async () => {
     const cwd = project(); const projectPath = join(cwd, 'agent.config.json'); const globalPath = join(home, '.agent', 'config.json');
-    write(globalPath, { provider: 'fake', capabilities: { reviewer: 'model-v2' }, pluginConfig: { 'agentlab.reviewer-strict': { provider: 'fake', model: 'global-model', timeoutMs: 11000, future: { keep: true } } } });
-    write(projectPath, { model: 'main-model', permissions: { allow: ['read_file(project-only.txt)'] }, pluginConfig: { 'agentlab.reviewer-strict': { model: 'project-model', timeoutMs: 22000 } } });
+    write(globalPath, { provider: 'fake', capabilities: { reviewer: 'model' }, pluginConfig: { 'agentlab.reviewer-model': { provider: 'fake', model: 'global-model', timeoutMs: 11000, future: { keep: true } } } });
+    write(projectPath, { model: 'main-model', permissions: { allow: ['read_file(project-only.txt)'] }, pluginConfig: { 'agentlab.reviewer-model': { model: 'project-model', timeoutMs: 22000 } } });
     const originalProject = readFileSync(projectPath, 'utf8');
     let agent = await createAgent(cwd, { autoSaveSessions: false });
     try {
-      const section = agent.settings.find(record => record.id === 'reviewer-strict-config')!.section;
+      const section = agent.settings.find(record => record.id === 'reviewer-model-config')!.section;
       expect(await section.read!(signal(), 'global')).toEqual({ provider: 'fake', model: 'global-model', timeoutMs: 11000, future: { keep: true } });
       expect(await section.read!(signal(), 'project')).toEqual({ model: 'project-model', timeoutMs: 22000 });
       const globalDraft = await section.draft!({ model: 'new-global' }, signal(), 'global');
@@ -58,11 +58,11 @@ describe('设置的全局 / 项目原始层隔离', () => {
       expect(() => section.commit!(globalDraft, signal(), 'project')).toThrow(/作用域/);
       await section.commit!(globalDraft, signal(), 'global');
       expect(readFileSync(projectPath, 'utf8')).toBe(originalProject);
-      expect(read(globalPath).pluginConfig['agentlab.reviewer-strict']).toEqual({ model: 'new-global', future: { keep: true } });
+      expect(read(globalPath).pluginConfig['agentlab.reviewer-model']).toEqual({ model: 'new-global', future: { keep: true } });
       expect(read(globalPath)).not.toHaveProperty('permissions');
       expect(agent.loop.getJudgeStatus()).toMatchObject({ model: 'project-model', providerSource: 'explicit' });
       await section.commit!(projectDraft, signal(), 'project');
-      expect(read(projectPath).pluginConfig['agentlab.reviewer-strict']).toEqual({});
+      expect(read(projectPath).pluginConfig['agentlab.reviewer-model']).toEqual({});
       await agent.dispose(); agent = await createAgent(cwd, { autoSaveSessions: false });
       expect(agent.loop.getJudgeStatus()).toMatchObject({ model: 'new-global', providerSource: 'current' });
     } finally { await agent.dispose(); }
@@ -71,20 +71,20 @@ describe('设置的全局 / 项目原始层隔离', () => {
   it('能力全局保存和删除不复制项目选择，取消和过期草稿不覆盖磁盘', async () => {
     const cwd = project(); const projectPath = join(cwd, 'agent.config.json'); const globalPath = join(home, '.agent', 'config.json');
     write(globalPath, { provider: 'fake', future: { keep: true } });
-    write(projectPath, { capabilities: { reviewer: 'model-v2' }, pluginConfig: { 'agentlab.policy-deterministic-v2': { writeRoots: [] } } });
+    write(projectPath, { capabilities: { reviewer: 'model' }, pluginConfig: { 'agentlab.policy': { writeRoots: [] } } });
     const originalProject = readFileSync(projectPath, 'utf8'); const originalGlobal = readFileSync(globalPath, 'utf8');
     const agent = await createAgent(cwd, { autoSaveSessions: false });
     try {
       const section = agent.settings.find(record => record.id === 'capability-selection')!.section;
       expect(await section.read!(signal(), 'global')).toEqual({});
-      expect(await section.read!(signal(), 'project')).toEqual({ reviewer: 'model-v2' });
+      expect(await section.read!(signal(), 'project')).toEqual({ reviewer: 'model' });
       const draft = await section.draft!({ reviewer: false }, signal(), 'global');
       expect(readFileSync(globalPath, 'utf8')).toBe(originalGlobal);
       expect(() => section.commit!(draft, signal(), 'project')).toThrow(/作用域/);
       await section.commit!(draft, signal(), 'global');
       expect(read(globalPath)).toEqual({ provider: 'fake', future: { keep: true }, capabilities: { reviewer: false } });
       expect(readFileSync(projectPath, 'utf8')).toBe(originalProject);
-      expect(agent.plugins.selected('reviewer')?.id).toBe('model-v2');
+      expect(agent.plugins.selected('reviewer')?.id).toBe('model');
       await section.read!(signal(), 'global');
       const clear = await section.draft!({}, signal(), 'global'); await section.commit!(clear, signal(), 'global');
       expect(read(globalPath).capabilities).toEqual({});
@@ -100,13 +100,13 @@ describe('设置的全局 / 项目原始层隔离', () => {
     const cwd = project(); const globalPath = join(home, '.agent', 'config.json');
     const agent = await createAgent(cwd, { config: { provider: 'fake' }, autoSaveSessions: false });
     try {
-      const section = agent.settings.find(record => record.id === 'policy-deterministic-v2-config')!.section;
+      const section = agent.settings.find(record => record.id === 'policy-deterministic-config')!.section;
       expect(section.scopeTargets).toEqual([{ scope: 'project', path: join(cwd, 'agent.config.json') }]);
       expect(() => section.read!(signal(), 'global')).toThrow(/只支持本项目/);
       await expect(section.draft!({ writeRoots: ['.'] }, signal(), 'global')).rejects.toThrow(/只支持本项目/);
       await expect(section.commit!({}, signal(), 'global')).rejects.toThrow(/只支持本项目/);
     } finally { await agent.dispose(); }
-    write(globalPath, { provider: 'fake', pluginConfig: { 'agentlab.policy-deterministic-v2': { writeRoots: ['.'] } } });
+    write(globalPath, { provider: 'fake', pluginConfig: { 'agentlab.policy': { writeRoots: ['.'] } } });
     await expect(createAgent(cwd, { autoSaveSessions: false })).rejects.toThrow(/not allowed in global scope/);
   });
 
@@ -119,7 +119,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
     const cwd = project(); const path = join(cwd, 'agent.config.json');
     const agent = await createAgent(cwd, { config: { provider: 'fake' }, autoSaveSessions: false });
     try {
-      const section = agent.settings.find(record => record.id === 'policy-deterministic-v2-config')!.section;
+      const section = agent.settings.find(record => record.id === 'policy-deterministic-config')!.section;
       await section.read!(signal(), 'project');
       const drafting = new AbortController();
       const cancelledDraft = section.draft!({ writeRoots: [] }, drafting.signal, 'project'); drafting.abort();
@@ -138,7 +138,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
     write(path, { provider: 'fake' });
     const agent = await createAgent(cwd, { autoSaveSessions: false });
     try {
-      const section = agent.settings.find(record => record.id === 'policy-deterministic-v2-config')!.section;
+      const section = agent.settings.find(record => record.id === 'policy-deterministic-config')!.section;
       await section.read!(signal(), 'project');
       const pending = section.draft!({ writeRoots: [] }, signal(), 'project');
       write(path, { provider: 'fake', external: true });

@@ -10,16 +10,15 @@ const help = `AgentLab
   --command <line>  执行已注册命令后退出；不加载终端组件
   --json            --command 的结果输出 JSON
   --resume <id>     启动后恢复指定会话，id 为 latest 时恢复最近一次
-  --allow-legacy-session  确认当前配置兼容，迁移缺少 provider 身份的旧会话
   --sessions        列出本项目已保存的会话后退出
   -h, --help        显示帮助
 `;
 
-let values: { command?: string; json?: boolean; resume?: string; sessions?: boolean; help?: boolean; 'allow-legacy-session'?: boolean };
+let values: { command?: string; json?: boolean; resume?: string; sessions?: boolean; help?: boolean };
 try {
   ({ values } = parseArgs({ options: {
     command: { type: 'string' }, json: { type: 'boolean', default: false },
-    resume: { type: 'string' }, 'allow-legacy-session': { type: 'boolean', default: false },
+    resume: { type: 'string' },
     sessions: { type: 'boolean', default: false }, help: { type: 'boolean', short: 'h', default: false },
   }, allowPositionals: false, strict: true }));
 } catch (error) {
@@ -56,5 +55,5 @@ if (values.command !== undefined) {
 } else {
   // 直到真正启动 TUI 才导入 pi-tui；脚本命令无需终端代码。
   const { startTui } = await import('./app.js');
-  if (!startTui(agent, values.resume ? { resume: values.resume, allowLegacySession: values['allow-legacy-session'] } : {})) await agent.dispose();
+  if (!startTui(agent, values.resume ? { resume: values.resume } : {})) await agent.dispose();
 }

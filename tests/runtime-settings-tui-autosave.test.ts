@@ -72,15 +72,15 @@ describe('设置入口的一次提交', () => {
       ui.key('\x05'); ui.key('\x15'); ui.key('\x1b[200~'); ui.key('{\n  "reviewer": false\n}'); ui.key('\x1b[201~'); ui.key('\r');
       await vi.waitFor(() => expect(read(ui.path).capabilities).toEqual({ reviewer: false }));
       await shown(ui, '重启后生效');
-      expect(ui.agent.plugins.selected('reviewer')?.id).toBe('model-v1');
+      expect(ui.agent.plugins.selected('reviewer')?.id).toBe('model');
       expect(ui.screen()).not.toContain('确认 Save');
     } finally { await ui.dispose(); }
   });
 
   it('可选全局入口无需确认，保持项目覆盖与其他字段', async () => {
-    const ui = await mount({ capabilities: { reviewer: 'model-v2' }, futureGlobal: true });
+    const ui = await mount({ capabilities: { reviewer: 'model' }, futureGlobal: true });
     try {
-      write(ui.path, { provider: 'fake', model: 'before', capabilities: { reviewer: 'model-v1' }, future: true });
+      write(ui.path, { provider: 'fake', model: 'before', capabilities: { reviewer: 'model' }, future: true });
       const before = readFileSync(ui.path, 'utf8');
       ui.send('/settings'); ui.key('\r'); await shown(ui, '切换到全局');
       ui.key('\x1b[B'); ui.key('\x1b[B'); ui.key('\r');

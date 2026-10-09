@@ -2,8 +2,7 @@ import { link, mkdir, mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDeterministicAnalyzer, createDeterministicPolicy, parseLiteralShell, previewRuleConflicts, validateWriteRoots, nativeFilesystemAnalysisSupported } from '../src/builtin/policy-deterministic-v2/index.js';
-import { createLegacyPolicy, PermissionEngine } from '../src/builtin/policy-legacy/index.js';
+import { createDeterministicAnalyzer, createDeterministicPolicy, parseLiteralShell, validateWriteRoots, nativeFilesystemAnalysisSupported } from '../src/builtin/policy/index.js';
 import { ToolExecutor } from '../src/core/tool-executor.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
@@ -25,25 +24,24 @@ const read = trusted(readFileTool); const write = trusted(writeFileTool); const 
 const policy = (mode: PermissionMode = 'auto', configured: Partial<SessionRules> = {}, pluginEntries?: readonly string[]) => createDeterministicPolicy({ cwd, mode, rules: rules(configured), pluginEntries });
 const operation = (tool: Tool = read, input: Record<string, unknown> = { path: 'src/code.ts' }): PolicyInput => ({ tool, input, cwd, configRevision: 'c1', policyRevision: 'p1' });
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'policy-v2-')); cwd = join(root, 'repo'); outside = join(root, 'outside');
+  root = await mkdtemp(join(tmpdir(), 'policy-')); cwd = join(root, 'repo'); outside = join(root, 'outside');
   await mkdir(join(cwd, 'src'), { recursive: true }); await mkdir(outside);
   await writeFile(join(cwd, 'src/code.ts'), 'export const value = 1;'); await writeFile(join(outside, 'data.txt'), 'outside');
 });
 afterEach(async () => { vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }); });
 
-describe('optional deterministic policy v2', () => {
+describe('deterministic policy', () => {
   it('完整的项目内普通文件 read 在 auto 中确定性放行，ask 模式仍询问', async () => {
-    expect(await policy().decide(operation(), signal())).toMatchObject({ kind: 'allow', reasonCode: 'v2_safe_read' });
-    expect(await policy('ask').decide(operation(), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_ask_mode' });
+    expect(await policy().decide(operation(), signal())).toMatchObject({ kind: 'allow', reasonCode: 'safe_read' });
+    expect(await policy('ask').decide(operation(), signal())).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
   });
 
-  it('默认 legacy 顺序不变，v2 ask 优先并提供只读冲突预览', async () => {
+  it('明确 ask 优先于宽泛 allow，检查不改写配置', async () => {
     const configured = rules({ allow: ['read_file'], ask: ['read_file(src/**)'] });
-    const legacy = createLegacyPolicy(new PermissionEngine({ mode: 'auto', rules: configured }));
-    expect((await legacy.decide(operation(), signal())).kind).toBe('allow');
-    expect(await policy('auto', configured).decide(operation(), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_explicit_ask' });
     const before = structuredClone(configured);
-    expect(previewRuleConflicts(configured)).toEqual([{ tool: 'read_file', allowRule: 'read_file', askRule: 'read_file(src/**)', certainty: 'definite', legacyWinner: 'allow', v2Winner: 'ask' }]);
+    expect(await policy('auto', configured).decide(operation(), signal())).toMatchObject({
+      kind: 'ask', reasonCode: 'explicit_ask', source: 'config', matchedRule: 'read_file(src/**)',
+    });
     expect(configured).toEqual(before);
   });
 
@@ -77,7 +75,7 @@ describe('optional deterministic policy v2', () => {
 
   it('精确普通文件目标授权可放行，宽 allow 不能放行不确定写入', async () => {
     const input = operation(write, { path: 'src/new.ts', content: 'x' });
-    expect(await policy('auto', { allow: ['write_file(="src/new.ts")'] }).decide(input, signal())).toMatchObject({ kind: 'allow', reasonCode: 'v2_exact_allow' });
+    expect(await policy('auto', { allow: ['write_file(="src/new.ts")'] }).decide(input, signal())).toMatchObject({ kind: 'allow', reasonCode: 'exact_allow' });
     expect((await policy('auto', { allow: ['write_file'] }).decide(input, signal())).kind).toBe('review');
     expect((await policy('ask', { allow: ['write_file(src/new.ts)'] }).decide(input, signal())).kind).toBe('allow');
   });
@@ -96,7 +94,7 @@ describe('optional deterministic policy v2', () => {
         const value = policy(mode, { allow: grants.config });
         for (const rule of grants.session) value.controller!.addSessionRule('allow', rule);
         expect(await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal())).toMatchObject({
-          kind: 'allow', reasonCode: 'v2_exact_allow', source: literalSource, matchedRule: literal,
+          kind: 'allow', reasonCode: 'exact_allow', source: literalSource, matchedRule: literal,
         });
       }
     });
@@ -106,7 +104,7 @@ describe('optional deterministic policy v2', () => {
       const value = policy(mode, { allow: source === 'config' ? broad : [] });
       if (source === 'session') for (const rule of broad) value.controller!.addSessionRule('allow', rule);
       expect(await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal())).toMatchObject({
-        kind: mode === 'ask' ? 'ask' : 'review', reasonCode: mode === 'ask' ? 'v2_ask_mode' : 'v2_review_uncertain',
+        kind: mode === 'ask' ? 'ask' : 'review', reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
       });
     });
 
@@ -119,17 +117,17 @@ describe('optional deterministic policy v2', () => {
         if (source === 'session') value.controller!.addSessionRule(kind, restriction);
         if (kind === 'deny') value.controller!.addSessionRule('ask', 'write_file');
         expect(await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal())).toMatchObject({
-          kind, reasonCode: kind === 'deny' ? 'v2_deny_rule' : 'v2_explicit_ask', source, matchedRule: restriction,
+          kind, reasonCode: kind === 'deny' ? 'deny_rule' : 'explicit_ask', source, matchedRule: restriction,
         });
       }
     });
 
     it('跳过宽规则后仍不绕过敏感目标与未知分析约束', async () => {
       const value = policy(mode, { allow: ['write_file', 'write_file(=".env")', 'write_file(="src/new.ts")', 'bash', 'bash(="npm test")'] });
-      expect(await value.decide(operation(write, { path: '.env', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_sensitive_target' });
+      expect(await value.decide(operation(write, { path: '.env', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
       for (const input of [operation(bash, { command: 'npm test' }), operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' })]) {
         expect(await value.decide(input, signal())).toMatchObject({
-          kind: mode === 'ask' ? 'ask' : 'review', reasonCode: mode === 'ask' ? 'v2_ask_mode' : 'v2_review_uncertain',
+          kind: mode === 'ask' ? 'ask' : 'review', reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
         });
       }
     });
@@ -138,25 +136,25 @@ describe('optional deterministic policy v2', () => {
   it.each(['.env', '.env.local', '.ssh/id_ed25519', '.git/hooks/pre-commit', '.git/config', '.agent/settings.json', 'agent.config.json', 'mcp.json', 'plugins/plugin.js', 'AGENTS.md'])('敏感目标 %s 必须询问，精确规则与 yolo 均不能覆盖', async (path) => {
     await mkdir(dirname(join(cwd, path)), { recursive: true }); await writeFile(join(cwd, path), 'fixture');
     const value = policy('yolo', { allow: [`write_file(=${JSON.stringify(path)})`, `read_file(=${JSON.stringify(path)})`] });
-    expect(await value.decide(operation(write, { path, content: 'changed' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_sensitive_target' });
+    expect(await value.decide(operation(write, { path, content: 'changed' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
     expect((await value.decide(operation(read, { path }), signal())).kind).toBe('ask');
   });
 
   it('自定义插件入口及其符号链接别名也受保护', async () => {
     await mkdir(join(cwd, 'extensions')); await writeFile(join(cwd, 'extensions/custom.ts'), 'plugin');
     await symlink('extensions/custom.ts', join(cwd, 'ordinary.ts'));
-    expect(await policy('auto', {}, ['extensions/custom.ts']).decide(operation(read, { path: 'ordinary.ts' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_sensitive_target' });
+    expect(await policy('auto', {}, ['extensions/custom.ts']).decide(operation(read, { path: 'ordinary.ts' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
   });
 
   it.each(['../outside/data.txt', '/etc/passwd'])('路径逃逸 %s 必须询问', async (path) => {
-    expect(await policy('yolo', { allow: ['read_file'] }).decide(operation(read, { path }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_external_target' });
+    expect(await policy('yolo', { allow: ['read_file'] }).decide(operation(read, { path }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'external_target' });
   });
 
   it('现有与新文件父目录符号链接，以及悬空符号链接都不能逃出项目', async () => {
     await symlink(outside, join(cwd, 'external-dir'));
     await symlink(join(outside, 'not-created.txt'), join(cwd, 'dangling'));
     for (const path of ['external-dir/data.txt', 'external-dir/new/deep.txt', 'dangling']) {
-      expect(await policy('yolo').decide(operation(write, { path, content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_external_target' });
+      expect(await policy('yolo').decide(operation(write, { path, content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'external_target' });
     }
   });
 
@@ -166,16 +164,16 @@ describe('optional deterministic policy v2', () => {
 
   it('硬链接可能指向敏感别名，不能据表面路径自动放行', async () => {
     await writeFile(join(cwd, '.env'), 'secret fixture'); await link(join(cwd, '.env'), join(cwd, 'ordinary.txt'));
-    expect(await policy('yolo').decide(operation(read, { path: 'ordinary.txt' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_aliased_target' });
+    expect(await policy('yolo').decide(operation(read, { path: 'ordinary.txt' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'aliased_target' });
   });
 
   it('非普通文件目标不能确定性读写', async () => {
-    expect(await policy('yolo').decide(operation(write, { path: 'src', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_special_target' });
+    expect(await policy('yolo').decide(operation(write, { path: 'src', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'special_target' });
   });
 
   it.each(['C:\\Users\\owner\\file', 'C:relative.txt', '\\\\server\\share\\file', 'src\\file'])('其他平台路径 %s 不被当成安全 POSIX 相对路径', async (path) => {
     if (process.platform === 'win32') return;
-    expect(await policy('yolo').decide(operation(read, { path }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_external_target' });
+    expect(await policy('yolo').decide(operation(read, { path }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'external_target' });
   });
 
   it('平台能力声明明确禁用原生 Windows 确定性文件授予（不冒充实机测试）', () => {
@@ -210,7 +208,7 @@ describe('optional deterministic policy v2', () => {
   });
 
   it('已知危险 Shell 必须询问，auto reviewer 也没有资格覆盖', async () => {
-    expect(await policy('auto', { allow: ['bash'] }).decide(operation(bash, { command: 'sudo rm -rf /opt' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_danger_constraint' });
+    expect(await policy('auto', { allow: ['bash'] }).decide(operation(bash, { command: 'sudo rm -rf /opt' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'danger_constraint' });
   });
 
   it('yolo 仅跳过完整普通文件写入；auto 写入仍交给 reviewer', async () => {
@@ -221,13 +219,13 @@ describe('optional deterministic policy v2', () => {
 
   it('writeRoots 默认空，只有显式授权的普通 src 写入免除模型', async () => {
     const value = createDeterministicPolicy({ cwd, mode: 'auto', rules: rules(), writeRoots: ['src'] });
-    expect(await value.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal())).toMatchObject({ kind: 'allow', reasonCode: 'v2_scoped_write' });
+    expect(await value.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal())).toMatchObject({ kind: 'allow', reasonCode: 'scoped_write' });
     expect((await policy().decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal())).kind).toBe('review');
     expect((await value.decide(operation(write, { path: 'other/generated.ts', content: 'x' }), signal())).kind).toBe('review');
     expect((await value.decide(operation(write, { path: 'src/AGENTS.md', content: 'instructions' }), signal())).kind).toBe('ask');
     expect((await value.decide(operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/generated.ts', content: 'x' }), signal())).kind).toBe('review');
     const ask = createDeterministicPolicy({ cwd, mode: 'ask', rules: rules(), writeRoots: ['src'] });
-    expect(await ask.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_ask_mode' });
+    expect(await ask.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
   });
 
   it('其他配置的分析快照不能扩大 writeRoots，本策略不能跨项目借用', async () => {
@@ -235,7 +233,7 @@ describe('optional deterministic policy v2', () => {
     const input = operation(write, { path: 'ungranted.ts', content: 'x' });
     const wider = await createDeterministicAnalyzer({ writeRoots: ['.'] }).analyze(input, signal());
     expect((await value.decide({ ...input, analysis: wider }, signal())).kind).toBe('review');
-    expect(await value.decide({ ...input, cwd: outside }, signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_context_changed' });
+    expect(await value.decide({ ...input, cwd: outside }, signal())).toMatchObject({ kind: 'ask', reasonCode: 'context_changed' });
   });
 
   it('writeRoots 不能覆盖明确 ask/deny 或通过符号链接越界', async () => {
@@ -274,7 +272,7 @@ describe('optional deterministic policy v2', () => {
     await writeFile(join(cwd, '.git'), 'gitdir: /tmp/fixture-gitdir');
     for (const mode of ['auto', 'yolo'] as const) {
       const value = createDeterministicPolicy({ cwd, mode, rules: rules({ allow: ['write_file(=".git")'] }), writeRoots: ['.'] });
-      expect(await value.decide(operation(write, { path: '.git', content: 'gitdir: /other' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'v2_sensitive_target' });
+      expect(await value.decide(operation(write, { path: '.git', content: 'gitdir: /other' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
     }
     const tools = new ToolRegistry(); const execute = vi.fn(async () => ({ content: 'bad' })); tools.register({ ...write, execute });
     const executor = new ToolExecutor({ tools, cwd, hooks: new HookRunner(), events: new EventBus(),

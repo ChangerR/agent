@@ -2,20 +2,20 @@
  * 示例外部插件：演示插件能做的一切。
  *
  * 在 agent.config.json 中启用：
- *   { "plugins": ["plugins/example/index.ts"] }
+ *   { "pluginEntries": ["plugins/example/index.ts"] }
  *
  * 展示三件事：
  * 1. 注册自定义工具（current_time）
  * 2. 注册 PreToolUse 钩子（审计所有 bash 命令）
  * 3. 注册 TurnEnd 钩子（统计轮次）
  */
-import type { Plugin } from '../../src/index.js';
+import type { Plugin } from '../../src/sdk/index.js';
 
 const examplePlugin: Plugin = {
-  name: 'example',
-  register(ctx) {
+  manifest: { id: 'example', version: '1.0.0', apiVersion: 1 },
+  setup(ctx) {
     // 1. 自定义工具
-    ctx.tools.register({
+    ctx.provide.tool('current_time', {
       name: 'current_time',
       description: 'Get the current date and time.',
       risk: 'read',

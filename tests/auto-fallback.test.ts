@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAgent, type Agent } from '../src/index.js';
 import type { AgentConfig } from '../src/core/config.js';
 import type { AgentEvent } from '../src/core/events.js';
-import type { Decision } from '../src/core/permission/engine.js';
-import { AutoJudge, mergeJudgeDecision } from '../src/core/permission/judge.js';
-import type { ReviewContext } from '../src/core/permission/review-context.js';
+import type { ReviewInput } from '../src/sdk/index.js';
+import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
+import type { ReviewContext } from '../src/core/permission/contracts.js';
 import type { ChatRequest, Provider } from '../src/core/provider.js';
 import type { StreamEvent } from '../src/core/protocol/types.js';
 import type { Tool } from '../src/core/registry.js';
@@ -21,7 +21,13 @@ const commandTool: Tool = {
   name: 'project_command', description: '执行本地项目检查', risk: 'execute', inputSchema: {},
   execute: async () => ({ content: 'passed' }),
 };
-const original: Decision = { kind: 'ask', source: 'mode', reason: 'auto 模式待审核' };
+function reviewResponse(decision: 'allow' | 'ask' | 'deny' | 'unknown' = 'allow', reason = '当前操作审批结果') {
+  return textResponse(JSON.stringify({ decision, reasonCode: `model_${decision}`, reason }));
+}
+function operation(input: Record<string, unknown> = {}, context = reviewContext(), tool = commandTool): ReviewInput {
+  return { tool, input, context, cwd: context.cwd, userRequest: context.userRequest,
+    decision: { kind: 'review', source: 'mode', reason: 'auto 模式待审核' } };
+}
 
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), 'agentlab-auto-fallback-'));
@@ -33,7 +39,7 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-async function assembled(config: Partial<AgentConfig> = {}, judgeResponse: ScriptedResponse = textResponse('{"verdict":"allow","reason":"本地检查"}'), toolOverrides: Partial<Tool> = {}) {
+async function assembled(config: Partial<AgentConfig> = {}, judgeResponse: ScriptedResponse = reviewResponse('allow', '本地检查'), toolOverrides: Partial<Tool> = {}) {
   await writeFile(join(tmp, 'agent.config.json'), JSON.stringify({
     provider: 'fake', model: 'current-a', permissionMode: 'auto', ...config,
   }));
@@ -69,7 +75,7 @@ describe('createAgent 的当前模型审批兜底', () => {
     const fixture = await assembled(judgeModel === undefined ? {} : { judgeModel });
     expect((await fixture.agent.loop.run('运行本地检查')).reason).toBe('completed');
     expect(judgeRequests(fixture.fake).map(request => request.model)).toEqual(['current-a']);
-    expect(fixture.agent.loop.getJudgeStatus()).toEqual({ loaded: true, model: 'current-a', source: 'current' });
+    expect(fixture.agent.loop.getJudgeStatus()).toMatchObject({ loaded: true, model: 'current-a', source: 'current' });
     expect(fixture.requests).toEqual([]);
     expect(fixture.execute).toHaveBeenCalledTimes(1);
     expect(fixture.decisions.find(event => event.phase === 'judge')?.decision).toMatchObject({
@@ -86,7 +92,7 @@ describe('createAgent 的当前模型审批兜底', () => {
     agent.loop.importSession({ messages: [{ role: 'user', content: '恢复的会话' }], model: 'restored-c' });
     await agent.loop.run('恢复后检查');
     expect(judgeRequests(fake).map(request => request.model)).toEqual(['current-a', 'current-b', 'restored-c']);
-    expect(agent.loop.getJudgeStatus()).toEqual({ loaded: true, model: 'restored-c', source: 'current' });
+    expect(agent.loop.getJudgeStatus()).toMatchObject({ loaded: true, model: 'restored-c', source: 'current' });
   });
 
   it('显式 judgeModel 始终固定，不受当前模型或恢复会话影响', async () => {
@@ -97,7 +103,7 @@ describe('createAgent 的当前模型审批兜底', () => {
     agent.loop.importSession({ messages: [], model: 'restored-c' });
     await agent.loop.run('恢复后检查');
     expect(judgeRequests(fake).map(request => request.model)).toEqual(['fixed-judge', 'fixed-judge', 'fixed-judge']);
-    expect(agent.loop.getJudgeStatus()).toEqual({ loaded: true, model: 'fixed-judge', source: 'explicit' });
+    expect(agent.loop.getJudgeStatus()).toMatchObject({ loaded: true, model: 'fixed-judge', source: 'explicit' });
     expect(decisions.filter(event => event.phase === 'judge').map(event => event.decision)).toEqual([
       expect.objectContaining({ judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'model_allow' } }),
       expect.objectContaining({ judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'model_allow' } }),
@@ -128,14 +134,14 @@ describe('审批请求模型快照与安全回退', () => {
       async *stream(request) {
         requests.push(request);
         await new Promise<void>(resolve => releases.push(resolve));
-        yield* textResponse('{"verdict":"allow","reason":"安全"}');
+        yield* reviewResponse('allow', '安全');
       },
     };
-    const judge = new AutoJudge(provider, resolveModel);
-    const first = judge.review(commandTool, { command: 'first' }, new AbortController().signal);
+    const judge = createModelReviewer({ provider, model: resolveModel });
+    const first = judge.review(operation({ command: 'first' }), new AbortController().signal);
     await vi.waitFor(() => expect(releases).toHaveLength(1));
     current = 'second-model';
-    const second = judge.review(commandTool, { command: 'second' }, new AbortController().signal);
+    const second = judge.review(operation({ command: 'second' }), new AbortController().signal);
     await vi.waitFor(() => expect(releases).toHaveLength(2));
     current = 'third-model';
     releases[1]();
@@ -144,28 +150,28 @@ describe('审批请求模型快照与安全回退', () => {
     const firstResult = await first;
     expect(requests.map(request => request.model)).toEqual(['first-model', 'second-model']);
     expect(resolveModel).toHaveBeenCalledTimes(2);
-    expect(mergeJudgeDecision(original, firstResult)).toMatchObject({
-      kind: 'allow', source: 'judge', judge: { model: 'first-model', source: 'current', reasonCode: 'model_allow' },
+    expect(firstResult).toMatchObject({
+      decision: 'allow', judge: { model: 'first-model', source: 'current', reasonCode: 'model_allow' },
     });
-    expect(mergeJudgeDecision(original, secondResult)).toMatchObject({
-      kind: 'allow', source: 'judge', judge: { model: 'second-model', source: 'current', reasonCode: 'model_allow' },
+    expect(secondResult).toMatchObject({
+      decision: 'allow', judge: { model: 'second-model', source: 'current', reasonCode: 'model_allow' },
     });
-    expect(judge.getStatus()).toEqual({ loaded: true, model: 'third-model', source: 'current' });
+    expect(judge.getStatus()).toMatchObject({ loaded: true, model: 'third-model', source: 'current' });
   });
 
-  it('兼容原有字符串构造方式，并把 ask 标记成审批员来源', async () => {
-    const fake = new FakeProvider([textResponse('{"verdict":"ask","reason":"需要确认操作范围"}')]);
-    const judge = new AutoJudge(fake, 'fixed-judge');
-    const verdict = await judge.review(commandTool, {}, new AbortController().signal);
-    expect(judge.getStatus()).toEqual({ loaded: true, model: 'fixed-judge', source: 'explicit' });
+  it('固定模型显式返回 ask 并携带来源元数据', async () => {
+    const fake = new FakeProvider([reviewResponse('ask', '需要确认操作范围')]);
+    const judge = createModelReviewer({ provider: fake, model: 'fixed-judge' });
+    const verdict = await judge.review(operation(), new AbortController().signal);
+    expect(judge.getStatus()).toMatchObject({ loaded: true, model: 'fixed-judge', source: 'explicit' });
     expect(fake.requests[0].model).toBe('fixed-judge');
-    expect(mergeJudgeDecision(original, verdict)).toMatchObject({
-      kind: 'ask', source: 'judge', judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'model_ask' },
+    expect(verdict).toMatchObject({
+      decision: 'ask', judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'model_ask' },
     });
   });
 
   it('真实装配的 ask 事件、权限审计与调试日志保留判定来源和模型', async () => {
-    const fixture = await assembled({}, textResponse('{"verdict":"ask","reason":"请确认范围"}'));
+    const fixture = await assembled({}, reviewResponse('ask', '请确认范围'));
     await fixture.agent.loop.run('检查');
     const expected = { kind: 'ask', source: 'judge', judge: { model: 'current-a', source: 'current', reasonCode: 'model_ask' } };
     expect(fixture.decisions.find(event => event.phase === 'judge')?.decision).toMatchObject(expected);
@@ -196,7 +202,7 @@ describe('审批请求模型快照与安全回退', () => {
   });
 
   it.each(['max_tokens', 'tool_use', undefined] as const)('回复以 %s 结束时，即使文本是有效 allow JSON 也不会执行工具', async stopReason => {
-    const response: StreamEvent[] = textResponse('{"verdict":"allow","reason":"看起来安全"}')
+    const response: StreamEvent[] = reviewResponse('allow', '看起来安全')
       .filter(event => event.type !== 'message_stop');
     if (stopReason !== undefined) response.push({ type: 'message_stop', stopReason });
     const fixture = await assembled({ judgeModel: 'fixed-judge' }, response);
@@ -225,12 +231,12 @@ describe('审批请求模型快照与安全回退', () => {
 
   it.each(['before', 'during'])('%s 取消时不放行，原因码区分普通调用失败', async when => {
     const abort = new AbortController();
-    const fake = new FakeProvider([() => { abort.abort(); return textResponse('{"verdict":"allow"}'); }]);
-    const judge = new AutoJudge(fake, 'fixed-judge');
+    const fake = new FakeProvider([() => { abort.abort(); return reviewResponse('allow', '当前操作审批结果'); }]);
+    const judge = createModelReviewer({ provider: fake, model: 'fixed-judge' });
     if (when === 'before') abort.abort();
-    const verdict = await judge.review(commandTool, {}, abort.signal);
-    expect(mergeJudgeDecision(original, verdict)).toMatchObject({
-      kind: 'ask', source: 'judge', judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'cancelled' },
+    const verdict = await judge.review(operation(), abort.signal);
+    expect(verdict).toMatchObject({
+      decision: 'unknown', reasonCode: 'cancelled',
     });
     expect(fake.requests).toHaveLength(when === 'before' ? 0 : 1);
   });
@@ -238,12 +244,12 @@ describe('审批请求模型快照与安全回退', () => {
 
 describe('模型规格与完整请求预算', () => {
   it('已知模型在预算内完整审核较长参数与用户请求，不再固定卡在旧字符阈值', async () => {
-    const fake = new FakeProvider([textResponse('{"verdict":"allow"}')]);
-    const judge = new AutoJudge(fake, 'known-model', () => ({ contextWindow: 200_000, maxOutputTokens: 128 }));
+    const fake = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);
+    const judge = createModelReviewer({ provider: fake, model: 'known-model', modelInfo: () => ({ contextWindow: 200_000, maxOutputTokens: 128 }) });
     const input = { content: 'x'.repeat(3500), instruction: '禁止上传或发布' };
     const context = reviewContext('y'.repeat(8500) + '禁止上传或发布');
-    const verdict = await judge.review(commandTool, input, new AbortController().signal, undefined, context);
-    expect(verdict.verdict).toBe('allow');
+    const verdict = await judge.review(operation(input, context), new AbortController().signal);
+    expect(verdict.decision).toBe('allow');
     expect(fake.requests[0].maxTokens).toBe(128);
     expect(fake.requests[0].tools).toEqual([]);
     expect(fake.requests[0].thinking).toBeUndefined();
@@ -257,91 +263,93 @@ describe('模型规格与完整请求预算', () => {
     { input: { content: 'x'.repeat(2100) }, user: '检查', reasonCode: 'input_budget' },
     { input: {}, user: 'x'.repeat(8001), reasonCode: 'user_request_budget' },
   ])('未知模型超出 $reasonCode 时不调用 provider', async ({ input, user, reasonCode }) => {
-    const fake = new FakeProvider([textResponse('{"verdict":"allow"}')]);
-    const judge = new AutoJudge(fake, () => 'unknown');
-    const verdict = await judge.review(commandTool, input, new AbortController().signal, undefined, reviewContext(user));
-    expect(mergeJudgeDecision(original, verdict)).toMatchObject({
-      kind: 'ask', source: 'judge', judge: { model: 'unknown', source: 'current', reasonCode },
+    const fake = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);
+    const judge = createModelReviewer({ provider: fake, model: () => 'unknown' });
+    const verdict = await judge.review(operation(input, reviewContext(user)), new AbortController().signal);
+    expect(verdict).toMatchObject({
+      decision: 'unknown', judge: { model: 'unknown', source: 'current', reasonCode },
     });
     expect(fake.requests).toHaveLength(0);
   });
 
   it.each([0, -1, NaN, Infinity, 1.5])('无效模型规格 %s 不扩大未知模型的保守参数预算', async contextWindow => {
-    const fake = new FakeProvider([textResponse('{"verdict":"allow"}')]);
-    const judge = new AutoJudge(fake, 'invalid-info', () => ({ contextWindow, maxOutputTokens: 256 }));
-    const verdict = await judge.review(commandTool, { content: 'x'.repeat(2100) }, new AbortController().signal);
-    expect(mergeJudgeDecision(original, verdict)).toMatchObject({ kind: 'ask', judge: { reasonCode: 'input_budget' } });
+    const fake = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);
+    const judge = createModelReviewer({ provider: fake, model: 'invalid-info', modelInfo: () => ({ contextWindow, maxOutputTokens: 256 }) });
+    const verdict = await judge.review(operation({ content: 'x'.repeat(2100) }), new AbortController().signal);
+    expect(verdict).toMatchObject({ decision: 'unknown', judge: { reasonCode: 'input_budget' } });
     expect(fake.requests).toHaveLength(0);
   });
 
   it('完整请求恰好预算内可审核，少一个字节则询问且不会截断请求', async () => {
-    const fake = new FakeProvider([() => textResponse('{"verdict":"allow"}')]);
+    const fake = new FakeProvider([() => reviewResponse('allow', '当前操作审批结果')]);
     let window = 200_000;
-    const judge = new AutoJudge(fake, 'known-model', () => ({ contextWindow: window, maxOutputTokens: 64 }));
+    const judge = createModelReviewer({ provider: fake, model: 'known-model', modelInfo: () => ({ contextWindow: window, maxOutputTokens: 64 }) });
     const input = { content: '中文内容🙂'.repeat(100) };
     const signal = new AbortController().signal;
-    await judge.review(commandTool, input, signal);
+    await judge.review(operation(input), signal);
     const serialized = JSON.stringify(fake.requests[0]);
     const bytes = Buffer.byteLength(serialized, 'utf8');
     expect(bytes).toBeGreaterThan(serialized.length);
     window = bytes + 1024 + 64;
-    expect((await judge.review(commandTool, input, signal)).verdict).toBe('allow');
+    expect((await judge.review(operation(input), signal)).decision).toBe('allow');
     window--;
-    expect(mergeJudgeDecision(original, await judge.review(commandTool, input, signal))).toMatchObject({
-      kind: 'ask', judge: { reasonCode: 'request_budget' },
+    expect(await judge.review(operation(input), signal)).toMatchObject({
+      decision: 'unknown', judge: { reasonCode: 'request_budget' },
     });
     expect(fake.requests).toHaveLength(2);
   });
 
   it.each([undefined, { contextWindow: 1_000_000, maxOutputTokens: 256 }])('请求总成本包括工具描述和历史，不能超过 32 KiB（规格=%j）', async info => {
-    const fake = new FakeProvider([textResponse('{"verdict":"allow"}')]);
-    const judge = new AutoJudge(fake, 'bounded', () => info);
+    const fake = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);
+    const judge = createModelReviewer({ provider: fake, model: 'bounded', modelInfo: () => info });
     const context = reviewContext();
     context.conversation = [{ source: 'tool', text: 'h'.repeat(16_000) }];
-    const verdict = await judge.review({ ...commandTool, description: 'd'.repeat(16_000) }, {}, new AbortController().signal, undefined, context);
-    expect(mergeJudgeDecision(original, verdict)).toMatchObject({ kind: 'ask', judge: { reasonCode: 'request_budget' } });
+    const verdict = await judge.review(operation({}, context, { ...commandTool, description: 'd'.repeat(16_000) }), new AbortController().signal);
+    expect(verdict).toMatchObject({ decision: 'unknown', judge: { reasonCode: 'request_budget' } });
     expect(fake.requests).toHaveLength(0);
   });
 
   it('模型窗口无法容纳系统说明时直接询问，不发送已知超限请求', async () => {
-    const fake = new FakeProvider([textResponse('{"verdict":"allow"}')]);
-    const judge = new AutoJudge(fake, 'tiny', () => ({ contextWindow: 1000, maxOutputTokens: 32 }));
-    const verdict = await judge.review(commandTool, {}, new AbortController().signal);
-    expect(mergeJudgeDecision(original, verdict)).toMatchObject({ kind: 'ask', judge: { reasonCode: 'request_budget' } });
+    const fake = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);
+    const judge = createModelReviewer({ provider: fake, model: 'tiny', modelInfo: () => ({ contextWindow: 1000, maxOutputTokens: 32 }) });
+    const verdict = await judge.review(operation(), new AbortController().signal);
+    expect(verdict).toMatchObject({ decision: 'unknown', judge: { reasonCode: 'request_budget' } });
     expect(fake.requests).toHaveLength(0);
   });
 });
 
 describe('默认加载审批员不改变确定性权限优先级', () => {
   it.each([
-    { label: 'deny 规则', config: { permissions: { allow: [], ask: [], deny: [commandTool.name] } }, kind: 'deny', source: 'config', executions: 0, asks: 0 },
-    { label: 'ask 规则', config: { permissions: { allow: [], ask: [commandTool.name], deny: [] } }, kind: 'ask', source: 'config', executions: 0, asks: 1 },
-    { label: 'allow 规则', config: { permissions: { allow: [commandTool.name], ask: [], deny: [] } }, kind: 'allow', source: 'config', executions: 1, asks: 0 },
-    { label: 'ask 模式', config: { permissionMode: 'ask' as const }, kind: 'ask', source: 'mode', executions: 0, asks: 1 },
-    { label: 'yolo 模式', config: { permissionMode: 'yolo' as const }, kind: 'allow', source: 'mode', executions: 1, asks: 0 },
-  ])('$label 不经过审批模型', async ({ config, kind, source, executions, asks }) => {
+    { label: 'deny 规则', config: { permissions: { allow: [], ask: [], deny: [commandTool.name] } }, kind: 'deny', source: 'config', asks: 0 },
+    { label: 'ask 规则', config: { permissions: { allow: [], ask: [commandTool.name], deny: [] } }, kind: 'ask', source: 'config', asks: 1 },
+    { label: 'ask 模式', config: { permissionMode: 'ask' as const }, kind: 'ask', source: 'mode', asks: 1 },
+    { label: 'yolo 的未知工具', config: { permissionMode: 'yolo' as const }, kind: 'ask', source: 'mode', asks: 1 },
+  ])('$label 不经过审批模型', async ({ config, kind, source, asks }) => {
     const fixture = await assembled(config);
     await fixture.agent.loop.run('检查');
     expect(judgeRequests(fixture.fake)).toHaveLength(0);
     expect(fixture.decisions[0].decision).toMatchObject({ kind, source });
-    expect(fixture.execute).toHaveBeenCalledTimes(executions);
+    expect(fixture.execute).not.toHaveBeenCalled();
     expect(fixture.requests).toHaveLength(asks);
   });
 
-  it('auto 只读工具保持静默放行，不增加审批请求', async () => {
-    const fixture = await assembled({}, undefined, { risk: 'read' });
+  it.each([
+    { label: '宽泛 allow', config: { permissions: { allow: [commandTool.name], ask: [], deny: [] } }, tool: {} },
+    { label: '外部工具声明 risk:read', config: {}, tool: { risk: 'read' as const } },
+  ])('$label 仍须审查完整未知操作', async ({ config, tool }) => {
+    const fixture = await assembled(config, reviewResponse('ask'), tool);
     await fixture.agent.loop.run('读取');
-    expect(judgeRequests(fixture.fake)).toHaveLength(0);
-    expect(fixture.execute).toHaveBeenCalledTimes(1);
-    expect(fixture.requests).toHaveLength(0);
-  });
-
-  it.each(['auto', 'yolo'] as const)('%s 的危险检测优先于审批模型和普通 allow 规则', async permissionMode => {
-    const fixture = await assembled({ permissionMode, permissions: { allow: [commandTool.name], ask: [], deny: [] } }, undefined, { analyzeInput: () => ({ patternTarget: 'danger', summary: '危险检查', dangerous: true }) });
-    await fixture.agent.loop.run('检查');
-    expect(judgeRequests(fixture.fake)).toHaveLength(0);
+    expect(judgeRequests(fixture.fake)).toHaveLength(1);
     expect(fixture.execute).not.toHaveBeenCalled();
     expect(fixture.requests).toHaveLength(1);
-    expect(fixture.decisions[0].decision).toMatchObject({ kind: 'ask', source: 'danger' });
+  });
+
+  it('审批员明确 deny 时直接拒绝，不降为人工询问或执行', async () => {
+    const fixture = await assembled({}, reviewResponse('deny', '用户明确禁止此操作'));
+    await fixture.agent.loop.run('只检查，不执行项目命令');
+    expect(judgeRequests(fixture.fake)).toHaveLength(1);
+    expect(fixture.decisions.find(event => event.phase === 'judge')?.decision).toMatchObject({ kind: 'deny', source: 'judge' });
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.requests).toHaveLength(0);
   });
 });

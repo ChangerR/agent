@@ -5,16 +5,17 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ContextManager, estimateTokens } from '../src/core/context/manager.js';
+import { ContextManager } from '../src/core/context/coordinator.js';
+import { estimateTokens } from '../src/core/context/tokens.js';
+import { SummaryCompactor } from '../src/builtin/compaction-summary/index.js';
 import { EventBus, type AgentEvent } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { AgentLoop } from '../src/core/loop.js';
-import { PermissionEngine } from '../src/core/permission/engine.js';
-import type { PluginContext } from '../src/core/plugin.js';
+import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import type { StreamEvent } from '../src/core/protocol/types.js';
 import { ProviderRegistry, ToolRegistry } from '../src/core/registry.js';
 import { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from '../src/providers/fake.js';
-import { builtinTools } from '../src/tools/index.js';
+import { builtinToolDefinitions } from '../src/tools/index.js';
 
 let tmp: string;
 
@@ -39,25 +40,20 @@ function makeLoop(opts: {
   const events = opts.events ?? new EventBus();
   const tools = new ToolRegistry();
   const hooks = opts.hooks ?? new HookRunner();
-  const ctx: PluginContext = {
-    providers: new ProviderRegistry(),
-    tools,
-    hooks: { register: (point, handler) => hooks.register(point, handler) },
-    config: {} as PluginContext['config'],
-  };
-  builtinTools.register(ctx);
+  for (const tool of builtinToolDefinitions) tools.register({ ...tool, ownerPlugin: 'agentlab.local-tools', version: '1.0.0' });
 
-  const permission = new PermissionEngine({
+  const policy = createDeterministicPolicy({
+    cwd: tmp,
     mode: opts.mode ?? 'auto',
     rules: opts.rules ?? { allow: [], ask: [], deny: [] },
   });
   const provider = new FakeProvider(opts.script);
-  const context = new ContextManager({ compactThreshold: opts.compactThreshold ?? 1_000_000 });
+  const context = new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: opts.compactThreshold ?? 1_000_000 });
   const loop = new AgentLoop({
     provider,
     model: 'fake',
     tools,
-    permission,
+    policy,
     hooks,
     events,
     context,
@@ -66,7 +62,7 @@ function makeLoop(opts: {
     cwd: tmp,
     ...(opts.cache ? { cache: opts.cache } : {}),
   });
-  return { loop, events, provider, permission, tools, context };
+  return { loop, events, provider, policy, permission: policy.controller!, tools, context };
 }
 
 function collect(events: EventBus): AgentEvent[] {
@@ -142,7 +138,7 @@ describe('AgentLoop', () => {
     expect(log.at(-1)).toMatchObject({ type: 'loop_end', reason: 'aborted' });
     expect(log.some((e) => e.type === 'tool_call')).toBe(false);
     await expect(access(join(tmp, 'cancelled.txt'))).rejects.toThrow();
-    expect(permission.check(tools.get('write_file')!, { path: 'cancelled.txt' }).kind).toBe('ask');
+    expect(permission.getSessionRules().allow).toEqual([]);
   });
 
   it('并行审批全部可取消，loop 不会继续等待其他请求', async () => {

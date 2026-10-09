@@ -41,7 +41,7 @@ import { PluginToolMessage } from './plugin-renderers.js';
 import { observationSnapshot } from '../runtime/plugin-host.js';
 import { InteractionPanel, type PanelItem } from './interaction-panel.js';
 import { TurnQueue } from './turn-queue.js';
-import { describeJudgeStatus } from './permission-settings.js';
+import { describeJudgeStatus } from '../builtin/policy/tui.js';
 import { createTuiAdapter } from '../builtin/tui-command-adapter.js';
 import type { TuiAdapter, TuiEntry, TuiPluginContext, BuiltinTuiContext } from './tui-plugins.js';
 import type { CommandResult, InteractionRequest, SettingsScope, SettingsScopeTarget } from '../sdk/index.js';
@@ -83,7 +83,7 @@ function cacheHitRate(usage: TokenUsage): string {
 
 export function startTui(
   agent: Agent,
-  options: { terminal?: Terminal; onExit?: () => void; resume?: string; allowLegacySession?: boolean } = {},
+  options: { terminal?: Terminal; onExit?: () => void; resume?: string } = {},
 ): { stop: () => void } | undefined {
   if (!options.terminal && !process.stdin.isTTY) {
     // 非 TTY 环境（管道/CI）：打印装配信息后退出，便于 smoke 测试
@@ -265,11 +265,11 @@ export function startTui(
     const input = request.input && typeof request.input === 'object' && !Array.isArray(request.input) ? request.input as Record<string, unknown> : {};
     const target = agent.tools.get(request.toolName)?.analyzeInput?.(input).patternTarget;
     const origin = request.decisionSource ? ({ mode: '权限模式', danger: '危险检测', config: '配置规则', session: '会话规则', judge: '自动审批员', builtin: '内置检查', user: '用户' }[request.decisionSource]) : '权限检查';
-    const dangerNotice = agent.config.dangerForceAsk ? '拒绝规则与危险检测仍优先' : '拒绝规则仍优先；当前已关闭危险操作强制询问';
+    const dangerNotice = '拒绝规则与危险检测仍优先';
     const rememberedScope = target === undefined ? `${request.toolName} 的所有调用` : `${request.toolName} 的相同匹配目标: ${JSON.stringify(target)}`;
     const options: Array<{ label: string; description: string; decision: UserDecision }> = [
       { label: '允许一次', description: '只允许这一次调用，不新增规则。', decision: { allow: true } },
-      { label: '允许并记住此规则', description: `允许 ${rememberedScope}。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } },
+      { label: '允许并记住此规则', description: `记录 ${rememberedScope} 的允许规则；实际放行仍由策略安全约束决定。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } },
       { label: '拒绝', description: '拒绝这一次调用，Agent 会收到拒绝结果。', decision: { allow: false } },
     ];
     let settled = false;
@@ -561,7 +561,7 @@ export function startTui(
     const controller = new AbortController(); settingsController = controller;
     const signal = AbortSignal.any([commandController.signal, controller.signal]);
     const current = () => !stopped && generation === settingsGeneration && !signal.aborted;
-    const timing = ['newSession', 'new-session'].includes(section.applyMode) ? '重启后生效；当前已加载实现不变' : section.applyMode === 'nextRequest' ? '下一次请求生效' : section.applyMode;
+    const timing = section.applyMode === 'newSession' ? '重启后生效；当前已加载实现不变' : section.applyMode === 'nextRequest' ? '下一次请求生效' : section.applyMode;
     showDetails(title, () => `${destination}\n正在读取设置…`, openSettings, true);
     void (async () => {
       const value = await section.read?.(signal, scope);
@@ -674,7 +674,7 @@ export function startTui(
   tui.setFocus(editor);
   tui.start();
   if (options.resume) {
-    void agent.session.resume(options.resume, { allowLegacyProvider: options.allowLegacySession }).catch((error) => err(error instanceof Error ? error.message : String(error)));
+    void agent.session.resume(options.resume).catch((error) => err(error instanceof Error ? error.message : String(error)));
   }
   return { stop };
 }

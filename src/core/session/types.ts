@@ -8,7 +8,7 @@ import type { Message, TokenUsage } from '../protocol/types.js';
 
 export type { SessionRules };
 
-/** v2 将 runtime、policy 和插件状态分别版本化；旧二进制会明确拒绝。 */
+/** 当前会话格式记录 runtime、policy 和插件状态，恢复前验证身份与版本。 */
 export const SESSION_SCHEMA_VERSION = 2;
 export interface SessionPolicyIdentity { id: string; version: string; stateSchemaVersion: number }
 export interface SessionPluginState { schemaVersion: number; requiredForSafety?: boolean; data: unknown }
@@ -16,21 +16,21 @@ export interface SessionRuntimeState { schemaVersion: 1 }
 
 
 export interface SessionFile {
-  schemaVersion: 1 | typeof SESSION_SCHEMA_VERSION;
-  runtime?: SessionRuntimeState;
-  policy?: SessionPolicyIdentity;
-  pluginStates?: Record<string, SessionPluginState>;
+  schemaVersion: typeof SESSION_SCHEMA_VERSION;
+  runtime: SessionRuntimeState;
+  policy: SessionPolicyIdentity;
+  pluginStates: Record<string, SessionPluginState>;
   id: string;
   title: string;
-  /** 最后观察到的版本；旧 v1 缺省为 0，每次保存/删除递增。 */
-  revision?: number;
+  /** 最后观察到的版本；新会话从 0 开始，每次保存/删除递增。 */
+  revision: number;
   createdAt: string;
   updatedAt: string;
   cwd: string;
   model: string;
-  /** 旧 v1 文件缺省；恢复须显式确认迁移。仅存身份，不存 URL 或凭证。 */
-  provider?: string;
-  endpointKey?: string;
+  /** 恢复时必须匹配的身份，不存 URL 或凭证。 */
+  provider: string;
+  endpointKey: string;
   thinking: ThinkingLevel;
   permissionMode: PermissionMode;
   sessionRules: SessionRules;

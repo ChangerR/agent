@@ -7,12 +7,13 @@ import { EventBus } from '../src/core/events.js';
 import { AgentLoop } from '../src/core/loop.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry } from '../src/core/registry.js';
-import { PermissionEngine, parseRule } from '../src/builtin/policy-legacy/engine.js';
+import { parseRule } from '../src/builtin/policy/controller.js';
+import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import { ContextManager } from '../src/core/context/coordinator.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 import type { SessionStore, SaveSessionOptions } from '../src/sdk/index.js';
 
-const policy = { id: 'legacy-v1', version: '1.0.0', stateSchemaVersion: 1 };
+const policy = { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 };
 /** 测试用替代存储；同样实施版本比较和删除墓碑，完全不访问文件系统。 */
 class MemoryStore implements SessionStore {
   files = new Map<string, SessionFile>();
@@ -50,9 +51,10 @@ class MemoryStore implements SessionStore {
 }
 function setup(store = new MemoryStore(), id = 'memory-session', persistenceTimeoutMs?: number) {
   const events = new EventBus();
-  const permission = new PermissionEngine({ mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
+  const activePolicy = createDeterministicPolicy({ cwd: '/memory-project', mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
+  const permission = activePolicy.controller!;
   const context = new ContextManager({ compactThreshold: 100000, compactor: { async compact(messages) { return messages; } } });
-  const loop = new AgentLoop({ provider: new FakeProvider([textResponse('ok')]), model: 'fake', tools: new ToolRegistry(), permission, context, events, hooks: new HookRunner(), cwd: '/memory-project', systemPrompt: '', maxTurns: 2 });
+  const loop = new AgentLoop({ provider: new FakeProvider([textResponse('ok')]), model: 'fake', tools: new ToolRegistry(), policy: activePolicy, context, events, hooks: new HookRunner(), cwd: '/memory-project', systemPrompt: '', maxTurns: 2 });
   const session = new SessionManager({ loop, permission, events, cwd: '/memory-project', store, restoreRequirements: { policy }, autoSave: false, persistenceTimeoutMs, makeId: () => id, validateSessionRules(rules) { for (const rule of [...rules.allow, ...rules.ask, ...rules.deny]) parseRule(rule); } });
   return { loop, session, permission, events, store };
 }
@@ -92,23 +94,34 @@ describe('可替换的 SessionStore 与独立版本 envelope', () => {
     await expect(item.session.resume('import')).rejects.toMatchObject({ code: 'unsupported_version' });
     expect(item.loop.getMessages()).toEqual(before);
     expect(() => assertCompatibleEnvelope(file(), { policy, plugins: { required: { schemaVersion: 1, requiredForSafety: true } } })).toThrow('缺少');
-    expect(() => assertCompatibleEnvelope(file({ policy: { ...policy, version: '2.0.0' } }), { policy })).toThrow('策略');
+    expect(() => assertCompatibleEnvelope(file({ policy: { ...policy, version: '3.0.0' } }), { policy })).toThrow('策略');
   });
-  it('v2 缺少安全 envelope 字段不能因默认值获得权限', () => {
-    for (const key of ['runtime', 'policy', 'pluginStates']) {
+  it('当前格式缺少安全 envelope 字段不能因默认值获得权限', () => {
+    for (const key of ['runtime', 'policy', 'pluginStates', 'provider', 'endpointKey', 'revision']) {
       const unsafe: Record<string, unknown> = { ...file() }; delete unsafe[key];
       expect(() => validateSessionSnapshot(unsafe)).toThrow();
     }
   });
-  it('v1 保留 provider/endpoint/revision、模式和规则，且不隐式迁移到其他策略', async () => {
-    const legacy = file({ schemaVersion: 1, runtime: undefined, policy: undefined, pluginStates: undefined, revision: 11, sessionRules: { allow: ['read_file'], ask: [], deny: [] } });
+  it.each(['allow', 'ask', 'deny'])('缺少 %s 规则数组时拒绝恢复且会话保持不变', async kind => {
+    const item = setup(); await item.loop.run('current history');
+    const before = structuredClone(item.loop.getMessages());
+    const rules = structuredClone(item.permission.getSessionRules());
+    const unsafe = file(); delete (unsafe.sessionRules as unknown as Record<string, unknown>)[kind];
+    expect(() => validateSessionSnapshot(unsafe)).toThrow();
+    item.store.files.set(item.store.path(unsafe.cwd, unsafe.id), unsafe);
+    await expect(item.session.resume('import')).rejects.toMatchObject({ code: 'invalid_schema' });
+    expect(item.loop.getMessages()).toEqual(before); expect(item.permission.getSessionRules()).toEqual(rules);
+  });
+  it('替代存储提供旧格式时拒绝恢复，不修改历史、规则或存储', async () => {
+    const old = { ...file(), schemaVersion: 1, runtime: undefined, policy: undefined, pluginStates: undefined, revision: 11 };
     const item = setup();
-    item.store.files.set(item.store.path('/memory-project', 'import'), structuredClone(legacy));
-    await item.session.resume('import');
-    await item.session.save();
-    const migrated = await item.store.load('/memory-project', 'import');
-    expect(migrated).toMatchObject({ schemaVersion: 2, revision: 12, provider: 'fake', endpointKey: 'default', permissionMode: 'ask', sessionRules: legacy.sessionRules, policy });
-    expect(() => assertCompatibleEnvelope(legacy, { policy: { ...policy, id: 'different-policy' } })).toThrow('legacy');
+    await item.loop.run('current history');
+    const before = item.loop.exportSession();
+    item.store.files.set(item.store.path('/memory-project', 'import'), old as unknown as SessionFile);
+    await expect(item.session.resume('import')).rejects.toMatchObject({ code: 'invalid_schema' });
+    expect(item.loop.exportSession()).toEqual(before);
+    expect(item.permission.getSessionRules()).toEqual({ allow: [], ask: [], deny: [] });
+    expect(await item.store.load('/memory-project', 'import')).toEqual(old);
   });
   it('替代存储接收独立保存快照，无效提交结果不会推进内存版本', async () => {
     const item = setup(); await item.loop.run('hello');
