@@ -38,7 +38,7 @@ export function defaultPreset(input: PresetContext): Preset {
       createDeterministicPolicyPlugin({ cwd, config }), createPolicyShadowPlugin({ cwd, config, getActiveState: () => ({ policyId: String(input.capabilityChoices().policy?.selected ?? 'unavailable'), mode: services.permission().mode, sessionRules: services.permission().getSessionRules() }) }), strictReviewerPlugin(input), createContextDefaultPlugin(), createCompactionSummaryPlugin(), createCachePrefixPlugin(),
       createModelCatalogPlugin(loadModelsFile(config.modelsFile)), createSessionFilePlugin(),
       createTelemetryJsonlPlugin({ path: input.logPath, includeBodies: config.pluginConfig['agentlab.telemetry-jsonl']?.includeBodies === true }),
-      modelCommandsPlugin(services), permissionCommandsPlugin(services, cwd), sessionCommandsPlugin(services), uiPlugin(), runtimeSettingsPlugin(input),
+      modelCommandsPlugin(services, cwd), permissionCommandsPlugin(services, cwd), sessionCommandsPlugin(services), uiPlugin(), runtimeSettingsPlugin(input),
     ],
   };
 }

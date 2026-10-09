@@ -48,6 +48,7 @@ import type { CommandResult, InteractionRequest, SettingsScope, SettingsScopeTar
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { SettingsInputPanel } from './settings-input.js';
+import { settingsErrorMessage } from '../runtime/config-store.js';
 
 // ---------------------------------------------------------------------------
 // 主题
@@ -393,6 +394,7 @@ export function startTui(
     if (!approving) nextApproval();
   }));
   unsubscribe.push(agent.events.on('session_restored', (e) => {
+    nextSettingsGeneration();
     streams.finish();
     toolMessages.clear();
     approvals.length = 0;
@@ -539,60 +541,70 @@ export function startTui(
     ? '本次会话；不写配置文件。'
     : `作用域: ${scopeLabel(target.scope)}\n保存路径: ${target.path}${target.scope === 'global' ? '\n影响所有继承此全局配置的项目；项目覆盖仍优先。' : ''}`;
   let settingsGeneration = 0;
+  let settingsController: AbortController | undefined;
+  const nextSettingsGeneration = () => { settingsController?.abort(); settingsController = undefined; return ++settingsGeneration; };
   const openSetting = (id: string, selectedScope?: SettingsScope) => {
-    const generation = ++settingsGeneration;
+    const generation = nextSettingsGeneration();
     const record = agent.settings.find(setting => setting.id === id); if (!record) return;
     const specialized = adapters.map(adapter => adapter.settings?.[id]).find(Boolean);
     if (specialized) { specialized(openSettings); return; }
     const section = record.section;
     const targets: readonly SettingsScopeTarget[] = section.scopeTargets ?? [];
-    if (!selectedScope && targets.length > 1) {
-      showPicker(`${section.title} · 选择作用域`, targets.map(target => ({ value: target.scope, label: scopeLabel(target.scope), description: targetDescription(target) })),
-        value => openSetting(id, value as SettingsScope), undefined, false, openSettings, true);
-      return;
-    }
-    const target = targets.find(target => target.scope === (selectedScope ?? targets[0]?.scope));
+    const defaultScope = targets.some(target => target.scope === 'project') ? 'project' : targets[0]?.scope;
+    const target = targets.find(target => target.scope === (selectedScope ?? defaultScope));
     if (selectedScope && !target) { err('此设置不支持所选作用域。'); return; }
     const scope = target?.scope;
     const readonly = !section.draft || !section.commit;
     const label = scope ? scopeLabel(scope) : readonly ? '当前运行' : '插件定义';
     const title = `${section.title} · ${label}`;
     const destination = target ? targetDescription(target) : readonly ? '当前运行的只读状态。' : '插件未声明保存目标；保存位置与作用域由插件定义。';
-    const back = () => targets.length > 1 ? openSetting(id) : openSettings();
-    showDetails(title, () => `${destination}\n正在读取设置…`, back, true);
+    const controller = new AbortController(); settingsController = controller;
+    const signal = AbortSignal.any([commandController.signal, controller.signal]);
+    const current = () => !stopped && generation === settingsGeneration && !signal.aborted;
+    const timing = ['newSession', 'new-session'].includes(section.applyMode) ? '重启后生效；当前已加载实现不变' : section.applyMode === 'nextRequest' ? '下一次请求生效' : section.applyMode;
+    showDetails(title, () => `${destination}\n正在读取设置…`, openSettings, true);
     void (async () => {
-      const value = await section.read?.(commandController.signal, scope);
-      if (stopped || generation !== settingsGeneration) return;
-      const body = `${destination}\n拥有者: ${record.ownerPlugin}\n生效时机: ${section.applyMode}\n${section.description ?? ''}\n运行配置来源: ${JSON.stringify(record.sources ?? {})}\n实现: ${(record.implementations ?? []).join(', ')}\n${section.draft && section.commit ? '所选层原始值' : '只读状态'}:\n${JSON.stringify(value ?? null, null, 2)}`;
-      if (!section.draft || !section.commit) { showDetails(`${title} · 只读`, () => body, back); return; }
-      showPicker(title, [{ value: 'view', label: '查看当前值', description: body }, { value: 'edit', label: '编辑草稿', description: `${destination}\n编辑 JSON；只有明确 Save 才提交。` }], action => {
+      const value = await section.read?.(signal, scope);
+      if (!current()) return;
+      const body = `${destination}\n拥有者: ${record.ownerPlugin}\n生效时机: ${timing}\n${section.description ?? ''}\n运行配置来源: ${JSON.stringify(record.sources ?? {})}\n实现: ${(record.implementations ?? []).join(', ')}\n${section.draft && section.commit ? '所选层原始值' : '只读状态'}:\n${JSON.stringify(value ?? null, null, 2)}`;
+      if (readonly && targets.length < 2) { showDetails(`${title} · 只读`, () => body, openSettings); return; }
+      showPicker(`${title}${readonly ? ' · 只读' : ''}`, [
+        ...(!readonly ? [{ value: 'edit', label: '编辑 JSON', description: `${destination}\n输入完成后 Enter 即保存；Esc 放弃。${timing}。` }] : []),
+        { value: 'view', label: '查看当前值', description: body },
+        ...targets.filter(other => other.scope !== scope).map(other => ({ value: `scope:${other.scope}`, label: `切换到${scopeLabel(other.scope)}`, description: targetDescription(other) })),
+      ], action => {
+        if (!current()) return;
+        if (action.startsWith('scope:')) { openSetting(id, action.slice(6) as SettingsScope); return; }
         if (action === 'view') { showDetails(title, () => body, () => openSetting(id, scope)); return; }
-        showInput({ title: `${title} · 草稿`, value: JSON.stringify(value ?? null), description: `${destination}\n输入 JSON；Enter 创建草稿，尚未保存。`,
+        if (action !== 'edit' || readonly) return;
+        let submitted = false;
+        showInput({ title: `${title} · 编辑 JSON`, format: 'json', value: JSON.stringify(value ?? null), description: `${destination}\n输入完整 JSON；Enter 保存；Esc 放弃。${timing}。`,
           validate: text => { try { JSON.parse(text); return undefined; } catch { return '请输入合法 JSON'; } },
           onCancel: () => openSetting(id, scope), onSubmit: text => {
-            showDetails(title, () => `${destination}\n正在验证草稿…`, () => openSetting(id, scope), true);
+            if (!current() || submitted) return;
+            submitted = true;
+            showDetails(title, () => `${destination}\n正在验证并保存…`, () => openSetting(id, scope), true);
             void (async () => {
-              const draft = await section.draft!(JSON.parse(text), commandController.signal, scope);
-              if (stopped || generation !== settingsGeneration) return;
-              const choice = await interact({ type: 'interaction', id: `settings:${id}:${scope ?? 'plugin'}:save`, kind: 'confirm', prompt: `确认 Save · ${title}`, body: `${destination}\n生效时机: ${section.applyMode}\n${JSON.stringify(draft, null, 2)}`, requireSelection: true, choices: [{ id: 'cancel', label: '取消' }, { id: 'save', label: `Save · ${label}` }] });
-              if (stopped || generation !== settingsGeneration) return;
-              if (choice === 'save') { await section.commit!(draft, commandController.signal, scope); say(`已保存 ${title}；${target ? target.scope === 'session' ? '不写配置文件' : `保存路径: ${target.path}` : '保存目标由插件定义'}；生效时机: ${section.applyMode}`); }
-              if (!stopped && generation === settingsGeneration) openSetting(id, scope);
+              const draft = await section.draft!(JSON.parse(text), signal, scope);
+              if (!current()) return;
+              await section.commit!(draft, signal, scope);
+              if (!current()) return;
+              say(`已保存 ${title}；${target ? target.scope === 'session' ? '不写配置文件' : `保存路径: ${target.path}` : '保存目标由插件定义'}；${timing}。`);
+              openSetting(id, scope);
             })().catch(error => {
-              if (stopped || generation !== settingsGeneration) return;
-              const message = error instanceof Error ? error.message : String(error);
-              showDetails(`${title} · 设置失败`, () => `${destination}\n${message}\n本次输入（返回后重新读取最新配置）:\n${text}`, () => openSetting(id, scope), true);
+              if (!current()) return;
+              showDetails(`${title} · 设置失败`, () => `${destination}\n${settingsErrorMessage(error)}\n返回后重新读取最新配置。`, () => openSetting(id, scope), true);
             });
           },
         });
-      }, undefined, false, back, true);
+      }, undefined, false, openSettings, true);
     })().catch(error => {
-      if (stopped || generation !== settingsGeneration) return;
-      showDetails(`${title} · 读取失败`, () => `${destination}\n${error instanceof Error ? error.message : String(error)}`, back, true);
+      if (!current()) return;
+      showDetails(`${title} · 读取失败`, () => `${destination}\n${settingsErrorMessage(error)}`, openSettings, true);
     });
   };
   function openSettings(): void {
-    ++settingsGeneration;
+    nextSettingsGeneration();
     showPicker('设置 · 本次会话 / 本项目 / 全局', [...agent.settings].sort((a, b) => (a.section.order ?? 100) - (b.section.order ?? 100)).map(({ id, section, ownerPlugin }) => ({
       value: id, label: section.title,
       description: `作用域: ${section.scopeTargets?.map(target => scopeLabel(target.scope)).join(' / ') ?? (!section.draft && !section.commit && !adapters.some(adapter => adapter.settings?.[id]) ? '当前运行 · 只读状态' : '插件定义（未声明保存目标）')}\n${section.description ?? ''}\n拥有者: ${ownerPlugin} · 生效时机: ${section.applyMode}`,
@@ -603,7 +615,7 @@ export function startTui(
     help: () => say(`命令（由已加载插件提供）：\n${agent.commands.list().map(command => `  /${command.id}  ${command.description}`).join('\n')}\n${HELP_FOOTER}`),
   };
   const dispatch = (line: string) => {
-    ++settingsGeneration;
+    nextSettingsGeneration();
     const [name, ...rest] = line.slice(1).trim().split(/\s+/); const arg = rest.join(' ');
     if (!agent.commands.has(name)) { err(`未知命令: /${name}，输入 /help 查看帮助`); return; }
     const frontend = frontendCommands[name]; if (frontend) { frontend(arg); return; }

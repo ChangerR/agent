@@ -33,7 +33,7 @@ async function mount(plugins: Plugin[], cwd?: string) {
 }
 
 describe('generic plugin CLI capabilities', () => {
-  it('先明确选择全局目标；显示真实路径，取消不写，Save必须重新选择且携带原scope', async () => {
+  it('默认项目、可选全局；显示真实路径，取消不写，一次提交携带原scope且无需额外确认', async () => {
     const cwd = await mkdtempProject(join(tmpdir(), 'scope-ui-'));
     const globalPath = join(cwd, 'global.json'); const projectPath = join(cwd, 'agent.config.json');
     const originalGlobal = '{"origin":"global"}'; const originalProject = '{"origin":"project"}';
@@ -48,25 +48,56 @@ describe('generic plugin CLI capabilities', () => {
     const down = () => ui.terminal.input?.('\x1b[B'); const enter = () => ui.terminal.input?.('\r');
     try {
       ui.send('/settings'); enter();
-      await vi.waitFor(() => expect(ui.screen()).toContain('选择作用域'));
-      expect(ui.screen()).toContain('本项目'); expect(ui.screen()).toContain('全局'); expect(read).not.toHaveBeenCalled();
-      down(); enter();
+      await vi.waitFor(() => expect(ui.screen()).toContain('范围设置 · 本项目'));
+      expect(ui.screen()).not.toContain('选择作用域');
+      expect(read).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'project');
+      expect(ui.screen()).toContain(projectPath);
+      down(); down(); enter();
       await vi.waitFor(() => expect(ui.screen()).toContain('范围设置 · 全局'));
       expect(ui.screen()).toContain(globalPath); expect(read).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'global');
-      down(); enter(); enter();
-      await vi.waitFor(() => expect(ui.screen()).toContain('确认 Save'));
-      expect(ui.screen()).toContain('全局'); expect(ui.screen()).toContain(globalPath);
-      enter(); enter(); expect(commit).not.toHaveBeenCalled();
-      ui.terminal.input?.('\x1b');
-      await vi.waitFor(() => expect(ui.screen()).toContain('编辑草稿'));
+      enter();
+      await vi.waitFor(() => expect(ui.screen()).toContain('输入完整 JSON'));
+      ui.terminal.input?.('未提交'); ui.terminal.input?.('\x1b');
+      await vi.waitFor(() => expect(ui.screen()).toContain('编辑 JSON'));
+      expect(commit).not.toHaveBeenCalled();
       expect(await readFile(globalPath, 'utf8')).toBe(originalGlobal); expect(await readFile(projectPath, 'utf8')).toBe(originalProject);
-      down(); enter(); enter();
-      await vi.waitFor(() => expect(ui.screen()).toContain('确认 Save'));
-      down(); down(); enter(); enter();
+      enter(); await vi.waitFor(() => expect(ui.screen()).toContain('输入完整 JSON'));
+      enter(); enter();
       await vi.waitFor(() => expect(commit).toHaveBeenCalledOnce());
       expect(commit).toHaveBeenLastCalledWith({ origin: 'global' }, expect.any(AbortSignal), 'global');
       expect(JSON.parse(await readFile(globalPath, 'utf8'))).toEqual({ value: { origin: 'global' }, saved: true });
       expect(await readFile(projectPath, 'utf8')).toBe(originalProject);
+      expect(ui.screen()).not.toContain('确认 Save');
+    } finally { await ui.dispose(); }
+  });
+
+  it('多作用域只读设置默认本项目，仍可直接查看全局；单作用域继续直接展示详情', async () => {
+    const read = vi.fn((_signal: AbortSignal, scope?: string) => ({ origin: scope }));
+    const ui = await mount([definePlugin({ manifest: { id: 'test.readonly-scopes', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
+      ctx.provide.settings('readonly-scopes', { title: '只读范围', order: -1, schema: {}, applyMode: 'restart',
+        scopeTargets: [{ scope: 'project', path: '/project/config.json' }, { scope: 'global', path: '/global/config.json' }], read });
+      ctx.provide.settings('readonly-single', { title: '单范围只读', order: -0.5, schema: {}, applyMode: 'restart',
+        scopeTargets: [{ scope: 'project', path: '/project/config.json' }], read: () => ({ single: true }) });
+    } })]);
+    try {
+      ui.send('/settings'); ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen()).toContain('切换到全局'));
+      expect(ui.screen()).toContain('只读范围 · 本项目 · 只读');
+      expect(ui.screen()).not.toContain('选择作用域'); expect(ui.screen()).not.toContain('编辑 JSON');
+      expect(read).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'project');
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen()).toContain('"origin": "project"'));
+      ui.terminal.input?.('\x1b');
+      await vi.waitFor(() => expect(ui.screen()).toContain('切换到全局'));
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen()).toContain('只读范围 · 全局 · 只读'));
+      expect(read).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'global');
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen()).toContain('"origin": "global"'));
+      ui.terminal.input?.('\x1b'); await vi.waitFor(() => expect(ui.screen()).toContain('切换到本项目'));
+      ui.terminal.input?.('\x1b'); ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen()).toContain('单范围只读 · 本项目 · 只读'));
+      expect(ui.screen()).toContain('"single": true'); expect(ui.screen()).not.toContain('查看当前值');
     } finally { await ui.dispose(); }
   });
 
@@ -122,7 +153,7 @@ describe('generic plugin CLI capabilities', () => {
       ui.send('/help'); await vi.waitFor(() => expect(stripTerminalSequences(ui.terminal.output)).toContain('/hello_plugin'));
       ui.send('/settings'); ui.terminal.input?.('\r');
       await vi.waitFor(() => expect(ui.screen()).toContain('插件设置'));
-      expect(ui.screen()).toContain('test.generic-ui'); expect(ui.screen()).toContain('newSession'); expect(ui.screen()).toContain('"enabled": true');
+      expect(ui.screen()).toContain('test.generic-ui'); expect(ui.screen()).toContain('重启后生效'); expect(ui.screen()).toContain('"enabled": true');
     } finally { await ui.dispose(); }
   });
   it('loads an optional external TUI entry for commands, settings, status and tool rendering', async () => {
@@ -159,17 +190,22 @@ describe('generic plugin CLI capabilities', () => {
   });
 });
 
-it('真实 v2 模式选择器说明范围授权与强制约束，不沿用 legacy yolo 文案', async () => {
+it('真实 v2 模式选择器显示约束，选择 yolo 一次保存并应用，无二次确认', async () => {
   const cwd = await mkdtempProject(join(tmpdir(), 'agent-v2-mode-ui-')); await mkdir(join(cwd, 'src'));
   await writeFile(join(cwd, 'agent.config.json'), JSON.stringify({ provider: 'fake', permissionMode: 'auto', capabilities: { policy: 'deterministic-v2' }, pluginConfig: { 'agentlab.policy-deterministic-v2': { writeRoots: ['src'] } } }));
   const ui = await mount([], cwd);
   try {
     ui.send('/mode'); await vi.waitFor(() => expect(ui.screen()).toContain('v2 auto'));
     expect(ui.screen()).toContain('writeRoots'); expect(ui.screen()).toContain('src');
-    ui.terminal.input?.('\u001b'); ui.send('/mode yolo');
+    ui.terminal.input?.('\u001b[B');
     await vi.waitFor(() => expect(ui.screen()).toContain('v2 yolo'));
     expect(ui.screen()).toContain('未知 Shell/MCP');
     expect(ui.screen()).not.toContain('普通操作自动放行，包括写入与执行');
     expect(ui.agent.permission.mode).toBe('auto');
+    ui.terminal.input?.('\r');
+    expect(ui.agent.permission.mode).toBe('yolo');
+    expect(JSON.parse(await readFile(join(cwd, 'agent.config.json'), 'utf8')).permissionMode).toBe('yolo');
+    await vi.waitFor(() => expect(ui.screen()).toContain('权限模式已保存'));
+    expect(ui.screen()).not.toContain('确认会话模式');
   } finally { await ui.dispose(); }
 });

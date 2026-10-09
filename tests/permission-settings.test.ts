@@ -33,352 +33,181 @@ function setup(options: { missingGlobal?: boolean } = {}) {
   return { settings, permission, config, session, path, globalConfigPath, cwd, notify, onModeChange, getJudgeStatus, pick, get picker() { return picker; }, get input() { return input; }, get detail() { return detail; } };
 }
 
-describe('TUI 权限中心', () => {
-  it('保存入口靠前，草稿同时显示当前与重启有效模式，并明确提供两种保存方式', () => {
-    const h = setup(); h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('auto');
-    expect(h.picker.items[0].value).toBe('save');
-    expect(h.picker.title).toContain('未保存');
-    expect(h.picker.context).toContain('当前 ask'); expect(h.picker.context).toContain('重启 auto');
-    h.pick('save');
-    expect(h.picker.requireSelection).toBe(true);
-    expect(h.picker.items.find(item => item.value === 'confirm')?.label).toContain('仅保存启动默认');
-    expect(h.picker.items.find(item => item.value === 'apply')?.label).toContain('保存并应用模式');
-    expect(h.picker.body?.()).toContain('当前会话模式: ask');
-    expect(h.picker.body?.()).toContain('重启后本项目新会话模式: auto');
-  });
-
-  it('保存并应用须再次精确确认，只即时改变模式，不热更新规则或审批员', () => {
-    const h = setup(); const globalBefore = readFileSync(h.globalConfigPath, 'utf8');
-    h.permission.addSessionRule('deny', 'write_file(private/**)');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('auto');
-    h.pick('judge'); h.pick('name'); h.input.onSubmit('next-reviewer');
-    h.pick('rules'); h.pick('allow'); h.pick('add'); h.input.onSubmit('glob'); h.picker.onCancel(); h.picker.onCancel();
-    h.pick('save'); h.pick('apply');
-    expect(h.picker.requireSelection).toBe(true); expect(h.picker.initialValue).toBeUndefined();
-    expect(h.picker.body?.()).toContain('ask → auto');
-    expect(h.picker.body?.()).toContain('规则和审批模型仍需重启');
-    expect(h.picker.body?.()).toContain('已弹出的审批不自动放行');
-    expect(h.permission.mode).toBe('ask'); expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('ask');
-    h.pick('cancel'); h.pick('apply'); h.pick('confirm');
-    expect(h.permission.mode).toBe('auto'); expect(h.onModeChange).toHaveBeenCalledOnce(); expect(h.onModeChange).toHaveBeenCalledWith('auto');
-    expect(JSON.parse(readFileSync(h.path, 'utf8'))).toMatchObject({ permissionMode: 'auto', judgeModel: 'next-reviewer', permissions: { allow: ['read_file', 'glob'] } });
-    expect(h.config.permissionMode).toBe('ask'); expect(h.config.judgeModel).toBeUndefined();
-    expect(h.config.permissions.allow).toEqual(['read_file']);
-    expect(h.permission.getSessionRules().deny).toEqual(['write_file(private/**)']);
-    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(globalBefore);
-    expect(h.picker.title).not.toContain('未保存'); expect(h.picker.context).toContain('当前 auto');
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('规则和审批模型仍需重启'));
-  });
-
-  it.each(['legacy', 'namespace'])('全局草稿被项目 %s 模式覆盖时显示原因且只应用合并后的 ask', representation => {
-    const h = setup();
-    writeFileSync(h.path, JSON.stringify(representation === 'legacy' ? { permissionMode: 'ask' }
-      : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } }));
-    const projectBefore = readFileSync(h.path, 'utf8');
-    h.permission.setMode('auto'); h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('yolo');
-    expect(h.picker.body?.()).toContain('全局默认 yolo 被本项目 ask 覆盖');
-    expect(h.picker.context).toContain('当前 auto'); expect(h.picker.context).toContain('重启 ask');
-    h.pick('save'); h.pick('apply');
-    expect(h.picker.body?.()).toContain('auto → ask'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(h.onModeChange).toHaveBeenCalledWith('ask');
-    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('yolo');
-    expect(readFileSync(h.path, 'utf8')).toBe(projectBefore);
-  });
-
-  it.each(['legacy', 'namespace'])('项目恢复继承时即时应用全局 %s auto，并删除同层模式别名', representation => {
-    const h = setup();
-    writeFileSync(h.globalConfigPath, JSON.stringify(representation === 'legacy' ? { permissionMode: 'auto' }
-      : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'auto' } } }));
-    writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask', pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } }));
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('inherit');
-    expect(h.picker.body?.()).toContain('重启后本项目新会话模式: auto');
-    h.pick('save'); h.pick('apply'); h.pick('confirm');
-    expect(h.permission.mode).toBe('auto');
-    const saved = JSON.parse(readFileSync(h.path, 'utf8'));
-    expect(saved).not.toHaveProperty('permissionMode');
-    expect(saved.pluginConfig['agentlab.policy-legacy']).not.toHaveProperty('permissionMode');
-  });
-
-  it('保存冲突失败时不应用模式，保留未保存草稿', () => {
-    const h = setup(); h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('apply');
-    writeFileSync(h.path, '{"custom":"external"}'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(h.onModeChange).not.toHaveBeenCalled();
-    expect(readFileSync(h.path, 'utf8')).toBe('{"custom":"external"}');
-    expect(h.picker.title).toContain('未保存'); expect(h.picker.context).toContain('草稿保留');
-  });
-
-  it.each(['session', 'mode'])('保存并应用的确认遇到 %s 变化时失效，不修改新会话或配置', change => {
-    const h = setup(); const before = readFileSync(h.path, 'utf8');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('apply');
-    if (change === 'session') h.session.id = 'session-two'; else h.permission.setMode('yolo');
-    h.pick('confirm');
-    expect(h.permission.mode).toBe(change === 'session' ? 'ask' : 'yolo'); expect(h.onModeChange).not.toHaveBeenCalled();
-    expect(readFileSync(h.path, 'utf8')).toBe(before); expect(h.picker.title).toContain('未保存');
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('会话已变化'), true);
-  });
-
-  it('确认期间继承层变化须重新确认有效模式，不写入已变更的授权目标', () => {
-    const h = setup(); writeFileSync(h.globalConfigPath, '{"permissionMode":"auto"}');
-    const before = readFileSync(h.path, 'utf8');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('inherit'); h.pick('save'); h.pick('apply');
-    writeFileSync(h.globalConfigPath, '{"permissionMode":"yolo"}'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(h.onModeChange).not.toHaveBeenCalled();
-    expect(readFileSync(h.path, 'utf8')).toBe(before); expect(h.picker.title).toContain('未保存');
-    h.pick('save'); h.pick('apply'); expect(h.picker.body?.()).toContain('ask → yolo'); h.pick('confirm');
-    expect(h.permission.mode).toBe('yolo');
-  });
-
-  it('仅保存后也能应用已保存有效模式，无需制造新草稿且旧确认不能重复执行', () => {
-    const h = setup(); h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); const saved = readFileSync(h.path, 'utf8');
-    h.pick('save'); h.pick('apply'); const confirm = h.picker;
-    h.pick('confirm'); h.permission.setMode('ask'); confirm.onPick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(h.onModeChange).toHaveBeenCalledTimes(1);
-    expect(readFileSync(h.path, 'utf8')).toBe(saved);
-  });
-
-  it('取消应用确认后旧回调失效，未保存退出仍询问是否放弃', () => {
-    const h = setup(); const before = readFileSync(h.path, 'utf8');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('yolo'); h.pick('save'); h.pick('apply');
-    const expired = h.picker; h.picker.onCancel(); expired.onPick('confirm');
-    expect(h.picker.title).toContain('确认 Save');
-    expect(h.permission.mode).toBe('ask'); expect(h.onModeChange).not.toHaveBeenCalled();
-    expect(readFileSync(h.path, 'utf8')).toBe(before);
-    h.pick('cancel'); h.picker.onCancel(); expect(h.picker.title).toContain('放弃未保存');
-    h.pick('cancel'); expect(h.picker.title).toContain('未保存');
-  });
-
-  it('全局保存应用确认期间项目出现覆盖，保留全局草稿并要求重新确认', () => {
-    const h = setup(); writeFileSync(h.path, '{}'); const before = readFileSync(h.globalConfigPath, 'utf8');
-    h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('apply');
-    writeFileSync(h.path, '{"pluginConfig":{"agentlab.policy-legacy":{"permissionMode":"ask"}}}'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(h.onModeChange).not.toHaveBeenCalled();
+describe('TUI 权限自动保存', () => {
+  it('直接打开本项目，选择一次模式就保存并应用，没有 Save 或二次确认', () => {
+    const h = setup(); const before = readFileSync(h.globalConfigPath, 'utf8'); h.settings.open();
+    expect(h.picker.title).toContain('本项目权限设置');
+    expect(h.picker.items.map(item => item.value)).not.toContain('save');
+    expect(h.picker.items.find(item => item.value === 'global')?.label).toContain('可选');
+    h.pick('mode'); h.pick('auto');
+    expect(h.permission.mode).toBe('auto'); expect(h.onModeChange).toHaveBeenCalledOnce();
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('auto');
     expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(before);
-    expect(h.picker.body?.()).toContain('全局默认 auto 被本项目 ask 覆盖');
-    expect(h.picker.title).toContain('未保存');
+    expect(h.picker.title).toContain('本项目权限设置'); expect(h.picker.requireSelection).not.toBe(true);
+    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已保存'));
   });
 
-  it('项目与全局均恢复默认时应用内置 ask，未设置的字段不被写入全局', () => {
-    const h = setup(); h.permission.setMode('yolo'); const globalBefore = readFileSync(h.globalConfigPath, 'utf8');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('inherit'); h.pick('save'); h.pick('apply');
-    expect(h.picker.body?.()).toContain('yolo → ask'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(JSON.parse(readFileSync(h.path, 'utf8'))).not.toHaveProperty('permissionMode');
-    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(globalBefore);
+  it('直接模式命令与模式选择都写项目配置，已有审批不被处理', () => {
+    const h = setup(); const back = vi.fn(); h.settings.openModes(back); h.pick('yolo');
+    expect(h.permission.mode).toBe('yolo'); expect(back).toHaveBeenCalledOnce();
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('yolo');
+    h.settings.requestMode('auto');
+    expect(h.permission.mode).toBe('auto'); expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('auto');
+    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已有审批仍需处理'));
   });
 
-  it('未修改的默认配置在应用确认期间被外部更改，不应用陈旧模式', () => {
-    const h = setup(); h.permission.setMode('auto');
-    h.settings.open(); h.pick('project'); h.pick('save'); h.pick('apply');
-    writeFileSync(h.path, '{"permissionMode":"yolo"}'); h.pick('confirm');
-    expect(h.permission.mode).toBe('auto'); expect(h.onModeChange).not.toHaveBeenCalled();
-    expect(readFileSync(h.path, 'utf8')).toBe('{"permissionMode":"yolo"}');
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('配置已变化'), true);
+  it.each(['legacy', 'namespace'])('全局编辑保留项目 %s 覆盖，应用合并后的有效模式', representation => {
+    const h = setup(); writeFileSync(h.path, JSON.stringify(representation === 'legacy' ? { permissionMode: 'ask' } : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } }));
+    const before = readFileSync(h.path, 'utf8'); h.permission.setMode('auto');
+    h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('yolo');
+    expect(h.permission.mode).toBe('ask'); expect(readFileSync(h.path, 'utf8')).toBe(before);
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('yolo');
+    expect(h.picker.body?.()).toContain('全局默认 yolo 被本项目 ask 覆盖');
   });
 
-  it('首次全局无更改时仅保存与应用均不建目录，也不声称写入成功', () => {
-    const h = setup({ missingGlobal: true }); const globalDirectory = join(h.cwd, 'home');
-    h.settings.open(); h.pick('global'); h.pick('save'); h.pick('confirm');
-    expect(existsSync(globalDirectory)).toBe(false);
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('没有需要保存的全局更改'));
-    h.permission.setMode('auto'); h.pick('save'); h.pick('apply'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(existsSync(globalDirectory)).toBe(false);
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('全局启动默认未改写'));
+  it.each(['legacy', 'namespace'])('项目恢复继承立即保存并应用全局 %s 模式', representation => {
+    const h = setup(); writeFileSync(h.globalConfigPath, JSON.stringify(representation === 'legacy' ? { permissionMode: 'auto' } : { pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'auto' } } }));
+    writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask', pluginConfig: { 'agentlab.policy-legacy': { permissionMode: 'ask' } } }));
+    h.settings.open(); h.pick('mode'); h.pick('inherit');
+    expect(h.permission.mode).toBe('auto'); const raw = JSON.parse(readFileSync(h.path, 'utf8'));
+    expect(raw).not.toHaveProperty('permissionMode'); expect(raw.pluginConfig['agentlab.policy-legacy']).not.toHaveProperty('permissionMode');
   });
 
-  it('仅保存确认期间继承层改变，成功后立即显示最新重启有效模式', () => {
-    const h = setup(); writeFileSync(h.globalConfigPath, '{"permissionMode":"auto"}');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('inherit'); h.pick('save');
-    writeFileSync(h.globalConfigPath, '{"permissionMode":"yolo"}'); h.pick('confirm');
-    expect(h.permission.mode).toBe('ask'); expect(h.picker.title).not.toContain('未保存');
-    expect(h.picker.body?.()).toContain('重启后本项目新会话模式: yolo');
+  it('自动保存冲突不覆盖外部文件、不改当前模式或误报成功', () => {
+    const h = setup(); h.settings.open(); h.pick('mode'); writeFileSync(h.path, '{"custom":"external"}'); h.pick('auto');
+    expect(readFileSync(h.path, 'utf8')).toBe('{"custom":"external"}'); expect(h.permission.mode).toBe('ask');
+    expect(h.onModeChange).not.toHaveBeenCalled(); expect(h.notify).toHaveBeenCalledWith(expect.any(String), true);
+    expect(h.notify).not.toHaveBeenCalledWith(expect.stringContaining('已保存'));
   });
 
-  it('仅保存成功后继承层损坏，明确已保存但无法核验，不误报保存失败或显示陈旧重启模式', () => {
-    const h = setup(); writeFileSync(h.globalConfigPath, '{"permissionMode":"auto"}');
-    h.settings.open(); h.pick('project'); h.pick('mode'); h.pick('inherit'); h.pick('save');
-    writeFileSync(h.globalConfigPath, 'invalid'); h.pick('confirm');
-    expect(JSON.parse(readFileSync(h.path, 'utf8'))).not.toHaveProperty('permissionMode');
-    expect(h.permission.mode).toBe('ask'); expect(h.picker.title).not.toContain('未保存');
-    expect(h.picker.context).toContain('无法核验'); expect(h.picker.context).not.toContain('保存失败');
-    expect(h.picker.body?.()).toContain('重启后本项目新会话模式: 无法核验');
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已保存，但无法核验'), true);
+  it('保存锁阻止写入，模式保持不变', () => {
+    const h = setup(); const before = readFileSync(h.path, 'utf8'); writeFileSync(`${h.path}.settings.lock`, '');
+    h.settings.requestMode('auto'); expect(readFileSync(h.path, 'utf8')).toBe(before); expect(h.permission.mode).toBe('ask');
+    expect(h.onModeChange).not.toHaveBeenCalled(); expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('保存锁'), true);
   });
 
-  it('清楚显示本次会话、本项目、全局及真实文件；项目继承查看始终只读', () => {
-    const h = setup(); h.settings.open();
-    expect(h.picker.items.find(item => item.value === 'mode')?.label).toContain('本次会话');
-    expect(h.picker.items.find(item => item.value === 'project')).toMatchObject({ label: expect.stringContaining('本项目'), description: expect.stringContaining(h.path) });
-    expect(h.picker.items.find(item => item.value === 'global')?.description).toContain(h.globalConfigPath);
-    h.pick('project'); h.pick('global');
-    expect(h.detail.title).toContain('只读'); expect(h.detail.body()).toContain(h.globalConfigPath);
+  it('继承层在模式选择期间变化时不应用旧显示值，也不写入', () => {
+    const h = setup(); writeFileSync(h.globalConfigPath, '{"permissionMode":"auto"}'); const before = readFileSync(h.path, 'utf8');
+    h.settings.open(); h.pick('mode'); writeFileSync(h.globalConfigPath, '{"permissionMode":"yolo"}'); h.pick('inherit');
+    expect(readFileSync(h.path, 'utf8')).toBe(before); expect(h.permission.mode).toBe('ask'); expect(h.notify).toHaveBeenCalledWith(expect.any(String), true);
   });
 
-  it('全局只编辑原始全局层；保存不提升项目权限、审批模型、writeRoots或运行时默认值', () => {
-    const h = setup(); const projectBefore = readFileSync(h.path, 'utf8');
-    writeFileSync(h.globalConfigPath, '{"custom":{"keep":true},"permissions":{"deny":["bash(rm *)"]}}');
-    h.config.permissionMode = 'yolo'; h.config.judgeModel = 'project-only-reviewer';
-    h.config.pluginConfig['agentlab.policy-deterministic-v2'] = { writeRoots: ['project-output'] };
-    h.permission.addSessionRule('allow', 'session_only');
-    h.settings.open(); h.pick('global');
-    expect(h.picker.body?.()).toContain('内置默认 ask');
-    expect(h.picker.body?.()).toContain('allow: 0 条');
-    expect(h.picker.body?.()).not.toContain('project-only-reviewer');
-    h.pick('mode'); h.pick('auto'); h.pick('review');
-    expect(h.detail.body()).toContain('作用范围: 全局'); expect(h.detail.body()).toContain(h.globalConfigPath);
-    expect(h.detail.body()).not.toContain('read_file'); expect(h.detail.body()).not.toContain('session_only');
-    h.detail.onBack(); h.pick('save'); expect(h.picker.requireSelection).toBe(true); h.pick('cancel');
-    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).not.toHaveProperty('permissionMode');
-    h.pick('save'); h.pick('confirm');
-    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).toEqual({ custom: { keep: true }, permissionMode: 'auto', permissions: { deny: ['bash(rm *)'] } });
-    expect(readFileSync(h.path, 'utf8')).toBe(projectBefore);
-    expect(h.permission.mode).toBe('ask'); expect(h.config.judgeModel).toBe('project-only-reviewer');
+  it.each(['session', 'mode'])('陈旧 %s 选择不会写入或影响新会话', change => {
+    const h = setup(); const before = readFileSync(h.path, 'utf8'); h.settings.open(); h.pick('mode');
+    if (change === 'session') h.session.id = 'session-two'; else h.permission.setMode('yolo');
+    h.pick('auto'); expect(readFileSync(h.path, 'utf8')).toBe(before); expect(h.onModeChange).not.toHaveBeenCalled();
+    expect(h.permission.mode).toBe(change === 'session' ? 'ask' : 'yolo');
   });
 
-  it('首次全局编辑取消、review和放弃均不建目录；只有明确Save才落盘', () => {
-    const h = setup({ missingGlobal: true }); const globalDirectory = join(h.cwd, 'home');
-    h.settings.open(); h.pick('global'); h.picker.onCancel();
-    expect(existsSync(globalDirectory)).toBe(false);
-    h.pick('global'); h.pick('mode'); h.pick('auto'); h.pick('review'); h.detail.onBack();
-    h.pick('save'); h.pick('cancel'); expect(existsSync(globalDirectory)).toBe(false);
-    h.pick('back'); expect(h.picker.title).toContain('放弃'); h.pick('confirm');
-    expect(existsSync(globalDirectory)).toBe(false);
-    h.pick('global'); expect(h.picker.body?.()).toContain('内置默认 ask');
-    h.pick('mode'); h.pick('auto'); h.pick('save'); h.pick('confirm');
+  it('取消、重复或先前面板的回调失效', () => {
+    const h = setup(); const before = readFileSync(h.path, 'utf8'); h.settings.open(); h.pick('mode');
+    const cancelled = h.picker; cancelled.onCancel(); cancelled.onPick('yolo'); expect(readFileSync(h.path, 'utf8')).toBe(before);
+    h.pick('mode'); const selected = h.picker; h.pick('auto'); selected.onPick('yolo');
+    expect(h.permission.mode).toBe('auto'); expect(h.onModeChange).toHaveBeenCalledOnce();
+    h.pick('mode'); const old = h.picker; h.settings.open(); old.onPick('yolo'); expect(h.permission.mode).toBe('auto');
+  });
+
+  it('规则 Enter 只提交一次，立即持久化；Esc 未提交输入不写盘', () => {
+    const h = setup(); const before = readFileSync(h.path, 'utf8'); h.settings.open(); h.pick('rules'); h.pick('allow'); h.pick('add');
+    const cancelled = h.input; h.input.onCancel(); cancelled.onSubmit('write_file'); expect(readFileSync(h.path, 'utf8')).toBe(before);
+    h.pick('add'); const submitted = h.input; h.input.onSubmit('glob(src/**)'); submitted.onSubmit('glob(src/**)');
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissions.allow).toEqual(['read_file', 'glob(src/**)']);
+    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('重启'));
+    expect(h.config.permissions.allow).toEqual(['read_file']); expect(h.permission.getSessionRules().allow).toEqual([]);
+  });
+
+  it('规则编辑与删除立即写盘，保留其他类型、全局和未知字段', () => {
+    const h = setup(); const globalBefore = readFileSync(h.globalConfigPath, 'utf8'); h.settings.open(); h.pick('rules'); h.pick('allow'); h.pick('0'); h.pick('edit'); h.input.onSubmit('glob');
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissions.allow).toEqual(['glob']);
+    h.pick('0'); h.pick('delete'); expect(JSON.parse(readFileSync(h.path, 'utf8'))).toMatchObject({ unknownSecret: 'not-in-ui', permissions: { allow: [] } });
+    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(globalBefore); expect(h.picker.items.map(item => item.value)).toEqual(['add']);
+  });
+
+  it('无效或冲突规则不写入，不通知保存成功', () => {
+    const h = setup(); h.settings.open(); h.pick('rules'); h.pick('allow'); h.pick('add'); const before = readFileSync(h.path, 'utf8');
+    h.input.onSubmit('invalid rule'); expect(readFileSync(h.path, 'utf8')).toBe(before);
+    writeFileSync(h.path, '{"custom":"external"}'); h.input.onSubmit('glob'); expect(readFileSync(h.path, 'utf8')).toBe('{"custom":"external"}');
+    expect(h.notify).not.toHaveBeenCalledWith(expect.stringContaining('已保存'));
+  });
+
+  it('审批模型选项和输入自动保存，准确提示重启并保留实际运行状态', () => {
+    const h = setup(); writeFileSync(h.globalConfigPath, '{"judgeModel":"global-reviewer"}');
+    h.settings.open(); h.pick('judge'); expect(h.picker.items.find(item => item.value === 'inherit')?.label).toContain('global-reviewer');
+    h.pick('current'); expect(JSON.parse(readFileSync(h.path, 'utf8')).judgeModel).toBe('');
+    h.pick('judge'); h.pick('inherit'); expect(JSON.parse(readFileSync(h.path, 'utf8'))).not.toHaveProperty('judgeModel');
+    h.pick('judge'); h.pick('name'); const input = h.input; input.onSubmit('next-reviewer'); input.onSubmit('other-reviewer');
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).judgeModel).toBe('next-reviewer'); expect(h.config.judgeModel).toBeUndefined();
+    expect(h.picker.items.find(item => item.value === 'judgeStatus')?.label).toContain('已加载');
+    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('重启'));
+  });
+
+  it('全局打开、取消和继承无更改时不创建目录，真正修改才写原始层', () => {
+    const h = setup({ missingGlobal: true }); h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('inherit');
+    expect(existsSync(h.globalConfigPath)).toBe(false); h.pick('mode'); h.pick('auto');
     expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).toEqual({ permissionMode: 'auto' });
+    expect(h.permission.mode).toBe('ask');
   });
 
-  it('全局规则和optional字段可编辑删除，namespace别名不造成新旧冲突', () => {
-    const h = setup(); writeFileSync(h.globalConfigPath, JSON.stringify({ pluginConfig: {
-      'agentlab.policy-legacy': { permissionMode: 'auto', permissions: { allow: ['glob'] } },
-      'agentlab.reviewer-model': { judgeModel: 'global-reviewer' },
-    } }));
-    h.settings.open(); h.pick('global'); expect(h.picker.body?.()).toContain('global-reviewer');
-    h.pick('mode'); h.pick('inherit'); h.pick('judge'); h.pick('inherit');
-    h.pick('rules'); h.pick('allow'); h.pick('0'); h.pick('delete'); h.pick('confirm');
-    h.pick('add'); h.input.onSubmit('read_file'); h.picker.onCancel(); h.picker.onCancel();
-    h.pick('save'); h.pick('confirm');
-    const raw = JSON.parse(readFileSync(h.globalConfigPath, 'utf8'));
-    expect(raw).not.toHaveProperty('permissionMode'); expect(raw).not.toHaveProperty('judgeModel'); expect(raw).not.toHaveProperty('permissions');
-    expect(raw.pluginConfig['agentlab.policy-legacy']).toEqual({ permissions: { allow: ['read_file'], ask: [], deny: [] } });
-    expect(raw.pluginConfig['agentlab.reviewer-model']).toEqual({});
-  });
-
-  it('全局并发冲突保留草稿，项目编辑与会话模式不变', () => {
-    const h = setup(); h.settings.open(); h.pick('global'); h.pick('mode'); h.pick('yolo');
-    writeFileSync(h.globalConfigPath, '{"custom":"external-global"}');
-    h.pick('save'); h.pick('confirm');
-    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe('{"custom":"external-global"}');
-    expect(h.picker.title).toContain('未保存'); expect(h.picker.body?.()).toContain('yolo');
-    expect(h.picker.context).toContain('草稿保留'); expect(h.permission.mode).toBe('ask');
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('ask');
-  });
-
-  it('按实际运行状态显示审批模型与来源，不以 judgeModel 配置推断是否加载', () => {
-    const h = setup();
-    expect(h.config.judgeModel).toBeUndefined();
-    h.getJudgeStatus.mockReturnValue({ loaded: true, model: 'current-runtime-model', source: 'current' });
-    h.settings.open();
-    expect(h.picker.items.find(item => item.value === 'judge')?.label).toContain('已加载 current-runtime-model（跟随当前模型）');
-    h.pick('mode');
-    expect(h.picker.items.find(item => item.value === 'auto')?.description).toContain('current-runtime-model');
-    h.getJudgeStatus.mockReturnValue({ loaded: true, model: 'explicit-runtime-model', source: 'explicit' });
-    h.settings.open(); h.pick('judge');
-    expect(h.detail.body()).toContain('已加载 explicit-runtime-model（显式指定）');
-    h.config.judgeModel = 'configured-but-not-loaded';
-    h.getJudgeStatus.mockReturnValue({ loaded: false });
-    expect(h.detail.body()).toContain('未加载');
-    expect(h.detail.body()).not.toContain('configured-but-not-loaded');
-    h.settings.openModes();
-    expect(h.picker.items.find(item => item.value === 'auto')?.description).toContain('当前未加载审批模型');
-  });
-
-  it('项目可保存空字符串跟随当前模型并覆盖全局，也可恢复继承；保存不冒充当前运行状态', () => {
-    const h = setup();
-    writeFileSync(h.globalConfigPath, JSON.stringify({ judgeModel: 'global-reviewer' }));
-    h.getJudgeStatus.mockReturnValue({ loaded: true, model: 'global-reviewer', source: 'explicit' });
-    h.settings.open(); h.pick('project'); h.pick('judge');
-    expect(h.picker.items.some(item => item.value === 'off' || item.label.includes('关闭'))).toBe(false);
-    expect(h.picker.items.find(item => item.value === 'inherit')?.label).toContain('global-reviewer');
-    h.pick('current');
-    expect(h.picker.body?.()).toContain('跟随当前模型（覆盖全局）');
-    h.pick('save'); h.pick('confirm');
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).judgeModel).toBe('');
-    h.pick('back');
-    expect(h.picker.items.find(item => item.value === 'judge')?.label).toContain('已加载 global-reviewer（显式指定）');
-    h.pick('project'); h.pick('judge'); h.pick('inherit'); h.pick('save'); h.pick('confirm');
-    expect(JSON.parse(readFileSync(h.path, 'utf8'))).not.toHaveProperty('judgeModel');
-  });
-
-  it('审批状态中的模型名称转义终端控制字符', () => {
-    const label = describeJudgeStatus({ loaded: true, model: 'model\x1b[2J\nnext', source: 'current' });
-    expect(label).toContain('model\\u001b[2J\\u000anext');
-    expect(label).not.toContain('\x1b');
-    expect(label).not.toContain('\n');
-  });
-
-  it('模式只能明确确认后改变，取消不变，准确解释作用范围与已有规则', () => {
-    const h = setup(); h.settings.open(); h.pick('mode'); h.pick('yolo');
-    expect(h.permission.mode).toBe('ask'); expect(h.picker.requireSelection).toBe(true); expect(h.picker.initialValue).toBeUndefined();
-    expect(h.picker.body?.()).toContain('已弹出的审批不自动放行'); expect(h.picker.body?.()).toContain('allow 与 ask 规则继续生效');
-    h.pick('cancel'); expect(h.permission.mode).toBe('ask'); h.pick('auto'); h.pick('confirm');
-    expect(h.permission.mode).toBe('auto'); expect(h.onModeChange).toHaveBeenCalledWith('auto'); expect(h.config.permissionMode).toBe('ask');
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('ask');
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('启动默认，请在 /permissions 的本项目或全局默认设置中 Save'));
-  });
-
-  it('会话移除不扩大到其他规则，取消和陈旧确认均不修改', () => {
-    const h = setup(); h.permission.addSessionRule('allow', 'bash(="npm test")'); h.permission.addSessionRule('deny', 'write_file(secrets*)');
-    h.settings.open(); h.pick('session'); h.pick('0'); expect(h.picker.body?.()).toContain('其他参数可能不同'); h.pick('cancel');
-    expect(h.permission.getSessionRules().allow).toHaveLength(1);
-    h.pick('0'); h.permission.addSessionRule('allow', 'glob'); h.pick('confirm');
-    expect(h.permission.getSessionRules().allow).toHaveLength(2); expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('规则已变化'), true);
-    h.pick('0'); h.pick('confirm');
-    expect(h.permission.getSessionRules()).toEqual({ allow: ['glob'], ask: [], deny: ['write_file(secrets*)'] });
+  it('会话规则一次选择移除，陈旧规则集合不被覆盖', () => {
+    const h = setup(); h.permission.addSessionRule('allow', 'glob'); h.permission.addSessionRule('deny', 'write_file(private/**)');
+    h.settings.open(); h.pick('session'); const stale = h.picker; h.permission.addSessionRule('allow', 'read_file'); stale.onPick('0');
+    expect(h.permission.getSessionRules().allow).toEqual(['glob', 'read_file']);
+    h.pick('0'); expect(h.permission.getSessionRules()).toEqual({ allow: ['read_file'], ask: [], deny: ['write_file(private/**)'] });
     expect(h.config.permissions.allow).toEqual(['read_file']);
   });
 
-  it('配置规则只读，有可核验全局/项目标签，精确目标与工具全范围含义不同', () => {
+  it('运行中配置规则只读，核验来源；审批状态不推测已加载模型', () => {
     const h = setup(); h.settings.open(); h.pick('effective');
     expect(h.detail.body()).toContain(`全局配置 ${h.globalConfigPath}`); expect(h.detail.body()).toContain(`项目配置 ${h.path}`);
-    expect(h.detail.body()).not.toContain('not-in-ui'); expect(h.detail.body()).toContain('启动时加载的快照');
-    expect(describePermissionRule('read_file')).toContain('全部调用');
-    expect(describePermissionRule('bash(="npm test")')).toContain('精确目标');
-    expect(describePermissionRule('edit_file(src/**)')).toContain('glob 目标');
+    expect(h.detail.body()).not.toContain('not-in-ui'); expect(h.detail.body()).toContain('启动时加载的快照'); h.detail.onBack();
+    h.getJudgeStatus.mockReturnValue({ loaded: false }); h.pick('judgeStatus'); expect(h.detail.body()).toContain('未加载');
+    expect(describePermissionRule('read_file')).toContain('全部调用'); expect(describePermissionRule('bash(="npm test")')).toContain('精确目标');
+    expect(describeJudgeStatus({ loaded: true, model: 'model\x1b[2J\nnext', source: 'current' })).toContain('model\\u001b[2J\\u000anext');
   });
 
-  it('项目 mode / allow / ask / deny / judgeModel 共用草稿，取消 Save 不写入，保存不改当前引擎', () => {
-    const h = setup(); const original = readFileSync(h.path, 'utf8'); h.settings.open(); h.pick('project');
-    h.pick('mode'); h.pick('yolo');
-    for (const kind of ['allow', 'ask', 'deny']) {
-      h.pick('rules'); h.pick(kind); h.pick('add');
-      expect(h.input.validate?.('invalid rule')).toBeTruthy(); h.input.onSubmit(`${kind === 'allow' ? 'glob' : kind === 'ask' ? 'bash' : 'write_file'}(src/**)`);
-      h.picker.onCancel(); h.picker.onCancel();
-    }
-    h.pick('judge'); h.pick('name'); h.input.onSubmit('review-model');
-    h.pick('save'); expect(h.picker.requireSelection).toBe(true); expect(h.picker.body?.()).toContain('恢复旧会话');
-    h.pick('cancel'); expect(readFileSync(h.path, 'utf8')).toBe(original);
-    h.pick('save'); h.pick('confirm');
-    const saved = JSON.parse(readFileSync(h.path, 'utf8'));
-    expect(saved).toMatchObject({ permissionMode: 'yolo', judgeModel: 'review-model', unknownSecret: 'not-in-ui', permissions: { allow: ['read_file', 'glob(src/**)'], ask: ['bash(src/**)'], deny: ['write_file(src/**)'] } });
-    expect(h.permission.mode).toBe('ask'); expect(h.config.permissions).toEqual({ allow: ['read_file'], ask: [], deny: ['bash(rm *)'] }); expect(h.config.judgeModel).toBeUndefined();
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('项目权限设置已保存'));
+  it('控制器拒绝模式时先验证，不改文件或报告成功', () => {
+    const h = setup(); const before = readFileSync(h.path, 'utf8');
+    Object.assign(h.permission, { validateMode: () => { throw new Error('unsupported mode'); } });
+    h.settings.requestMode('auto'); expect(readFileSync(h.path, 'utf8')).toBe(before); expect(h.permission.mode).toBe('ask');
+    h.settings.open(); h.pick('mode'); h.pick('yolo'); expect(readFileSync(h.path, 'utf8')).toBe(before);
+    expect(h.onModeChange).not.toHaveBeenCalled(); expect(h.notify).not.toHaveBeenCalledWith(expect.stringContaining('已保存'));
   });
 
-  it('编辑/删除规则只更新草稿，冲突失败保留草稿，退出询问放弃', () => {
-    const h = setup(); h.settings.open(); h.pick('project'); h.pick('rules'); h.pick('allow'); h.pick('0'); h.pick('edit'); h.input.onSubmit('glob');
-    h.pick('0'); h.pick('delete'); h.pick('confirm'); h.picker.onCancel(); h.picker.onCancel();
-    h.pick('review'); expect(h.detail.body()).toContain('allow:\n  (无)'); h.detail.onBack();
-    writeFileSync(h.path, '{"custom":"external"}'); h.pick('save'); h.pick('confirm');
-    expect(readFileSync(h.path, 'utf8')).toBe('{"custom":"external"}'); expect(h.picker.title).toContain('未保存'); expect(h.picker.context).toContain('草稿保留');
-    h.picker.onCancel(); expect(h.picker.title).toContain('放弃'); h.pick('cancel'); expect(h.picker.title).toContain('未保存');
+  it('自定义控制器提交后应用失败，准确报告已保存而非未保存，界面可返回', () => {
+    const h = setup(); vi.spyOn(h.permission, 'setMode').mockImplementation(() => { throw new Error('private controller detail'); });
+    h.settings.open(); h.pick('mode'); expect(() => h.pick('auto')).not.toThrow();
+    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('auto'); expect(h.permission.mode).toBe('ask');
+    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已保存，但当前策略应用失败'), true);
+    expect(h.onModeChange).not.toHaveBeenCalled(); expect(h.picker.title).toContain('本项目权限设置');
+    expect(JSON.stringify(h.notify.mock.calls)).not.toContain('private controller detail');
   });
 
-  it('每次独立打开清除旧返回目标；确认前切换会话不改新会话模式', () => {
+  it('格式化 JSON 初始值可直接提交且保留转义字符串', () => {
+    const onSubmit = vi.fn(); const original = { list: ['glob'], escaped: 'a\nb' };
+    const panel = new SettingsInputPanel({ title: 'JSON', value: JSON.stringify(original, null, 2), format: 'json', description: '', onSubmit, onCancel: vi.fn(), rows: () => 20, changed: vi.fn() });
+    panel.handleInput('\r'); expect(JSON.parse(onSubmit.mock.calls[0][0])).toEqual(original);
+  });
+
+  it('输入面板有效 Enter 与 Esc 回调均只能执行一次', () => {
+    const onSubmit = vi.fn(); const onCancel = vi.fn();
+    const panel = new SettingsInputPanel({ title: '字段', value: 'glob', description: '', onSubmit, onCancel, rows: () => 20, changed: vi.fn() });
+    panel.handleInput('\r'); panel.handleInput('\r'); panel.handleInput('\x1b'); expect(onSubmit).toHaveBeenCalledOnce(); expect(onCancel).not.toHaveBeenCalled();
+    const cancelled = new SettingsInputPanel({ title: '字段', value: 'glob', description: '', onSubmit, onCancel, rows: () => 20, changed: vi.fn() });
+    cancelled.handleInput('\x1b'); cancelled.handleInput('\r'); expect(onSubmit).toHaveBeenCalledOnce(); expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it('完整多行 JSON 粘贴无需逐行确认，Enter 提交一次', () => {
+    const onSubmit = vi.fn(); const panel = new SettingsInputPanel({ title: 'JSON', value: '', description: '',
+      validate: value => { try { JSON.parse(value); } catch { return 'invalid JSON'; } }, onSubmit, onCancel: vi.fn(), rows: () => 20, changed: vi.fn() });
+    panel.handleInput('\x1b[200~{\n\t"allow": ["glob"],\n\t"path": "a\\nb"\n}\x1b[201~'); expect(onSubmit).not.toHaveBeenCalled();
+    panel.handleInput('\r'); panel.handleInput('\r'); expect(onSubmit).toHaveBeenCalledOnce(); expect(JSON.parse(onSubmit.mock.calls[0][0])).toEqual({ allow: ['glob'], path: 'a\nb' });
+  });
+
+  it('每次独立打开重置返回目标', () => {
     const h = setup(); const back = vi.fn(); h.settings.open(back); h.picker.onCancel(); expect(back).toHaveBeenCalledTimes(1);
     h.settings.open(); h.picker.onCancel(); expect(back).toHaveBeenCalledTimes(1);
     h.settings.openModes(back); h.picker.onCancel(); expect(back).toHaveBeenCalledTimes(2);
     h.settings.openModes(); h.picker.onCancel(); expect(back).toHaveBeenCalledTimes(2);
-    h.settings.requestMode('yolo'); h.session.id = 'session-two'; h.pick('confirm'); expect(h.permission.mode).toBe('ask');
   });
 
   it('设置输入使用细分隔线，窄终端宽高有界，无效输入不提交，Esc 取消', () => {

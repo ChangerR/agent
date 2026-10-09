@@ -3,6 +3,8 @@ import { definePlugin, type CommandContext, type CommandResult, type PermissionC
 import type { ThinkingLevel } from '../core/provider.js';
 import type { SessionManager } from '../core/session/coordinator.js';
 import { resolveAgentPaths } from '../core/paths.js';
+import { assertPermissionConfigUnchanged, copyPermissionDraft, readPermissionConfig, savePermissionConfig } from './policy-legacy/config.js';
+import { createScopedConfigStores, settingsErrorMessage } from '../runtime/config-store.js';
 export interface BuiltinCommandServices {
   model(): string;
   setModel(value: string): void;
@@ -18,44 +20,64 @@ async function pick(id: string, prompt: string, choices: Array<{ id: string; lab
   const request = { type: 'interaction' as const, id, prompt, choices };
   return context.interact ? (await context.interact(request)) ?? text('已取消') : request;
 }
-export function modelCommandsPlugin(services: BuiltinCommandServices) {
+export function modelCommandsPlugin(services: BuiltinCommandServices, cwd = process.cwd()) {
+  const stores = createScopedConfigStores(cwd);
   return definePlugin({ manifest: { id: 'agentlab.model-commands', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-    ctx.provide.command('model', { description: '查看/切换模型', async handler(input, context) {
-      const selected = args(input) || await pick('model', '选择模型', services.models().map(m => ({ id: m.name, label: m.name })), context);
-      if (typeof selected !== 'string') return selected;
-      services.setModel(selected); return text(`模型已切换: ${selected}`);
-    } });
-    ctx.provide.command('think', { description: '查看/设置思考等级', async handler(input, context) {
-      const selected = args(input) || await pick('think', '思考等级', ['off', 'low', 'medium', 'high'].map(id => ({ id, label: id })), context);
-      if (typeof selected !== 'string') return selected;
-      if (!['off', 'low', 'medium', 'high'].includes(selected)) throw new Error('用法: /think off|low|medium|high');
-      services.setThinking(selected as ThinkingLevel); return text(`思考等级: ${selected}`);
-    } });
+    for (const id of ['model', 'think'] as const) {
+      const field = id === 'model' ? 'model' : 'thinking';
+      const title = id === 'model' ? '模型' : '思考等级';
+      ctx.provide.command(id, { description: `选择${title}，立即保存本项目并应用`, async handler(input, context) {
+        const store = stores.store('project');
+        const sessionId = services.session().id;
+        // 在打开选择器前固定基线；等待选择期间的外部修改必须通过 CAS 检测。
+        let base;
+        try { base = store.readFields([field]); } catch (error) { throw new Error(settingsErrorMessage(error)); }
+        const selected = args(input) || await pick(id, id === 'model' ? '选择模型 · 本项目' : '思考等级 · 本项目',
+          id === 'model' ? services.models().map(m => ({ id: m.name, label: m.name })) : ['off', 'low', 'medium', 'high'].map(id => ({ id, label: id })), context);
+        if (typeof selected !== 'string') return selected;
+        if (id === 'think' && !['off', 'low', 'medium', 'high'].includes(selected)) throw new Error('用法: /think off|low|medium|high');
+        if (id === 'model' && (!selected.trim() || /[\s\u0000-\u001f\u007f-\u009f]/u.test(selected))) throw new Error('用法: /model <模型 ID>');
+        context.signal.throwIfAborted();
+        if (services.session().id !== sessionId) throw new Error('会话已变化，请重新选择设置。');
+        try { store.commitFields(base, { [field]: selected }); } catch (error) { throw new Error(settingsErrorMessage(error)); }
+        // 持久化成功后才修改运行值；恢复会话的 loop setter 不会写启动默认。
+        try { if (id === 'model') services.setModel(selected); else services.setThinking(selected as ThinkingLevel); }
+        catch { throw new Error('设置已保存，但当前运行值应用失败，请检查插件并重新启动。'); }
+        return text(`${title}切换为 ${selected}；已保存本项目（${store.path}）。下一次模型请求生效（可能在本轮内）${id === 'model' ? '；当前 provider、endpoint 和凭据引用保持不变' : ''}。`);
+      } });
+    }
     for (const [id, title, read] of [['model', '模型', services.model], ['think', '思考', services.thinking]] as const) {
-      ctx.provide.settings(id, { title, order: id === 'model' ? 0 : 1, description: '本次会话；下一次请求生效，不修改全局或项目默认。', scopeTargets: [{ scope: 'session' }], schema: { type: 'string' }, applyMode: 'nextRequest', read });
+      ctx.provide.settings(id, { title, order: id === 'model' ? 0 : 1, description: '选择即保存本项目并应用；下一次模型请求生效。模型仅切换当前 provider / endpoint 下的模型 ID。', scopeTargets: stores.scopeTargets.filter(target => target.scope === 'project'), schema: { type: 'string' }, applyMode: 'nextRequest', read });
     }
   } });
 }
 export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd = process.cwd()) {
   const paths = resolveAgentPaths(cwd);
   return definePlugin({ manifest: { id: 'agentlab.permission-commands', version: '1.0.0', apiVersion: 1 }, setup(ctx) {
-    ctx.provide.command('mode', { description: '切换本次会话权限模式；启动默认请在 /permissions 本项目/全局设置中 Save', async handler(input, context) {
-      const selected = args(input) || await pick('mode', '选择本次会话权限模式', ['ask', 'auto', 'yolo'].map(id => ({ id, label: id })), context);
+    ctx.provide.command('mode', { description: '选择权限模式，自动保存本项目并立即应用', async handler(input, context) {
+      const snapshot = readPermissionConfig(paths.projectConfigPath, 'project');
+      const permission = services.permission();
+      const currentMode = permission.mode;
+      const sessionId = services.session().id;
+      const selected = args(input) || await pick('mode', '选择本项目权限模式 · 自动保存并应用', ['ask', 'auto', 'yolo'].map(id => ({ id, label: id })), context);
       if (typeof selected !== 'string') return selected;
       if (!['ask', 'auto', 'yolo'].includes(selected)) throw new Error('用法: /mode ask|auto|yolo');
-      if (selected === 'yolo') {
-        const confirmation = { type: 'interaction' as const, id: 'mode-yolo', kind: 'confirm' as const, prompt: 'yolo 会自动执行未被规则拦截的写入和命令，确认切换？', requireSelection: true, choices: [{ id: 'cancel', label: '取消' }, { id: 'confirm', label: '确认' }] };
-        if (!context.interact) return confirmation;
-        if (await context.interact(confirmation) !== 'confirm') return text('已取消');
-      }
-      services.permission().setMode(selected as 'ask' | 'auto' | 'yolo');
-      return text(`本次会话权限模式: ${selected}。如需作为启动默认，请在 /permissions 的本项目或全局默认设置中 Save。`);
+      context.signal.throwIfAborted();
+      if (permission !== services.permission() || currentMode !== permission.mode || sessionId !== services.session().id) throw new Error('当前会话已变化，请重新选择模式；未保存更改。');
+      const mode = selected as 'ask' | 'auto' | 'yolo';
+      permission.validateMode?.(mode);
+      const next = copyPermissionDraft(snapshot); next.permissionMode = mode;
+      if (snapshot.permissionMode === mode) assertPermissionConfigUnchanged(snapshot);
+      else savePermissionConfig(snapshot, next);
+      try { permission.setMode(mode); }
+      catch { throw new Error(`权限配置已保存，但当前策略应用失败；当前模式为 ${permission.mode}。请重新选择或重启后核对。`); }
+      return text(`权限模式: ${selected}；已保存本项目并应用到后续检查，已有审批仍需处理。通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。`);
     } });
     ctx.provide.command('permissions', { description: '权限设置与决策日志', handler(input) {
       return args(input) === 'audit' ? { type: 'data', data: services.permission().getAuditLog() } : { type: 'data', data: { mode: services.permission().mode, sessionRules: services.permission().getSessionRules() } };
     } });
-    ctx.provide.settings('permissions', { title: '权限', order: 2, description: '本次会话规则即时生效；本项目/全局默认需明确选择并保存，重启生效。', schema: { type: 'object' }, applyMode: 'new-session',
-      scopeTargets: [{ scope: 'session' }, { scope: 'project', path: paths.projectConfigPath }, { scope: 'global', path: paths.globalConfigPath }],
+    ctx.provide.settings('permissions', { title: '权限', order: 2, description: '默认编辑本项目，选择或 Enter 自动保存。模式立即应用；规则与审批模型重启后生效。全局范围可选。', schema: { type: 'object' }, applyMode: 'new-session',
+      scopeTargets: [{ scope: 'project', path: paths.projectConfigPath }, { scope: 'global', path: paths.globalConfigPath }, { scope: 'session' }],
       read: () => ({ mode: services.permission().mode, rules: services.permission().getSessionRules() }) });
   } });
 }

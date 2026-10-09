@@ -116,17 +116,17 @@ describe('pi 风格交互面板', () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 
-  it.each([[24, 8], [40, 12], [80, 24]])('字段草稿 %i×%i 保留完整细框，保留校验与取消', (width, rows) => {
+  it.each([[24, 8], [40, 12], [80, 24]])('字段输入 %i×%i 保留完整细框，保留校验与一次性取消', (width, rows) => {
     const onSubmit = vi.fn();
     const onCancel = vi.fn();
-    const panel = new SettingsInputPanel({ title: '项目\x1b[2J规则', value: 'bad rule', description: '\x1b]52;c;hidden\x07草稿尚未保存',
+    const panel = new SettingsInputPanel({ title: '项目\x1b[2J规则', value: 'bad rule', description: '\x1b]52;c;hidden\x07Enter 保存，Esc 取消',
       validate: () => '无效规则', onSubmit, onCancel, rows: () => rows, changed: vi.fn(),
     });
     const raw = panel.render(width);
     const lines = display(raw);
     expect(lines[0]).toMatch(/^╭ 项目规则 .*╮$/);
     expect(lines.at(-1)).toMatch(/^╰ .*╯$/);
-    expect(lines.at(-1)).toMatch(/Esc ?返回/);
+    expect(lines.at(-1)).toMatch(/Esc ?取消/);
     expect(lines.slice(1, -1).every(line => line.startsWith('│') && line.endsWith('│'))).toBe(true);
     expect(raw.join('\n')).not.toContain('\x1b[2J');
     expect(raw.join('\n')).not.toContain('\x1b]52');
@@ -136,6 +136,7 @@ describe('pi 风格交互面板', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(display(panel.render(width)).join('\n')).toContain('无效规则');
     panel.handleInput('\x1b');
-    expect(onCancel).toHaveBeenCalledOnce();
+    panel.handleInput('\x1b'); panel.handleInput('\r');
+    expect(onCancel).toHaveBeenCalledOnce(); expect(onSubmit).not.toHaveBeenCalled();
   });
 });

@@ -176,10 +176,10 @@ describe('权限配置的安全草稿保存', () => {
     const { dir, path } = project(); writeFileSync(path, '{ "permissionMode": "ask" }');
     const snapshot = readProjectPermissionConfig(dir); const draft = copyPermissionDraft(snapshot); draft.permissionMode = 'auto';
     vi.mocked(fs.renameSync).mockImplementationOnce(() => { throw new Error('SECRET IO DETAILS'); });
-    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('草稿已保留');
+    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('更改未保存');
     expect(readFileSync(path, 'utf8')).toBe('{ "permissionMode": "ask" }'); expect(readdirSync(dir).filter(name => name !== '.git')).toEqual(['agent.config.json']);
     vi.mocked(fs.fsyncSync).mockImplementationOnce(() => { throw new Error('SECRET IO DETAILS'); });
-    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('草稿已保留');
+    expect(() => saveProjectPermissionConfig(snapshot, draft)).toThrow('更改未保存');
     expect(readFileSync(path, 'utf8')).toBe('{ "permissionMode": "ask" }'); expect(readdirSync(dir).filter(name => name !== '.git')).toEqual(['agent.config.json']);
     expect(saveProjectPermissionConfig(snapshot, draft).permissionMode).toBe('auto');
   });

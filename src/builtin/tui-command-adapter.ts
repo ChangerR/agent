@@ -1,6 +1,5 @@
 /** 默认产品的可选终端交互。只由 CLI 加载；核心与 headless 不导入终端组件。 */
 import type { TuiAdapter, BuiltinTuiContext, TuiCommandHandler } from '../cli/tui-plugins.js';
-import type { ThinkingLevel } from '../core/provider.js';
 import { createPermissionSettings } from './policy-legacy/tui.js';
 
 function formatUpdated(iso: string): string {
@@ -20,14 +19,31 @@ const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}
 export function createTuiAdapter(context: BuiltinTuiContext): TuiAdapter {
   const { agent, say, error: err, showPicker } = context;
   const runAsync = (task: () => Promise<void>) => { void task().catch(error => err(error instanceof Error ? error.message : String(error))); };
-  const setModel = (name: string) => {
-    agent.loop.setModel(name); const info = agent.modelInfo(name);
-    say(info ? `模型切换为 ${name}（context: ${info.contextWindow.toLocaleString()} tokens，max output: ${info.maxOutputTokens.toLocaleString()}）` : `模型切换为 ${name}（未知规格，压缩阈值保持配置值；可在 models.json 中补充）`);
-    say('下一次模型请求生效（可能在本轮内）；不会切换 provider 或 endpoint'); context.updateStatus();
-  };
-  const setThinking = (level: string) => {
-    agent.loop.setThinking(level as ThinkingLevel); say(`思考等级切换为 ${level}（下一次模型请求生效，可能在本轮内）`); context.updateStatus();
-  };
+  let selectionController: AbortController | undefined;
+  const runModelSetting = (id: 'model' | 'think', arg: string, onBack?: () => void) => runAsync(async () => {
+    selectionController?.abort();
+    const controller = new AbortController(); selectionController = controller;
+    const off = agent.events.on('session_restored', () => controller.abort());
+    try {
+      const result = await agent.dispatchCommand(`/${id}${arg ? ` ${arg}` : ''}`, { signal: controller.signal, interact: request => new Promise(resolve => {
+        const finish = (value?: string) => { controller.signal.removeEventListener('abort', cancel); resolve(value); };
+        const cancel = () => finish();
+        controller.signal.addEventListener('abort', cancel, { once: true });
+        const items = (request.choices ?? []).map(choice => {
+          const info = id === 'model' ? agent.modelInfo(choice.id) : undefined;
+          return { value: choice.id, label: choice.label, description: id === 'model'
+            ? `${info ? `context ${info.contextWindow.toLocaleString()} · output ${info.maxOutputTokens.toLocaleString()}` : '未知规格'}\n选择即保存本项目，下一次模型请求生效；需与当前 provider / endpoint 兼容。`
+            : `${choice.id === 'off' ? '不请求额外推理参数，实际行为由模型决定。' : '请求相应推理等级，模型需支持。'}选择即保存本项目；下一次模型请求生效。` };
+        });
+        showPicker(`${request.prompt}${id === 'model' ? ` · ${agent.loop.providerName}` : ''}`, items,
+          value => { if (!controller.signal.aborted) finish(value); }, id === 'model' ? agent.loop.model : agent.loop.thinking, id === 'model',
+          () => { finish(); onBack?.(); });
+      }) });
+      if (result?.type === 'text' && result.text !== '已取消') say(result.text);
+      context.updateStatus();
+    } catch (error) { if (!controller.signal.aborted) throw error; }
+    finally { off(); if (selectionController === controller) selectionController = undefined; }
+  });
   const permissions = createPermissionSettings({ agent, cwd: agent.cwd,
     notify: (text, error) => error ? err(text) : say(text), onModeChange: () => context.updateStatus(),
     showPicker: context.showPermissionPicker, showDetails: (title, body, onBack) => context.showDetails(title, body, onBack, true), showInput: context.showInput,
@@ -46,26 +62,12 @@ export function createTuiAdapter(context: BuiltinTuiContext): TuiAdapter {
       say(`tokens: ${fmtTokens(usage.inputTokens)} 输入 / ${fmtTokens(usage.outputTokens)} 输出\ncache: ${fmtTokens(usage.cacheReadTokens)} 读 / ${fmtTokens(usage.cacheWriteTokens)} 写 · 命中率 ${denom ? `${Math.round(usage.cacheReadTokens / denom * 100)}%` : '-'}\n会话日志: ${agent.logPath}`);
     },
     queue: arg => { say(arg === 'clear' ? `已取消 ${context.queue.clear()} 条排队消息` : `待发送 ${context.queue.size()} 条消息，/queue clear 清空`); },
-    model: (arg, onBack) => {
-      if (arg) { setModel(arg); return; }
-      showPicker(`选择模型 · ${agent.loop.providerName}`, agent.knownModels.map(m => ({ value: m.name, label: m.name,
-        description: `${m.info ? `context ${m.info.contextWindow.toLocaleString()} · output ${m.info.maxOutputTokens.toLocaleString()}` : '未知规格'}\n下一次模型请求生效；需与当前 provider / endpoint 兼容。`,
-      })), setModel, agent.loop.model, true, onBack);
-    },
+    model: (arg, onBack) => runModelSetting('model', arg, onBack),
     mode: (arg, onBack) => {
       if (arg === 'ask' || arg === 'auto' || arg === 'yolo') permissions.requestMode(arg);
       else if (arg) err('用法: /mode ask|auto|yolo'); else permissions.openModes(onBack);
     },
-    think: (arg, onBack) => {
-      if (arg === 'off' || arg === 'low' || arg === 'medium' || arg === 'high') { setThinking(arg); return; }
-      if (arg) { err('用法: /think off|low|medium|high'); return; }
-      showPicker(`思考等级（当前: ${agent.loop.thinking}）`, [
-        { value: 'off', label: 'off', description: '不请求额外推理参数，实际行为由模型决定。下一次模型请求生效。' },
-        { value: 'low', label: 'low', description: '请求轻度推理；下一次模型请求生效，模型需支持。' },
-        { value: 'medium', label: 'medium', description: '请求均衡推理；下一次模型请求生效，模型需支持。' },
-        { value: 'high', label: 'high', description: '请求深度推理；下一次模型请求生效，模型需支持。' },
-      ], setThinking, agent.loop.thinking, false, onBack);
-    },
+    think: (arg, onBack) => runModelSetting('think', arg, onBack),
     permissions: (arg, onBack) => { if (arg === 'audit') permissions.openAudit(); else if (arg) err('用法: /permissions 或 /permissions audit'); else permissions.open(onBack); },
     save: () => runAsync(async () => {
       const saved = await agent.session.save(); if (!saved) { say('当前会话还没有内容，未保存'); return; }
@@ -89,5 +91,5 @@ export function createTuiAdapter(context: BuiltinTuiContext): TuiAdapter {
       showPicker('恢复会话', listing.sessions.map(item => ({ value: item.id, label: item.title, description: `${item.id} · ${formatUpdated(item.updatedAt)} · ${item.messageCount} 条` })), value => runAsync(async () => { await agent.session.resume(value); }));
     }),
   };
-  return { commands, settings: { model: onBack => { void commands.model!('', onBack); }, think: onBack => { void commands.think!('', onBack); }, permissions: onBack => permissions.open(onBack) } };
+  return { dispose: () => selectionController?.abort(), commands, settings: { model: onBack => { void commands.model!('', onBack); }, think: onBack => { void commands.think!('', onBack); }, permissions: onBack => permissions.open(onBack) } };
 }

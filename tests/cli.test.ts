@@ -248,7 +248,7 @@ describe('TUI 审批模型运行状态', () => {
 });
 
 describe('真实 TUI 离线交互', () => {
-  it('设置入口可返回，项目默认单独确认 Save，浏览与草稿不修改运行权限', async () => {
+  it('权限默认打开本项目，模式一次选择即自动保存并应用，浏览取消不改文件', async () => {
     const ui = await mountTui();
     const file = join(ui.agent.cwd, 'agent.config.json');
     const before = await readFile(file, 'utf8');
@@ -260,20 +260,17 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('设置 · 本次会话 / 本项目 / 全局'));
       ui.terminal.input?.('\x1b');
-      ui.send('/permissions'); down(); down(); down(); down(); enter();
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));
-      down(); enter(); down(); enter(); // Save 入口前置；默认模式 auto -> yolo，仍只是项目草稿
-      expect(await readFile(file, 'utf8')).toBe(before);
-      expect(ui.agent.permission.mode).toBe('auto');
-      enter(); // 返回草稿后首项即 Save
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('确认 Save'));
-      enter(); enter(); // 未重新选择不能保存
-      expect(await readFile(file, 'utf8')).toBe(before);
-      down(); down(); enter(); enter(); // 显式确认；重复 Enter 不触发新菜单
+      ui.send('/permissions');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('本项目权限设置'));
+      enter();
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('本项目权限模式'));
+      ui.terminal.input?.('\x1b'); expect(await readFile(file, 'utf8')).toBe(before);
+      enter(); down(); enter(); // 当前 auto，下一项 yolo；一次 Enter 即保存并应用。
       expect(JSON.parse(await readFile(file, 'utf8')).permissionMode).toBe('yolo');
-      expect(ui.agent.permission.mode).toBe('auto');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('项目默认设置'));
-      await snapshot('project-explicit-save', ui.screen());
+      expect(ui.agent.permission.mode).toBe('yolo');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('本项目权限设置'));
+      expect(ui.screen().join('\n')).not.toContain('确认 Save');
+      await snapshot('project-autosave-mode', ui.screen());
     } finally { await ui.dispose(); }
   });
 

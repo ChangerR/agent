@@ -131,8 +131,15 @@ function assertUnchanged(path: string, expected: FileState | undefined): void {
   const actual = readFileState(path);
   if ((!actual !== !expected) || (actual && expected &&
     (actual.dev !== expected.dev || actual.ino !== expected.ino || actual.mode !== expected.mode || !actual.bytes.equals(expected.bytes)))) {
-    throw new PermissionConfigError('conflict', '配置在打开设置后已被其他程序修改。草稿已保留；请返回并重新打开对应范围的设置后重做更改。');
+    throw new PermissionConfigError('conflict', '配置在打开设置后已被其他程序修改。更改未保存；请返回并重新打开对应范围的设置后重做更改。');
   }
+}
+
+/** 无更改提交也必须检查原始文件身份，防止陈旧面板绕过 CAS。 */
+export function assertPermissionConfigUnchanged(snapshot: PermissionConfigSnapshot): void {
+  const original = snapshots.get(snapshot);
+  if (!original) throw new PermissionConfigError('invalid', '配置快照无效，请重新打开对应范围的设置。');
+  assertUnchanged(snapshot.path, original.state);
 }
 
 /** 同目录临时文件 + fsync + rename；提交前重读快照，失败不删除或截断目标文件。 */
@@ -178,11 +185,11 @@ export function savePermissionConfig(snapshot: PermissionConfigSnapshot, draft: 
   const lock = `${snapshot.path}.settings.lock`;
   let lockFd: number | undefined;
   try {
-    // 打开、查看、取消均无副作用；只在明确提交全局草稿时创建配置目录。
+    // 打开、查看、取消均无副作用；只在提交全局字段修改时创建配置目录。
     if (snapshot.scope === 'global') fs.mkdirSync(dirname(snapshot.path), { recursive: true, mode: 0o700 });
     try { lockFd = fs.openSync(lock, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600); }
     catch (error) {
-      if (errorCode(error) === 'EEXIST') throw new PermissionConfigError('conflict', '另一个设置保存正在进行（或遗留了保存锁），草稿已保留。请稍后重试；确认无其他保存任务后可人工检查锁文件。');
+      if (errorCode(error) === 'EEXIST') throw new PermissionConfigError('conflict', '另一个设置保存正在进行（或遗留了保存锁），更改未保存。请稍后重试；确认无其他保存任务后可人工检查锁文件。');
       throw error;
     }
     assertUnchanged(snapshot.path, original.state);
@@ -203,7 +210,7 @@ export function savePermissionConfig(snapshot: PermissionConfigSnapshot, draft: 
     return saved;
   } catch (error) {
     if (error instanceof PermissionConfigError) throw error;
-    throw new PermissionConfigError('io', '权限配置保存失败，原文件未被覆盖，草稿已保留。请检查文件权限或磁盘空间后重试。');
+    throw new PermissionConfigError('io', '权限配置保存失败，原文件未被覆盖，更改未保存。请检查文件权限或磁盘空间后重试。');
   } finally {
     if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* 保留原始错误 */ } }
     if (created) { try { fs.unlinkSync(tmp); } catch { /* 清理失败不覆盖保存错误 */ } }

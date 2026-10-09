@@ -1,4 +1,4 @@
-/** 宿主实现选择的统一草稿入口。保存只影响下一会话，不热替换活动能力。 */
+/** 宿主实现选择的统一设置入口。提交即保存；重启后才重新装配活动能力。 */
 import { definePlugin, type SettingsScope } from '../sdk/index.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import type { PresetContext } from '../runtime/preset.js';
@@ -16,7 +16,7 @@ export function runtimeSettingsPlugin(input: Pick<PresetContext, 'cwd' | 'capabi
     const drafts = new WeakMap<object, { scope: SettingsScope; base: ConfigSnapshot; selections: Record<string, string | false> }>();
     ctx.provide.settings('capability-selection', {
       title: '插件实现与权限策略', order: 3,
-      get description() { return '只编辑所选层的覆盖值；省略字段即删除本层选择并继承。deterministic-v2 的 ask 优先于 allow；切换前运行 /policy-migrate。model-v2 为独立严格审批协议。当前会话已加载实现：' + JSON.stringify(input.capabilityChoices()); },
+      get description() { return '输入完成后 Enter 即保存；重启后生效。只编辑所选层的覆盖值；省略字段即删除本层选择并继承。deterministic-v2 的 ask 优先于 allow；切换前运行 /policy-migrate。model-v2 为独立严格审批协议。当前会话已加载实现：' + JSON.stringify(input.capabilityChoices()); },
       applyMode: 'newSession', schema: { type: 'object', additionalProperties: { type: ['string', 'boolean'] } },
       scopeTargets: stores.scopeTargets,
       read(signal, scope = 'project') {
@@ -39,7 +39,7 @@ export function runtimeSettingsPlugin(input: Pick<PresetContext, 'cwd' | 'capabi
         const changes = [...new Set([...Object.keys(base.value), ...Object.keys(selections)])]
           .filter(kind => base.value[kind] !== selections[kind])
           .map(kind => `${kind}: ${base.value[kind] ?? '继承'} → ${selections[kind] ?? '继承'}`);
-        const result = Object.freeze({ selections: Object.freeze(selections), changes, warning: '只在重启/新会话生效；不会改变当前批准或自动迁移旧会话。v2 改变 ask/allow 优先级。' });
+        const result = Object.freeze({ selections: Object.freeze(selections), changes, warning: '已保存的设置只在重启后生效；不会改变当前批准或自动迁移旧会话。v2 改变 ask/allow 优先级。' });
         drafts.set(result, { scope, base, selections }); return result;
       },
       commit(draft, signal, scope = 'project') {
