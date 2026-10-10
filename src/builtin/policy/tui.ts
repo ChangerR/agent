@@ -70,7 +70,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     if (!isDeterministic()) return `${safeText(policyId())} 的 ${mode} 模式；请查看该策略设置与说明，宿主不假定其放行规则。`;
     return {
       ask: '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
-      auto: `只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy']?.writeRoots ?? []))}）。剩余可审查操作才交审批模型；原始 Shell 不作确定性放行。`,
+      auto: `只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy']?.writeRoots ?? []))}）。经 AST 与执行环境验证的只读 Bash 组合直接放行；其余未知操作才交审批模型。`,
       yolo: '仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
     }[mode];
   };

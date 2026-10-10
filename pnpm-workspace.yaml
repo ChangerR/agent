@@ -2,6 +2,10 @@ packages:
   - .
 onlyBuiltDependencies:
   - esbuild
+  - tree-sitter
+  - tree-sitter-bash
 allowBuilds:
   esbuild: true
   koffi: true
+  tree-sitter: true
+  tree-sitter-bash: true

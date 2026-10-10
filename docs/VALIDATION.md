@@ -18,10 +18,11 @@
 - reviewer：完整参数与真实用户要求、严格 JSON/流协议、预算、独立模型/provider 来源、用途与执行关联、超时/取消、无批准结果缓存。
 - 设置：项目默认作用域、一次提交自动保存、Esc 不保存未提交输入、全局/项目覆盖、重启提示、CAS 冲突和安全错误。
 - `.env`：项目根加载、进程环境优先、显式 apiKeyEnv 不回退、不暴露 key、provider 端点与凭据身份绑定。
+- Shell：原始 `ls -la && echo "---" && cat package.json` 通过真实 runtime 和 pnpm dev PTY 验证实际 stdout 与 judge/人工次数，并在保存 auto 后重启复验；不能用内置 grep/glob 的通过数量代替 shell 可用性证据。
 - Headless/TUI：命令不加载 pi-tui；内存终端和真实 PTY 检查窄屏、焦点、详情、审批、取消、队列和 renderer 异常。
 
 ## 明确限制
 
-Linux 上的 Windows 字符串测试不能代替原生 Windows 验收；原生 Windows 文件系统授予保守要求人工确认。所有实际原始 Shell 调用不做确定性放行，字面量解析缓存只提供事实。
+Linux 上的 Windows 字符串测试不能代替原生 Windows 验收；原生 Windows 文件系统授予保守要求人工确认。Bash 仅对完整验证的只读执行计划确定性放行；动态展开、未知参数及不支持的仓库配置仍需审批。本轮 Shell 运行证据来自 Linux，不等于 macOS 或 Windows 实机验收。
 
 没有 OS 沙箱、在线插件安装器、任意热卸载或真实模型安全准确率保证。文件系统前提会重验，但不是针对恶意外部进程的原子隔离。缺失用量记为未知，不声称零费用。明确目录授权的确定性放行不能推导为任意任务都降低成本。

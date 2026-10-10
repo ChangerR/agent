@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { decodeShellOutput, detectPlatform, shellInvocation } from '../core/platform.js';
 import type { Tool } from '../core/registry.js';
 import { envWithRg } from './grep.js';
+import { analyzeReadOnlyShell, readOnlyShellEnvironment, trustedShellPath } from './shell-readonly.js';
 
 const DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   { re: /\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)?\/(\s|$)/, why: '递归删除根目录' },
@@ -63,12 +64,24 @@ export const bashTool: Tool = {
   async execute(input, ctx) {
     const command = String(input.command);
     const timeout = Number(input.timeout ?? DEFAULT_TIMEOUT_MS);
-    const invocation = shellInvocation(command);
+    let invocation = shellInvocation(command);
+    let env = envWithRg(process.env);
+    const approved = ctx.analysis?.environment?.['$shellContract'];
+    if (approved) {
+      const entries: string[] = JSON.parse(ctx.analysis?.environment?.['$shellPluginEntries'] ?? '[]');
+      const current = await analyzeReadOnlyShell(command, ctx.cwd, entries, ctx.signal);
+      const shell = await trustedShellPath();
+      if (!current.complete || !current.command || !shell || JSON.stringify(current) !== approved) {
+        throw new Error('approval_stale: read-only shell scope changed; run the command again');
+      }
+      invocation = { file: shell, args: ['--noprofile', '--norc', '-p', '-c', current.command] };
+      env = readOnlyShellEnvironment();
+    }
 
     return new Promise((resolvePromise) => {
       const child = spawn(invocation.file, invocation.args, {
         cwd: ctx.cwd,
-        env: envWithRg(process.env),
+        env,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });

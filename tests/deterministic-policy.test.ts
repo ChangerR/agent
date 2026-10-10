@@ -2,7 +2,7 @@ import { link, mkdir, mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDeterministicAnalyzer, createDeterministicPolicy, parseLiteralShell, validateWriteRoots, nativeFilesystemAnalysisSupported } from '../src/builtin/policy/index.js';
+import { createDeterministicAnalyzer, createDeterministicPolicy, validateWriteRoots, nativeFilesystemAnalysisSupported } from '../src/builtin/policy/index.js';
 import { ToolExecutor } from '../src/core/tool-executor.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
@@ -196,14 +196,13 @@ describe('deterministic policy', () => {
     expect((await policy().decide(operation(glob, { pattern: '**/.env' }), signal())).kind).toBe('ask');
   });
 
-  it.each(['pwd', 'echo "hello"', "printf '%s\\n' 'hello'"])('字面量 Shell %s 只证明语法，不自动证明解释器安全', async (command) => {
-    expect(parseLiteralShell(command).complete).toBe(true);
-    expect((await policy().decide(operation(bash, { command }), signal())).kind).toBe('review');
-    expect((await policy('yolo', { allow: [`bash(=${JSON.stringify(command)})`] }).decide(operation(bash, { command }), signal())).kind).toBe('ask');
+  it.each(['pwd', 'echo "hello"', "printf '%s\\n' 'hello'"])('受控字面量 Shell %s 在 auto 确定性放行', async (command) => {
+    expect((await policy().decide(operation(bash, { command }), signal())).kind).toBe('allow');
+    expect((await policy('ask').decide(operation(bash, { command }), signal())).kind).toBe('ask');
+    expect((await policy('yolo').decide(operation(bash, { command }), signal())).kind).toBe('allow');
   });
 
-  it.each(['echo x > file', 'echo $(cat .env)', 'pwd && rm x', 'npm test', 'pnpm build', 'git status', 'git -c alias.x=!rm x', 'echo $HOME', 'cat *.txt'])('未知或动态 Shell %s 从不确定性放行', async (command) => {
-    expect(parseLiteralShell(command).complete).toBe(false);
+  it.each(['echo x > file', 'echo $(cat .env)', 'pwd && rm x', 'npm test', 'pnpm build', 'git -c alias.x=!rm x', 'echo $HOME', 'cat *.txt'])('未知或动态 Shell %s 从不确定性放行', async (command) => {
     expect((await policy('yolo').decide(operation(bash, { command }), signal())).kind).toBe('ask');
   });
 
@@ -305,7 +304,8 @@ describe('deterministic policy', () => {
     expect(await analyzer.revalidate!(second, input, signal())).toBe(false);
     await writeFile(join(cwd, 'env.sh'), 'old'); vi.stubEnv('BASH_ENV', join(cwd, 'env.sh'));
     const third = await analyzer.analyze(operation(bash, { command: 'pwd' }), signal()); await writeFile(join(cwd, 'env.sh'), 'new');
-    expect(await analyzer.revalidate!(third, operation(bash, { command: 'pwd' }), signal())).toBe(false);
+    // 受控读取不继承 BASH_ENV；未执行的启动脚本变更不应让普通 pwd 重新审批。
+    expect(await analyzer.revalidate!(third, operation(bash, { command: 'pwd' }), signal())).toBe(true);
   });
 
   it('执行门：安全文件读取模型0次，未知调用至多委托一次，明确 ask不委托', async () => {

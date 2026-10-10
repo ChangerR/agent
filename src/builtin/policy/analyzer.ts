@@ -5,58 +5,21 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { AnalysisInput, ToolAnalysis, ToolAnalyzer } from '../../sdk/capabilities.js';
 import { createEnvironmentAnalyzer } from './environment.js';
 import { analyzeCommand } from '../../tools/bash.js';
+import { analyzeReadOnlyShell } from '../../tools/shell-readonly.js';
 import { collectSearchFiles, sensitivePath, within, foreignPath, searchPatternScope, type SearchFile } from '../../tools/search-scope.js';
 import { jsonInput } from '../../core/permission/input-validation.js';
 
 export const ANALYZER_ID = 'deterministic-operations';
-export const ANALYZER_VERSION = '2.1.0';
+export const ANALYZER_VERSION = '2.2.0';
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(platform: NodeJS.Platform = process.platform): boolean { return platform !== 'win32'; }
 export interface AnalyzerOptions { pluginEntries?: readonly string[]; writeRoots?: readonly string[]; parseCacheSize?: number }
-export interface LiteralShellFacts {
-  complete: boolean;
-  argv: readonly string[];
-  subset: 'pwd' | 'echo' | 'printf' | 'unsupported';
-  reasonCode: string;
-}
 type ParsedOperation =
   | { kind: 'file'; path: string; effect: 'read' | 'write' }
   | { kind: 'glob'; path: string; pattern: string }
-  | { kind: 'shell'; facts: LiteralShellFacts; dangerous: boolean }
+  | { kind: 'shell'; command: string; dangerous: boolean }
   | { kind: 'search'; path: string; pattern: string }
   | { kind: 'unknown'; reasonCode: string };
-
-/** 只认单条字面量语法。语法完整不代表 Shell 环境、副作用已被证明安全。 */
-export function parseLiteralShell(command: unknown): LiteralShellFacts {
-  const unsupported = (reasonCode: string): LiteralShellFacts => ({ complete: false, argv: [], subset: 'unsupported', reasonCode });
-  if (typeof command !== 'string' || command.length === 0 || command.length > 4096) return unsupported('shell_input_limit');
-  if (/[\0\r\n]/.test(command)) return unsupported('shell_control_syntax');
-  const argv: string[] = []; let token = ''; let present = false; let quote: "'" | '"' | undefined;
-  for (const char of command) {
-    if (quote) {
-      if (char === quote) { quote = undefined; continue; }
-      if (quote === '"' && /[$`\\]/.test(char)) return unsupported('shell_expansion');
-      token += char; continue;
-    }
-    if (char === "'" || char === '"') { quote = char; present = true; continue; }
-    if (/\s/.test(char)) { if (present) { argv.push(token); token = ''; present = false; } continue; }
-    if (/[;&|<>$`\\(){}*?!\[\]~]/.test(char)) return unsupported('shell_dynamic_or_composed');
-    token += char; present = true;
-  }
-  if (quote) return unsupported('shell_unclosed_quote');
-  if (present) argv.push(token);
-  if (!argv.length || argv.length > 32) return unsupported('shell_token_limit');
-  if (argv[0] === 'pwd' && (argv.length === 1 || argv.length === 2 && ['-L', '-P'].includes(argv[1]))) {
-    return { complete: true, argv, subset: 'pwd', reasonCode: 'literal_pwd' };
-  }
-  if (argv[0] === 'echo' && argv.slice(1).every((arg) => !arg.startsWith('-'))) {
-    return { complete: true, argv, subset: 'echo', reasonCode: 'literal_echo' };
-  }
-  if (argv[0] === 'printf' && argv.length >= 2 && ['%s', '%s\\n'].includes(argv[1])) {
-    return { complete: true, argv, subset: 'printf', reasonCode: 'literal_printf' };
-  }
-  return { complete: false, argv, subset: 'unsupported', reasonCode: /^(?:git|npm|pnpm|yarn|npx|make|bash|sh|python\d*|node)$/.test(argv[0]) ? 'shell_script_or_configuration' : 'shell_command_not_supported' };
-}
 
 /** 可复用的是纯语法结果。完整输入、工具/分析版本、cwd 和 revision 都在键中。 */
 export function operationKey(input: AnalysisInput): string {
@@ -85,7 +48,7 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
       parsed = { kind: 'glob', path: typeof data.path === 'string' ? data.path : '.', pattern: data.pattern };
     } else if (input.tool.name === 'grep') {
       parsed = { kind: 'search', path: typeof data.path === 'string' ? data.path : '.', pattern: typeof data.glob === 'string' ? data.glob : '**/*' };
-    } else if (input.tool.name === 'bash') parsed = { kind: 'shell', facts: parseLiteralShell(data.command),
+    } else if (input.tool.name === 'bash') parsed = { kind: 'shell', command: String(data.command ?? ''),
       dangerous: typeof data.command === 'string' && analyzeCommand(data.command).dangerous };
     else parsed = { kind: 'unknown', reasonCode: input.tool.name.startsWith('mcp') || input.tool.name.includes('__') ? 'mcp_effects_unknown' : 'tool_semantics_unknown' };
     if (limit > 0) { if (cache.size >= limit) cache.delete(cache.keys().next().value!); cache.set(key, structuredClone(parsed)); }
@@ -107,24 +70,35 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     environment['$writeRoots'] = JSON.stringify(rootPaths);
     for (const path of writeRoots) environment[`writeRoot:${resolve(input.cwd, path)}`] = await pathFingerprint(resolve(input.cwd, path), signal);
     const base = { analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, environment };
-    if (parsed.kind === 'unknown' || parsed.kind === 'shell') {
+    if (parsed.kind === 'unknown') {
       const snapshot = await checkpoint.analyze(input, signal);
       for (const [key, value] of Object.entries(snapshot.environment ?? {})) environment[`checkpoint:${key}`] = value;
     }
     if (parsed.kind === 'unknown') return { ...base, completeness: 'unknown', effects: [{ kind: 'unknown', scope: 'unknown' }], reasonCode: parsed.reasonCode,
       evidence: [{ source: 'registered-semantics', detail: 'Tool.risk 声明不等价于已验证的具体副作用。' }] };
     if (parsed.kind === 'shell') {
-      // 捕获会影响解释器行为的环境，不发送原值；每次重验，不作为安全认证。
+      const contract = await analyzeReadOnlyShell(parsed.command, input.cwd, pluginEntries, signal);
+      Object.assign(environment, contract.environment);
+      if (contract.complete && contract.command && !parsed.dangerous) {
+        environment['$shellContract'] = JSON.stringify(contract);
+        environment['$shellPluginEntries'] = JSON.stringify(pluginEntries);
+        return { ...base, completeness: 'complete', effects: contract.effects, targets: contract.targets,
+          reasonCode: contract.reasonCode,
+          evidence: [{ source: 'controlled-shell-contract', detail: JSON.stringify({ commands: contract.commands, unresolved: contract.unresolved, contract: 'AST + literal argv + canonical targets + controlled bash' }) }],
+          summary: `bash: ${parsed.command}` };
+      }
+      // 未知命令继续原审批路径；环境指纹不能代替具体执行授权。
+      const snapshot = await checkpoint.analyze(input, signal);
+      for (const [key, value] of Object.entries(snapshot.environment ?? {})) environment[`checkpoint:${key}`] = value;
       const variables = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(?:PATH|Path|BASH_ENV|ENV|BASHOPTS|SHELLOPTS|BASH_FUNC_.*|LD_.*|DYLD_.*|RIPGREP_CONFIG_PATH)$/.test(key)));
       environment['$shellEnvironment'] = hash(variables);
       for (const key of ['BASH_ENV', 'ENV']) {
         const path = process.env[key];
         if (path && !/[$`*?{}]/.test(path)) environment[`shell:${key}`] = await pathFingerprint(resolve(input.cwd, path), signal);
       }
-      return { ...base, completeness: parsed.facts.complete ? 'partial' : 'unknown', effects: [{ kind: 'execute', target: actualCwd, scope: 'unknown' }], targets: [actualCwd],
-        reasonCode: parsed.dangerous ? 'shell_dangerous' : parsed.facts.complete ? 'shell_environment_unverified' : parsed.facts.reasonCode,
-        evidence: [{ source: 'literal-shell-parser', detail: JSON.stringify(parsed.facts) },
-          { source: 'execution-contract', detail: '字面量语法不足以验证解释器/PATH/BASH_ENV/继承函数；实际 bash 操作始终 defer。' }] };
+      return { ...base, completeness: 'unknown', effects: contract.effects.length ? contract.effects : [{ kind: 'execute', target: actualCwd, scope: 'unknown' }], targets: contract.targets,
+        reasonCode: parsed.dangerous ? 'shell_dangerous' : contract.reasonCode,
+        evidence: [{ source: 'controlled-shell-contract', detail: JSON.stringify({ reason: contract.reasonCode, commands: contract.commands, unresolved: contract.unresolved }) }] };
     }
     const raw = parsed.kind === 'file' ? parsed.path : parsed.path || '.';
     if (foreignPath(raw)) {
