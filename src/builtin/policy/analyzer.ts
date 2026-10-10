@@ -6,14 +6,33 @@ import type { AnalysisInput, ToolAnalysis, ToolAnalyzer } from '../../sdk/capabi
 import { createEnvironmentAnalyzer } from './environment.js';
 import { analyzeCommand } from '../../tools/bash.js';
 import { analyzeReadOnlyShell } from '../../tools/shell-readonly.js';
-import { collectSearchFiles, sensitivePath, within, foreignPath, searchPatternScope, type SearchFile } from '../../tools/search-scope.js';
+import { collectSearchFiles, sensitivePath, within, foreignPath, searchPatternScope, projectRelativePattern, type SearchFile } from '../../tools/search-scope.js';
 import { jsonInput } from '../../core/permission/input-validation.js';
 
 export const ANALYZER_ID = 'deterministic-operations';
-export const ANALYZER_VERSION = '2.2.0';
+export const ANALYZER_VERSION = '2.5.0';
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(platform: NodeJS.Platform = process.platform): boolean { return platform !== 'win32'; }
-export interface AnalyzerOptions { pluginEntries?: readonly string[]; writeRoots?: readonly string[]; parseCacheSize?: number }
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\..*)?$/i;
+/**
+ * 原生 Windows 上已知会让同一文件出现多个名字、或指向设备/命名空间的路径形态：UNC 与 \\?\ 设备命名空间、
+ * NTFS 备用数据流（盘符外的冒号）、尾随点/空格、8.3 短名（~数字）、保留设备名。命中时不交给模型，仍由人工确认。
+ */
+export function windowsAmbiguousPath(path: string): boolean {
+  if (/^[\\/]{2}/.test(path)) return true;
+  const body = path.replace(/^[A-Za-z]:/, '');
+  if (body.includes(':')) return true;
+  return body.split(/[\\/]/).some((part) => part !== '' && part !== '.' && part !== '..'
+    && (/[. ]$/.test(part) || /~\d/.test(part) || WINDOWS_RESERVED_NAME.test(part)));
+}
+const WINDOWS_READ_NOTE = 'Windows 平台未做文件系统校验：通用分析已完整执行（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件与受控搜索枚举均已检查并绑定），'
+  + '但 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等平台特有语义未经实机验收，且已拦截这些歧义路径形态；'
+  + '因此策略不确定性放行，而是委托模型按当前用户要求审查这次项目内只读操作。';
+export interface AnalyzerOptions {
+  pluginEntries?: readonly string[]; writeRoots?: readonly string[]; parseCacheSize?: number;
+  /** 平台判断注入点，默认 process.platform；测试用它在任意宿主上覆盖原生 Windows 分支。 */
+  platform?: NodeJS.Platform;
+}
 type ParsedOperation =
   | { kind: 'file'; path: string; effect: 'read' | 'write' }
   | { kind: 'glob'; path: string; pattern: string }
@@ -54,14 +73,31 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     if (limit > 0) { if (cache.size >= limit) cache.delete(cache.keys().next().value!); cache.set(key, structuredClone(parsed)); }
     return parsed;
   };
+  const platform = options.platform ?? process.platform;
   const analyze = async (input: AnalysisInput, signal: AbortSignal): Promise<ToolAnalysis> => {
     signal.throwIfAborted();
     jsonInput(input.input, input.tool.inputSchema);
     const parsed = parse(input);
+    const windows = !nativeFilesystemAnalysisSupported(platform);
+    // 原生 Windows：只有内置只读工具（read_file/glob/grep）沿用通用分析并降级为“待模型审批”；写入、Shell 仍整体未验证。
+    const windowsRead = windows && (parsed.kind === 'glob' || parsed.kind === 'search' || parsed.kind === 'file' && parsed.effect === 'read')
+      && ![parsed.path, parsed.kind === 'file' ? '' : parsed.pattern].some((value) => value && windowsAmbiguousPath(value));
+    if (!windowsRead) return analyzeOperation(input, parsed, windows, signal);
+    const result = await analyzeOperation(input, parsed, false, signal);
+    const projectRead = result.completeness === 'complete' && result.effects.length > 0
+      && result.effects.every((effect) => effect.kind === 'read' && effect.scope === 'project')
+      && !(result.targets ?? []).some((target) => windowsAmbiguousPath(target));
+    // 敏感、项目外、特殊文件、硬链接等结论保持原样（仍人工）；只有通用逻辑判定为项目内完整读取的才交给模型。
+    // 通用分析本身是完整的，completeness 保持 'complete'（不违背审查合约“分析不完整则 ask/unknown”）；
+    // 平台风险用 reasonCode + 证据表达，策略据此委托 reviewer，而不会确定性放行（见 policy/index.ts）。
+    return projectRead ? { ...result, reasonCode: 'native_windows_read_unverified',
+      evidence: [{ source: 'platform-support', detail: WINDOWS_READ_NOTE }, ...(result.evidence ?? [])] } : result;
+  };
+  const analyzeOperation = async (input: AnalysisInput, parsed: ParsedOperation, windows: boolean, signal: AbortSignal): Promise<ToolAnalysis> => {
     const environment: Record<string, string> = { '$operation': operationKey(input), '$policyOptions': hash({ writeRoots, pluginEntries }) };
     const actualCwd = await realpath(resolve(input.cwd));
     environment[`path:${resolve(input.cwd)}`] = await pathFingerprint(resolve(input.cwd), signal);
-    if (!nativeFilesystemAnalysisSupported() && parsed.kind !== 'unknown') {
+    if (windows && parsed.kind !== 'unknown') {
       return { analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, environment, completeness: 'unknown',
         effects: [{ kind: 'unknown', scope: 'unknown' }], reasonCode: 'native_windows_unverified',
         evidence: [{ source: 'platform-support', detail: '未验证原生 Windows ADS/设备名/尾随点路径与 PowerShell 语义，不授予确定性文件权限。' }] };
@@ -114,19 +150,22 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
       configuredEntries.push(absolute, actual.actual);
       environment[`plugin:${absolute}`] = await pathFingerprint(absolute, signal);
     }
-    const patternScope = parsed.kind === 'file' ? 'project' : searchPatternScope(parsed.pattern, target, configuredEntries);
+    // 项目内绝对 glob 与执行侧（collectSearchFiles）同样先转为相对 pattern。
+    const pattern = parsed.kind === 'file' ? '' : projectRelativePattern(parsed.pattern, [target, resolved.actual]);
+    const access = parsed.kind === 'file' && parsed.effect === 'write' ? 'write' : 'read';
+    const patternScope = parsed.kind === 'file' ? 'project' : searchPatternScope(pattern, target, configuredEntries);
     // 明确前缀/字面文件也做真实路径检查；泛型 **/* 不因排除项而整批升级为 ask。
-    const parts = parsed.kind === 'file' ? [] : parsed.pattern.split('/');
+    const parts = parsed.kind === 'file' ? [] : pattern.split('/');
     const prefix = parts.slice(0, parts.findIndex((part) => /[?*{}[\]()!+@\\]/.test(part)) >>> 0).join('/');
     const intended = prefix ? await resolveTarget(resolve(target, prefix), signal) : resolved;
     if (prefix) environment[`searchPrefix:${resolve(target, prefix)}`] = await pathFingerprint(resolve(target, prefix), signal);
-    const sensitive = sensitivePath(target, configuredEntries) || sensitivePath(resolved.actual, configuredEntries) || patternScope === 'sensitive'
-      || prefix !== '' && (sensitivePath(resolve(target, prefix), configuredEntries) || sensitivePath(intended.actual, configuredEntries));
+    const sensitive = sensitivePath(target, configuredEntries, access) || sensitivePath(resolved.actual, configuredEntries, access) || patternScope === 'sensitive'
+      || prefix !== '' && (sensitivePath(resolve(target, prefix), configuredEntries, access) || sensitivePath(intended.actual, configuredEntries, access));
     const scope = sensitive ? 'sensitive' : patternScope !== 'external' && within(actualCwd, resolved.actual) && within(actualCwd, intended.actual) ? 'project' : 'external';
     if (parsed.kind === 'glob' || parsed.kind === 'search') {
-      if (parsed.kind === 'glob' && !/[?*{}[\]()!+@\\]/.test(parsed.pattern)) environment['$searchLiteral'] = intended.actual;
+      if (parsed.kind === 'glob' && !/[?*{}[\]()!+@\\]/.test(pattern)) environment['$searchLiteral'] = intended.actual;
       const ignoreFiles: SearchFile[] = [];
-      const files = scope === 'project' ? await collectSearchFiles(actualCwd, resolved.actual, parsed.pattern, configuredEntries, signal, parsed.kind === 'search', (file) => ignoreFiles.push(file)) : [];
+      const files = scope === 'project' ? await collectSearchFiles(actualCwd, resolved.actual, pattern, configuredEntries, signal, parsed.kind === 'search', (file) => ignoreFiles.push(file)) : [];
       const reads = [...files, ...ignoreFiles.sort((a, b) => a.absolute.localeCompare(b.absolute))];
       // 重验重新枚举并绑定实际候选集合；新增文件和别名变化不会复用旧的审批。
       environment['$searchFiles'] = hash(reads);
@@ -140,8 +179,13 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     const effect = parsed.kind === 'file' ? parsed.effect : 'read';
     let completeness: ToolAnalysis['completeness'] = 'complete';
     let reasonCode = sensitive ? 'sensitive_path' : scope === 'external' ? 'outside_project' : 'bounded_file';
-    if (effect === 'read' && (!resolved.exists || !resolved.regularFile)) { completeness = 'partial'; reasonCode = 'read_target_not_regular_file'; }
-    if (parsed.kind === 'file' && resolved.exists && !resolved.regularFile) { completeness = 'unknown'; reasonCode = 'special_file_target'; }
+    // 项目内不存在的目标或目录：读取不返回文件内容也无副作用，由工具返回 ENOENT/EISDIR；执行前重验仍绑定 missing/目录指纹。
+    // 敏感与项目外作用域已由 scope 表达，策略照旧要求人工确认。
+    if (effect === 'read' && !resolved.exists) { if (scope === 'project') reasonCode = 'read_target_missing'; }
+    else if (effect === 'read' && resolved.directory) { if (scope === 'project') reasonCode = 'read_target_directory'; }
+    else if (parsed.kind === 'file' && resolved.exists && !resolved.regularFile) { completeness = 'unknown'; reasonCode = 'special_file_target'; }
+    // 多硬链接一律视为未验证别名：路径段（如 node_modules）无法证明 inode 来自包管理器 store，
+    // 同用户进程可把项目外密钥硬链接进项目；store 本身也可被同用户写入，按内容哈希比对同样不能证明来源。
     if (resolved.links > 1) { completeness = 'unknown'; reasonCode = 'hardlink_alias_unverified'; }
     return { ...base, completeness, effects: [{ kind: effect, target: resolved.actual, scope }], targets: [resolved.actual], reasonCode,
       evidence: [{ source: 'filesystem-realpath', detail: `${target} -> ${resolved.actual}` },
@@ -168,7 +212,7 @@ export async function validateWriteRoots(cwd: string, roots: readonly string[], 
   }
   return [...new Set(result)].sort();
 }
-async function resolveTarget(path: string, signal: AbortSignal, links = new Set<string>()): Promise<{ actual: string; parent: string; exists: boolean; regularFile: boolean; links: number }> {
+async function resolveTarget(path: string, signal: AbortSignal, links = new Set<string>()): Promise<{ actual: string; parent: string; exists: boolean; regularFile: boolean; directory: boolean; links: number }> {
   signal.throwIfAborted();
   try {
     const link = await lstat(path);
@@ -178,12 +222,12 @@ async function resolveTarget(path: string, signal: AbortSignal, links = new Set<
       return resolveTarget(resolve(dirname(path), await readlink(path)), signal, links);
     }
     const actual = await realpath(path); const stat = await lstat(actual);
-    return { actual, parent: dirname(actual), exists: true, regularFile: stat.isFile(), links: stat.isFile() ? stat.nlink : 1 };
+    return { actual, parent: dirname(actual), exists: true, regularFile: stat.isFile(), directory: stat.isDirectory(), links: stat.isFile() ? stat.nlink : 1 };
   } catch (error) {
     if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
     const parent = dirname(path); if (parent === path) throw error;
     const resolvedParent = await resolveTarget(parent, signal, links);
-    return { actual: join(resolvedParent.actual, relative(parent, path)), parent: resolvedParent.exists ? resolvedParent.actual : resolvedParent.parent, exists: false, regularFile: false, links: 0 };
+    return { actual: join(resolvedParent.actual, relative(parent, path)), parent: resolvedParent.exists ? resolvedParent.actual : resolvedParent.parent, exists: false, regularFile: false, directory: false, links: 0 };
   }
 }
 async function pathFingerprint(path: string, signal: AbortSignal, links = new Set<string>()): Promise<string> {
