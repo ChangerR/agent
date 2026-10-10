@@ -4,7 +4,7 @@
 
 ## 完整检查
 
-运行 `pnpm test`、`pnpm typecheck`、`pnpm build` 和 `git diff --check`。键盘设置流程可用 `python3 scripts/settings-e2e.py` 在隔离 HOME/项目中复现。
+运行 `pnpm test`、`pnpm typecheck`、`pnpm build` 和 `git diff --check`。全部回归统一走 Vitest；`pnpm test tests/cli-pty.test.ts` 可单独复现 Linux 真 PTY。该专项依赖 util-linux `script`，缺失明确失败，非 Linux 明确跳过。
 
 ## 核心证据
 
@@ -19,7 +19,7 @@
 - 设置：项目默认作用域、一次提交自动保存、Esc 不保存未提交输入、全局/项目覆盖、重启提示、CAS 冲突和安全错误。
 - `.env`：项目根加载、进程环境优先、显式 apiKeyEnv 不回退、不暴露 key、provider 端点与凭据身份绑定。
 - Shell：原始 `ls -la && echo "---" && cat package.json` 通过真实 runtime 和 pnpm dev PTY 验证实际 stdout 与 judge/人工次数，并在保存 auto 后重启复验；不能用内置 grep/glob 的通过数量代替 shell 可用性证据。
-- Headless/TUI：命令不加载 pi-tui；内存终端和真实 PTY 检查窄屏、焦点、详情、审批、取消、队列和 renderer 异常。
+- Headless/TUI：命令不加载 pi-tui；内存终端检查窄屏、焦点、详情、审批、队列和 renderer 异常；Linux 真 PTY 复用原 package.json/dev 与逐文件哈希一致的源码，验证单选自动保存、Esc 不保存、重启，以及真实工具失败和运行中取消后的再次请求。
 
 ## 明确限制
 

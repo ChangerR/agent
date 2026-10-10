@@ -219,11 +219,7 @@ pnpm typecheck
 pnpm build        # tsup → dist/
 ```
 
-真实键盘验收（Linux/macOS，Python 3，先安装上述依赖）：
+真实键盘回归与其他测试统一使用 `pnpm test`，单独定位可用 `pnpm test tests/cli-pty.test.ts`。
+Linux 真 PTY 专项需要系统自带或安装 `util-linux`（提供 `script`）；Linux 缺少该工具会明确失败，非 Linux 明确跳过该专项，不代表 macOS/Windows 已通过实机验收。其他 TypeScript 设置、搜索与运行时测试照常执行。
 
-```bash
-python3 scripts/settings-e2e.py
-python3 scripts/settings-e2e.py --cols 80 --rows 24
-```
-
-脚本创建隔离的临时 HOME 与测试项目，通过真实 `pnpm dev` 和键盘操作 `/settings`、`/permissions`、`/mode`，使用 fake provider 验证保存、即时应用、取消、重启与项目覆盖。无需 key，不发送外部模型请求。输出目录保留原始终端字节、按键步骤和文本回放；文本回放不是终端截图。
+PTY 测试在隔离 HOME/项目中复制仓库原样的 package.json、启动源码及已安装依赖，校验源码哈希，直接执行原定义的 `pnpm dev`，通过键盘验证单选即保存、取消、重启、只读 shell 与 grep/glob、失败及中断后的恢复。模型为本地离线替身，不使用真实 key 或 API。只增加一个共享 Node PTY helper，不引入额外 npm 依赖或终端模拟器；无需 Python 测试脚本。

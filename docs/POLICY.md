@@ -87,5 +87,5 @@
 - `tests/policy-runtime.test.ts`：真实 runtime 中 reviewer 次数和拒绝边界
 - `tests/search-runtime.test.ts` / `tests/search-tools.test.ts`：真实 rg/fallback、全部常用只读工具、零 judge/零人工、ignore、敏感/外部/规则与重验竞态
 - `tests/shell-runtime.test.ts` / `tests/shell-contract-binding.test.ts`：真实 Bash 输出、审批次数、组合/参数/路径与执行绑定
-- `tests/shell-pty.test.ts` / `scripts/shell-pty-regression.py`：真实 pnpm dev、原命令、auto 保存与重启后零审批
+- `tests/cli-pty.test.ts` / `tests/helpers/pty.ts`：Linux 真 PTY 运行仓库原样 pnpm dev，原命令、auto 单选保存与重启后零审批；共用 Vitest 入口，无额外 npm 依赖
 - `tests/tool-executor.test.ts`：最终输入、一次批准绑定、故障回退、取消/迟到结果与唯一门控
