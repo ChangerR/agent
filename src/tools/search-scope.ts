@@ -7,13 +7,38 @@ import { Minimatch } from 'minimatch';
 import type { ToolAnalysis } from '../sdk/capabilities.js';
 import { fsCaseSensitive } from './text.js';
 
-const SENSITIVE_DIRECTORIES = ['.git', '.ssh', '.aws', '.azure', '.gnupg', '.kube', 'credentials', 'secrets', 'plugins', '.codex', '.agentlab', '.agent'];
-export function sensitivePath(path: string, configuredEntries: readonly string[]): boolean {
+const SENSITIVE_DIRECTORIES = ['.git', '.ssh', '.aws', '.azure', '.gnupg', '.kube', 'credentials', 'secrets', '.codex', '.agentlab', '.agent'];
+/** 只保护写入：说明文件、项目配置与 plugins 目录不含凭据，可读；但不能被模型静默改写（提示注入持久化/扩权）。 */
+const WRITE_PROTECTED_DIRECTORIES = ['plugins'];
+const WRITE_PROTECTED_FILE = /^(?:agents\.md|claude\.md|agent\.config\.json)$/;
+export type SensitiveAccess = 'read' | 'write';
+/**
+ * access 默认 'write'（最保守）。配置的插件入口、凭据/密钥、.git 等元数据和 mcp.json（可能含 env/headers token）读写都受保护；
+ * AGENTS.md、CLAUDE.md、agent.config.json 与 plugins 目录只在写入时受保护。
+ */
+export function sensitivePath(path: string, configuredEntries: readonly string[], access: SensitiveAccess = 'write'): boolean {
   if (configuredEntries.some((entry) => resolve(entry) === resolve(path))) return true;
   const parts = path.replace(/\\/g, '/').toLowerCase().split('/');
   const basename = parts.at(-1) ?? '';
+  if (access === 'write' && (parts.some((part) => WRITE_PROTECTED_DIRECTORIES.includes(part)) || WRITE_PROTECTED_FILE.test(basename))) return true;
   return parts.some((part) => SENSITIVE_DIRECTORIES.includes(part))
-    || /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.pypirc|agents\.md|claude\.md|agent\.config\.json|mcp\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|credentials?(?:\..*)?|secrets?(?:\..*)?|.*\.(?:pem|key|p12|pfx))$/.test(basename);
+    || /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.pypirc|mcp\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|credentials?(?:\..*)?|secrets?(?:\..*)?|.*\.(?:pem|key|p12|pfx))$/.test(basename);
+}
+/** 目录不可读（EACCES/EPERM）时工具同样无法读取其中内容；枚举跳过它，分析与执行共用同一函数，范围一致。 */
+const UNREADABLE = ['EACCES', 'EPERM'];
+/**
+ * 指向搜索根内部的绝对 glob 转为相对 pattern；分析与执行共用，避免绝对 pattern 被误判为项目外且永远无匹配。
+ * 含 `..`、其他平台路径或不在任一根内的 pattern 原样返回，仍按项目外处理。
+ */
+export function projectRelativePattern(pattern: string, roots: readonly string[]): string {
+  if (!isAbsolute(pattern) || foreignPath(pattern) || pattern.split(/[\\/]/).includes('..')) return pattern;
+  const wildcard = pattern.search(/[*?[\]{}()!+@]/);
+  const literal = wildcard < 0 ? pattern : pattern.slice(0, wildcard);
+  for (const root of roots) {
+    const rest = relative(root, pattern);
+    if (rest && within(root, literal) && within(root, resolve(root, rest))) return rest.split(sep).join('/');
+  }
+  return pattern;
 }
 export function within(root: string, path: string): boolean {
   const rest = relative(root, path); return rest === '' || rest !== '..' && !rest.startsWith(`..${sep}`) && !isAbsolute(rest);
@@ -24,8 +49,8 @@ export function foreignPath(path: string): boolean {
 /** 这些明确的越界/敏感请求仍由策略要求确认，不当成空的普通搜索授予。 */
 export function searchPatternScope(pattern: string, cwd: string, entries: readonly string[]): 'project' | 'external' | 'sensitive' {
   if (isAbsolute(pattern) || foreignPath(pattern) || pattern.split(/[/{} ,]/).includes('..')) return 'external';
-  if (sensitivePath(resolve(cwd, pattern), entries)
-    || pattern.split(/[/{} ,]/).some((part) => sensitivePath(resolve(cwd, part), []))) return 'sensitive';
+  if (sensitivePath(resolve(cwd, pattern), entries, 'read')
+    || pattern.split(/[/{} ,]/).some((part) => sensitivePath(resolve(cwd, part), [], 'read'))) return 'sensitive';
   return 'project';
 }
 export interface SearchFile {
@@ -45,14 +70,14 @@ export async function collectSearchFiles(
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return undefined;
     throw error;
   });
-  if (!root || !within(project, root) || sensitivePath(searchCwd, configuredEntries) || sensitivePath(root, configuredEntries)) return [];
+  if (!root || !within(project, root) || sensitivePath(searchCwd, configuredEntries, 'read') || sensitivePath(root, configuredEntries, 'read')) return [];
   if (!(await lstat(root)).isDirectory()) return [];
   interface IgnoreLayer { root: string; matcher: Ignore }
   const layers: IgnoreLayer[] = [];
   const addIgnore = async (dir: string, parents: readonly IgnoreLayer[]): Promise<IgnoreLayer[]> => {
     signal.throwIfAborted();
     const path = resolve(dir, '.gitignore');
-    if (sensitivePath(path, configuredEntries)) return [...parents];
+    if (sensitivePath(path, configuredEntries, 'read')) return [...parents];
     try {
       const stat = await lstat(path);
       // .gitignore 只作为解析输入；不追随配置链接，也不执行其中内容。
@@ -68,7 +93,7 @@ export async function collectSearchFiles(
         return [...parents, { root: dir, matcher: ignore({ ignorecase: !fsCaseSensitive() }).add(text) }];
       } finally { await handle.close(); }
     } catch (error) {
-      if (['ENOENT', 'ENOTDIR', 'ELOOP'].includes((error as NodeJS.ErrnoException).code ?? '')) return [...parents];
+      if (['ENOENT', 'ENOTDIR', 'ELOOP', ...UNREADABLE].includes((error as NodeJS.ErrnoException).code ?? '')) return [...parents];
       throw error;
     }
   };
@@ -90,31 +115,34 @@ export async function collectSearchFiles(
     if (ignored(ancestor, true, active)) return [];
     active = await addIgnore(ancestor, active);
   }
-  const normalizedPattern = pattern.replace(/^(?:\.\/)+/, '');
+  const normalizedPattern = projectRelativePattern(pattern, [searchCwd, root]).replace(/^(?:\.\/)+/, '');
   const matcher = new Minimatch(normalizedPattern, { dot: false, nocase: !fsCaseSensitive(), matchBase });
   const recursiveBasename = matchBase && !normalizedPattern.includes('/');
   const result: SearchFile[] = [];
   const walk = async (dir: string, rules: readonly IgnoreLayer[]): Promise<void> => {
     signal.throwIfAborted();
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); }
+    catch (error) { if (UNREADABLE.includes((error as NodeJS.ErrnoException).code ?? '')) return; throw error; }
+    for (const entry of entries) {
       signal.throwIfAborted();
       if (entry.name.startsWith('.') || ['node_modules', 'dist'].includes(entry.name)) continue;
       const raw = resolve(dir, entry.name);
       const name = relative(root, raw).replace(/\\/g, '/');
       // 仅在已知目录树内剪枝，pattern 不会成为新的遍历根或外部路径。
       if (entry.isDirectory() ? !recursiveBasename && !matcher.negate && !matcher.match(name, true) : !matcher.match(name)) continue;
-      if (entry.isSymbolicLink() || sensitivePath(raw, configuredEntries) || ignored(raw, entry.isDirectory(), rules)) continue;
+      if (entry.isSymbolicLink() || sensitivePath(raw, configuredEntries, 'read') || ignored(raw, entry.isDirectory(), rules)) continue;
       try {
         const stat = await lstat(raw);
         if (stat.isSymbolicLink()) continue;
         const actual = await realpath(raw);
-        if (!within(root, actual) || !within(project, actual) || sensitivePath(actual, configuredEntries)) continue;
+        if (!within(root, actual) || !within(project, actual) || sensitivePath(actual, configuredEntries, 'read')) continue;
         if (stat.isDirectory()) { await walk(actual, await addIgnore(actual, rules)); continue; }
         if (!stat.isFile() || stat.nlink !== 1) continue;
         result.push({ path: name, absolute: actual, mtimeMs: stat.mtimeMs,
           identity: `${stat.dev}:${stat.ino}:${stat.mode}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}` });
       } catch (error) {
-        if (!['ENOENT', 'ENOTDIR', 'ELOOP'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+        if (!['ENOENT', 'ENOTDIR', 'ELOOP', ...UNREADABLE].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
       }
     }
   };

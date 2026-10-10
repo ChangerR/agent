@@ -8,13 +8,17 @@ import { PermissionController, parseRule, matchRule } from './controller.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { resolveAgentPaths } from '../../core/paths.js';
 import { ANALYZER_ID, ANALYZER_VERSION, createDeterministicAnalyzer, hash, operationKey, validateWriteRoots } from './analyzer.js';
-export { createDeterministicAnalyzer, validateWriteRoots, nativeFilesystemAnalysisSupported, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
-export interface DeterministicPolicyOptions { cwd: string; mode: PermissionMode; rules: SessionRules; pluginEntries?: readonly string[]; writeRoots?: readonly string[] }
+export { createDeterministicAnalyzer, validateWriteRoots, nativeFilesystemAnalysisSupported, windowsAmbiguousPath, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
+export interface DeterministicPolicyOptions {
+  cwd: string; mode: PermissionMode; rules: SessionRules; pluginEntries?: readonly string[]; writeRoots?: readonly string[];
+  /** 平台判断注入点，默认 process.platform。 */
+  platform?: NodeJS.Platform;
+}
 export function createDeterministicPolicy(options: DeterministicPolicyOptions): Policy {
   const writeRoots = Object.freeze([...(options.writeRoots ?? [])]);
   const pluginEntries = Object.freeze([...(options.pluginEntries ?? [])]);
   const controller = new PermissionController({ mode: options.mode, rules: options.rules });
-  const analyzer = createDeterministicAnalyzer({ pluginEntries, writeRoots });
+  const analyzer = createDeterministicAnalyzer({ pluginEntries, writeRoots, ...(options.platform ? { platform: options.platform } : {}) });
   return { id: 'deterministic', version: '2.0.0', controller, analyzer,
     get revision() { return `policy:${hash({ rules: controller.revision, writeRoots, pluginEntries })}`; },
     async decide(input, signal) {
@@ -76,6 +80,9 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         }
       }
       if (complete && analysis.effects.every((effect) => effect.kind === 'read')) return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
+      // yolo 与 auto 一致：Windows 只读未经文件系统校验，不能确定性放行，但也不比 auto 更严格。
+      if (analysis.reasonCode === 'native_windows_read_unverified') return decision('review', 'platform_read_review',
+        'Windows 平台未做文件系统校验：内置只读工具的项目内读取已静态排除敏感/项目外目标，委托 reviewer 判断当前完整操作', 'mode');
       if (controller.mode === 'yolo') return complete
         ? decision('allow', 'yolo_complete', 'yolo 仅跳过已完整验证的项目内普通文件写入询问', 'mode')
         : decision('ask', 'unknown_ask', 'yolo 不跳过未知、动态 Shell 或不完整副作用，需人工确认', 'mode');
