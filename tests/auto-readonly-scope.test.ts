@@ -3,6 +3,7 @@ import { chmod, link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/pro
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { projectRelativePattern } from '../src/tools/search-scope.js';
 import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
@@ -28,7 +29,7 @@ beforeAll(async () => {
     'src/a.ts': 'export const needle = 1;\n', 'README.md': '# readme\n', 'AGENTS.md': '# agents\n', 'CLAUDE.md': '# claude\n', 'agent.config.json': '{}\n',
     'mcp.json': '{}\n', '.env': 'TOKEN=fixture\n', '.eslintrc.json': '{}\n', 'plugins/vite-plugin.ts': 'export const needle = 2;\n', 'src/i18n.key': 'k\n',
     'config/credentials.json': '{}\n', 'node_modules/pkg/index.js': 'module.exports = 1;\n', 'node_modules/.pnpm/zod@1.0.0/node_modules/zod/package.json': '{}\n',
-    'src/hard.ts': 'h\n',
+    'src/hard.ts': 'h\n', '!private.txt': 'bang\n',
   };
   for (const [name, content] of Object.entries(files)) { await mkdir(dirname(join(cwd, name)), { recursive: true }); await writeFile(join(cwd, name), content); }
   // pnpm 布局：包目录是指向 .pnpm 的符号链接，文件与全局 store 硬链接（nlink ≥ 2）。
@@ -38,6 +39,8 @@ beforeAll(async () => {
   await mkdir(join(cwd, 'docs'));
   await link(join(cwd, 'src/hard.ts'), join(cwd, 'docs/hard-copy.ts'));
   await mkdir(outside); await writeFile(join(outside, 'o.txt'), 'outside\n');
+  // 回归：项目外密钥被硬链接进 node_modules（路径段不能证明 inode 来自 pnpm store）。
+  await writeFile(join(outside, 'id_rsa'), 'PRIVATE-KEY-FIXTURE\n'); await link(join(outside, 'id_rsa'), join(cwd, 'node_modules/pkg/index2.js'));
   await symlink(join(outside, 'o.txt'), join(cwd, 'src/link-out.txt'));
   await symlink('a.ts', join(cwd, 'src/link-in.ts'));
   await mkdir(join(locked, 'src'), { recursive: true }); await writeFile(join(locked, 'src/a.ts'), 'export const needle = 3;\n');
@@ -77,7 +80,6 @@ describe.skipIf(process.platform === 'win32')('auto 只读工具放行矩阵', (
     ['read_file', { path: 'CLAUDE.md' }, 'allow', 'safe_read'],
     ['read_file', { path: 'agent.config.json' }, 'allow', 'safe_read'],
     ['read_file', { path: 'plugins/vite-plugin.ts' }, 'allow', 'safe_read'],
-    ['read_file', { path: 'node_modules/zod/package.json' }, 'allow', 'safe_read'],
     ['glob', { pattern: 'plugins/*.ts' }, 'allow', 'safe_read'],
     ['glob', { pattern: '*.ts', path: 'plugins' }, 'allow', 'safe_read'],
     ['glob', { pattern: '{cwd}/src/**/*.ts' }, 'allow', 'safe_read'],
@@ -92,6 +94,11 @@ describe.skipIf(process.platform === 'win32')('auto 只读工具放行矩阵', (
     ['read_file', { path: '{outside}/missing.txt' }, 'ask-human', 'external_target'],
     ['read_file', { path: 'src/link-out.txt' }, 'ask-human', 'external_target'],
     ['read_file', { path: 'src/hard.ts' }, 'ask-human', 'aliased_target'],
+    // 多硬链接一律保持审批：pnpm store 硬链接与外部密钥硬链接在路径上无法区分
+    ['read_file', { path: 'node_modules/zod/package.json' }, 'ask-human', 'aliased_target'],
+    ['read_file', { path: 'node_modules/pkg/index2.js' }, 'ask-human', 'aliased_target'],
+    // 绝对 pattern 的相对部分以 ! 开头时不转换（避免 minimatch 取反），按项目外处理
+    ['glob', { pattern: '{cwd}/!private.txt' }, 'ask-human', 'external_target'],
     ['glob', { pattern: 'src/hard.ts' }, 'ask-human', 'aliased_target'],
     ['glob', { pattern: '**/*.key' }, 'ask-human', 'sensitive_target'],
     ['glob', { pattern: '{outside}/*' }, 'ask-human', 'external_target'],
@@ -130,6 +137,29 @@ describe.skipIf(process.platform === 'win32')('auto 只读工具放行矩阵', (
     expect(asks).toBe(0); expect(result.isError).toBeFalsy(); expect(result.content).toBe('src/a.ts');
   });
 
+  it('外部密钥硬链接进 node_modules 仍需审批，拒绝后不返回内容', async () => {
+    const registry = new ToolRegistry(); registry.register(read);
+    const policy = createDeterministicPolicy({ cwd, mode: 'auto', rules: { allow: [], ask: [], deny: [] } });
+    let asks = 0;
+    const executor = new ToolExecutor({ tools: registry, policy, events: new EventBus(), hooks: new HookRunner(), cwd, approvalResponder: async () => { asks++; return { allow: false }; } });
+    const result = await executor.invokeTool('read_file', { path: 'node_modules/pkg/index2.js' }, { signal: signal(), runId: 'hardlink', userRequest: 'read', messages: [] });
+    expect(asks).toBe(1); expect(result.content).not.toContain('PRIVATE-KEY-FIXTURE');
+  });
+
+  it('绝对 glob 转相对时保留字面语义：开头的 ! / # 不转换，执行不会变成取反匹配', async () => {
+    expect(projectRelativePattern(join(cwd, '!private.txt'), [cwd])).toBe(join(cwd, '!private.txt'));
+    expect(projectRelativePattern(join(cwd, '#notes.md'), [cwd])).toBe(join(cwd, '#notes.md'));
+    expect(projectRelativePattern(join(cwd, 'src/!x.ts'), [cwd])).toBe('src/!x.ts');
+    expect(projectRelativePattern(join(cwd, 'src/**/*.ts'), [cwd])).toBe('src/**/*.ts');
+    const registry = new ToolRegistry(); registry.register(glob);
+    const policy = createDeterministicPolicy({ cwd, mode: 'auto', rules: { allow: [], ask: [], deny: [] } });
+    let asks = 0;
+    const executor = new ToolExecutor({ tools: registry, policy, events: new EventBus(), hooks: new HookRunner(), cwd, approvalResponder: async () => { asks++; return { allow: true }; } });
+    const result = await executor.invokeTool('glob', { pattern: join(cwd, '!private.txt') }, { signal: signal(), runId: 'bang', userRequest: 'find', messages: [] });
+    expect(asks).toBe(1);
+    expect(result.content).not.toContain('src/a.ts'); expect(result.content).not.toContain('README.md');
+  });
+
   it('端到端：auto 下连续 read_file / glob / grep 零审批，且工具结果正确', async () => {
     const registry = new ToolRegistry(); for (const tool of [read, glob, grep]) registry.register(tool);
     const policy = createDeterministicPolicy({ cwd, mode: 'auto', rules: { allow: [], ask: [], deny: [] } });
@@ -139,7 +169,6 @@ describe.skipIf(process.platform === 'win32')('auto 只读工具放行矩阵', (
     const run = (name: string, input: Record<string, unknown>) => executor.invokeTool(name, input, { signal: signal(), runId: 'e2e', userRequest: 'explore', messages: [] });
     expect((await run('read_file', { path: 'AGENTS.md' })).content).toContain('# agents');
     expect((await run('read_file', { path: abs('src/a.ts') })).content).toContain('needle');
-    expect((await run('read_file', { path: 'node_modules/zod/package.json' })).content).toContain('{}');
     const missing = await run('read_file', { path: 'src/missing.ts' }); expect(missing.isError).toBe(true); expect(missing.content).toContain('ENOENT');
     const directory = await run('read_file', { path: 'src' }); expect(directory.isError).toBe(true); expect(directory.content).toContain('EISDIR');
     expect((await run('glob', { pattern: '**/*.ts' })).content).toContain('src/a.ts');

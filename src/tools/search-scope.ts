@@ -28,7 +28,7 @@ export function sensitivePath(path: string, configuredEntries: readonly string[]
 const UNREADABLE = ['EACCES', 'EPERM'];
 /**
  * 指向搜索根内部的绝对 glob 转为相对 pattern；分析与执行共用，避免绝对 pattern 被误判为项目外且永远无匹配。
- * 含 `..`、其他平台路径或不在任一根内的 pattern 原样返回，仍按项目外处理。
+ * 含 `..`、其他平台路径、不在任一根内，或相对部分以 `!`/`#` 开头（minimatch 取反/注释）的 pattern 原样返回，仍按项目外处理。
  */
 export function projectRelativePattern(pattern: string, roots: readonly string[]): string {
   if (!isAbsolute(pattern) || foreignPath(pattern) || pattern.split(/[\\/]/).includes('..')) return pattern;
@@ -36,7 +36,11 @@ export function projectRelativePattern(pattern: string, roots: readonly string[]
   const literal = wildcard < 0 ? pattern : pattern.slice(0, wildcard);
   for (const root of roots) {
     const rest = relative(root, pattern);
-    if (rest && within(root, literal) && within(root, resolve(root, rest))) return rest.split(sep).join('/');
+    const relativePattern = rest.split(sep).join('/');
+    // minimatch 把开头的 `!` 当整体取反、`#` 当注释；转换后会改变字面语义，此时保持原绝对 pattern（按项目外处理）。
+    // 不用反斜杠转义：Windows 上反斜杠是路径分隔符，不是 glob 转义符。
+    if (/^[!#]/.test(relativePattern)) return pattern;
+    if (rest && within(root, literal) && within(root, resolve(root, rest))) return relativePattern;
   }
   return pattern;
 }

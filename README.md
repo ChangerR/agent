@@ -108,7 +108,7 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 
 ### 可选：自动审批
 
-`auto` 模式默认使用当前主模型审核未命中规则的写入与执行操作，无需另配审批模型；已完整验证的项目内只读操作直接放行：普通文件读取（含不存在的文件、目录路径，结果由工具自身报错；pnpm `node_modules` 内的硬链接文件；AGENTS.md / CLAUDE.md / agent.config.json / `plugins/` 下的文件）以及内置 grep/glob 项目搜索（含指向项目内的绝对路径 pattern，枚举时跳过无权限目录）。`.env*`、密钥/凭据、mcp.json、`.git` 元数据、已配置插件入口、项目外路径与链接逃逸仍需人工确认。原生 Windows 上上述只读放行改为交给审批模型，并在审批上下文中注明“Windows 平台未做文件系统校验”。搜索排除敏感文件与链接，遵守项目及嵌套 `.gitignore`；明确 ask/deny 规则仍优先。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
+`auto` 模式默认使用当前主模型审核未命中规则的写入与执行操作，无需另配审批模型；已完整验证的项目内只读操作直接放行：普通文件读取（含不存在的文件、目录路径，结果由工具自身报错；AGENTS.md / CLAUDE.md / agent.config.json / `plugins/` 下的文件）以及内置 grep/glob 项目搜索（含指向项目内的绝对路径 pattern，枚举时跳过无权限目录）。`.env*`、密钥/凭据、mcp.json、`.git` 元数据、已配置插件入口、项目外路径、链接逃逸与多硬链接文件（包括 pnpm 默认以硬链接安装的 `node_modules` 文件；可用 `package-import-method=copy` 避免）仍需人工确认。原生 Windows 上上述只读放行改为交给审批模型，并在审批上下文中注明“Windows 平台未做文件系统校验”。搜索排除敏感文件与链接，遵守项目及嵌套 `.gitignore`；明确 ask/deny 规则仍优先。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
 
 可用 `judgeModel` 指定兼容同一 provider / endpoint 的独立审批模型。项目未写该字段时继承全局配置，最终未指定时跟随当前模型；`"judgeModel": ""` 则明确跟随当前模型并覆盖全局指定值。跟随模式会随 `/model` 和恢复会话更新，显式指定的审批模型保持不变。`/permissions` 可查看实际加载的审批模型及来源；需要未命中规则的操作都询问时使用 `ask` 模式。
 

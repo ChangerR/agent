@@ -10,7 +10,7 @@ import { collectSearchFiles, sensitivePath, within, foreignPath, searchPatternSc
 import { jsonInput } from '../../core/permission/input-validation.js';
 
 export const ANALYZER_ID = 'deterministic-operations';
-export const ANALYZER_VERSION = '2.4.0';
+export const ANALYZER_VERSION = '2.5.0';
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(platform: NodeJS.Platform = process.platform): boolean { return platform !== 'win32'; }
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\..*)?$/i;
@@ -25,8 +25,9 @@ export function windowsAmbiguousPath(path: string): boolean {
   return body.split(/[\\/]/).some((part) => part !== '' && part !== '.' && part !== '..'
     && (/[. ]$/.test(part) || /~\d/.test(part) || WINDOWS_RESERVED_NAME.test(part)));
 }
-const WINDOWS_READ_NOTE = 'Windows 平台未做文件系统校验：未验证 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等语义；'
-  + '已按通用逻辑静态排除敏感名称、项目外路径（含真实路径）、链接逃逸、多硬链接与非普通文件，结果仅供模型审批参考，不授予确定性放行。';
+const WINDOWS_READ_NOTE = 'Windows 平台未做文件系统校验：通用分析已完整执行（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件与受控搜索枚举均已检查并绑定），'
+  + '但 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等平台特有语义未经实机验收，且已拦截这些歧义路径形态；'
+  + '因此策略不确定性放行，而是委托模型按当前用户要求审查这次项目内只读操作。';
 export interface AnalyzerOptions {
   pluginEntries?: readonly string[]; writeRoots?: readonly string[]; parseCacheSize?: number;
   /** 平台判断注入点，默认 process.platform；测试用它在任意宿主上覆盖原生 Windows 分支。 */
@@ -87,7 +88,9 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
       && result.effects.every((effect) => effect.kind === 'read' && effect.scope === 'project')
       && !(result.targets ?? []).some((target) => windowsAmbiguousPath(target));
     // 敏感、项目外、特殊文件、硬链接等结论保持原样（仍人工）；只有通用逻辑判定为项目内完整读取的才交给模型。
-    return projectRead ? { ...result, completeness: 'partial', reasonCode: 'native_windows_read_unverified',
+    // 通用分析本身是完整的，completeness 保持 'complete'（不违背审查合约“分析不完整则 ask/unknown”）；
+    // 平台风险用 reasonCode + 证据表达，策略据此委托 reviewer，而不会确定性放行（见 policy/index.ts）。
+    return projectRead ? { ...result, reasonCode: 'native_windows_read_unverified',
       evidence: [{ source: 'platform-support', detail: WINDOWS_READ_NOTE }, ...(result.evidence ?? [])] } : result;
   };
   const analyzeOperation = async (input: AnalysisInput, parsed: ParsedOperation, windows: boolean, signal: AbortSignal): Promise<ToolAnalysis> => {
@@ -181,9 +184,9 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     if (effect === 'read' && !resolved.exists) { if (scope === 'project') reasonCode = 'read_target_missing'; }
     else if (effect === 'read' && resolved.directory) { if (scope === 'project') reasonCode = 'read_target_directory'; }
     else if (parsed.kind === 'file' && resolved.exists && !resolved.regularFile) { completeness = 'unknown'; reasonCode = 'special_file_target'; }
-    // pnpm 等内容寻址存储天然产生多硬链接；仅豁免项目内 node_modules 中的非敏感读取，其他位置仍按别名风险询问。
-    const packageStoreRead = effect === 'read' && scope === 'project' && relative(actualCwd, resolved.actual).split(sep).includes('node_modules');
-    if (resolved.links > 1 && !packageStoreRead) { completeness = 'unknown'; reasonCode = 'hardlink_alias_unverified'; }
+    // 多硬链接一律视为未验证别名：路径段（如 node_modules）无法证明 inode 来自包管理器 store，
+    // 同用户进程可把项目外密钥硬链接进项目；store 本身也可被同用户写入，按内容哈希比对同样不能证明来源。
+    if (resolved.links > 1) { completeness = 'unknown'; reasonCode = 'hardlink_alias_unverified'; }
     return { ...base, completeness, effects: [{ kind: effect, target: resolved.actual, scope }], targets: [resolved.actual], reasonCode,
       evidence: [{ source: 'filesystem-realpath', detail: `${target} -> ${resolved.actual}` },
         { source: 'filesystem-kind', detail: resolved.exists ? resolved.regularFile ? 'regular-file' : 'non-regular-file' : `new-target; existing-parent=${resolved.parent}` }],

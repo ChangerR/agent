@@ -60,6 +60,11 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       if (analysis.reasonCode === 'shell_dangerous') return decision('ask', 'danger_constraint', '危险操作属于 不可降级约束，必须人工确认', 'danger');
       const asked = matched('ask', targets);
       if (asked) return decision('ask', 'explicit_ask', `命中 ask 规则 "${asked.raw}"（中优先于 allow）`, asked.source, asked.raw);
+      // Windows 只读的分析是完整的，但平台语义未验收：必须在精确 allow / safe_read / yolo 之前截住，只能委托 reviewer。
+      // ask 模式照旧询问；yolo 与 auto 一致（未完整验证平台不能确定性放行，但也不比 auto 更严格）。
+      if (analysis.reasonCode === 'native_windows_read_unverified') return controller.mode === 'ask'
+        ? decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode')
+        : decision('review', 'platform_read_review', 'Windows 平台未做文件系统校验：内置只读工具的项目内读取已完成通用分析并排除敏感/项目外目标，委托 reviewer 判断当前完整操作', 'mode');
       const complete = analysis.completeness === 'complete' && analysis.effects.length > 0
         && analysis.effects.every((effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind));
       // 宽规则没有放行资格，也不能遮挡同来源或后续来源的精确目标授权。
@@ -80,9 +85,6 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         }
       }
       if (complete && analysis.effects.every((effect) => effect.kind === 'read')) return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
-      // yolo 与 auto 一致：Windows 只读未经文件系统校验，不能确定性放行，但也不比 auto 更严格。
-      if (analysis.reasonCode === 'native_windows_read_unverified') return decision('review', 'platform_read_review',
-        'Windows 平台未做文件系统校验：内置只读工具的项目内读取已静态排除敏感/项目外目标，委托 reviewer 判断当前完整操作', 'mode');
       if (controller.mode === 'yolo') return complete
         ? decision('allow', 'yolo_complete', 'yolo 仅跳过已完整验证的项目内普通文件写入询问', 'mode')
         : decision('ask', 'unknown_ask', 'yolo 不跳过未知、动态 Shell 或不完整副作用，需人工确认', 'mode');

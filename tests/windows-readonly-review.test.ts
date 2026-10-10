@@ -18,6 +18,9 @@ import { editFileTool } from '../src/tools/edit.js';
 import { createGlobTool } from '../src/tools/glob.js';
 import { createGrepTool } from '../src/tools/grep.js';
 import { readFileTool } from '../src/tools/read.js';
+import { createModelReviewer, STRICT_REVIEWER_SYSTEM } from '../src/builtin/reviewer-model/index.js';
+import { FakeProvider, textResponse } from '../src/providers/fake.js';
+import type { ChatRequest } from '../src/core/provider.js';
 import { writeFileTool } from '../src/tools/write.js';
 import type { SessionRules } from '../src/core/permission/contracts.js';
 import type { PolicyInput, ReviewInput, ReviewResult } from '../src/sdk/capabilities.js';
@@ -61,7 +64,7 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
     const result = await decide(mode, name, fill(input));
     expect(result).toMatchObject({ kind: 'review', reasonCode: 'platform_read_review' });
     expect(result.reason).toContain(NOTE);
-    expect(result.analysis).toMatchObject({ completeness: 'partial', reasonCode: 'native_windows_read_unverified' });
+    expect(result.analysis).toMatchObject({ completeness: 'complete', reasonCode: 'native_windows_read_unverified' });
     expect(result.analysis.evidence?.[0]).toMatchObject({ source: 'platform-support' });
     expect(result.analysis.evidence?.[0]?.detail).toContain(NOTE);
   });
@@ -106,8 +109,10 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
     expect(await decide('auto', 'read_file', { path: 'src/a.ts' }, 'win32', { allow: [], ask: [], deny: ['read_file(src/a.ts)'] })).toMatchObject({ kind: 'deny', reasonCode: 'deny_rule' });
     expect(await decide('auto', 'read_file', { path: 'src/a.ts' }, 'win32', { allow: [], ask: ['read_file(src/a.ts)'], deny: [] })).toMatchObject({ kind: 'ask', reasonCode: 'explicit_ask' });
     expect(await decide('auto', 'glob', { pattern: '**/*.ts' }, 'win32', { allow: [], ask: ['glob(**/*.ts)'], deny: [] })).toMatchObject({ kind: 'ask', reasonCode: 'explicit_ask' });
-    // 精确 allow 不能把未经文件系统校验的 Windows 读取变成确定性放行
-    expect(await decide('auto', 'read_file', { path: 'src/a.ts' }, 'win32', { allow: ['read_file(src/a.ts)'], ask: [], deny: [] })).toMatchObject({ kind: 'review' });
+    // 分析为 complete，但精确 allow 仍不能把未经文件系统校验的 Windows 读取变成确定性放行；ask 模式下精确 allow 也不放行
+    expect(await decide('auto', 'read_file', { path: 'src/a.ts' }, 'win32', { allow: ['read_file(src/a.ts)'], ask: [], deny: [] })).toMatchObject({ kind: 'review', reasonCode: 'platform_read_review' });
+    expect(await decide('yolo', 'read_file', { path: 'src/a.ts' }, 'win32', { allow: ['read_file(src/a.ts)'], ask: [], deny: [] })).toMatchObject({ kind: 'review', reasonCode: 'platform_read_review' });
+    expect(await decide('ask', 'read_file', { path: 'src/a.ts' }, 'win32', { allow: ['read_file(src/a.ts)'], ask: [], deny: [] })).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
   });
 
   it('非 Windows 平台行为不变：项目内读取确定性放行', async () => {
@@ -158,5 +163,48 @@ describe('原生 Windows 端到端：ToolExecutor 把只读调用交给 reviewer
     expect((await run('read_file', { path: '.env' })).content).not.toContain('TOKEN');
     await run('write_file', { path: 'src/new.ts', content: 'x' });
     expect(reviews).toHaveLength(0); expect(humanRequests).toHaveLength(2);
+  });
+});
+
+describe('原生 Windows：真实审查合约（非 stub）', () => {
+  const allowText = JSON.stringify({ decision: 'allow', reasonCode: 'task_scoped_read', reason: '项目内只读操作符合当前要求' });
+  const knowledge = () => ({ contextWindow: 128_000, maxOutputTokens: 8192 });
+  const body = (request: ChatRequest) => JSON.parse(request.messages[0]!.content as string);
+
+  it('交给真实 reviewer 的分析不是“不完整”，与提示词中的不完整规则不冲突，合约接受 allow', async () => {
+    // 提示词规则：分析不完整时必须 ask/unknown。Windows 只读路径必须不触发这一条。
+    expect(STRICT_REVIEWER_SYSTEM).toContain('分析不完整或证据不足时返回 ask 或 unknown');
+    const policy = createDeterministicPolicy({ cwd, mode: 'auto', rules: noRules, platform: 'win32' });
+    const operation: PolicyInput = { tool: tools.read_file, input: { path: 'src/a.ts' }, cwd, configRevision: 'c', policyRevision: 'p' };
+    const analysis = await policy.analyzer!.analyze(operation, signal());
+    const decision = await policy.decide({ ...operation, analysis }, signal());
+    const provider = new FakeProvider([textResponse(allowText)]);
+    const result = await createModelReviewer({ provider, model: 'reviewer', modelInfo: knowledge })
+      .review({ ...operation, analysis, decision, userRequest: '阅读 src/a.ts 并解释' }, signal());
+    expect(result).toMatchObject({ decision: 'allow', reasonCode: 'task_scoped_read' });
+    const sent = body(provider.requests[0]!);
+    expect(provider.requests[0]!.system).toBe(STRICT_REVIEWER_SYSTEM);
+    expect(sent.analysis.completeness).toBe('complete');
+    expect(sent.analysis.reasonCode).toBe('native_windows_read_unverified');
+    expect(sent.analysis.effects.every((effect: { kind: string; scope: string }) => effect.kind === 'read' && effect.scope === 'project')).toBe(true);
+    expect(JSON.stringify(sent.analysis.evidence)).toContain(NOTE);
+    expect(sent.policy.decision).toMatchObject({ kind: 'review', reasonCode: 'platform_read_review' });
+  });
+
+  it('ToolExecutor + 真实模型 reviewer：模型 allow 时 read_file/glob/grep 零人工审批', async () => {
+    const registry = new ToolRegistry(); for (const tool of [tools.read_file, tools.glob, tools.grep]) registry.register(tool);
+    const policy = createDeterministicPolicy({ cwd, mode: 'auto', rules: noRules, platform: 'win32' });
+    const provider = new FakeProvider([textResponse(allowText), textResponse(allowText), textResponse(allowText)]);
+    const reviewer = createModelReviewer({ provider, model: 'reviewer', modelInfo: knowledge });
+    const events = new EventBus(); const humanRequests: string[] = [];
+    events.on('permission_request', (event) => { humanRequests.push(event.request.toolName); event.resolve({ allow: false }); });
+    const executor = new ToolExecutor({ tools: registry, policy, reviewer, events, hooks: new HookRunner(), cwd });
+    const run = (name: string, input: Record<string, unknown>) => executor.invokeTool(name, input, { signal: signal(), runId: 'win-real', userRequest: '浏览项目源码', messages: [] });
+    expect((await run('read_file', { path: 'src/a.ts' })).content).toContain('needle');
+    expect((await run('glob', { pattern: '**/*.ts' })).content).toContain('src/a.ts');
+    expect((await run('grep', { pattern: 'needle' })).content).toContain('src/a.ts');
+    expect(humanRequests).toEqual([]);
+    expect(provider.requests).toHaveLength(3);
+    for (const request of provider.requests) expect(body(request).analysis.completeness).toBe('complete');
   });
 });
