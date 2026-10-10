@@ -8,7 +8,7 @@ import { PermissionController, parseRule, matchRule } from './controller.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { resolveAgentPaths } from '../../core/paths.js';
 import { ANALYZER_ID, ANALYZER_VERSION, createDeterministicAnalyzer, hash, operationKey, validateWriteRoots } from './analyzer.js';
-export { createDeterministicAnalyzer, parseLiteralShell, validateWriteRoots, nativeFilesystemAnalysisSupported, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
+export { createDeterministicAnalyzer, validateWriteRoots, nativeFilesystemAnalysisSupported, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
 export interface DeterministicPolicyOptions { cwd: string; mode: PermissionMode; rules: SessionRules; pluginEntries?: readonly string[]; writeRoots?: readonly string[] }
 export function createDeterministicPolicy(options: DeterministicPolicyOptions): Policy {
   const writeRoots = Object.freeze([...(options.writeRoots ?? [])]);
@@ -44,7 +44,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         signal.throwIfAborted(); return decision('ask', 'analysis_error', '无法完整验证操作与环境，需人工确认');
       }
       signal.throwIfAborted();
-      const targets = ['read_file', 'write_file', 'edit_file', 'glob', 'grep'].includes(input.tool.name)
+      const targets = ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash'].includes(input.tool.name)
         ? [...new Set([target, ...(analysis.targets ?? []).flatMap((path) => [path.replace(/\\/g, '/'), relative(input.cwd, path).replace(/\\/g, '/')])])] : [target];
       const canonicalDeny = matched('deny', targets);
       if (canonicalDeny) return decision('deny', 'deny_rule', `真实目标命中 deny 规则 "${canonicalDeny.raw}"`, canonicalDeny.source, canonicalDeny.raw);
@@ -60,7 +60,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         && analysis.effects.every((effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind));
       // 宽规则没有放行资格，也不能遮挡同来源或后续来源的精确目标授权。
       const literalSearch = analysis.environment?.['$searchLiteral'];
-      const allowTargets = input.tool.name === 'glob' && literalSearch
+      const allowTargets = input.tool.name === 'bash' ? [target] : input.tool.name === 'glob' && literalSearch
         ? [literalSearch.replace(/\\/g, '/'), relative(input.cwd, literalSearch).replace(/\\/g, '/')] : targets;
       const allowed = input.tool.name === 'grep' || input.tool.name === 'glob' && !literalSearch ? undefined
         : matched('allow', allowTargets, (rule) => literalTarget(rule) !== undefined);
@@ -75,7 +75,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           return decision('allow', 'scoped_write', '命中显式 writeRoots 项目目录授权；最终实际路径与敏感约束已验证', 'config');
         }
       }
-      if (complete && analysis.effects.every((effect) => effect.kind === 'read')) return decision('allow', 'safe_read', '已验证为项目内普通文件的完整只读操作');
+      if (complete && analysis.effects.every((effect) => effect.kind === 'read')) return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
       if (controller.mode === 'yolo') return complete
         ? decision('allow', 'yolo_complete', 'yolo 仅跳过已完整验证的项目内普通文件写入询问', 'mode')
         : decision('ask', 'unknown_ask', 'yolo 不跳过未知、动态 Shell 或不完整副作用，需人工确认', 'mode');

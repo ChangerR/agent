@@ -63,8 +63,11 @@
 - `grep` 保留宿主提供的 ripgrep 及其正则语义，只向它传入已核验的文件列表，禁用 rg 配置、预处理器与链接跟随，清除相关动态加载环境，使用 `--` 分隔文件参数并分批运行；无 rg 时使用同一候选列表的 JS 正则扫描。空候选不退回目录搜索。宿主安装的 rg 仍是受信任依赖，不能据此宣称任意替换二进制也安全。
 - 搜索的 deny/ask 检查原请求与全部候选路径。一个文件的精确 allow 不能授权通配搜索的其他文件；grep 的 regex 精确匹配也不是文件范围授权。ask 模式的递归搜索仍询问。
 - 每次最终重验重新枚举、比较文件集和元数据；执行时再核验并绑定已批准目标。若最终重验后新增候选，返回 `approval_stale`，需要重新搜索，不能把新文件悄悄并入已批准操作。
-- Shell 字面量解析子集包含单条 `pwd`、无选项字面量 `echo`、受限 `%s` 的 `printf`。这里只证明语法，不证明实际解释器安全。当前内置 POSIX 执行是 `bash -c`，仍存在 PATH、BASH_ENV、继承函数等环境前提；所以所有实际 bash 调用仍 defer，不会因为字面量子集命中就自动放行。
-- 重定向、替换、变量展开、复杂组合、npm/pnpm 构建测试脚本、git alias/config 和外部命令均不被称为只读。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
+- Bash 使用成熟 `tree-sitter-bash` 语法树，区分语法解析与具体语义授权。支持字面量命令、单/双引号、转义空格、混合引号、`&&` / `||` / `;` 与只读管道；整条表达式所有命令和选项都要验证。可判定的命令包括 `ls`、`pwd`、`echo`、受限格式 `printf`、`cat`、`head`、`tail`、`wc`、`grep`、`rg`、只列举元数据的 `find`、受控本地仓库 `git status` / `git diff`。工具名称本身不能覆盖危险参数。
+- 读取内容的目标检查真实路径、敏感/外部作用域、普通文件与硬链接；路径中的符号链接再接 `..` 按内核实际路径语义处理。列表元数据不等同读取秘密内容，因此 `ls -la` 或非 verbose `git status` 可列出 `.env` 文件名，`cat .env` / `git diff -- .env` 仍必须询问。shell 的 deny/ask 同时匹配原命令与解析后的真实目标。
+- 确定性计划以固定系统工具和 `bash --noprofile --norc -p` 执行，保留 Bash builtin 的 echo/pwd/printf 语义，环境不继承 BASH_ENV、ENV、导出函数、动态加载器和搜索配置。Git 限定本地普通仓库与固定只读子命令，拒绝执行型配置和外部仓库入口，不开启 pager、外部 diff、textconv、fsmonitor 或网络取回。计划重验与实际执行绑定；目标/环境变化返回 `approval_stale`。
+- 重定向、命令/进程替换、变量/算术/通配展开、后台执行、函数、脚本、未知选项与任意子进程不自动放行。反斜杠续行目前明确不确定，避免语法树与 Bash 去续行后的 argv 差异。解析结果给出命令、effects 与 unresolved 原因；不声称能静态推断任意程序目的。
+- 递归 grep/rg 保留原工具与过滤语义，不悄悄删掉敏感候选；如果保守候选范围包含敏感/未知文件则询问。Git worktree/gitfile、submodule、partial clone、额外 filter/include 配置等不在确定性支持范围。普通 status 不遍历被忽略的 node_modules 或禁用的 hooks；diff 额外验证对象/引用存储，超过 20,000 项扫描预算明确回退审批。已安装系统工具是受信任依赖，不引入恶意宿主二进制的无限威胁模型。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
 
 原生 Windows 的文件系统授予目前明确禁用：NTFS ADS、设备名、尾随点/空格和 PowerShell 的完整语义尚未实机验收，已知本地工具统一返回不可降级的人工询问，writeRoots、精确规则和 yolo 都不能绕过。Linux 上的 Windows 字符串样例仅验证保守分类，不宣称证明了 Windows 安全。工具执行仍保留平台适配；平台适配不等于已经完成安全分析验收。
 
@@ -78,8 +81,11 @@
 
 ## 主要代码与回归
 
-- `src/builtin/policy/`：版本化策略、文件/字面量语法分析、显式目录授权与设置
+- `src/builtin/policy/`：版本化策略、文件分析、显式目录授权与设置
+- `src/tools/shell-readonly.ts`：Bash AST、逐命令参数语义、受控执行合约
 - `tests/deterministic-policy.test.ts`：优先级、路径、链接、凭据、Windows、Shell、MCP、缓存与环境变化
 - `tests/policy-runtime.test.ts`：真实 runtime 中 reviewer 次数和拒绝边界
 - `tests/search-runtime.test.ts` / `tests/search-tools.test.ts`：真实 rg/fallback、全部常用只读工具、零 judge/零人工、ignore、敏感/外部/规则与重验竞态
+- `tests/shell-runtime.test.ts` / `tests/shell-contract-binding.test.ts`：真实 Bash 输出、审批次数、组合/参数/路径与执行绑定
+- `tests/cli-pty.test.ts` / `tests/helpers/pty.ts`：Linux 真 PTY 运行仓库原样 pnpm dev，原命令、auto 单选保存与重启后零审批；共用 Vitest 入口，无额外 npm 依赖
 - `tests/tool-executor.test.ts`：最终输入、一次批准绑定、故障回退、取消/迟到结果与唯一门控
