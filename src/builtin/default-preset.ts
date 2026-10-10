@@ -5,7 +5,7 @@ import { modelReviewerPlugin } from './reviewer-model/plugin.js';
 import { runtimeSettingsPlugin } from './runtime-settings.js';
 import { uiPlugin } from './ui-plugin.js';
 import { providerPlugins } from './providers.js';
-import { localToolsPlugin } from './local-tools.js';
+import { createLocalToolsPlugin } from './local-tools.js';
 import { skillsLocalPlugin } from './skills-local.js';
 import { builtinMcpPlugin } from './mcp.js';
 import { createContextDefaultPlugin } from './context-default/index.js';
@@ -21,7 +21,7 @@ export function defaultPreset(input: PresetContext): Preset {
   return {
     selections: { policy: 'deterministic', reviewer: 'model', compactor: 'summary', cacheStrategy: 'prefix', modelCatalog: 'presets', sessionStore: 'file' },
     plugins: [
-      ...providerPlugins(config), localToolsPlugin, skillsLocalPlugin(cwd), builtinMcpPlugin(config.mcpConfig),
+      ...providerPlugins(config), createLocalToolsPlugin(config.pluginEntries.filter((entry) => typeof entry === 'string' || entry.enabled).map((entry) => typeof entry === 'string' ? entry : entry.entry)), skillsLocalPlugin(cwd), builtinMcpPlugin(config.mcpConfig),
       createDeterministicPolicyPlugin({ cwd, config }), modelReviewerPlugin(input), createContextDefaultPlugin(), createCompactionSummaryPlugin(), createCachePrefixPlugin(),
       createModelCatalogPlugin(loadModelsFile(config.modelsFile)), createSessionFilePlugin(),
       createTelemetryJsonlPlugin({ path: input.logPath, includeBodies: config.pluginConfig['agentlab.telemetry-jsonl']?.includeBodies === true }),

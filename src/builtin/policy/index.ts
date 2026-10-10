@@ -44,7 +44,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         signal.throwIfAborted(); return decision('ask', 'analysis_error', '无法完整验证操作与环境，需人工确认');
       }
       signal.throwIfAborted();
-      const targets = ['read_file', 'write_file', 'edit_file', 'glob'].includes(input.tool.name)
+      const targets = ['read_file', 'write_file', 'edit_file', 'glob', 'grep'].includes(input.tool.name)
         ? [...new Set([target, ...(analysis.targets ?? []).flatMap((path) => [path.replace(/\\/g, '/'), relative(input.cwd, path).replace(/\\/g, '/')])])] : [target];
       const canonicalDeny = matched('deny', targets);
       if (canonicalDeny) return decision('deny', 'deny_rule', `真实目标命中 deny 规则 "${canonicalDeny.raw}"`, canonicalDeny.source, canonicalDeny.raw);
@@ -59,7 +59,11 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       const complete = analysis.completeness === 'complete' && analysis.effects.length > 0
         && analysis.effects.every((effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind));
       // 宽规则没有放行资格，也不能遮挡同来源或后续来源的精确目标授权。
-      const allowed = matched('allow', targets, (rule) => literalTarget(rule) !== undefined);
+      const literalSearch = analysis.environment?.['$searchLiteral'];
+      const allowTargets = input.tool.name === 'glob' && literalSearch
+        ? [literalSearch.replace(/\\/g, '/'), relative(input.cwd, literalSearch).replace(/\\/g, '/')] : targets;
+      const allowed = input.tool.name === 'grep' || input.tool.name === 'glob' && !literalSearch ? undefined
+        : matched('allow', allowTargets, (rule) => literalTarget(rule) !== undefined);
       if (allowed && complete) {
         return decision('allow', 'exact_allow', `命中精确目标 allow 规则 "${allowed.raw}"`, allowed.source, allowed.raw);
       }
@@ -112,7 +116,7 @@ export function createDeterministicPolicyPlugin({ config, cwd }: { config: Agent
       const value = schema.parse(ctx.config.value);
       await validateWriteRoots(cwd, value.writeRoots, entries);
       const policy = createDeterministicPolicy({ cwd, mode: config.permissionMode, rules: config.permissions, pluginEntries: entries, writeRoots: value.writeRoots });
-      ctx.provide.analyzer('deterministic', policy.analyzer!, { version: '2.0.0' });
+      ctx.provide.analyzer('deterministic', policy.analyzer!, { version: ANALYZER_VERSION });
       ctx.provide.policy('deterministic', policy, { version: '2.0.0' });
       ctx.provide.settings('policy-deterministic', { title: '确定性策略', description: 'ask 优先于 allow；未知 Shell/MCP 不会因 risk 声明放行。选择后新会话生效。',
         schema: { type: 'object' }, applyMode: 'newSession', read: () => ({ selectedBy: 'capabilities.policy = deterministic', writeRoots: [...value.writeRoots] }) });

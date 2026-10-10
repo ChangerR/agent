@@ -5,10 +5,11 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { AnalysisInput, ToolAnalysis, ToolAnalyzer } from '../../sdk/capabilities.js';
 import { createEnvironmentAnalyzer } from './environment.js';
 import { analyzeCommand } from '../../tools/bash.js';
+import { collectSearchFiles, sensitivePath, within, foreignPath, searchPatternScope, type SearchFile } from '../../tools/search-scope.js';
 import { jsonInput } from '../../core/permission/input-validation.js';
 
 export const ANALYZER_ID = 'deterministic-operations';
-export const ANALYZER_VERSION = '2.0.0';
+export const ANALYZER_VERSION = '2.1.0';
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(platform: NodeJS.Platform = process.platform): boolean { return platform !== 'win32'; }
 export interface AnalyzerOptions { pluginEntries?: readonly string[]; writeRoots?: readonly string[]; parseCacheSize?: number }
@@ -20,9 +21,9 @@ export interface LiteralShellFacts {
 }
 type ParsedOperation =
   | { kind: 'file'; path: string; effect: 'read' | 'write' }
-  | { kind: 'glob'; path: string; pattern: string; literal: boolean }
+  | { kind: 'glob'; path: string; pattern: string }
   | { kind: 'shell'; facts: LiteralShellFacts; dangerous: boolean }
-  | { kind: 'search'; path: string }
+  | { kind: 'search'; path: string; pattern: string }
   | { kind: 'unknown'; reasonCode: string };
 
 /** 只认单条字面量语法。语法完整不代表 Shell 环境、副作用已被证明安全。 */
@@ -81,9 +82,9 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     } else if (['read_file', 'write_file', 'edit_file'].includes(input.tool.name) && typeof data.path === 'string' && data.path.length > 0) {
       parsed = { kind: 'file', path: data.path, effect: input.tool.name === 'read_file' ? 'read' : 'write' };
     } else if (input.tool.name === 'glob' && typeof data.pattern === 'string') {
-      parsed = { kind: 'glob', path: typeof data.path === 'string' ? data.path : '.', pattern: data.pattern, literal: !/[?*{}[\]()!+@\\]/.test(data.pattern) };
+      parsed = { kind: 'glob', path: typeof data.path === 'string' ? data.path : '.', pattern: data.pattern };
     } else if (input.tool.name === 'grep') {
-      parsed = { kind: 'search', path: typeof data.path === 'string' ? data.path : '.' };
+      parsed = { kind: 'search', path: typeof data.path === 'string' ? data.path : '.', pattern: typeof data.glob === 'string' ? data.glob : '**/*' };
     } else if (input.tool.name === 'bash') parsed = { kind: 'shell', facts: parseLiteralShell(data.command),
       dangerous: typeof data.command === 'string' && analyzeCommand(data.command).dangerous };
     else parsed = { kind: 'unknown', reasonCode: input.tool.name.startsWith('mcp') || input.tool.name.includes('__') ? 'mcp_effects_unknown' : 'tool_semantics_unknown' };
@@ -125,12 +126,10 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
         evidence: [{ source: 'literal-shell-parser', detail: JSON.stringify(parsed.facts) },
           { source: 'execution-contract', detail: '字面量语法不足以验证解释器/PATH/BASH_ENV/继承函数；实际 bash 操作始终 defer。' }] };
     }
-    const globEscape = parsed.kind === 'glob' && (isAbsolute(parsed.pattern) || parsed.pattern.replace(/\\/g, '/').split('/').includes('..'));
-    const prefix = parsed.kind === 'glob' ? parsed.pattern.split('/').slice(0, parsed.pattern.split('/').findIndex((part) => /[?*{}[\]()!+@\\]/.test(part)) >>> 0).join('/') : '';
-    const raw = parsed.kind === 'glob' ? resolve(input.cwd, parsed.path, parsed.literal ? parsed.pattern : prefix || '.') : parsed.path;
-    if (foreignPath(raw) || parsed.kind === 'glob' && foreignPath(parsed.pattern)) {
+    const raw = parsed.kind === 'file' ? parsed.path : parsed.path || '.';
+    if (foreignPath(raw)) {
       return { ...base, completeness: 'unknown', effects: [{ kind: parsed.kind === 'file' ? parsed.effect : 'read', target: raw, scope: 'external' }], targets: [raw],
-        reasonCode: 'foreign_platform_path', evidence: [{ source: 'path-parser', detail: '其他平台的盘符、UNC 或反斜杠路径没有被当前文件系统验证。' }] };
+        reasonCode: 'foreign_platform_path', evidence: [{ source: 'path-parser', detail: '其他平台的路径没有被当前文件系统验证。' }] };
     }
     const target = resolve(input.cwd, raw);
     const resolved = await resolveTarget(target, signal);
@@ -141,19 +140,33 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
       configuredEntries.push(absolute, actual.actual);
       environment[`plugin:${absolute}`] = await pathFingerprint(absolute, signal);
     }
-    const sensitive = sensitivePath(target, configuredEntries) || sensitivePath(resolved.actual, configuredEntries)
-      || parsed.kind === 'glob' && sensitivePath(resolve(input.cwd, parsed.path, parsed.pattern), configuredEntries);
-    const scope = sensitive ? 'sensitive' : !globEscape && within(actualCwd, resolved.actual) ? 'project' : 'external';
+    const patternScope = parsed.kind === 'file' ? 'project' : searchPatternScope(parsed.pattern, target, configuredEntries);
+    // 明确前缀/字面文件也做真实路径检查；泛型 **/* 不因排除项而整批升级为 ask。
+    const parts = parsed.kind === 'file' ? [] : parsed.pattern.split('/');
+    const prefix = parts.slice(0, parts.findIndex((part) => /[?*{}[\]()!+@\\]/.test(part)) >>> 0).join('/');
+    const intended = prefix ? await resolveTarget(resolve(target, prefix), signal) : resolved;
+    if (prefix) environment[`searchPrefix:${resolve(target, prefix)}`] = await pathFingerprint(resolve(target, prefix), signal);
+    const sensitive = sensitivePath(target, configuredEntries) || sensitivePath(resolved.actual, configuredEntries) || patternScope === 'sensitive'
+      || prefix !== '' && (sensitivePath(resolve(target, prefix), configuredEntries) || sensitivePath(intended.actual, configuredEntries));
+    const scope = sensitive ? 'sensitive' : patternScope !== 'external' && within(actualCwd, resolved.actual) && within(actualCwd, intended.actual) ? 'project' : 'external';
+    if (parsed.kind === 'glob' || parsed.kind === 'search') {
+      if (parsed.kind === 'glob' && !/[?*{}[\]()!+@\\]/.test(parsed.pattern)) environment['$searchLiteral'] = intended.actual;
+      const ignoreFiles: SearchFile[] = [];
+      const files = scope === 'project' ? await collectSearchFiles(actualCwd, resolved.actual, parsed.pattern, configuredEntries, signal, parsed.kind === 'search', (file) => ignoreFiles.push(file)) : [];
+      const reads = [...files, ...ignoreFiles.sort((a, b) => a.absolute.localeCompare(b.absolute))];
+      // 重验重新枚举并绑定实际候选集合；新增文件和别名变化不会复用旧的审批。
+      environment['$searchFiles'] = hash(reads);
+      return { ...base, completeness: scope === 'project' && intended.links <= 1 ? 'complete' : 'partial',
+        effects: [{ kind: 'read', target: resolved.actual, scope }, ...reads.map((file) => ({ kind: 'read' as const, target: file.absolute, scope: 'project' as const }))],
+        targets: [...new Set([resolved.actual, intended.actual]), ...reads.map((file) => file.absolute)],
+        reasonCode: sensitive ? 'sensitive_path' : scope === 'external' ? 'outside_project' : intended.links > 1 ? 'hardlink_alias_unverified' : 'bounded_search',
+        evidence: [{ source: 'bounded-search-contract', detail: '固定目录枚举，不跟随链接；排除敏感路径、配置插件入口、外部目标及非普通/多硬链接文件。' }],
+        summary: `${input.tool.name}: ${resolved.actual}` };
+    }
     const effect = parsed.kind === 'file' ? parsed.effect : 'read';
     let completeness: ToolAnalysis['completeness'] = 'complete';
     let reasonCode = sensitive ? 'sensitive_path' : scope === 'external' ? 'outside_project' : 'bounded_file';
-    if (parsed.kind === 'search') {
-      completeness = 'partial'; reasonCode = 'recursive_search_or_rg_configuration';
-      environment['$searchEnvironment'] = hash({ PATH: process.env.PATH, RIPGREP_CONFIG_PATH: process.env.RIPGREP_CONFIG_PATH });
-      if (process.env.RIPGREP_CONFIG_PATH) environment['$ripgrepConfig'] = await pathFingerprint(resolve(input.cwd, process.env.RIPGREP_CONFIG_PATH), signal);
-    }
-    if (parsed.kind === 'glob' && !parsed.literal) { completeness = 'partial'; reasonCode = 'glob_expansion_unverified'; }
-    if (effect === 'read' && (!resolved.exists || !resolved.regularFile) && parsed.kind !== 'search') { completeness = 'partial'; reasonCode = 'read_target_not_regular_file'; }
+    if (effect === 'read' && (!resolved.exists || !resolved.regularFile)) { completeness = 'partial'; reasonCode = 'read_target_not_regular_file'; }
     if (parsed.kind === 'file' && resolved.exists && !resolved.regularFile) { completeness = 'unknown'; reasonCode = 'special_file_target'; }
     if (resolved.links > 1) { completeness = 'unknown'; reasonCode = 'hardlink_alias_unverified'; }
     return { ...base, completeness, effects: [{ kind: effect, target: resolved.actual, scope }], targets: [resolved.actual], reasonCode,
@@ -166,12 +179,6 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     cacheStats: () => ({ entries: cache.size, hits, misses }) };
 }
 
-function foreignPath(path: string): boolean {
-  return process.platform !== 'win32' && (/^[A-Za-z]:/.test(path) || path.includes('\\'));
-}
-function within(root: string, path: string): boolean {
-  const difference = relative(root, path); return difference === '' || !difference.startsWith(`..${sep}`) && difference !== '..' && !isAbsolute(difference);
-}
 /** 只读验证显式作用域授权；项目外、敏感根或非目录根均不能启用。 */
 export async function validateWriteRoots(cwd: string, roots: readonly string[], pluginEntries: readonly string[] = [], signal = new AbortController().signal): Promise<readonly string[]> {
   if (roots.length > 32) throw new Error('writeRoots 最多允许 32 个目录');
@@ -186,14 +193,6 @@ export async function validateWriteRoots(cwd: string, roots: readonly string[], 
     result.push(target.actual);
   }
   return [...new Set(result)].sort();
-}
-function sensitivePath(path: string, configuredEntries: readonly string[]): boolean {
-  if (configuredEntries.some((entry) => resolve(entry) === resolve(path))) return true;
-  const parts = path.replace(/\\/g, '/').toLowerCase().split('/');
-  const basename = parts.at(-1) ?? '';
-  return parts.some((part) => ['.git', '.ssh', '.aws', '.azure', '.gnupg', '.kube', 'credentials', 'secrets', 'plugins', '.codex', '.agentlab', '.agent'].includes(part))
-    || parts.some((part, index) => part === '.git' && ['hooks', 'config', 'config.worktree'].includes(parts[index + 1] ?? ''))
-    || /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.pypirc|agents\.md|claude\.md|agent\.config\.json|mcp\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|credentials?(?:\..*)?|secrets?(?:\..*)?|.*\.(?:pem|key|p12|pfx))$/.test(basename);
 }
 async function resolveTarget(path: string, signal: AbortSignal, links = new Set<string>()): Promise<{ actual: string; parent: string; exists: boolean; regularFile: boolean; links: number }> {
   signal.throwIfAborted();

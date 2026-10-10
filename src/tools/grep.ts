@@ -3,18 +3,18 @@
  * 两种路径都跳过 node_modules、.git、dist，并最多返回 100 条。
  */
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { delimiter, dirname, resolve } from 'node:path';
-import fg from 'fast-glob';
+import { authorizedSearchFiles, authorizedSearchTarget, collectSearchFiles, searchPluginEntries, type SearchFile } from './search-scope.js';
 import { findRg } from '../core/platform.js';
 import type { Tool } from '../core/registry.js';
-import { fsCaseSensitive, matchPath, normalizeGrepLine, textStyle } from './text.js';
+import { matchPath, normalizeGrepLine, textStyle } from './text.js';
 
 const MAX_RESULTS = 100;
 
 export function buildRgArgs(input: { pattern: string; glob?: string; caseInsensitive?: boolean }): string[] {
   // --crlf 让 $ 和行号把 \r\n 当成一个换行，LF 文件不受影响。
-  const args = ['--line-number', '--no-heading', '--color=never', '--crlf', '--max-columns=300', '--max-count=100'];
+  const args = ['--no-config', '--no-follow', '--no-pre', '--with-filename', '--line-number', '--no-heading', '--color=never', '--crlf', '--max-columns=300', '--max-count=100'];
   if (input.caseInsensitive) args.push('--ignore-case');
   if (input.glob) args.push('--glob', input.glob);
   args.push('--glob', '!**/node_modules/**', '--glob', '!**/.git/**', '--glob', '!**/dist/**', '--regexp', input.pattern);
@@ -38,10 +38,10 @@ export function envWithRg(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next;
 }
 
-export const grepTool: Tool = {
+export function createGrepTool(pluginEntries: readonly string[] = []): Tool { return {
   name: 'grep',
   description:
-    'Search file contents with ripgrep (the rg command). Returns path:line:text. Respects .gitignore. If rg is not installed, falls back to a built-in scan.',
+    'Search ordinary project files with ripgrep; returns path:line:text. Excludes hidden/sensitive files, configured plugin entries, symlinks, node_modules and dist. Respects project and nested .gitignore, including explicit glob filters. Ignores ripgrep configuration. Without rg, uses the same bounded file list with a JavaScript regex scan.',
   risk: 'read',
   isConcurrencySafe: true,
   inputSchema: {
@@ -62,19 +62,38 @@ export const grepTool: Tool = {
     const pattern = String(input.pattern ?? '');
     const searchCwd = input.path ? resolve(ctx.cwd, String(input.path)) : ctx.cwd;
     const glob = input.glob === undefined ? undefined : matchPath(String(input.glob));
+    const protectedEntries = await searchPluginEntries(ctx.cwd, pluginEntries);
+    const files = authorizedSearchFiles(await collectSearchFiles(ctx.cwd, searchCwd, glob ?? '**/*', protectedEntries, ctx.signal, true, (file) => authorizedSearchTarget(file.absolute, ctx.analysis)), ctx.analysis);
+    if (!files.length) return { content: '(no matches)' };
     const bin = findRg();
     if (bin) {
-      const rg = await runRg(
-        bin,
-        buildRgArgs({ pattern, glob, caseInsensitive: Boolean(input.case_insensitive) }),
-        searchCwd,
-        ctx.signal,
-      );
-      if (!rg.missing) return formatRg(rg);
+      const outputs: string[] = [];
+      let missing = false;
+      // 显式文件列表，空列表绝不变回目录递归；分批避免操作系统 argv 长度上限。
+      for (let offset = 0; offset < files.length; offset += 128) {
+        ctx.signal.throwIfAborted();
+        const rg = await runRg(bin,
+          [...buildRgArgs({ pattern, caseInsensitive: Boolean(input.case_insensitive) }), '--', ...files.slice(offset, offset + 128).map((file) => file.absolute)],
+          searchCwd, ctx.signal);
+        if (rg.missing) { missing = true; break; }
+        if (rg.code !== 0 && rg.code !== 1) return formatRg(rg);
+        outputs.push(rg.stdout);
+        if (outputs.join('').split('\n').filter(Boolean).length > MAX_RESULTS) break;
+      }
+      if (!missing) {
+        const prefix = (await realpath(searchCwd)).replace(/\\/g, '/') + '/';
+        const stdout = outputs.join('').split('\n').map((line) => {
+          const normalized = normalizeGrepLine(line);
+          return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+        }).join('\n');
+        return formatRg({ missing: false, code: 0, stdout, stderr: '' });
+      }
     }
-    return searchBuiltin(pattern, searchCwd, glob, Boolean(input.case_insensitive));
+    return searchBuiltin(pattern, files, Boolean(input.case_insensitive), ctx.signal);
   },
-};
+}; }
+
+export const grepTool = createGrepTool();
 
 interface RgRun {
   missing: boolean;
@@ -85,7 +104,9 @@ interface RgRun {
 
 function runRg(bin: string, args: string[], cwd: string, signal: AbortSignal): Promise<RgRun> {
   return new Promise((resolvePromise) => {
-    const child = spawn(bin, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    // rg 是宿主提供的工具依赖，不运行项目提供的配置/预处理器或动态加载环境。
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(?:RIPGREP_CONFIG_PATH|LD_.*|DYLD_.*)$/.test(key)));
+    const child = spawn(bin, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout?.on('data', (chunk: Buffer) => out.push(chunk));
@@ -129,9 +150,9 @@ function formatRg(result: RgRun): { content: string; isError?: boolean } {
 
 async function searchBuiltin(
   pattern: string,
-  cwd: string,
-  glob: string | undefined,
+  files: readonly SearchFile[],
   caseInsensitive: boolean,
+  signal: AbortSignal,
 ): Promise<{ content: string; isError?: boolean }> {
   let re: RegExp;
   try {
@@ -139,25 +160,19 @@ async function searchBuiltin(
   } catch (error) {
     return { content: error instanceof Error ? error.message : String(error), isError: true };
   }
-  const files = await fg(glob ?? '**/*', {
-    cwd,
-    onlyFiles: true,
-    dot: false,
-    caseSensitiveMatch: fsCaseSensitive(),
-    ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
-  });
   const hits: string[] = [];
   for (const file of files) {
+    signal.throwIfAborted();
     if (hits.length >= MAX_RESULTS) break;
     let text: string;
     try {
-      text = textStyle(await readFile(resolve(cwd, file), 'utf-8')).body;
+      text = textStyle(await readFile(file.absolute, { encoding: 'utf-8', signal })).body;
     } catch {
       continue;
     }
     const lines = text.split('\n');
     for (let i = 0; i < lines.length && hits.length < MAX_RESULTS; i++) {
-      if (re.test(lines[i])) hits.push(`${file}:${i + 1}: ${lines[i]}`);
+      if (re.test(lines[i])) hits.push(`${file.path}:${i + 1}: ${lines[i]}`);
     }
   }
   return { content: hits.length > 0 ? hits.join('\n') : '(no matches)' };

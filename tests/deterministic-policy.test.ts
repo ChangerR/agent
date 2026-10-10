@@ -188,10 +188,10 @@ describe('deterministic policy', () => {
     }
   });
 
-  it('字面量 glob 可验证具体普通文件，递归 glob/grep 保持不完整', async () => {
+  it('普通字面量与递归 glob/grep 都确定性放行，真实敏感和外部边界保留', async () => {
     expect((await policy().decide(operation(glob, { pattern: 'src/code.ts' }), signal())).kind).toBe('allow');
-    expect((await policy().decide(operation(glob, { pattern: 'src/**/*.ts' }), signal())).kind).toBe('review');
-    expect((await policy().decide(operation(grep, { pattern: 'value', path: 'src' }), signal())).kind).toBe('review');
+    expect((await policy().decide(operation(glob, { pattern: 'src/**/*.ts' }), signal())).kind).toBe('allow');
+    expect((await policy().decide(operation(grep, { pattern: 'value', path: 'src' }), signal())).kind).toBe('allow');
     expect((await policy('yolo').decide(operation(glob, { pattern: '../outside/**' }), signal())).kind).toBe('ask');
     expect((await policy().decide(operation(glob, { pattern: '**/.env' }), signal())).kind).toBe('ask');
   });
