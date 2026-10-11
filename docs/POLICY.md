@@ -26,15 +26,15 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 1. 明确 `deny`
 2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell。尚未验收的原生 Windows Shell 不在此列，auto 把它交给 reviewer
 3. 明确 `ask`
-4. 已完整验证操作的精确目标规则
-5. `ask` 模式默认询问
-6. 显式 `writeRoots` 目录授权；已验证的普通文件读取与受控项目搜索
+4. bash 与未知 MCP 的等于引号精确调用规则（`exact_call_allow`），以及已完整验证操作的精确目标规则
+5. 已验证的项目内完整只读（`safe_read`）；`ask` 模式同样直接放行
+6. `ask` 模式对写入、执行与未知操作默认询问；随后才是显式 `writeRoots` 目录授权
 7. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
 8. `auto` 的剩余不确定操作可委托一次 reviewer；缺少 reviewer、非法输出、unknown、失败或超时均不会自动放行
 
 会话规则只在同一 action 类别内优先于配置规则，不会让 session allow 越过配置 ask/deny。
 
-精确规则使用 JSON 字面量目标，例如 `write_file(="src/new.ts")`，或不含 glob 元字符的字面量模式。其权限范围仍按实际匹配字段解释：文件规则匹配路径，不声称同时限定内容。宽泛的 `write_file` 或 `write_file(src/**)` 不足以让未知操作自动执行。敏感路径和不完整效果也不能借精确规则放行。
+精确规则使用 JSON 字面量目标，例如 `write_file(="src/new.ts")` 或 `bash(="pnpm test")`。其权限范围仍按实际匹配字段解释：文件规则匹配路径，不声称同时限定内容。宽泛的 `write_file`、`bash` 或 `bash(npm *)` 只作说明，不会放行。敏感路径、项目外目标、危险命令和明确 ask 不能借精确规则放行。bash 与未知 MCP 的等于引号 JSON 规则可以放行该次不完整调用；字面量模式和通配规则不能。
 
 已知文件工具与搜索工具还会用全部实际候选的真实绝对路径与项目相对路径匹配 deny/ask，避免 `./`、`..` 或符号链接别名绕过相同文件的 ask/deny。
 
@@ -54,7 +54,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 
 这表示在新的 auto 会话中，允许已知内置 `write_file` / `edit_file` 对 `src` 内普通文件进行完整、已验证的写入。默认目录列表为空，不存在隐式整项目写授权。项目外目录、敏感目录和非目录根会被拒绝；不存在的目录必须有可验证的目录父节点。
 
-目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式仍要求本次确认或精确规则，不因目录授权跳过默认询问。
+目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式的写入仍要求本次确认或精确规则，不因目录授权跳过询问。
 
 `/settings` 中的“明确写入目录授权”支持独立输入、验证和一次提交自动保存，无额外确认；保存走配置 fingerprint/CAS、原子写、未知字段保留和符号链接保护。保存只改变下一会话配置，不热更新活动策略。更改写入目录属于明确扩大授权范围，界面说明这一含义。
 
@@ -67,7 +67,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - `glob` / `grep`：分析与执行共用受控目录枚举，只处理项目内普通文件；默认根目录、子目录、递归、空匹配与重复搜索在 auto 中均无需 reviewer 或人工确认。用户 glob 只过滤项目树并用于安全剪枝，不控制外部遍历根。排除隐藏/敏感路径、配置插件入口、symlink、多硬链接文件、node_modules 和 dist；`plugins/`、AGENTS/CLAUDE 说明与 agent.config.json 作为普通文件参与搜索。指向项目内的绝对 pattern（如 `/repo/src/**/*.ts`）在分析与执行中统一转换为项目相对 pattern；含 `..`、指向项目外，或相对部分以 `!`/`#` 开头（minimatch 会解释为取反/注释）的绝对 pattern 不转换，保持字面语义并按项目外要求确认；不使用反斜杠转义，因为 Windows 上反斜杠是路径分隔符。遇到 EACCES/EPERM 的目录或 ignore 文件在分析与执行中一致跳过，不让整次搜索变成 analysis_error。显式敏感、项目外路径及链接逃逸仍要求人工确认。搜索工具始终遵守此范围；需要读取被排除的具体文件时使用 `read_file` 并按策略确认。
 - 两种搜索工具统一遵守项目与嵌套 `.gitignore`（使用 `ignore` 包处理 negation）；被排除的父目录不会被子目录规则恢复。显式 pattern/glob 不覆盖 ignore；不读取项目外的全局 ignore 或链接形式的 ignore 配置。`glob('*.ts')` 只匹配当前层，`grep` 的 `glob: '*.ts'` 可匹配各层文件名。
 - `grep` 保留宿主提供的 ripgrep 及其正则语义，只向它传入已核验的文件列表，禁用 rg 配置、预处理器与链接跟随，清除相关动态加载环境，使用 `--` 分隔文件参数并分批运行；无 rg 时使用同一候选列表的 JS 正则扫描。空候选不退回目录搜索。宿主安装的 rg 仍是受信任依赖，不能据此宣称任意替换二进制也安全。
-- 搜索的 deny/ask 检查原请求与全部候选路径。一个文件的精确 allow 不能授权通配搜索的其他文件；grep 的 regex 精确匹配也不是文件范围授权。ask 模式的递归搜索仍询问。
+- 搜索的 deny/ask 检查原请求与全部候选路径。一个文件的精确 allow 不能授权通配搜索的其他文件；grep 的 regex 精确匹配也不是文件范围授权。ask 模式的已验证项目内递归搜索直接放行；敏感、项目外与明确 ask 仍询问。
 - 每次最终重验重新枚举、比较文件集和元数据；执行时再核验并绑定已批准目标。若最终重验后新增候选，返回 `approval_stale`，需要重新搜索，不能把新文件悄悄并入已批准操作。
 - Bash 使用成熟 `tree-sitter-bash` 语法树，区分语法解析与具体语义授权。支持字面量命令、单/双引号、转义空格、混合引号、`&&` / `||` / `;` 与只读管道；整条表达式所有命令和选项都要验证。可判定的命令包括 `ls`、`pwd`、`echo`、受限格式 `printf`、`cat`、`head`、`tail`、`wc`、`grep`、`rg`、只列举元数据的 `find`、受控本地仓库 `git status` / `git diff`。工具名称本身不能覆盖危险参数。
 - 读取内容的目标检查真实路径、敏感/外部作用域、普通文件与硬链接；路径中的符号链接再接 `..` 按内核实际路径语义处理。列表元数据不等同读取秘密内容，因此 `ls -la` 或非 verbose `git status` 可列出 `.env` 文件名，`cat .env` / `git diff -- .env` 仍必须询问。shell 的 deny/ask 同时匹配原命令与解析后的真实目标。
@@ -75,7 +75,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - 重定向、命令/进程替换、变量/算术/通配展开、后台执行、函数、脚本、未知选项与任意子进程不自动放行。反斜杠续行目前明确不确定，避免语法树与 Bash 去续行后的 argv 差异。解析结果给出命令、effects 与 unresolved 原因；不声称能静态推断任意程序目的。
 - 递归 grep/rg 保留原工具与过滤语义，不悄悄删掉敏感候选；如果保守候选范围包含敏感/未知文件则询问。Git worktree/gitfile、submodule、partial clone、额外 filter/include 配置等不在确定性支持范围。普通 status 不遍历被忽略的 node_modules 或禁用的 hooks；diff 额外验证对象/引用存储，超过 20,000 项扫描预算明确回退审批。已安装系统工具是受信任依赖，不引入恶意宿主二进制的无限威胁模型。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
 
-原生 Windows 上，内置 `read_file` / `glob` / `grep` 与其他平台走同一套通用检查（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件、受控搜索枚举与候选绑定）。通过这些检查的项目内完整读取，在 auto 与 yolo 中直接放行（`safe_read`），不交给 reviewer，也不询问人工。歧义路径仍不能走这条放行：含 UNC/`\\?\` 前缀、备用数据流冒号、尾随点/空格、`~数字` 短名或保留设备名的路径，以及敏感、项目外、用户 deny/ask 规则，继续人工确认。ask 模式默认询问，精确 allow 可以放行。NTFS ADS、设备名、8.3 短名和 junction 的完整语义仍未实机验收，所以未通过通用检查或带歧义形态的路径不会确定性放行。歧义路径与未知工具里属于不可降级约束的部分继续人工确认（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过；这类审批面板不提供“允许并记住此规则”（记住的规则不会生效），只提供“允许一次”与“拒绝”。不能确定只是在读文件、列目录或搜索内容的 PowerShell 不再在策略里直接改成人工：分析记为 `native_windows_shell_unverified`，auto 交给 reviewer（`review_uncertain`），ask 模式默认询问，yolo 对不完整副作用仍人工确认。审批模型拒绝、失败或不可用时才回到人工；这类面板同样不提供不会生效的“允许并记住此规则”。整条命令只由 Get-Content、Get-ChildItem、Select-String、Get-Item 及其默认别名（可接 Select-Object 等格式化管道）组成时，直接拒绝且不执行（`use_dedicated_tool`），理由要求改用 read_file、glob、grep，不弹人工确认，也不交给 reviewer。含子表达式、调用运算符、重定向、脚本块或其他命令时走上面的 reviewer 兜底，危险命令仍人工确认。
+原生 Windows 上，内置 `read_file` / `glob` / `grep` 与其他平台走同一套通用检查（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件、受控搜索枚举与候选绑定）。通过这些检查的项目内完整读取，在 ask、auto 与 yolo 中直接放行（`safe_read`），不交给 reviewer，也不询问人工。歧义路径仍不能走这条放行：含 UNC/`\\?\` 前缀、备用数据流冒号、尾随点/空格、`~数字` 短名或保留设备名的路径，以及敏感、项目外、用户 deny/ask 规则，继续人工确认。写入仍可凭精确目标 allow 放行；已验证只读不再因 ask 模式询问。NTFS ADS、设备名、8.3 短名和 junction 的完整语义仍未实机验收，所以未通过通用检查或带歧义形态的路径不会确定性放行。歧义路径与未知工具里属于不可降级约束的部分继续人工确认（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过；这类审批面板不提供“允许并记住此规则”（记住的规则不会生效），只提供“允许一次”与“拒绝”。不能确定只是在读文件、列目录或搜索内容的 PowerShell 不再在策略里直接改成人工：分析记为 `native_windows_shell_unverified`，等于引号的精确命令规则可直接放行（`exact_call_allow`），没有精确规则时 auto 交给 reviewer（`review_uncertain`），ask 模式询问，yolo 对不完整副作用仍人工确认。审批模型拒绝、失败或不可用时才回到人工；这类面板可以记住精确命令规则。整条命令只由 Get-Content、Get-ChildItem、Select-String、Get-Item 及其默认别名（可接 Select-Object 等格式化管道）组成时，直接拒绝且不执行（`use_dedicated_tool`），理由要求改用 read_file、glob、grep，不弹人工确认，也不交给 reviewer。含子表达式、调用运算符、重定向、脚本块或其他命令时走上面的 reviewer 兜底，危险命令仍人工确认。
 
 写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用，因此“本次会话始终允许”在 Windows 上只询问一次；未命中时 ask 模式默认询问（`ask_mode`），auto/yolo 委托 reviewer（`platform_write_review`）。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先；Windows 文件路径限制按大小写不敏感匹配，以保护尚未创建的大小写变体目标，allow 不因此扩大，Shell 命令与 grep 正则仍保持字面语义。原始路径普通、但规范化目标或项目根含 Windows 歧义形式时，同样必须人工确认，不能退回通用自动放行。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
 
@@ -96,10 +96,10 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - `tests/deterministic-policy.test.ts`：优先级、路径、链接、凭据、Windows、Shell、MCP、缓存与环境变化
 - `tests/auto-readonly-scope.test.ts`：auto 只读放行矩阵（缺失/目录读取、说明与插件目录读写区分、多硬链接含外部密钥硬链接进 node_modules、绝对 glob 及开头 `!`、无权限目录）与零审批端到端
 - `tests/windows-remembered-write-rules.test.ts`：注入 win32 平台，覆盖精确/会话记住规则直接放行写入、通配规则与 writeRoots 不直接放行、未命中→模型审批、ask 模式、敏感/写保护/项目外/硬链接/歧义路径与 bash→人工、deny 优先、Linux 行为不变、真实严格审查合约可返回 allow，以及 ToolExecutor 端到端（记住规则只询问一次、执行前重验绑定）
-- `tests/windows-readonly-review.test.ts`：注入 win32 平台，覆盖项目内只读直接放行、写入/Shell/ask 模式/敏感/项目外/歧义路径→人工，以及只读不调用 reviewer 的端到端
+- `tests/windows-readonly-review.test.ts`：注入 win32 平台，覆盖项目内只读（含 ask 模式）直接放行、写入/无精确规则的 Shell/敏感/项目外/歧义路径→人工，以及只读不调用 reviewer 的端到端
 - `tests/windows-policy-path-guards.test.ts`：Windows 路径 deny/ask 大小写限制、真实路径歧义、目标替换重验，以及非 Windows 和命令/正则字面语义不变
 - `tests/windows-default-runtime.test.ts`：默认 runtime、真实 reviewer + FakeProvider 的写入执行、会话规则与显式持久化规则重启回归；仅注入平台，不代表 Windows 实机验收
-- `tests/windows-permission-ui.test.ts`：Windows 项目内只读零 reviewer/零人工；ask 只读保留记住选项，普通写入回退保留精确规则入口
+- `tests/windows-permission-ui.test.ts`：Windows 项目内只读（含 ask 模式）零 reviewer/零人工；记住选项只对 ask_mode、review_uncertain、platform_write_review 白名单显示，普通写入回退保留精确规则入口
 - `tests/policy-runtime.test.ts`：真实 runtime 中 reviewer 次数和拒绝边界
 - `tests/search-runtime.test.ts` / `tests/search-tools.test.ts`：真实 rg/fallback、全部常用只读工具、零 judge/零人工、ignore、敏感/外部/规则与重验竞态
 - `tests/shell-runtime.test.ts` / `tests/shell-contract-binding.test.ts`：真实 Bash 输出、审批次数、组合/参数/路径与执行绑定

@@ -182,31 +182,43 @@ describe.each(['auto', 'yolo'] as const)('Windows %s 项目内只读直接放行
 });
 
 describe('人工模式和非 Windows 不被 reviewer 原因码误判', () => {
-  it.each(readCases)('Windows ask %s 与其他平台一样提供记住选项', async (name, input) => {
+  it.each(readCases)('Windows ask %s 与其他平台一样直接放行', async (name, input) => {
     const h = setup('ask', jsonResponse('allow'));
-    await h.run(name, input);
-    expect(h.requests[0]).toMatchObject({
-      reasonCode: 'ask_mode',
-      policyReasonCode: 'ask_mode',
-    });
-    expect(h.requests[0]?.analysisReasonCode).not.toBe('native_windows_read_unverified');
-    expect(h.rememberChoices).toEqual([true]);
+    expect((await h.run(name, input)).isError).toBeFalsy();
+    expect(h.requests).toEqual([]);
     expect(h.provider!.requests).toHaveLength(0);
   });
 
-  it('Linux ask 的普通只读仍提供记住选项', async () => {
+  it('Linux ask 的普通只读直接放行', async () => {
     const h = setup('ask', undefined, 'linux');
-    await h.run('read_file', { path: 'src/read.ts' });
-    expect(h.requests[0].reasonCode).toBe('ask_mode');
-    expect(h.rememberChoices).toEqual([true]);
+    expect((await h.run('read_file', { path: 'src/read.ts' })).isError).toBeFalsy();
+    expect(h.requests).toEqual([]);
   });
 
   it.each(['model_ask', 'reviewer_unavailable', 'invalid_response', 'timeout'])(
-    '单凭通用 reviewer 原因码 %s 不移除其他策略的记住选项',
+    '单凭通用 reviewer 原因码 %s 不显示记住',
     (reasonCode) => {
-      expect(canRememberPermission({ reasonCode })).toBe(true);
+      expect(canRememberPermission({ reasonCode, toolName: 'bash' })).toBe(false);
     },
   );
+
+  it('记住白名单只覆盖可生效的询问原因', () => {
+    expect(
+      canRememberPermission({
+        reasonCode: 'ask_mode',
+        analysisReasonCode: 'native_windows_shell_unverified',
+        toolName: 'bash',
+      }),
+    ).toBe(true);
+    expect(canRememberPermission({ reasonCode: 'explicit_ask', toolName: 'bash' })).toBe(false);
+    expect(canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' })).toBe(
+      false,
+    );
+    expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'grep' })).toBe(false);
+    expect(
+      canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash', agentId: 'child' }),
+    ).toBe(false);
+  });
 
   it('reviewer 自定义原因码不能冒充原策略的平台限制，写入能力以原策略为准', async () => {
     const script = textResponse(

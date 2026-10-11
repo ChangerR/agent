@@ -120,7 +120,7 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
   ];
   it.each(
     reviewCases.flatMap(([name, input]) =>
-      (['auto', 'yolo'] as const).map((mode) => [mode, name, input] as const),
+      (['ask', 'auto', 'yolo'] as const).map((mode) => [mode, name, input] as const),
     ),
   )('%s %s %j → allow（safe_read）', async (mode, name, input) => {
     const result = await decide(mode, name, fill(input));
@@ -142,10 +142,6 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
     ['yolo', 'bash', { command: 'git status' }, 'unknown_ask'],
     ['ask', 'bash', { command: 'git status --short' }, 'ask_mode'],
     ['auto', 'bash', { command: 'git push origin HEAD --force' }, 'danger_constraint'],
-    // ask 模式默认询问
-    ['ask', 'read_file', { path: 'src/a.ts' }, 'ask_mode'],
-    ['ask', 'glob', { pattern: '**/*.ts' }, 'ask_mode'],
-    ['ask', 'grep', { pattern: 'needle' }, 'ask_mode'],
     // 能静态判定的敏感 / 项目外目标
     ['auto', 'read_file', { path: '.env' }, 'sensitive_target'],
     ['auto', 'read_file', { path: 'mcp.json' }, 'sensitive_target'],
@@ -201,6 +197,19 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
     expect(result).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
     expect(result.analysis.reasonCode).toBe('native_windows_shell_unverified');
   });
+
+  it.each(['ask', 'auto'] as const)(
+    'PowerShell 精确命令规则在 %s 放行',
+    async (mode) => {
+      expect(
+        await decide(mode, 'bash', { command: 'npm test' }, 'win32', {
+          allow: ['bash(="npm test")'],
+          ask: [],
+          deny: [],
+        }),
+      ).toMatchObject({ kind: 'allow', reasonCode: 'exact_call_allow' });
+    },
+  );
 
   it('用户 deny 规则优先于读文件类 PowerShell 的专用工具拒绝', async () => {
     expect(

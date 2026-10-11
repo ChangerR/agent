@@ -171,13 +171,13 @@ describe('TUI 权限自动保存', () => {
     const h = setup({ platform: 'linux' });
     h.settings.openModes();
     expect(h.picker.items.find((item) => item.value === 'ask')!.description).toContain(
-      '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
+      '项目内已验证的只读操作直接放行；写入、执行与未知操作询问，精确 allow 可放行；明确 ask 优先。',
     );
     expect(h.picker.items.find((item) => item.value === 'auto')!.description).toContain(
-      '只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（[]）。经 AST 与执行环境验证的只读 Bash 组合直接放行；其余未知操作才交审批模型。',
+      '只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（[]）。经 AST 与执行环境验证的只读 Bash 组合直接放行；精确命令规则可免审批员。其余未知操作才交审批模型。',
     );
     expect(h.picker.items.find((item) => item.value === 'yolo')!.description).toContain(
-      '仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
+      '仅自动执行已完整验证的项目内普通文件读写；精确命令规则可免审批员。敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
     );
     expect(h.picker.items.map((item) => item.description).join('\n')).not.toContain('Windows');
   });

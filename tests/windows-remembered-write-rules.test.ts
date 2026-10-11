@@ -263,17 +263,26 @@ describe('原生 Windows 写入：仍人工的边界（精确规则也不能越�
     ).toMatchObject({ kind: 'ask', reasonCode });
   });
 
-  it('未验收的 Windows Shell：auto 交给 reviewer，ask/yolo 仍人工，精确规则不直接放行', async () => {
-    const allowed = rules({ allow: ['bash(echo one)', 'bash(="echo one")'] });
-    expect(await decide('auto', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+  it('未验收的 Windows Shell：等于引号精确规则放行，字面量模式仍不放行', async () => {
+    const exact = rules({ allow: ['bash(="echo one")'] });
+    expect(await decide('auto', 'bash', { command: 'echo one' }, exact)).toMatchObject({
+      kind: 'allow',
+      reasonCode: 'exact_call_allow',
+    });
+    expect(await decide('ask', 'bash', { command: 'echo one' }, exact)).toMatchObject({
+      kind: 'allow',
+      reasonCode: 'exact_call_allow',
+    });
+    const literal = rules({ allow: ['bash(echo one)'] });
+    expect(await decide('auto', 'bash', { command: 'echo one' }, literal)).toMatchObject({
       kind: 'review',
       reasonCode: 'review_uncertain',
     });
-    expect(await decide('yolo', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+    expect(await decide('yolo', 'bash', { command: 'echo one' }, literal)).toMatchObject({
       kind: 'ask',
       reasonCode: 'unknown_ask',
     });
-    expect(await decide('ask', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+    expect(await decide('ask', 'bash', { command: 'echo one' }, literal)).toMatchObject({
       kind: 'ask',
       reasonCode: 'ask_mode',
     });

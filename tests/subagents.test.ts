@@ -736,7 +736,9 @@ describe('子权限、工具协调与会话', () => {
     const g = await fixture({
       config: { permissionMode: 'ask' },
       script: [
-        toolUseResponse([{ id: 'read-ask', name: 'read_file', input: { path: 'note.txt' } }]),
+        toolUseResponse([
+          { id: 'write-ask', name: 'write_file', input: { path: 'note.txt', content: 'x' } },
+        ]),
         textResponse('done'),
       ],
     });
@@ -829,9 +831,9 @@ describe('子权限、工具协调与会话', () => {
           req.messages.at(-1)?.role === 'user' && typeof req.messages.at(-1)?.content === 'string'
             ? toolUseResponse([
                 {
-                  id: `read-${req.messages.length}`,
-                  name: 'read_file',
-                  input: { path: 'note.txt' },
+                  id: `write-${req.messages.length}`,
+                  name: 'write_file',
+                  input: { path: 'note.txt', content: 'updated' },
                 },
               ])
             : textResponse('done'),
