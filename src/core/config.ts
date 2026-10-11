@@ -61,9 +61,15 @@ export const AgentConfigSchema = z.object({
     .default({ enabled: true, ttl: '5m', escalateAfterMs: 0 }),
   mcpConfig: z.string().default('./mcp.json'),
   /** 外部插件入口；默认导出 SDK Plugin，enabled=false 在重启后生效。 */
-  pluginEntries: z.array(z.union([z.string(), z.object({ entry: z.string(), enabled: z.boolean().default(true) })])).default([]),
+  pluginEntries: z
+    .array(
+      z.union([z.string(), z.object({ entry: z.string(), enabled: z.boolean().default(true) })]),
+    )
+    .default([]),
   /** 显式选定单例能力；false 禁用可选能力，不隐式选下一个实现。 */
-  capabilities: z.record(z.enum(SINGLETON_CAPABILITY_KINDS), z.union([z.string(), z.literal(false)])).default({}),
+  capabilities: z
+    .record(z.enum(SINGLETON_CAPABILITY_KINDS), z.union([z.string(), z.literal(false)]))
+    .default({}),
   pluginConfig: z.record(z.record(z.unknown())).default({}),
   disabledPlugins: z.array(z.string()).default([]),
 });
@@ -92,13 +98,18 @@ export interface LoadedConfig {
   paths: AgentPaths;
   sources: ConfigSources;
   /** 文件原始层用于插件配置校验和逐字段来源；绝不改写输入文件。 */
-  layers: { global: Record<string, unknown>; project: Record<string, unknown>; session: Partial<AgentConfig> };
+  layers: {
+    global: Record<string, unknown>;
+    project: Record<string, unknown>;
+    session: Partial<AgentConfig>;
+  };
 }
 
 function readJson(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   const value: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`配置必须是 JSON 对象: ${path}`);
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error(`配置必须是 JSON 对象: ${path}`);
   return value as Record<string, unknown>;
 }
 
@@ -107,7 +118,10 @@ export function loadConfig(cwd: string): AgentConfig {
   return loadConfigWithSources(cwd).config;
 }
 
-export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfig> = {}): LoadedConfig {
+export function loadConfigWithSources(
+  cwd: string,
+  overrides: Partial<AgentConfig> = {},
+): LoadedConfig {
   const paths = resolveAgentPaths(cwd);
   const globalRaw = readJson(paths.globalConfigPath);
   const projectRaw = readJson(paths.projectConfigPath);
@@ -117,13 +131,25 @@ export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfi
   const merged = {
     ...globalCfg,
     ...projectCfg,
-    permissions: Object.fromEntries(['allow', 'ask', 'deny'].map(kind => [kind, [
-      ...(((globalCfg.permissions as Record<string, string[]>)?.[kind]) ?? []),
-      ...(((projectCfg.permissions as Record<string, string[]>)?.[kind]) ?? []),
-    ]])),
+    permissions: Object.fromEntries(
+      ['allow', 'ask', 'deny'].map((kind) => [
+        kind,
+        [
+          ...((globalCfg.permissions as Record<string, string[]>)?.[kind] ?? []),
+          ...((projectCfg.permissions as Record<string, string[]>)?.[kind] ?? []),
+        ],
+      ]),
+    ),
     ...sessionCfg,
-    capabilities: { ...((globalCfg.capabilities as object) ?? {}), ...((projectCfg.capabilities as object) ?? {}), ...((sessionCfg.capabilities as object) ?? {}) },
-    pluginConfig: mergePluginConfig(mergePluginConfig(globalCfg.pluginConfig, projectCfg.pluginConfig), sessionCfg.pluginConfig),
+    capabilities: {
+      ...((globalCfg.capabilities as object) ?? {}),
+      ...((projectCfg.capabilities as object) ?? {}),
+      ...((sessionCfg.capabilities as object) ?? {}),
+    },
+    pluginConfig: mergePluginConfig(
+      mergePluginConfig(globalCfg.pluginConfig, projectCfg.pluginConfig),
+      sessionCfg.pluginConfig,
+    ),
   };
   const config = AgentConfigSchema.parse(merged);
   const scopeSources = {
@@ -132,25 +158,57 @@ export function loadConfigWithSources(cwd: string, overrides: Partial<AgentConfi
     project: { scope: 'project', path: paths.projectConfigPath, directory: paths.projectRoot },
     session: { scope: 'session', directory: paths.projectRoot },
   } as const;
-  const sources = Object.fromEntries(Object.keys(AgentConfigSchema.shape).map(key => {
-    const scopes = (['global', 'project', 'session'] as const).filter(scope => Object.hasOwn({ global: globalCfg, project: projectCfg, session: sessionCfg }[scope], key));
-    const source: ConfigValueSource = scopeSources[scopes.at(-1) ?? 'default'];
-    const contributors = ['capabilities', 'pluginConfig'].includes(key) || key === 'permissions' && !Object.hasOwn(sessionCfg, key)
-      ? scopes.map(scope => scopeSources[scope]) : undefined;
-    return [key, Object.freeze({ ...source, ...(contributors?.length ? { contributors: Object.freeze(contributors) } : {}) })];
-  })) as Record<keyof AgentConfig, ConfigValueSource>;
-  const fromSource = (value: string, key: keyof AgentConfig) => isAbsolute(value) ? value : resolve(sources[key].directory, value);
+  const sources = Object.fromEntries(
+    Object.keys(AgentConfigSchema.shape).map((key) => {
+      const scopes = (['global', 'project', 'session'] as const).filter((scope) =>
+        Object.hasOwn({ global: globalCfg, project: projectCfg, session: sessionCfg }[scope], key),
+      );
+      const source: ConfigValueSource = scopeSources[scopes.at(-1) ?? 'default'];
+      const contributors =
+        ['capabilities', 'pluginConfig'].includes(key) ||
+        (key === 'permissions' && !Object.hasOwn(sessionCfg, key))
+          ? scopes.map((scope) => scopeSources[scope])
+          : undefined;
+      return [
+        key,
+        Object.freeze({
+          ...source,
+          ...(contributors?.length ? { contributors: Object.freeze(contributors) } : {}),
+        }),
+      ];
+    }),
+  ) as Record<keyof AgentConfig, ConfigValueSource>;
+  const fromSource = (value: string, key: keyof AgentConfig) =>
+    isAbsolute(value) ? value : resolve(sources[key].directory, value);
   config.modelsFile = fromSource(config.modelsFile, 'modelsFile');
   config.mcpConfig = fromSource(config.mcpConfig, 'mcpConfig');
-  config.pluginEntries = config.pluginEntries.map(entry => typeof entry === 'string'
-    ? fromSource(entry, 'pluginEntries') : { ...entry, entry: fromSource(entry.entry, 'pluginEntries') });
-  return { config, paths, sources: Object.freeze(sources), layers: { global: globalRaw, project: projectRaw, session: overrides } };
+  config.pluginEntries = config.pluginEntries.map((entry) =>
+    typeof entry === 'string'
+      ? fromSource(entry, 'pluginEntries')
+      : { ...entry, entry: fromSource(entry.entry, 'pluginEntries') },
+  );
+  return {
+    config,
+    paths,
+    sources: Object.freeze(sources),
+    layers: { global: globalRaw, project: projectRaw, session: overrides },
+  };
 }
 
 /** 命名空间逐字段合并；数组默认替换。领域特殊合并由插件 schema 显式处理。 */
 function mergePluginConfig(global: unknown, project: unknown): Record<string, unknown> {
-  const g = global && typeof global === 'object' && !Array.isArray(global) ? global as Record<string, unknown> : {};
-  const p = project && typeof project === 'object' && !Array.isArray(project) ? project as Record<string, unknown> : {};
-  return Object.fromEntries([...new Set([...Object.keys(g), ...Object.keys(p)])].map(id => [id,
-    { ...(g[id] as object ?? {}), ...(p[id] as object ?? {}) }]));
+  const g =
+    global && typeof global === 'object' && !Array.isArray(global)
+      ? (global as Record<string, unknown>)
+      : {};
+  const p =
+    project && typeof project === 'object' && !Array.isArray(project)
+      ? (project as Record<string, unknown>)
+      : {};
+  return Object.fromEntries(
+    [...new Set([...Object.keys(g), ...Object.keys(p)])].map((id) => [
+      id,
+      { ...((g[id] as object) ?? {}), ...((p[id] as object) ?? {}) },
+    ]),
+  );
 }

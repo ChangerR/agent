@@ -10,9 +10,7 @@
 import type { ChatRequest, Provider } from '../core/provider.js';
 import type { StreamEvent } from '../core/protocol/types.js';
 
-export type ScriptedResponse =
-  | StreamEvent[]
-  | ((req: ChatRequest) => StreamEvent[]);
+export type ScriptedResponse = StreamEvent[] | ((req: ChatRequest) => StreamEvent[]);
 
 /** 便捷构造器：一轮纯文本回复 */
 export function textResponse(text: string): StreamEvent[] {
@@ -25,7 +23,10 @@ export function textResponse(text: string): StreamEvent[] {
 }
 
 /** 便捷构造器：一轮工具调用（可多个） */
-export function toolUseResponse(calls: Array<{ id: string; name: string; input: unknown }>, text = ''): StreamEvent[] {
+export function toolUseResponse(
+  calls: Array<{ id: string; name: string; input: unknown }>,
+  text = '',
+): StreamEvent[] {
   const events: StreamEvent[] = [{ type: 'message_start' }];
   if (text) events.push({ type: 'text_delta', text });
   for (const c of calls) {

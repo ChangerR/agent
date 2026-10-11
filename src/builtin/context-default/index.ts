@@ -4,6 +4,8 @@ export { defaultContextSource, buildDefaultContext, buildSystemPrompt } from './
 export function createContextDefaultPlugin() {
   return definePlugin({
     manifest: { id: 'agentlab.context-default', version: '1.0.0', apiVersion: 1 },
-    setup(ctx) { ctx.provide.contextSource('default', defaultContextSource); },
+    setup(ctx) {
+      ctx.provide.contextSource('default', defaultContextSource);
+    },
   });
 }

@@ -25,7 +25,7 @@
 模型必须只返回一个完整 JSON 对象，恰好有 `decision`、`reasonCode`、`reason` 三个字符串字段：
 
 ```json
-{"decision":"deny","reasonCode":"user_prohibited","reason":"用户明确禁止该操作"}
+{ "decision": "deny", "reasonCode": "user_prohibited", "reason": "用户明确禁止该操作" }
 ```
 
 - `decision` 只允许 `allow`、`ask`、`deny`、`unknown`。

@@ -12,13 +12,23 @@ export function initializeCliHome(cwd: string): void {
     const temporary = join(paths.agentHome, `.config-${randomUUID()}.tmp`);
     // 先完整写临时文件，再用不可覆盖的原子链接发布；并发启动不会读到半份 JSON。
     try {
-      writeFileSync(temporary, JSON.stringify(AgentConfigSchema.parse({}), null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-      try { linkSync(temporary, paths.globalConfigPath); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      writeFileSync(temporary, JSON.stringify(AgentConfigSchema.parse({}), null, 2) + '\n', {
+        flag: 'wx',
+        mode: 0o600,
+      });
+      try {
+        linkSync(temporary, paths.globalConfigPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
     } finally {
-      try { unlinkSync(temporary); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      try {
+        unlinkSync(temporary);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
     }
   }
-  for (const path of [paths.sessionsDir, paths.logsDir]) mkdirSync(path, { recursive: true, mode: 0o700 });
+  for (const path of [paths.sessionsDir, paths.logsDir])
+    mkdirSync(path, { recursive: true, mode: 0o700 });
 }

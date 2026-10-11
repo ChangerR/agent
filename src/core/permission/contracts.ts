@@ -3,9 +3,30 @@ import type { Message, ToolResult } from '../protocol/types.js';
 import type { Tool } from '../registry.js';
 
 export type DecisionKind = 'allow' | 'ask' | 'deny';
-export type JudgeReasonCode = 'model_allow' | 'model_ask' | 'model_deny' | 'invalid_response' | 'incomplete_response' | 'provider_error' | 'cancelled' | 'timeout' | 'input_budget' | 'user_request_budget' | 'request_budget';
-export interface JudgeMetadata { model: string; source: 'current' | 'explicit'; reasonCode: JudgeReasonCode }
-export interface JudgeStatus { provider?: string; providerSource?: 'current' | 'explicit'; loaded: boolean; model?: string; source?: 'current' | 'explicit' }
+export type JudgeReasonCode =
+  | 'model_allow'
+  | 'model_ask'
+  | 'model_deny'
+  | 'invalid_response'
+  | 'incomplete_response'
+  | 'provider_error'
+  | 'cancelled'
+  | 'timeout'
+  | 'input_budget'
+  | 'user_request_budget'
+  | 'request_budget';
+export interface JudgeMetadata {
+  model: string;
+  source: 'current' | 'explicit';
+  reasonCode: JudgeReasonCode;
+}
+export interface JudgeStatus {
+  provider?: string;
+  providerSource?: 'current' | 'explicit';
+  loaded: boolean;
+  model?: string;
+  source?: 'current' | 'explicit';
+}
 export interface Decision {
   kind: DecisionKind;
   reason: string;
@@ -14,9 +35,23 @@ export interface Decision {
   judge?: JudgeMetadata;
   source: 'session' | 'config' | 'builtin' | 'mode' | 'danger' | 'judge' | 'user';
 }
-export interface ParsedRule { raw: string; tool: string; pattern?: string; exact?: string }
-export interface SessionRules { allow: string[]; ask: string[]; deny: string[] }
-export interface AuditEntry { toolName: string; summary: string; decision: Decision; at: number }
+export interface ParsedRule {
+  raw: string;
+  tool: string;
+  pattern?: string;
+  exact?: string;
+}
+export interface SessionRules {
+  allow: string[];
+  ask: string[];
+  deny: string[];
+}
+export interface AuditEntry {
+  toolName: string;
+  summary: string;
+  decision: Decision;
+  at: number;
+}
 export interface ReviewRecord {
   toolName: string;
   input?: Record<string, unknown>;
@@ -38,7 +73,19 @@ export interface ReviewContext {
 }
 export interface ReviewHistoryStore {
   clear(): void;
-  build(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, cwd: string, userRequest: string, messages: readonly Message[]): ReviewContext;
-  record(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, cwd: string, userRequest: string, decision: Decision): ReviewRecord;
+  build(
+    tool: Omit<Tool, 'execute'>,
+    input: Record<string, unknown>,
+    cwd: string,
+    userRequest: string,
+    messages: readonly Message[],
+  ): ReviewContext;
+  record(
+    tool: Omit<Tool, 'execute'>,
+    input: Record<string, unknown>,
+    cwd: string,
+    userRequest: string,
+    decision: Decision,
+  ): ReviewRecord;
   finish(record: ReviewRecord, result: ToolResult, cancelled: boolean): void;
 }

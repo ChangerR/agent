@@ -24,7 +24,11 @@ export class McpClientManager {
   private servers: ConnectedServer[] = [];
   private closing?: Promise<void>;
 
-  async connect(name: string, config: McpServerConfig, options: { cwd?: string } = {}): Promise<Client> {
+  async connect(
+    name: string,
+    config: McpServerConfig,
+    options: { cwd?: string } = {},
+  ): Promise<Client> {
     const client = new Client({ name: 'agentlab', version: '0.1.0' });
 
     if ('command' in config) {
@@ -35,8 +39,12 @@ export class McpClientManager {
         env: { ...process.env, ...config.env } as Record<string, string>,
         stderr: 'pipe',
       });
-      try { await client.connect(transport); }
-      catch (error) { await transport.close(); throw error; }
+      try {
+        await client.connect(transport);
+      } catch (error) {
+        await transport.close();
+        throw error;
+      }
       this.servers.push({
         name,
         client,
@@ -48,8 +56,12 @@ export class McpClientManager {
       const transport = new StreamableHTTPClientTransport(new URL(config.url), {
         requestInit: config.headers ? { headers: config.headers } : undefined,
       });
-      try { await client.connect(transport); }
-      catch (error) { await transport.close(); throw error; }
+      try {
+        await client.connect(transport);
+      } catch (error) {
+        await transport.close();
+        throw error;
+      }
       this.servers.push({
         name,
         client,
@@ -64,26 +76,28 @@ export class McpClientManager {
   /** 把一个 server 的全部工具桥接为本地 Tool */
   async bridgeTools(serverName: string, client: Client): Promise<Tool[]> {
     const { tools } = await client.listTools();
-    return tools.map(
-      (t): Tool => ({
-        name: `mcp__${serverName}__${t.name}`,
-        description: `[MCP:${serverName}] ${t.description ?? t.name}`,
-        inputSchema: (t.inputSchema as Record<string, unknown>) ?? { type: 'object' },
-        // MCP 工具风险未知，保守按 write 处理；可通过 allow 规则精细放行
-        risk: 'write',
-        analyzeInput: (input) => ({
-          patternTarget: canonicalInput(input),
-          summary: `mcp:${serverName}.${t.name}(${JSON.stringify(input).slice(0, 80)})`,
-        }),
-        execute: async (input, ctx) => {
-          ctx.signal.throwIfAborted();
-          const result = await client.callTool({ name: t.name, arguments: input }, undefined, { signal: ctx.signal });
-          const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
-          const text = content.map((c) => (c.type === 'text' ? (c.text ?? '') : JSON.stringify(c))).join('\n');
-          return { content: text || '(no content)', isError: Boolean(result.isError) };
-        },
+    return tools.map((t): Tool => ({
+      name: `mcp__${serverName}__${t.name}`,
+      description: `[MCP:${serverName}] ${t.description ?? t.name}`,
+      inputSchema: (t.inputSchema as Record<string, unknown>) ?? { type: 'object' },
+      // MCP 工具风险未知，保守按 write 处理；可通过 allow 规则精细放行
+      risk: 'write',
+      analyzeInput: (input) => ({
+        patternTarget: canonicalInput(input),
+        summary: `mcp:${serverName}.${t.name}(${JSON.stringify(input).slice(0, 80)})`,
       }),
-    );
+      execute: async (input, ctx) => {
+        ctx.signal.throwIfAborted();
+        const result = await client.callTool({ name: t.name, arguments: input }, undefined, {
+          signal: ctx.signal,
+        });
+        const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
+        const text = content
+          .map((c) => (c.type === 'text' ? (c.text ?? '') : JSON.stringify(c)))
+          .join('\n');
+        return { content: text || '(no content)', isError: Boolean(result.isError) };
+      },
+    }));
   }
 
   async disconnect(client: Client): Promise<void> {
@@ -98,9 +112,13 @@ export class McpClientManager {
     this.closing = (async () => {
       try {
         const results = await Promise.allSettled(servers.map((s) => s.close()));
-        const errors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => r.reason);
+        const errors = results
+          .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+          .map((r) => r.reason);
         if (errors.length) throw new AggregateError(errors, 'MCP cleanup failed');
-      } finally { this.closing = undefined; }
+      } finally {
+        this.closing = undefined;
+      }
     })();
     return this.closing;
   }
@@ -132,10 +150,15 @@ export function mcpPlugin(configPath: string): Plugin {
         } catch (err) {
           if (connected) throw err;
           if (client) {
-            try { await manager.disconnect(client); }
-            catch (cleanupError) { console.error(`[mcp] server "${name}" 清理失败: ${String(cleanupError)}`); }
+            try {
+              await manager.disconnect(client);
+            } catch (cleanupError) {
+              console.error(`[mcp] server "${name}" 清理失败: ${String(cleanupError)}`);
+            }
           }
-          console.error(`[mcp] server "${name}" 连接失败: ${err instanceof Error ? err.message : err}`);
+          console.error(
+            `[mcp] server "${name}" 连接失败: ${err instanceof Error ? err.message : err}`,
+          );
         }
       }
     },
@@ -146,7 +169,11 @@ export function mcpPlugin(configPath: string): Plugin {
 function canonicalInput(input: Record<string, unknown>): string {
   return JSON.stringify(input, (_key, value) => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]));
+      return Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((key) => [key, value[key]]),
+      );
     }
     return value;
   });

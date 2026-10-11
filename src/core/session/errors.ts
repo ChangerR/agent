@@ -19,7 +19,11 @@ export class SessionError extends Error {
   readonly code: SessionErrorCode;
   readonly path?: string;
 
-  constructor(code: SessionErrorCode, message: string, options?: { cause?: unknown; path?: string }) {
+  constructor(
+    code: SessionErrorCode,
+    message: string,
+    options?: { cause?: unknown; path?: string },
+  ) {
     super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = 'SessionError';
     this.code = code;
@@ -33,6 +37,7 @@ export function invalidIdMessage(id: string): string {
 
 /** Node 文件系统错误上的 code；没有时给一个稳定占位，方便写进 io 文案。 */
 export function errnoCode(err: unknown): string {
-  if (err && typeof err === 'object' && 'code' in err && typeof err.code === 'string') return err.code;
+  if (err && typeof err === 'object' && 'code' in err && typeof err.code === 'string')
+    return err.code;
   return 'UNKNOWN';
 }

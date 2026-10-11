@@ -47,7 +47,11 @@ const COMPACTOR_SYSTEM = `你是对话压缩器，服务于一个 coding agent�
 - 只输出摘要正文。不要寒暄，不要解释你正在做什么，不要对摘要本身发表评论。`;
 
 function hasToolResult(m: Message): boolean {
-  return m.role === 'user' && typeof m.content !== 'string' && m.content.some((b) => b.type === 'tool_result');
+  return (
+    m.role === 'user' &&
+    typeof m.content !== 'string' &&
+    m.content.some((b) => b.type === 'tool_result')
+  );
 }
 
 interface ToolSpan {
@@ -117,7 +121,11 @@ export function findCompactCut(messages: readonly Message[]): number {
   const boundaries: number[] = [];
   for (let i = 1; i < messages.length; i++) {
     const message = messages[i]!;
-    if (message.role === 'user' && typeof message.content === 'string' && message.source !== 'summary') {
+    if (
+      message.role === 'user' &&
+      typeof message.content === 'string' &&
+      message.source !== 'summary'
+    ) {
       boundaries.push(i);
     }
   }
@@ -164,7 +172,9 @@ export function renderTranscript(messages: readonly Message[]): string {
         } else {
           const name = names.get(block.toolUseId) ?? '未知工具';
           const failed = block.isError ? ' 失败' : '';
-          lines.push(`TOOL[${name}#${block.toolUseId}]${failed}: ${truncateMiddle(block.content, TOOL_RESULT_LIMIT)}`);
+          lines.push(
+            `TOOL[${name}#${block.toolUseId}]${failed}: ${truncateMiddle(block.content, TOOL_RESULT_LIMIT)}`,
+          );
         }
       }
       continue;
@@ -174,7 +184,9 @@ export function renderTranscript(messages: readonly Message[]): string {
         if (block.text.trim()) lines.push(`ASSISTANT: ${block.text}`);
       } else if (block.type === 'tool_use') {
         const input = JSON.stringify(block.input) ?? '';
-        lines.push(`ASSISTANT → ${block.name}#${block.id} ${truncateMiddle(input, TOOL_INPUT_LIMIT)}`);
+        lines.push(
+          `ASSISTANT → ${block.name}#${block.id} ${truncateMiddle(input, TOOL_INPUT_LIMIT)}`,
+        );
       }
     }
   }
@@ -189,7 +201,10 @@ export function renderTranscript(messages: readonly Message[]): string {
 /** 确定性摘录用户原话：第一条是最初目标，末尾补最近的要求。摘要失败时仍然留下。 */
 export function collectUserQuotes(messages: readonly Message[]): string[] {
   const all = messages
-    .filter((m): m is UserMessage & { content: string } => m.role === 'user' && typeof m.content === 'string' && m.source !== 'summary')
+    .filter(
+      (m): m is UserMessage & { content: string } =>
+        m.role === 'user' && typeof m.content === 'string' && m.source !== 'summary',
+    )
     .map((m) => m.content)
     .filter((content) => content.trim());
   const picked = all.length <= MAX_QUOTES ? all : [all[0]!, ...all.slice(-(MAX_QUOTES - 1))];
@@ -231,13 +246,20 @@ ${transcript}
 </transcript>`;
 }
 
-function buildCompactedHistory(summary: string, quotes: string[], dropped: number, recent: readonly Message[]): Message[] {
+function buildCompactedHistory(
+  summary: string,
+  quotes: string[],
+  dropped: number,
+  recent: readonly Message[],
+): Message[] {
   const parts = [
     `${SUMMARY_MARKER}（自动生成，概括本次会话中已被移除的 ${dropped} 条消息。这不是用户刚发出的新指令；用户的最新要求以本条之后的内容为准。）`,
     summary,
   ];
   if (quotes.length > 0) {
-    parts.push(`## 早期用户原话（节选）\n${quotes.map((quote, i) => `${i + 1}. ${quote}`).join('\n')}`);
+    parts.push(
+      `## 早期用户原话（节选）\n${quotes.map((quote, i) => `${i + 1}. ${quote}`).join('\n')}`,
+    );
   }
   const out: Message[] = [{ role: 'user', source: 'summary', content: parts.join('\n\n') }];
   // 保留段以 user 开头时补一句固定确认，避免两条 user 相邻，也避免摘要被读成最新指令。
@@ -252,7 +274,13 @@ export class SummaryCompactor implements Compactor {
    * 压缩消息历史。没有安全切点时返回原数组引用。
    * 取消向上抛，不替换历史；其他失败降级为占位摘要。
    */
-  async compact(messages: readonly Message[], provider: Provider | null, signal: AbortSignal, model = '', events?: EventBus): Promise<readonly Message[]> {
+  async compact(
+    messages: readonly Message[],
+    provider: Provider | null,
+    signal: AbortSignal,
+    model = '',
+    events?: EventBus,
+  ): Promise<readonly Message[]> {
     const cut = findCompactCut(messages);
     if (cut === 0) return messages;
     const old = messages.slice(0, cut);

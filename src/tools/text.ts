@@ -51,7 +51,10 @@ export function fsCaseSensitive(platform: NodeJS.Platform = process.platform): b
 }
 
 /** rg 在 Windows 上会把路径写成反斜杠。只改路径段，不动匹配正文。 */
-export function normalizeGrepLine(line: string, platform: NodeJS.Platform = process.platform): string {
+export function normalizeGrepLine(
+  line: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   if (platform !== 'win32') return line;
   const matched = /^(.*?):(\d+):(.*)$/.exec(line);
   if (!matched) return line.replace(/\\/g, '/');

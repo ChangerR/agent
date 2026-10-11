@@ -37,18 +37,36 @@ export interface RegisteredHook {
 export class HookRunner {
   private hooks: RegisteredHook[] = [];
   private frozen = false;
-  freeze(): void { this.frozen = true; }
+  freeze(): void {
+    this.frozen = true;
+  }
 
   register(point: HookPoint, handler: HookHandler): void {
-    const batch = this.prepareBatch([{ point, handler }]); batch.commit(); batch.seal();
+    const batch = this.prepareBatch([{ point, handler }]);
+    batch.commit();
+    batch.seal();
   }
   prepareBatch(hooks: readonly RegisteredHook[]): RegistrationBatch {
-    const assertMutable = () => { if (this.frozen) throw new Error('Hook registry is frozen'); };
+    const assertMutable = () => {
+      if (this.frozen) throw new Error('Hook registry is frozen');
+    };
     assertMutable();
     for (const hook of hooks) {
-      if (!['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'TurnEnd'].includes(hook.point) || typeof hook.handler !== 'function') throw new Error('Invalid hook registration');
+      if (
+        !['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'TurnEnd'].includes(hook.point) ||
+        typeof hook.handler !== 'function'
+      )
+        throw new Error('Invalid hook registration');
     }
-    return prepareRegistration(this.hooks, [...this.hooks, ...hooks], () => this.hooks, value => { this.hooks = value; }, assertMutable);
+    return prepareRegistration(
+      this.hooks,
+      [...this.hooks, ...hooks],
+      () => this.hooks,
+      (value) => {
+        this.hooks = value;
+      },
+      assertMutable,
+    );
   }
   /** PreToolUse：依次执行，允许改写 input，任一钩子 veto 即短路 */
   async runPreToolUse(payload: PreToolUsePayload): Promise<PreToolUseResult> {
@@ -58,9 +76,14 @@ export class HookRunner {
       payload.signal?.throwIfAborted();
       const result = (await hook.handler({ ...payload, input })) as PreToolUseResult | void;
       payload.signal?.throwIfAborted();
-      if (result !== undefined && (!result || typeof result !== 'object'
-        || (result.veto !== undefined && typeof result.veto !== 'string')
-        || (result.input !== undefined && (!result.input || typeof result.input !== 'object' || Array.isArray(result.input))))) {
+      if (
+        result !== undefined &&
+        (!result ||
+          typeof result !== 'object' ||
+          (result.veto !== undefined && typeof result.veto !== 'string') ||
+          (result.input !== undefined &&
+            (!result.input || typeof result.input !== 'object' || Array.isArray(result.input))))
+      ) {
         throw new Error('Invalid PreToolUse hook result');
       }
       if (result?.veto) return { veto: result.veto };
@@ -70,7 +93,11 @@ export class HookRunner {
   }
 
   /** 通知型钩子（PostToolUse / UserPromptSubmit / TurnEnd） */
-  async notify(point: Exclude<HookPoint, 'PreToolUse'>, payload: unknown, signal?: AbortSignal): Promise<void> {
+  async notify(
+    point: Exclude<HookPoint, 'PreToolUse'>,
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<void> {
     for (const hook of this.hooks) {
       if (hook.point !== point) continue;
       signal?.throwIfAborted();

@@ -12,7 +12,7 @@ export function createUseSkillTool(loader: SkillLoader): Tool {
   return {
     name: 'use_skill',
     description:
-      'Load the full instructions of a skill into context. Call this BEFORE doing work that matches a skill\'s description.',
+      "Load the full instructions of a skill into context. Call this BEFORE doing work that matches a skill's description.",
     risk: 'read',
     isConcurrencySafe: true,
     inputSchema: {
@@ -28,7 +28,12 @@ export function createUseSkillTool(loader: SkillLoader): Tool {
       const skill = loader.get(String(input.name));
       if (!skill) {
         return {
-          content: `Skill not found: ${input.name}. Available: ${loader.list().map((s) => s.name).join(', ') || '(none)'}`,
+          content: `Skill not found: ${input.name}. Available: ${
+            loader
+              .list()
+              .map((s) => s.name)
+              .join(', ') || '(none)'
+          }`,
           isError: true,
         };
       }
@@ -40,6 +45,8 @@ export function createUseSkillTool(loader: SkillLoader): Tool {
 export function skillPlugin(loader: SkillLoader): Plugin {
   return {
     manifest: { id: 'agentlab.skills', version: '1.0.0', apiVersion: 1 },
-    setup(ctx) { ctx.provide.tool('use_skill', createUseSkillTool(loader)); },
+    setup(ctx) {
+      ctx.provide.tool('use_skill', createUseSkillTool(loader));
+    },
   };
 }

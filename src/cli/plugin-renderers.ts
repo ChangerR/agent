@@ -8,7 +8,13 @@ import type { TuiToolRenderInput, TuiToolRenderer } from './tui-plugins.js';
 export class PluginToolMessage extends ToolMessage {
   private snapshot: TuiToolRenderInput;
   private failed?: TuiToolRenderer;
-  constructor(summary: string, expanded: () => boolean, operation: { name: string; input: unknown }, private renderer: () => TuiToolRenderer | undefined, private report: (message: string) => void) {
+  constructor(
+    summary: string,
+    expanded: () => boolean,
+    operation: { name: string; input: unknown },
+    private renderer: () => TuiToolRenderer | undefined,
+    private report: (message: string) => void,
+  ) {
     super(summary, expanded, operation);
     this.snapshot = observationSnapshot(operation);
   }
@@ -21,11 +27,14 @@ export class PluginToolMessage extends ToolMessage {
     if (renderer && renderer !== this.failed) {
       try {
         const lines = renderer(this.snapshot, width);
-        if (!Array.isArray(lines) || lines.some(line => typeof line !== 'string')) throw new Error('renderer 必须返回文本行数组');
-        return lines.map(line => truncateToWidth(safeTerminalText(line), width));
+        if (!Array.isArray(lines) || lines.some((line) => typeof line !== 'string'))
+          throw new Error('renderer 必须返回文本行数组');
+        return lines.map((line) => truncateToWidth(safeTerminalText(line), width));
       } catch (error) {
         this.failed = renderer;
-        this.report(`工具界面已回落通用视图: ${error instanceof Error ? error.message : String(error)}`);
+        this.report(
+          `工具界面已回落通用视图: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
     return super.render(width);

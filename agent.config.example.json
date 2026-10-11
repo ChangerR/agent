@@ -6,9 +6,7 @@
   "permissions": {
     "allow": [],
     "ask": [],
-    "deny": [
-      "bash(git push *)"
-    ]
+    "deny": ["bash(git push *)"]
   },
   "maxTurns": 50,
   "compactThreshold": 120000,

@@ -11,7 +11,12 @@ process.once('message', async () => {
     await agent.session.save();
     process.send?.({ type: 'result', ok: true });
   } catch (error) {
-    process.send?.({ type: 'result', ok: false, code: (error as { code?: string }).code, message: String(error) });
+    process.send?.({
+      type: 'result',
+      ok: false,
+      code: (error as { code?: string }).code,
+      message: String(error),
+    });
   } finally {
     // 结果已明确报告；夹具仅清理进程，避免重复发送 flush 中的同一错误。
     await agent.dispose().catch(() => undefined);

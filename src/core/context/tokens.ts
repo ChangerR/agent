@@ -10,4 +10,3 @@ export function estimateTokens(messages: readonly Message[]): number {
   for (const m of messages) chars += messageChars(m);
   return Math.ceil(chars / 3);
 }
-
