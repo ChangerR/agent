@@ -130,21 +130,25 @@ export function assertSafeHistory(messages: readonly Message[]): void {
   if (pending.size) fail(messages.length, `tool_use "${[...pending][0]}" 没有结果`);
 }
 
-/** 第一条非摘要的用户原文；否则退回第一条 user 的首个 text 块。按码点截到 40。 */
+/** 用户原文或 child 的委派任务；跳过摘要、子结果和工具来源。按码点截到 40。 */
 export function makeTitle(messages: readonly Message[]): string {
   let raw: string | undefined;
   for (const message of messages) {
     if (
       message.role === 'user' &&
       typeof message.content === 'string' &&
-      message.source !== 'summary'
+      (message.source === undefined || message.source === 'delegation')
     ) {
       raw = message.content;
       break;
     }
   }
   if (raw === undefined) {
-    const firstUser = messages.find((message) => message.role === 'user');
+    const firstUser = messages.find(
+      (message) =>
+        message.role === 'user' &&
+        (message.source === undefined || message.source === 'delegation'),
+    );
     if (firstUser && Array.isArray(firstUser.content)) {
       const text = firstUser.content.find((block) => block.type === 'text');
       if (text && text.type === 'text') raw = text.text;

@@ -12,6 +12,19 @@ export interface JsonlTelemetryOptions {
 }
 export function redactedEvent(event: Readonly<TelemetryEvent>): Record<string, unknown> {
   switch (event.type) {
+    case 'subagent_event':
+      return {
+        type: event.type,
+        agentId: event.agentId,
+        runId: event.runId,
+        seq: event.seq,
+        kind: event.kind,
+        status: event.status,
+        requestId: event.requestId,
+        purpose: event.purpose,
+        usage: event.usage,
+        detailType: event.detail?.type,
+      };
     case 'model_request':
       return {
         type: event.type,

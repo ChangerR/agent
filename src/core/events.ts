@@ -14,9 +14,14 @@ import type {
 } from './protocol/types.js';
 import type { ChatRequest, ThinkingLevel } from './provider.js';
 import type { Decision } from './permission/contracts.js';
+import type { SubagentProgress } from './agents.js';
+import { bounded } from './permission/async.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
+  agentId?: string;
+  agentName?: string;
+  task?: string;
   /** 一次工具调用审计 ID；requestId 单独标识每次人工询问。 */
   toolRequestId?: string;
   runId?: string;
@@ -44,6 +49,7 @@ export type UserDecision =
 export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
 
 export type AgentEvent =
+  | SubagentProgress
   | {
       type: 'model_request';
       requestId: string;
@@ -128,6 +134,42 @@ type Handler<E> = (event: E) => void;
 export class EventBus {
   private emitter = new EventEmitter();
   private observers = new Set<(event: AgentEvent) => void>();
+  private pending = new Set<Promise<unknown>>();
+  /** 原始模型/辅助能力的实际生命周期；停止等待不能假称底层已结束。 */
+  track<T>(task: Promise<T>): Promise<T> {
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task)).catch(() => undefined);
+    return task;
+  }
+  get hasPendingActivity(): boolean {
+    return this.pending.size > 0;
+  }
+  async whenSettled(): Promise<void> {
+    while (this.pending.size) await Promise.allSettled([...this.pending]);
+  }
+  bounded<T>(
+    handler: (signal: AbortSignal) => T | Promise<T>,
+    signal: AbortSignal,
+    timeoutMs: number,
+    retain?: (signal: AbortSignal) => Promise<() => void>,
+  ): Promise<T> {
+    return bounded(
+      (child) =>
+        this.track(
+          (async () => {
+            const release = await retain?.(child);
+            try {
+              child.throwIfAborted();
+              return await handler(child);
+            } finally {
+              release?.();
+            }
+          })(),
+        ),
+      signal,
+      timeoutMs,
+    );
+  }
 
   constructor() {
     this.emitter.setMaxListeners(100);

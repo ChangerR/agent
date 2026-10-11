@@ -14,6 +14,7 @@ import { ToolRegistry, type Tool } from '../src/core/registry.js';
 import { PermissionController, createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../src/sdk/capabilities.js';
 import { emptyUsage } from '../src/core/protocol/types.js';
+import { ToolScheduler } from '../src/core/tool-scheduler.js';
 
 const folders: string[] = [];
 afterEach(async () => {
@@ -78,6 +79,72 @@ function fixture(options: Partial<ToolExecutorOptions> = {}) {
 }
 
 describe('ToolExecutor 唯一授权门', () => {
+  it.each(['analyzer', 'policy', 'pre', 'revalidate', 'post'] as const)(
+    '取消 %s 仅结束等待，实际能力和重验锁保留到原始 Promise 结算',
+    async (phase) => {
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let start!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        start = resolve;
+      });
+      const pause = async () => {
+        start();
+        await pending;
+      };
+      const scheduler = new ToolScheduler();
+      const analysis = {
+        analyzerId: 'test',
+        analyzerVersion: '1',
+        completeness: 'complete' as const,
+        effects: [{ kind: 'write' as const, target: 'x' }],
+      };
+      const f = fixture({
+        scheduler,
+        analyzer: {
+          async analyze() {
+            if (phase === 'analyzer') await pause();
+            return analysis;
+          },
+          async revalidate() {
+            if (phase === 'revalidate') await pause();
+            return true;
+          },
+        },
+        policy: {
+          async decide() {
+            if (phase === 'policy') await pause();
+            return { kind: 'allow', source: 'config', reason: 'test' };
+          },
+        },
+      });
+      if (phase === 'pre')
+        f.hooks.register('PreToolUse', async () => {
+          await pause();
+          return {};
+        });
+      if (phase === 'post') f.hooks.register('PostToolUse', pause);
+      const run = f.run();
+      await entered;
+      f.controller.abort();
+      await run;
+      expect(f.executor.hasPendingActivity).toBe(true);
+      let lockEntered = false;
+      const later = scheduler.acquire('write', new AbortController().signal).then((lease) => {
+        lockEntered = true;
+        lease.release();
+      });
+      await Promise.resolve();
+      expect(lockEntered).toBe(!['revalidate', 'post'].includes(phase));
+      finish();
+      await f.executor.whenSettled();
+      await later;
+      expect(f.executor.hasPendingActivity).toBe(false);
+      expect(f.execute).toHaveBeenCalledTimes(phase === 'post' ? 1 : 0);
+    },
+  );
   it('参数先校验，改写后重新校验；无效输入不进入审批或执行', async () => {
     const decide = vi.fn(allow.decide);
     const f = fixture({ policy: { ...allow, decide } });

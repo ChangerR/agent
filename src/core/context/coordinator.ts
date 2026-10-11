@@ -43,23 +43,44 @@ export class ContextManager implements ContextCoordinator {
     signal: AbortSignal,
     model = '',
     events?: EventBus,
+    runId?: string,
   ): Promise<Message[]> {
     checkAbort(signal);
     const before = JSON.stringify(messages);
     const snapshot = freeze(structuredClone(messages));
     // 压缩器只能发布本次 compact 的用量/请求，不能订阅主总线审批 resolver。
-    const scopedEvents = events ? new EventBus() : undefined;
+    const scopedEvents = events
+      ? new (class extends EventBus {
+          override track<T>(task: Promise<T>): Promise<T> {
+            events.track(task);
+            return super.track(task);
+          }
+        })()
+      : undefined;
     const detach = scopedEvents?.onAll((event) => {
       if (
         (event.type === 'model_request' || event.type === 'model_usage') &&
         event.purpose === 'compact'
       )
-        events!.emit(structuredClone(event));
+        events!.emit({ ...structuredClone(event), runId });
     });
     let proposal: readonly Message[];
+    let original: Promise<readonly Message[]> | undefined;
     try {
       proposal = await bounded(
-        (child) => this.options.compactor.compact(snapshot, provider, child, model, scopedEvents),
+        (child) => {
+          original = Promise.resolve(
+            this.options.compactor.compact(snapshot, provider, child, model, scopedEvents),
+          );
+          events?.track(original);
+          void original
+            .finally(async () => {
+              await scopedEvents?.whenSettled();
+              detach?.();
+            })
+            .catch(() => undefined);
+          return original;
+        },
         signal,
         this.options.compactTimeoutMs ?? 120_000,
       );
@@ -68,7 +89,7 @@ export class ContextManager implements ContextCoordinator {
         throw new Error('Compaction cancelled', { cause: error });
       throw error;
     } finally {
-      detach?.();
+      if (!original) detach?.();
     }
     checkAbort(signal);
     if (JSON.stringify(messages) !== before) throw new Error('压缩期间历史已变化，候选历史未提交');

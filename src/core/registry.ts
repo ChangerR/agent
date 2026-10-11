@@ -6,6 +6,7 @@
  */
 import { prepareRegistration, type RegistrationBatch } from './registration.js';
 import type { ToolAnalysis } from '../sdk/capabilities.js';
+import type { InvocationOrigin } from './agents.js';
 import type { Provider } from './provider.js';
 import type { ToolDefinition, ToolResult } from './protocol/types.js';
 
@@ -64,6 +65,8 @@ export class ProviderRegistry {
 export type ToolRisk = 'read' | 'write' | 'execute';
 
 export interface ToolContext {
+  /** 执行门绑定的调用来源；模型参数不能覆盖。 */
+  invocation?: InvocationOrigin;
   cwd: string;
   signal: AbortSignal;
   /** 本次决策绑定并完成最终重验的分析；工具只能收窄其已批准目标，不扩展范围。 */

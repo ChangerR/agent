@@ -51,7 +51,7 @@ export interface ToolResultBlock {
 export interface UserMessage {
   role: 'user';
   /** 自动压缩产生的消息来源；未标记的旧消息按用户原文处理。 */
-  source?: 'summary';
+  source?: 'summary' | 'delegation' | 'subagent' | 'tool';
   content: string | Array<TextBlock | ToolResultBlock>;
 }
 

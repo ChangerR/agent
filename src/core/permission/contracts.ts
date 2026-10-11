@@ -66,7 +66,10 @@ export interface ReviewRecord {
 export interface ReviewContext {
   cwd: string;
   userRequest: string;
-  conversation: Array<{ source: 'user' | 'assistant' | 'tool' | 'summary'; text: string }>;
+  conversation: Array<{
+    source: 'user' | 'assistant' | 'tool' | 'summary' | 'delegation' | 'subagent';
+    text: string;
+  }>;
   previousReviews: Array<ReviewRecord & { sameOperation: boolean }>;
   omittedConversation: boolean;
   omittedReviews: number;

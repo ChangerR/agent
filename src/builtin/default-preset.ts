@@ -21,9 +21,12 @@ import {
   type BuiltinCommandServices,
 } from './commands.js';
 import type { Preset, PresetContext } from '../runtime/preset.js';
+import { subagentsPlugin } from './subagents/index.js';
+import { SUBAGENT_PLUGIN, SUBAGENT_TOOLS } from './subagents/identity.js';
 export function defaultPreset(input: PresetContext): Preset {
   const { cwd, config, services } = input;
   return {
+    controlTools: SUBAGENT_TOOLS.map((name) => ({ ownerPlugin: SUBAGENT_PLUGIN, name })),
     selections: {
       policy: 'deterministic',
       reviewer: 'model',
@@ -57,6 +60,7 @@ export function defaultPreset(input: PresetContext): Preset {
       sessionCommandsPlugin(services),
       uiPlugin(),
       runtimeSettingsPlugin(input),
+      subagentsPlugin(services, cwd),
     ],
   };
 }

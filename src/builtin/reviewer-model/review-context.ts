@@ -82,7 +82,9 @@ export class ReviewHistory {
             (message.role === 'user' && message.source === 'summary') ||
             message.content.startsWith(SUMMARY_MARKER)
               ? 'summary'
-              : 'user',
+              : message.role === 'user'
+                ? (message.source ?? 'user')
+                : 'assistant',
           text: message.content,
         });
       } else {
@@ -93,7 +95,9 @@ export class ReviewHistory {
                 message.role === 'user' &&
                 (message.source === 'summary' || block.text.startsWith(SUMMARY_MARKER))
                   ? 'summary'
-                  : message.role,
+                  : message.role === 'user'
+                    ? (message.source ?? 'user')
+                    : 'assistant',
               text: block.text,
             });
           if (block.type === 'tool_result')

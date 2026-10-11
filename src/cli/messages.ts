@@ -300,6 +300,15 @@ export function renderHistory(
       if (typeof message.content === 'string') {
         if (message.source === 'summary') {
           components.push(new CollapsibleText('早期对话摘要', message.content, options.expanded));
+        } else if (message.source) {
+          const labels = {
+            delegation: '委派任务',
+            subagent: '子 agent 来源数据',
+            tool: '工具来源数据',
+          };
+          components.push(
+            new CollapsibleText(labels[message.source], message.content, options.expanded),
+          );
         } else {
           pushUserText(message.content);
         }

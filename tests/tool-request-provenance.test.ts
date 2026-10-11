@@ -144,7 +144,7 @@ describe('工具调用的用户请求来源', () => {
   });
 
   it.each(['public', 'command'] as const)(
-    '并发 %s 调用有独立来源与生命周期，模型轮次结束不会取消独立工具',
+    '并发 %s 调用串行协调未知效果，来源与生命周期独立，模型轮次结束不会取消独立工具',
     async (entry) => {
       const mainStarted = deferred();
       const finishMain = deferred();
@@ -178,10 +178,12 @@ describe('工具调用的用户请求来源', () => {
           entry === 'public'
             ? f.agent.invokeTool('request-probe', {})
             : f.agent.dispatchCommand('/probe-command');
-        await commandStarted.promise;
+        await vi.waitFor(() => expect(f.reviews).toHaveLength(2));
+        expect(commandSignal).toBeUndefined();
         expect(f.reviews[1]).toMatchObject({ userRequest: '', messages: [] });
         expect(f.reviews[1]?.runId).not.toBe(f.reviews[0]?.runId);
         finishMain.resolve();
+        await commandStarted.promise;
         expect((await run).reason).toBe('completed');
         expect(commandSignal?.aborted).toBe(false);
         finishCommand.resolve();

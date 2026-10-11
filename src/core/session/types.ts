@@ -5,6 +5,7 @@ import type { PermissionMode } from '../config.js';
 import type { SessionRules } from '../permission/contracts.js';
 import type { ThinkingLevel } from '../provider.js';
 import type { Message, TokenUsage } from '../protocol/types.js';
+import type { AgentSessionState } from '../agents.js';
 
 export type { SessionRules };
 
@@ -25,6 +26,7 @@ export interface SessionRuntimeState {
 }
 
 export interface SessionFile {
+  agents?: AgentSessionState;
   schemaVersion: typeof SESSION_SCHEMA_VERSION;
   runtime: SessionRuntimeState;
   policy: SessionPolicyIdentity;

@@ -104,6 +104,7 @@ export const bashTool: Tool = {
         env,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
       });
 
       const chunks: Buffer[] = [];
@@ -121,21 +122,40 @@ export const bashTool: Tool = {
         return text;
       };
 
+      let timedOut = false;
+      let termination: Promise<void> | undefined;
+      const terminate = () => {
+        if (!child.pid || termination) return;
+        if (process.platform === 'win32') {
+          // shell 的所有后代属于本次工具调用；不能只结束 PowerShell 留下工作进程。
+          termination = new Promise((done) => {
+            const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+              windowsHide: true,
+              stdio: 'ignore',
+            });
+            killer.once('error', () => {
+              child.kill('SIGKILL');
+              done();
+            });
+            killer.once('close', () => {
+              child.kill('SIGKILL');
+              done();
+            });
+          });
+        } else {
+          try {
+            process.kill(-child.pid, 'SIGKILL');
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill('SIGKILL');
+          }
+        }
+      };
       const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        resolvePromise({
-          content: `${collected()}\n[timed out after ${timeout}ms]`,
-          isError: true,
-        });
+        timedOut = true;
+        terminate();
       }, timeout);
-
-      ctx.signal.addEventListener(
-        'abort',
-        () => {
-          child.kill('SIGKILL');
-        },
-        { once: true },
-      );
+      ctx.signal.addEventListener('abort', terminate, { once: true });
+      if (ctx.signal.aborted) terminate();
 
       child.on('error', (err) => {
         clearTimeout(timer);
@@ -145,12 +165,14 @@ export const bashTool: Tool = {
         });
       });
 
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         clearTimeout(timer);
+        ctx.signal.removeEventListener('abort', terminate);
+        await termination;
         const output = collected();
         resolvePromise({
-          content: output || '(no output)',
-          isError: code !== 0,
+          content: timedOut ? `${output}\n[timed out after ${timeout}ms]` : output || '(no output)',
+          isError: timedOut || code !== 0,
         });
       });
     });

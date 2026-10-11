@@ -4,6 +4,11 @@
 
 本文档逐模块讲解 AgentLab 的实现原理。AgentLab 是一个仿 Claude Code 的教学版 coding agent，设计目标是把"一个 agent 到底是怎么运转的"讲清楚。
 
+runtime 的 AgentSupervisor 管理子任务，每个 child 仍用同一个 AgentLoop 实现，拥有独立
+EventBus、上下文和会话。具体控制工具、设置与 TUI 放在 builtin/subagents；core 不导入
+这些实现。父子共用根宿主能力实例和依据 effect 分析的工具调度。状态、来源绑定、
+真实取消结算、CAS 恢复及用量归属见 [SUBAGENTS.md](SUBAGENTS.md)。
+
 ## 0. 一张图看懂全局
 
 ```

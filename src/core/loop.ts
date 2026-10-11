@@ -23,7 +23,6 @@
  * 模型据此调整后续行为，这是"人在回路"的标准实现方式。
  */
 import { randomUUID } from 'node:crypto';
-import { bounded } from './permission/async.js';
 import type { EventBus, LoopEndReason } from './events.js';
 import type { HookRunner } from './hooks.js';
 import type { JudgeStatus } from './permission/contracts.js';
@@ -49,6 +48,7 @@ import type { ToolRegistry } from './registry.js';
 import { estimateTokens } from './context/tokens.js';
 import { SessionError } from './session/errors.js';
 import { assertSafeHistory, trimToSafeTail } from './session/history.js';
+import type { InputSource, InvocationOrigin } from './agents.js';
 
 export interface AgentLoopOptions {
   provider: Provider;
@@ -66,6 +66,15 @@ export interface AgentLoopOptions {
   capabilityTimeoutMs?: number;
   shutdownTimeoutMs?: number;
   toolExecutor?: ToolExecutor;
+  scheduler?: ToolExecutorOptions['scheduler'];
+  isControlTool?: ToolExecutorOptions['isControlTool'];
+  restrict?: ToolExecutorOptions['restrict'];
+  agentId?: string;
+  agentName?: string;
+  task?: () => string;
+  onCancel?: () => void;
+  maxInbox?: number;
+  maxOutputChars?: number;
   cacheStrategy?: CacheStrategy | null;
   hooks: HookRunner;
   events: EventBus;
@@ -104,6 +113,19 @@ export interface AgentRunResult {
   usage: TokenUsage;
   error?: string;
 }
+export interface RunInput {
+  text: string;
+  source: InputSource;
+  userRequest: string;
+}
+export interface RunOptions {
+  runId?: string;
+  source?: InputSource;
+  userRequest?: string;
+  maxTurns?: number;
+  maxInbox?: number;
+  maxOutputChars?: number;
+}
 
 export class UnresolvedExecutionError extends Error {
   readonly code = 'shutdown_timeout';
@@ -129,12 +151,17 @@ export class AgentLoop {
   private disposed = false;
   private idle: Promise<void> = Promise.resolve();
   private completionTasks = new Set<() => Promise<void>>();
+  private startTasks = new Set<() => Promise<void>>();
   private readonly executor: ToolExecutor;
   private sessionId = randomUUID();
   private activeRunId = '';
   private detachedRuns = new Set<AbortController>();
   private detachedTasks = new Set<Promise<ToolResult>>();
   private detachedRunIds = new Set<string>();
+  private inbox: RunInput[] = [];
+  private accepting = false;
+  private sessionTransition = false;
+  private inboxLimit?: number;
 
   constructor(private opts: AgentLoopOptions) {
     this.executor =
@@ -151,6 +178,29 @@ export class AgentLoop {
 
   getMessages(): readonly Message[] {
     return this.messages;
+  }
+  get acceptingInput(): boolean {
+    return this.accepting;
+  }
+  get inboxSize(): number {
+    return this.inbox.length;
+  }
+  enqueueInput(input: RunInput): boolean {
+    if (!this.accepting) return false;
+    if (this.inbox.length >= (this.inboxLimit ?? this.opts.maxInbox ?? 16))
+      throw new Error('Agent inbox limit exceeded');
+    this.inbox.push(structuredClone(input));
+    return true;
+  }
+  /** 来源数据仅在安全边界入历史，不发起模型请求，也不产生真实用户授权。 */
+  deliverData(text: string): void {
+    if (this.running) {
+      if (this.inbox.length >= (this.inboxLimit ?? this.opts.maxInbox ?? 16))
+        throw new Error('Agent inbox limit exceeded');
+      this.inbox.push({ text, source: 'subagent', userRequest: '' });
+    } else {
+      this.messages.push({ role: 'user', source: 'subagent', content: text });
+    }
   }
 
   get providerName(): string {
@@ -172,6 +222,7 @@ export class AgentLoop {
     signal?: AbortSignal,
   ): Promise<ToolResult> {
     if (this.disposed) throw new Error('AgentLoop is disposed');
+    if (this.sessionTransition) throw new SessionError('busy', '会话正在恢复。');
     const detached = new AbortController();
     this.detachedRuns.add(detached);
     const invocationSignal = signal ? AbortSignal.any([detached.signal, signal]) : detached.signal;
@@ -182,6 +233,13 @@ export class AgentLoop {
       runId,
       userRequest: '',
       messages: [],
+      origin: {
+        sessionId: this.opts.sessionId?.() ?? this.sessionId,
+        agentId: this.opts.agentId ?? 'root',
+        runId,
+        source: 'tool',
+        userRequest: '',
+      },
     });
     this.detachedTasks.add(task);
     try {
@@ -214,13 +272,23 @@ export class AgentLoop {
   }
 
   get hasPendingActivity(): boolean {
-    return this.abort !== null || this.detachedTasks.size > 0 || this.executor.hasPendingActivity;
+    return (
+      this.abort !== null ||
+      this.detachedTasks.size > 0 ||
+      this.executor.hasPendingActivity ||
+      this.opts.events.hasPendingActivity
+    );
   }
 
   /** 等待原始执行结算；不会执行重试、伪造结果或释放仍被使用的资源。 */
   async whenSettled(): Promise<void> {
     while (this.hasPendingActivity)
-      await Promise.allSettled([this.idle, ...this.detachedTasks, this.executor.whenSettled()]);
+      await Promise.allSettled([
+        this.idle,
+        ...this.detachedTasks,
+        this.executor.whenSettled(),
+        this.opts.events.whenSettled(),
+      ]);
   }
 
   /** 裁掉不安全的尾部再克隆。不改 this.messages，也不发事件。 */
@@ -244,7 +312,7 @@ export class AgentLoop {
     thinking?: ThinkingLevel;
   }): void {
     if (this.disposed) throw new SessionError('busy', 'AgentLoop 已释放');
-    if (this.abort)
+    if (this.hasPendingActivity)
       throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
     assertSafeHistory(snapshot.messages);
     this.messages = structuredClone(snapshot.messages) as Message[];
@@ -271,6 +339,7 @@ export class AgentLoop {
   abort_current(): void {
     this.abort?.abort();
     for (const controller of this.detachedRuns) controller.abort();
+    this.opts.onCancel?.();
   }
 
   /** 轮次完成前等待持久化等任务；失败传给 run 调用方，仍保证释放运行状态。 */
@@ -278,6 +347,21 @@ export class AgentLoop {
     this.completionTasks.add(task);
     return () => {
       this.completionTasks.delete(task);
+    };
+  }
+  onRunStarted(task: () => Promise<void>): () => void {
+    this.startTasks.add(task);
+    return () => {
+      this.startTasks.delete(task);
+    };
+  }
+  /** 恢复从读文件到提交期间不能启动另一轮或独立工具调用。 */
+  beginSessionTransition(): () => void {
+    if (this.disposed || this.running || this.sessionTransition)
+      throw new SessionError('busy', '会话正在运行、恢复或释放。');
+    this.sessionTransition = true;
+    return () => {
+      this.sessionTransition = false;
     };
   }
 
@@ -302,12 +386,23 @@ export class AgentLoop {
     this.sessionId = randomUUID();
   }
 
-  async run(userInput: string): Promise<AgentRunResult> {
+  async run(userInput: string, options: RunOptions = {}): Promise<AgentRunResult> {
     if (this.disposed) throw new Error('AgentLoop is disposed');
+    if (this.sessionTransition) throw new SessionError('busy', '会话正在恢复。');
     if (this.abort) throw new Error('AgentLoop is already running');
     const { events, hooks, provider, tools, context } = this.opts;
     this.abort = new AbortController();
-    const runId = (this.activeRunId = randomUUID());
+    const runId = (this.activeRunId = options.runId ?? randomUUID());
+    this.accepting = true;
+    this.inboxLimit = options.maxInbox;
+    let origin: InvocationOrigin = {
+      sessionId: this.opts.sessionId?.() ?? this.sessionId,
+      agentId: this.opts.agentId ?? 'root',
+      runId,
+      source: options.source ?? 'user',
+      userRequest:
+        options.source && options.source !== 'user' ? (options.userRequest ?? '') : userInput,
+    };
     const signal = this.abort.signal;
     let release!: () => void;
     this.idle = new Promise<void>((resolve) => {
@@ -315,11 +410,16 @@ export class AgentLoop {
     });
     let turns = 0;
     const totalUsage = emptyUsage();
-    const stopUsage = events.on('model_usage', ({ usage }) => {
+    const seenUsage = new Set<string>();
+    const stopUsage = events.on('model_usage', ({ usage, requestId, runId: usageRunId }) => {
+      if (usageRunId !== runId) return;
+      if (seenUsage.has(requestId)) return;
+      seenUsage.add(requestId);
       for (const key of Object.keys(totalUsage) as Array<keyof TokenUsage>)
         totalUsage[key] += usage[key];
     });
     const finish = (reason: LoopEndReason, error?: string): AgentRunResult => {
+      this.accepting = false;
       events.emit({
         type: 'loop_end',
         reason,
@@ -330,12 +430,28 @@ export class AgentLoop {
       return { reason, turns, usage: totalUsage, ...(error ? { error } : {}) };
     };
 
+    let outputCharacters = 0;
     try {
       await this.notify('UserPromptSubmit', { input: userInput }, signal);
-      this.messages.push({ role: 'user', content: userInput });
+      this.messages = trimToSafeTail(this.messages).messages;
+      this.messages.push({
+        role: 'user',
+        content: userInput,
+        ...(origin.source !== 'user' ? { source: origin.source } : {}),
+      });
+      await Promise.all([...this.startTasks].map((task) => task()));
       await this.maybeCompact(signal);
 
-      while (turns < this.opts.maxTurns) {
+      while (turns < Math.min(options.maxTurns ?? this.opts.maxTurns, this.opts.maxTurns)) {
+        for (const input of this.inbox.splice(0)) {
+          this.messages.push({
+            role: 'user',
+            content: input.text,
+            ...(input.source !== 'user' ? { source: input.source } : {}),
+          });
+          if (input.source !== 'subagent')
+            origin = { ...origin, source: input.source, userRequest: input.userRequest };
+        }
         turns++;
         if (signal.aborted) {
           return finish('aborted');
@@ -360,12 +476,24 @@ export class AgentLoop {
             cache: this.buildCachePolicy(),
           },
           signal,
-          { events, purpose: 'agent' },
+          { events, purpose: 'agent', runId },
         );
         this.lastRequestMessageCount = this.messages.length;
 
         // 边收事件边转发给 UI
-        const forwarding = forwardEvents(stream, events);
+        const forwarding = forwardEvents(
+          stream,
+          events,
+          (options.maxOutputChars ?? this.opts.maxOutputChars ?? Number.POSITIVE_INFINITY) -
+            outputCharacters,
+          () => {
+            events.emit({ type: 'notice', text: 'output_limit: 子任务输出达到限制，保留部分结果' });
+            this.abort?.abort();
+          },
+          (count) => {
+            outputCharacters += count;
+          },
+        );
         const { message, stopReason, usage } = await collectStreamAsync(forwarding);
         this.messages.push(message);
         events.emit({ type: 'assistant_message', message });
@@ -378,6 +506,7 @@ export class AgentLoop {
 
         const toolUses = message.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
         if (toolUses.length === 0 || stopReason !== 'tool_use') {
+          if (!signal.aborted && this.inbox.length && stopReason !== 'max_tokens') continue;
           return finish(
             signal.aborted ? 'aborted' : stopReason === 'max_tokens' ? 'max_tokens' : 'completed',
           );
@@ -388,7 +517,8 @@ export class AgentLoop {
         const results = await this.executeTools(toolUses, {
           signal,
           runId,
-          userRequest: userInput,
+          userRequest: origin.userRequest,
+          origin,
           messages: structuredClone(this.messages),
         });
         this.lastToolBatchMs = Date.now() - toolStarted;
@@ -404,6 +534,15 @@ export class AgentLoop {
         return finish('error', err instanceof Error ? err.message : String(err));
       }
     } finally {
+      this.accepting = false;
+      if (!findUnsafeTail(this.messages)) {
+        for (const input of this.inbox.splice(0))
+          this.messages.push({
+            role: 'user',
+            source: input.source === 'user' ? undefined : input.source,
+            content: input.text,
+          });
+      }
       try {
         const settled = await Promise.allSettled([...this.completionTasks].map((task) => task()));
         const errors = settled
@@ -415,7 +554,9 @@ export class AgentLoop {
         this.abort = null;
         this.executor.finishRun(this.activeRunId);
         this.activeRunId = '';
-        stopUsage();
+        this.inboxLimit = undefined;
+        if (events.hasPendingActivity) void events.whenSettled().then(stopUsage);
+        else stopUsage();
         release();
       }
     }
@@ -427,7 +568,7 @@ export class AgentLoop {
     signal: AbortSignal,
   ): Promise<void> {
     try {
-      await bounded(
+      await this.opts.events.bounded(
         (s) => this.opts.hooks.notify(point, payload, s),
         signal,
         this.opts.capabilityTimeoutMs ?? 30_000,
@@ -446,7 +587,14 @@ export class AgentLoop {
     const { events, provider, context } = this.opts;
     if (!context.shouldCompact(this.messages)) return;
     const before = this.messages.length;
-    const next = await context.compact(this.messages, provider, signal, this.opts.model, events);
+    const next = await context.compact(
+      this.messages,
+      provider,
+      signal,
+      this.opts.model,
+      events,
+      this.activeRunId,
+    );
     if (next === this.messages) return;
     if (emergency) {
       events.emit({
@@ -529,10 +677,44 @@ export class AgentLoop {
 async function* forwardEvents(
   stream: AsyncIterable<import('./protocol/types.js').StreamEvent>,
   events: EventBus,
+  maxChars = Number.POSITIVE_INFINITY,
+  cancel?: () => void,
+  count?: (characters: number) => void,
 ): AsyncGenerator<import('./protocol/types.js').StreamEvent> {
+  let characters = 0;
   for await (const ev of stream) {
-    if (ev.type === 'text_delta') events.emit({ type: 'text_delta', text: ev.text });
-    else if (ev.type === 'thinking_delta') events.emit({ type: 'thinking_delta', text: ev.text });
+    const structural =
+      ev.type === 'tool_use_delta'
+        ? ev.input
+        : ev.type === 'signature_delta'
+          ? ev.signature
+          : ev.type === 'redacted_thinking'
+            ? ev.data
+            : undefined;
+    if (structural !== undefined) {
+      characters += structural.length;
+      count?.(structural.length);
+      if (characters > maxChars) {
+        cancel?.();
+        throw new Error('Agent output limit reached');
+      }
+    }
+    if (ev.type === 'text_delta' || ev.type === 'thinking_delta') {
+      const remaining = Math.max(0, maxChars - characters);
+      characters += ev.text.length;
+      if (characters > maxChars) cancel?.();
+      const text = ev.text.slice(0, remaining);
+      count?.(text.length);
+      if (text) {
+        events.emit({ type: ev.type, text });
+        yield { ...ev, text };
+      }
+      continue;
+    }
     yield ev;
   }
+}
+
+function findUnsafeTail(messages: readonly Message[]): boolean {
+  return trimToSafeTail(messages).dropped > 0;
 }

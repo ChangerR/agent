@@ -56,13 +56,14 @@ export async function* observedStream(
   provider: Provider,
   req: ChatRequest,
   signal: AbortSignal,
-  trace: { events: EventBus; purpose: 'agent' | 'compact' | 'judge' },
+  trace: { events: EventBus; purpose: 'agent' | 'compact' | 'judge'; runId?: string },
 ): AsyncIterable<StreamEvent> {
   const requestId = randomUUID();
   const usage = emptyUsage();
   trace.events.emit({
     type: 'model_request',
     requestId,
+    runId: trace.runId,
     purpose: trace.purpose,
     provider: provider.name,
     request: structuredClone(req),
@@ -73,7 +74,13 @@ export async function* observedStream(
       yield event;
     }
   } finally {
-    trace.events.emit({ type: 'model_usage', requestId, purpose: trace.purpose, usage });
+    trace.events.emit({
+      type: 'model_usage',
+      requestId,
+      runId: trace.runId,
+      purpose: trace.purpose,
+      usage,
+    });
   }
 }
 

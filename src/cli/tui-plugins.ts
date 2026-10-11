@@ -14,7 +14,7 @@ export interface TuiPluginContext {
   error(text: string): void;
   showPicker(
     title: string,
-    items: PanelItem[],
+    items: PanelItem[] | (() => PanelItem[]),
     onPick: (value: string) => void,
     initialValue?: string,
     filterable?: boolean,

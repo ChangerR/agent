@@ -101,7 +101,8 @@ export async function windowsUnverified(
     evidence: [
       {
         source: 'platform-support',
-        detail: '未验证原生 Windows ADS/设备名/尾随点路径与 PowerShell 语义，不授予确定性文件权限。',
+        detail:
+          '未验证原生 Windows ADS/设备名/尾随点路径与 PowerShell 语义，不授予确定性文件权限。',
       },
     ],
   };

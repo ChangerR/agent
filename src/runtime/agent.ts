@@ -14,7 +14,9 @@ import type {
 } from '../sdk/index.js';
 import type { PluginInspection } from './plugin-inspection.js';
 import type { CommandRegistry, SettingsRecord } from './commands.js';
+import type { AgentSupervisor } from './subagents.js';
 export interface Agent {
+  readonly agents: AgentSupervisor;
   readonly cwd: string;
   readonly paths: AgentPaths;
   readonly configSources: ConfigSources;

@@ -18,8 +18,10 @@ import { TurnQueue } from '../src/cli/turn-queue.js';
 import { SUMMARY_MARKER } from '../src/builtin/compaction-summary/implementation.js';
 import type { Message } from '../src/core/protocol/types.js';
 import { saveSession } from '../src/builtin/session-file/implementation.js';
+import { fileSessionStore } from '../src/builtin/session-file/index.js';
 import { createAgent } from '../src/index.js';
-import { FakeProvider } from '../src/providers/fake.js';
+import { definePlugin, type Plugin } from '../src/sdk/index.js';
+import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
 
 const identity = (s: string) => s;
 const theme: MarkdownTheme = {
@@ -284,7 +286,7 @@ class MemoryTerminal implements Terminal {
   setProgress(): void {}
 }
 
-async function mountTui(config: Record<string, unknown> = {}) {
+async function mountTui(config: Record<string, unknown> = {}, plugins: Plugin[] = []) {
   vi.stubEnv('AGENTLAB_SCREEN', 'alt');
   let renderer!: TuiAltScreen;
   const originalStart = TuiAltScreen.prototype.start;
@@ -297,7 +299,7 @@ async function mountTui(config: Record<string, unknown> = {}) {
     join(dir, 'agent.config.json'),
     JSON.stringify({ provider: 'fake', permissionMode: 'auto', ...config }),
   );
-  const agent = await createAgent(dir);
+  const agent = await createAgent(dir, { plugins });
   const terminal = new MemoryTerminal();
   const session = startTui(agent, { terminal, onExit: vi.fn() });
   const screen = () => renderer.getScreenLines().map(stripTerminalSequences);
@@ -326,6 +328,200 @@ async function snapshot(name: string, lines: string[]) {
 }
 
 describe('TUI 审批模型运行状态', () => {
+  it('会话切换中状态可读、控制拒绝；真实底栏渲染在恢复后继续显示新 child', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let rootId = '';
+    let rootReads = 0;
+    const plugin = definePlugin({
+      manifest: { id: 'test.tui-resume-store', version: '1.0.0', apiVersion: 1 },
+      setup(ctx) {
+        ctx.provide.sessionStore('tui-resume', {
+          ...fileSessionStore,
+          async load(cwd, id, signal) {
+            if (id === rootId && ++rootReads === 2) await gate;
+            return fileSessionStore.load(cwd, id, signal);
+          },
+        });
+      },
+    });
+    const ui = await mountTui({ capabilities: { reviewer: false, sessionStore: 'tui-resume' } }, [
+      plugin,
+    ]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const a = ui.agent.agents.spawn({ task: 'before restore' });
+      await ui.agent.agents.wait(a.agentId);
+      await ui.agent.agents.whenSettled();
+      await ui.agent.session.save();
+      rootId = ui.agent.session.id;
+      const restoring = ui.agent.session.resume(rootId);
+      await vi.waitFor(() => expect(rootReads).toBe(2));
+      expect(ui.agent.agents.status(a.agentId)[0].runs[0].status).toBe('completed');
+      expect(() => ui.agent.agents.spawn({ task: 'blocked during transition' })).toThrow(
+        'switching',
+      );
+      expect(() =>
+        ui.agent.agents.status(a.agentId, undefined, {
+          sessionId: 'foreign-session',
+          agentId: 'root',
+          runId: '',
+          source: 'user',
+          userRequest: '',
+        }),
+      ).toThrow('current session');
+      ui.terminal.columns = 120;
+      ui.terminal.resize?.();
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('agents 0/1'));
+      release();
+      await restoring;
+      const b = ui.agent.agents.spawn({ task: 'after restore' });
+      await ui.agent.agents.wait(b.agentId);
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('agents 0/2'));
+      expect(
+        errors.mock.calls.some((call) => String(call[0]).includes('状态项 subagents 失败')),
+      ).toBe(false);
+    } finally {
+      release();
+      await ui.dispose();
+    }
+  });
+  it('子列表实时刷新，详情补充/取消复用 run，父输入和流互相隔离', async () => {
+    const ui = await mountTui({ capabilities: { reviewer: false } });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requests: string[] = [];
+    vi.spyOn(ui.agent.providers.get('fake'), 'stream').mockImplementation(
+      async function* (request, signal) {
+        const last = request.messages.at(-1)?.content;
+        const input = typeof last === 'string' ? last : '';
+        requests.push(input);
+        yield { type: 'message_start' };
+        yield { type: 'text_delta', text: `CHILD_STREAM_${input}` };
+        if (input === 'supplement')
+          await new Promise<void>((resolve) =>
+            signal.addEventListener('abort', () => resolve(), { once: true }),
+          );
+        else await gate;
+        yield { type: 'usage', inputTokens: 3, outputTokens: 4 };
+        yield { type: 'message_stop', stopReason: 'end_turn' };
+      },
+    );
+    try {
+      const a = ui.agent.agents.spawn({ task: 'A', name: '甲' });
+      const b = ui.agent.agents.spawn({ task: 'B', name: '乙' });
+      await vi.waitFor(() => expect(requests).toHaveLength(2));
+      ui.terminal.input?.('PARENT_DRAFT');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('PARENT_DRAFT'));
+      expect(ui.screen().join('\n')).not.toContain('CHILD_STREAM_');
+      ui.terminal.input?.('\x15');
+      ui.send('/agents');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('甲 · running'));
+      release();
+      await Promise.all([ui.agent.agents.wait(a.agentId), ui.agent.agents.wait(b.agentId)]);
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('甲 · completed'));
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('子 agent 详情'));
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('补充任务'));
+      ui.terminal.input?.('supplement');
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(requests).toContain('supplement'));
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\r');
+      await ui.agent.agents.whenSettled();
+      expect(ui.agent.agents.status(a.agentId)[0].runs.at(-1)?.status).toBe('cancelled');
+      expect(ui.agent.agents.status(a.agentId)[0].runs).toHaveLength(2);
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('完整结果'));
+      expect(ui.screen().join('\n')).toContain('CHILD_STREAM_');
+    } finally {
+      release();
+      await ui.dispose();
+    }
+  });
+  it('child 审批共用 FIFO，展示名称任务与一次性范围，取消后迟到点击不能批准兄弟', async () => {
+    const ui = await mountTui({ permissionMode: 'ask', capabilities: { reviewer: false } });
+    vi.spyOn(ui.agent.providers.get('fake'), 'stream').mockImplementation(
+      async function* (request) {
+        const last = request.messages.at(-1)?.content;
+        if (last === 'PARENT_DURING_APPROVAL') {
+          yield* textResponse('PARENT_APPROVAL_REPLY');
+          return;
+        }
+        if (last === 'seed-list') {
+          yield* textResponse('seed result');
+          return;
+        }
+        yield* typeof last === 'string'
+          ? toolUseResponse([
+              {
+                id: `child-write-${last}`,
+                name: 'write_file',
+                input: { path: `${last}.txt`, content: 'approved once' },
+              },
+            ])
+          : textResponse('done');
+      },
+    );
+    try {
+      const seed = ui.agent.agents.spawn({ task: 'seed-list', name: '种子' });
+      await ui.agent.agents.wait(seed.agentId);
+      await ui.agent.agents.whenSettled();
+      ui.send('/agents');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('种子 · completed'));
+      const a = ui.agent.agents.spawn({ task: 'task-a', name: '甲' });
+      const b = ui.agent.agents.spawn({ task: 'task-b', name: '乙' });
+      const approvals: string[] = [];
+      const off = ui.agent.events.on('permission_request', (e) =>
+        approvals.push(e.request.agentId!),
+      );
+      await vi.waitFor(() => expect(approvals).toHaveLength(2));
+      const first = approvals[0];
+      const second = approvals[1];
+      await vi.waitFor(() =>
+        expect(ui.screen().join('\n')).toContain(first === a.agentId ? '甲' : '乙'),
+      );
+      expect(ui.screen().join('\n')).not.toContain('未经 Windows');
+      expect(ui.screen().join('\n')).not.toContain('允许并记住此规则');
+      ui.terminal.input?.('\x07');
+      ui.terminal.input?.('PARENT_DURING_APPROVAL');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('PARENT_DURING_APPROVAL'));
+      expect(ui.screen().join('\n')).toContain('Ctrl+G 返回审批');
+      ui.terminal.input?.('\r');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('PARENT_APPROVAL_REPLY'));
+      expect(approvals).toHaveLength(2);
+      expect(ui.agent.agents.status(first)[0].runs[0].status).toBe('running');
+      expect(ui.agent.agents.status(second)[0].runs[0].status).toBe('running');
+      expect(ui.agent.permission.getSessionRules().allow).toEqual([]);
+      ui.terminal.input?.('PARENT_DRAFT_KEEP');
+      ui.agent.agents.cancel(first);
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('PARENT_DRAFT_KEEP'));
+      ui.terminal.input?.('\x07');
+      await vi.waitFor(() =>
+        expect(ui.screen().join('\n')).toContain(second === a.agentId ? '甲' : '乙'),
+      );
+      ui.terminal.input?.('\r');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(ui.agent.agents.status(second)[0].runs[0].status).toBe('running');
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\r');
+      await ui.agent.agents.whenSettled();
+      expect(ui.agent.agents.status(second)[0].runs[0].status).toBe('completed');
+      expect(ui.agent.permission.getSessionRules().allow).toEqual([]);
+      ui.terminal.input?.('\x1b');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('PARENT_DRAFT_KEEP'));
+      off();
+    } finally {
+      await ui.dispose();
+    }
+  });
   it.each([
     {
       judgeModel: '',

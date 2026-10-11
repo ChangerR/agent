@@ -16,15 +16,10 @@ import {
   savePermissionConfig,
 } from './policy/config.js';
 import { createScopedConfigStores, settingsErrorMessage } from '../runtime/config-store.js';
-export interface BuiltinCommandServices {
-  model(): string;
-  setModel(value: string): void;
-  thinking(): ThinkingLevel;
-  setThinking(value: ThinkingLevel): void;
-  models(): Array<{ name: string; info?: { contextWindow: number; maxOutputTokens: number } }>;
-  permission(): PermissionController;
-  session(): SessionManager;
-}
+export type BuiltinCommandServices = Pick<
+  import('../runtime/services.js').RuntimeServices,
+  'model' | 'setModel' | 'thinking' | 'setThinking' | 'models' | 'permission' | 'session'
+>;
 const text = (text: string): CommandResult => ({ type: 'text', text });
 const args = (input: Record<string, unknown>) =>
   typeof input.args === 'string' ? input.args.trim() : '';

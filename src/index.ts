@@ -131,3 +131,16 @@ export {
 export { resolveAgentPaths, getGlobalConfigPath, type AgentPaths } from './core/paths.js';
 
 export { MODEL_PRESETS } from './builtin/model-catalog/presets.js';
+export {
+  AgentSupervisor,
+  DEFAULT_SUBAGENT_LIMITS,
+  type SubagentLimits,
+  type SpawnAgentInput,
+  type AgentAddress,
+} from './runtime/subagents.js';
+export type {
+  InvocationOrigin,
+  SubagentRecord,
+  SubagentRun,
+  SubagentStatus,
+} from './core/agents.js';

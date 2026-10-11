@@ -16,9 +16,11 @@ import { EventBus, type AgentEvent, type PermissionRequest, type UserDecision } 
 import type { HookRunner } from './hooks.js';
 import type { Decision, JudgeStatus, ReviewHistoryStore } from './permission/contracts.js';
 import { jsonInput } from './permission/input-validation.js';
-import { bounded, CapabilityTimeout } from './permission/async.js';
+import { CapabilityTimeout } from './permission/async.js';
 import type { Message, ToolResult, ToolResultBlock, ToolUseBlock } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
+import type { InvocationOrigin } from './agents.js';
+import type { ToolLease, ToolScheduler } from './tool-scheduler.js';
 
 export interface ToolInvocationContext {
   readonly signal: AbortSignal;
@@ -26,6 +28,8 @@ export interface ToolInvocationContext {
   readonly userRequest: string;
   readonly messages: readonly Message[];
   readonly depth?: number;
+  readonly origin?: InvocationOrigin;
+  readonly lease?: ToolLease;
 }
 export interface ToolExecutorOptions {
   tools: ToolRegistry;
@@ -51,6 +55,12 @@ export interface ToolExecutorOptions {
   ) => Promise<UserDecision> | UserDecision;
   reviewTimeoutMs?: number;
   capabilityTimeoutMs?: number;
+  scheduler?: ToolScheduler;
+  /** 由宿主按注册身份指定控制工具，不采用工具自报 risk。 */
+  isControlTool?: (tool: Tool) => boolean;
+  restrict?: (input: PolicyInput) => string | undefined;
+  agentName?: string;
+  task?: () => string;
 }
 interface Binding {
   sessionId: string;
@@ -92,11 +102,12 @@ export class ToolExecutor {
     this.used.delete(runId);
   }
   get hasPendingActivity(): boolean {
-    return this.pending.size > 0;
+    return this.pending.size > 0 || this.opts.events.hasPendingActivity;
   }
   /** 只观察已发出的实际执行，不重试，也不把超时冒充执行结束。 */
   async whenSettled(): Promise<void> {
-    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    while (this.hasPendingActivity)
+      await Promise.allSettled([...this.pending, this.opts.events.whenSettled()]);
   }
   getJudgeStatus(): JudgeStatus {
     return this.opts.reviewer?.getStatus?.() ?? { loaded: false };
@@ -129,6 +140,7 @@ export class ToolExecutor {
     let tool = tools.get(toolUse.name);
     let input: Record<string, unknown> = {};
     let resultEmitted = false;
+    let lease: ToolLease | undefined;
     const finish = (result: ToolResult): ToolResultBlock => {
       if (!resultEmitted) {
         resultEmitted = true;
@@ -200,7 +212,7 @@ export class ToolExecutor {
       used.add(toolUse.id);
       this.used.set(context.runId, used);
       input = jsonInput(toolUse.input, tool.inputSchema);
-      const hook = await bounded(
+      const hook = await this.opts.events.bounded(
         (hookSignal) => hooks.runPreToolUse({ toolName: tool!.name, input, signal: hookSignal }),
         signal,
         this.opts.capabilityTimeoutMs ?? 30_000,
@@ -237,7 +249,7 @@ export class ToolExecutor {
           try {
             analysis = freeze(
               structuredClone(
-                await bounded(
+                await this.opts.events.bounded(
                   (s) => analyzer.analyze(analysisInput, s),
                   signal,
                   this.opts.capabilityTimeoutMs ?? 30_000,
@@ -276,10 +288,15 @@ export class ToolExecutor {
           configRevision: binding.configRevision,
           policyRevision: binding.policyRevision,
         });
+        const restricted = this.opts.restrict?.(operation);
+        if (restricted) {
+          audit('policy', 'child_restriction', 'deny', binding);
+          return fail(`Permission denied: ${restricted}`);
+        }
         let policyDecision: PolicyDecision;
         try {
           policyDecision = structuredClone(
-            await bounded(
+            await this.opts.events.bounded(
               (s) => this.decide(operation, s),
               signal,
               this.opts.capabilityTimeoutMs ?? 30_000,
@@ -357,6 +374,13 @@ export class ToolExecutor {
           const summary =
             analysis?.summary ?? descriptor.analyzeInput?.(input).summary ?? tool.name;
           const request = freeze({
+            ...(context.origin?.agentId !== 'root' && context.origin
+              ? {
+                  agentId: context.origin.agentId,
+                  agentName: this.opts.agentName,
+                  task: this.opts.task?.(),
+                }
+              : {}),
             runId: context.runId,
             requestId: randomUUID(),
             toolRequestId: requestId,
@@ -412,11 +436,21 @@ export class ToolExecutor {
         }
 
         if (signal.aborted) return cancelled();
+        const control = this.opts.isControlTool?.(tool) === true;
+        if (control && context.lease)
+          return fail('Control tools cannot run inside a workspace tool lease');
+        if (!control && this.opts.scheduler) {
+          const read =
+            analysis?.completeness === 'complete' &&
+            analysis.effects.length > 0 &&
+            analysis.effects.every((effect) => effect.kind === 'read');
+          lease = await this.opts.scheduler.acquire(read ? 'read' : 'write', signal, context.lease);
+        }
         let environmentValid = true;
         if (analyzer && analysis) {
           try {
             environmentValid =
-              (await bounded(
+              (await this.opts.events.bounded(
                 async (s) =>
                   analyzer.revalidate
                     ? analyzer.revalidate(analysis!, analysisInput, s)
@@ -424,6 +458,12 @@ export class ToolExecutor {
                       fingerprint(analysis),
                 signal,
                 this.opts.capabilityTimeoutMs ?? 30_000,
+                lease && this.opts.scheduler
+                  ? async (s) => {
+                      const retained = await this.opts.scheduler!.acquire(lease!.mode, s, lease);
+                      return () => retained.release();
+                    }
+                  : undefined,
               )) === true;
           } catch {
             environmentValid = false;
@@ -443,12 +483,18 @@ export class ToolExecutor {
           ) {
             return fail('approval_stale: originating session or run has changed');
           }
-          if (attempt < 2) continue;
+          if (attempt < 2) {
+            lease?.release();
+            lease = undefined;
+            continue;
+          }
           return fail(
             'approval_stale: tool, configuration, policy, or environment changed during approval',
           );
         }
         // 从最终重验到 execute 不再 await；记忆规则是本次有效人工批准的附带结果。
+        // child 的人工批准只绑定此次调用；不能把规则写进共享父控制器。
+        if (context.origin && context.origin.agentId !== 'root') remember = undefined;
         if (remember) this.remember(descriptor, input, remember);
         const expectedRevision = remember ? this.policyRevision() : binding.policyRevision;
         const reviewRecord = this.history?.record(
@@ -475,8 +521,13 @@ export class ToolExecutor {
             cwd,
             signal,
             analysis,
+            invocation: context.origin,
             invokeTool: (name, childInput) =>
-              this.invokeTool(name, childInput, { ...context, depth: (context.depth ?? 0) + 1 }),
+              this.invokeTool(name, childInput, {
+                ...context,
+                lease: lease ?? context.lease,
+                depth: (context.depth ?? 0) + 1,
+              }),
           });
           if (
             !result ||
@@ -497,7 +548,7 @@ export class ToolExecutor {
         }
         if (reviewRecord) this.history?.finish(reviewRecord, result, signal.aborted);
         try {
-          await bounded(
+          await this.opts.events.bounded(
             (s) =>
               hooks.notify(
                 'PostToolUse',
@@ -510,6 +561,12 @@ export class ToolExecutor {
               ),
             signal,
             this.opts.capabilityTimeoutMs ?? 30_000,
+            lease && this.opts.scheduler
+              ? async (s) => {
+                  const retained = await this.opts.scheduler!.acquire(lease!.mode, s, lease);
+                  return () => retained.release();
+                }
+              : undefined,
           );
         } catch {
           events.emit({
@@ -531,6 +588,8 @@ export class ToolExecutor {
       if (signal.aborted) return cancelled();
       audit('validation', 'invalid_input_or_handler');
       return fail(error instanceof Error ? error.message : String(error));
+    } finally {
+      lease?.release();
     }
   }
 
@@ -560,17 +619,19 @@ export class ToolExecutor {
     });
     try {
       const result = structuredClone(
-        await bounded(
+        await this.opts.events.bounded(
           async (s) => {
-            return this.opts.reviewer!.review(
-              {
-                ...operation,
-                decision: freeze(structuredClone(original)),
-                events,
-                userRequest: context.userRequest,
-                messages: freeze(structuredClone(context.messages)),
-              },
-              s,
+            return this.opts.events.track(
+              this.opts.reviewer!.review(
+                {
+                  ...operation,
+                  decision: freeze(structuredClone(original)),
+                  events,
+                  userRequest: context.userRequest,
+                  messages: freeze(structuredClone(context.messages)),
+                },
+                s,
+              ),
             );
           },
           signal,
@@ -863,5 +924,8 @@ class ReviewerEventBus extends EventBus {
     if (event.type === 'model_request' || event.type === 'model_usage') {
       this.#parent.emit({ ...event, ...this.#correlation, purpose: 'judge' });
     }
+  }
+  override track<T>(task: Promise<T>): Promise<T> {
+    return this.#parent.track(task);
   }
 }
