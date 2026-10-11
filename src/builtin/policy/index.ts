@@ -229,6 +229,27 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         return decision('allow', 'plan_control', '更新会话计划；真实工具另行审批');
       if (isSubagentControl(input.tool) && analysis.reasonCode === 'agent_control')
         return decision('allow', 'agent_control', '仅管理当前会话的子任务；真实工具另行审批');
+      // 精确调用：只接受 ToolExecutor.remember() 生成的等于引号 JSON 规则。
+      // 内置 bash，以及副作用未知的 MCP / 工具语义。字面量模式和通配规则没有资格。
+      // 第三方同名文件工具（unverified_tool_implementation）不进入。
+      const exactCallEligible =
+        analysis.reasonCode !== 'unverified_tool_implementation' &&
+        ((input.tool.name === 'bash' &&
+          input.tool.ownerPlugin === 'agentlab.local-tools' &&
+          input.tool.version === '1.0.0') ||
+          analysis.reasonCode === 'mcp_effects_unknown' ||
+          analysis.reasonCode === 'tool_semantics_unknown');
+      if (exactCallEligible) {
+        const exactCall = matched('allow', [rawTarget], (rule) => rule.exact !== undefined);
+        if (exactCall)
+          return decision(
+            'allow',
+            'exact_call_allow',
+            `命中精确调用 allow 规则 "${exactCall.raw}"（危险、敏感、项目外与明确 ask 已先行检查）`,
+            exactCall.source,
+            exactCall.raw,
+          );
+      }
       // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；
       // 通配符/工具级规则和 writeRoots 目录授权都不放行，auto/yolo 交给 reviewer，ask 模式照旧询问。
       // 敏感/写保护、项目外、特殊文件、硬链接与歧义路径在上方已人工，精确规则同样不能越过。
@@ -296,6 +317,8 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           allowed.raw,
         );
       }
+      if (complete && analysis.effects.every((effect) => effect.kind === 'read'))
+        return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
       if (controller.mode === 'ask')
         return decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
       if (
@@ -321,8 +344,6 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           );
         }
       }
-      if (complete && analysis.effects.every((effect) => effect.kind === 'read'))
-        return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
       if (controller.mode === 'yolo')
         return complete
           ? decision(

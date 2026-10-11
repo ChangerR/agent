@@ -85,6 +85,8 @@ export interface PlannerInput {
 }
 export interface PlanningStrategy {
   prepare(input: PlannerInput): Promise<{ goal: string; steps: string[] } | undefined>;
+  /** 模型准备结束时，由规划插件决定是否提醒它继续；loop 仍负责预算和中断。 */
+  continuation?(plan: Plan): string | undefined;
   /** 只声明可用于调研的已注册工具身份；权限管线仍然必须通过。 */
   readTools: readonly { name: string; ownerPlugin: string }[];
   controlTools: readonly { name: string; ownerPlugin: string; planningSafe?: boolean }[];

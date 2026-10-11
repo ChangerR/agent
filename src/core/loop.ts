@@ -10,7 +10,7 @@
  *         provider.stream(messages, tools)
  *           ├─ 流式产出 text/thinking/tool_use（转发为 UI 事件）
  *           └─ 聚合成完整 AssistantMessage
- *         若无 tool_use → turn_end，结束
+ *         若无 tool_use → 检查未完成计划；按插件策略继续或结束
  *         对每个 tool_use：
  *           PreToolUse 钩子（可改写/否决）
  *           → 选定 Policy 决策管线（allow/ask/deny）
@@ -459,6 +459,9 @@ export class AgentLoop {
     };
 
     let outputCharacters = 0;
+    // 同一执行进度只提醒一次，防止模型反复空答；提醒不新建 run、不增加授权。
+    let executionProgress = 0;
+    let lastContinuationProgress: string | undefined;
     try {
       await this.notify('UserPromptSubmit', { input: userInput }, signal);
       this.messages = trimToSafeTail(this.messages).messages;
@@ -592,6 +595,29 @@ export class AgentLoop {
         const toolUses = message.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
         if (toolUses.length === 0 || stopReason !== 'tool_use') {
           if (!signal.aborted && this.inbox.length && stopReason !== 'max_tokens') continue;
+          const plan = this.plan.snapshot;
+          if (
+            !signal.aborted &&
+            stopReason === 'end_turn' &&
+            toolUses.length === 0 &&
+            plan?.mode === 'auto' &&
+            plan.phase === 'executing'
+          ) {
+            const progress = JSON.stringify([
+              plan.id,
+              executionProgress,
+              plan.steps
+                .filter((step) => step.status === 'completed')
+                .map((step) => step.id)
+                .sort(),
+            ]);
+            const reminder = this.opts.planning?.()?.continuation?.(plan);
+            if (reminder && progress !== lastContinuationProgress) {
+              lastContinuationProgress = progress;
+              this.messages.push({ role: 'user', source: 'tool', content: reminder });
+              continue;
+            }
+          }
           return finish(
             signal.aborted ? 'aborted' : stopReason === 'max_tokens' ? 'max_tokens' : 'completed',
           );
@@ -615,6 +641,14 @@ export class AgentLoop {
                 messages: structuredClone(this.messages),
               });
         this.lastToolBatchMs = Date.now() - toolStarted;
+        if (
+          results.some((result) => {
+            const call = toolUses.find((tool) => tool.id === result.toolUseId);
+            const tool = call && tools.get(call.name);
+            return !result.isError && tool && !this.opts.isControlTool?.(tool);
+          })
+        )
+          executionProgress++;
         this.messages.push({ role: 'user', content: results });
         signal.throwIfAborted();
       }

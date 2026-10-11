@@ -16,7 +16,7 @@ import type { ChatRequest } from '../src/core/provider.js';
 import { PlanController, type Plan } from '../src/core/plan.js';
 import { EventBus } from '../src/core/events.js';
 import { planLines } from '../src/builtin/planning/tui.js';
-import { needsPlan } from '../src/builtin/planning/index.js';
+import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const f of cleanup.splice(0).reverse()) await f();
@@ -28,6 +28,7 @@ async function fixture(
     plugins?: Plugin[];
     save?: boolean;
     before?: (req: ChatRequest, signal: AbortSignal) => Promise<void>;
+    platform?: NodeJS.Platform;
   } = {},
 ) {
   const cwd = await mkdtempProject(join(tmpdir(), 'agent-planning-'));
@@ -46,13 +47,37 @@ async function fixture(
     },
   });
   const agent = await createAgent(cwd, {
-    plugins: [provider, ...(options.plugins ?? [])],
+    plugins: [
+      provider,
+      ...(options.platform
+        ? [
+            definePlugin({
+              manifest: { id: 'test.planning-platform', version: '1.0.0', apiVersion: 1 },
+              setup(ctx) {
+                ctx.provide.policy(
+                  'planning-platform',
+                  createDeterministicPolicy({
+                    cwd,
+                    platform: options.platform,
+                    mode: options.config?.permissionMode ?? 'yolo',
+                    rules: options.config?.permissions ?? { allow: [], ask: [], deny: [] },
+                  }),
+                );
+              },
+            }),
+          ]
+        : []),
+      ...(options.plugins ?? []),
+    ],
     autoSaveSessions: options.save ?? false,
     config: {
       provider: 'planning-test',
       model: 'current-model',
       permissionMode: 'yolo',
-      capabilities: { reviewer: false },
+      capabilities: {
+        reviewer: false,
+        ...(options.platform ? { policy: 'planning-platform' } : {}),
+      },
       ...options.config,
     },
   });
@@ -71,9 +96,14 @@ const update = (req: ChatRequest, index: number, status: string, evidence?: stri
   const p = from(req);
   return call('plan_update', { revision: p.revision, stepId: p.steps[index].id, status, evidence });
 };
-const proposal = textResponse(
-  JSON.stringify({ goal: '修改并验证', steps: ['写入结果', '验证结果'] }),
-);
+const proposal: ScriptedResponse = (req) =>
+  req.tools.length === 0
+    ? textResponse(JSON.stringify({ goal: '修改并验证', steps: ['写入结果', '验证结果'] }))
+    : call('plan_update', {
+        revision: 0,
+        goal: '修改并验证',
+        steps: [{ title: '写入结果' }, { title: '验证结果' }],
+      });
 function gate() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -95,6 +125,8 @@ describe('规划到执行', () => {
       textResponse('已验证'),
     ]);
     const order: string[] = [];
+    // Windows 的普通写入仍需精确授权；本用例只授权隔离项目中的合成文件。
+    f.agent.permission.addSessionRule('allow', 'write_file(="result.txt")');
     f.agent.events.on('plan_changed', (e) => {
       if (e.plan) order.push('plan');
     });
@@ -107,7 +139,7 @@ describe('规划到执行', () => {
       steps: [{ status: 'completed' }, { status: 'completed' }],
     });
     expect(f.fake.requests.every((req) => req.model === 'current-model')).toBe(true);
-    expect(f.fake.requests[0].tools).toEqual([]);
+    expect(f.fake.requests[0].tools.some((tool) => tool.name === 'plan_update')).toBe(true);
   });
   it('简单问答不额外规划，显式 only 入口总是规划且保存配置', async () => {
     const f = await fixture([textResponse('你好'), proposal, textResponse('计划供审阅')]);
@@ -128,6 +160,7 @@ describe('规划到执行', () => {
       textResponse('invalid json'),
       call('write_file', { path: 'no.txt', content: 'no' }),
     ]);
+    f.agent.loop.plan.force = true;
     expect((await f.agent.loop.run('实现并测试')).reason).toBe('error');
     expect(f.fake.requests).toHaveLength(1);
     await expect(readFile(join(f.cwd, 'no.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
@@ -165,11 +198,219 @@ describe('规划到执行', () => {
       f.fake.requests[1].tools.some((t) => ['bash', 'agent_spawn', 'agent_send'].includes(t.name)),
     ).toBe(false);
     const approvals = vi.fn();
+    f.agent.permission.addSessionRule('allow', 'write_file(="executed.txt")');
     f.agent.events.on('permission_request', approvals);
     await f.agent.dispatchCommand('/plan execute');
     expect(await readFile(join(f.cwd, 'executed.txt'), 'utf8')).toBe('yes');
     expect(f.fake.requests[2].tools.some((t) => t.name === 'write_file')).toBe(true);
     expect(approvals).not.toHaveBeenCalled();
+  });
+});
+
+describe('直接描述任务，自动规划并持续执行', () => {
+  it('普通任务保留对话上下文，自行建计划；两次中途汇报后继续至验证完成', async () => {
+    const task = '就按刚才说的，把这件事做完';
+    const f = await fixture(
+      [
+        textResponse('了解：result.txt 应包含 ok，并读回核对。'),
+        (req) => {
+          expect(req.messages.some((message) => message.content === 'result.txt 应包含 ok')).toBe(
+            true,
+          );
+          expect(req.tools.some((tool) => tool.name === 'plan_update')).toBe(true);
+          return proposal(req);
+        },
+        textResponse('计划已列好，接下来开始。'),
+        (req) => {
+          expect(req.messages.at(-1)).toMatchObject({ role: 'user', source: 'tool' });
+          return update(req, 0, 'running');
+        },
+        call('write_file', { path: 'result.txt', content: 'ok' }),
+        (req) => update(req, 0, 'completed', '已写入 ok'),
+        textResponse('文件已写入，接下来核对。'),
+        (req) => update(req, 1, 'running'),
+        call('read_file', { path: 'result.txt' }),
+        (req) => update(req, 1, 'completed', '读回内容为 ok'),
+        textResponse('已完成并验证'),
+      ],
+      { config: { permissionMode: 'ask' } },
+    );
+    const approvals: string[] = [];
+    f.agent.events.on('permission_request', (event) => {
+      approvals.push(event.request.runId!);
+      event.resolve({ allow: true });
+    });
+    await f.agent.loop.run('result.txt 应包含 ok');
+    const result = await f.agent.loop.run(task);
+    expect(result.reason).toBe('completed');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(await readFile(join(f.cwd, 'result.txt'), 'utf8')).toBe('ok');
+    expect(f.fake.requests).toHaveLength(11);
+    expect(approvals.length).toBeGreaterThan(0);
+    expect(new Set(approvals).size).toBe(1);
+    expect(
+      f.agent.loop
+        .getMessages()
+        .filter((message) => message.role === 'user' && message.source === 'tool'),
+    ).toHaveLength(2);
+    await expect(readFile(join(f.cwd, 'agent.config.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('包含多个行动词的问答不会被关键词强制拆成执行计划', async () => {
+    const f = await fixture([textResponse('实现是编写功能，测试是验证行为，部署是交付运行。')]);
+    await f.agent.loop.run('实现、测试和部署各是什么意思？');
+    expect(f.fake.requests).toHaveLength(1);
+    expect(f.fake.requests[0].tools.length).toBeGreaterThan(0);
+    expect(f.agent.loop.plan.snapshot).toBeUndefined();
+  });
+
+  it('连续空答只提醒一次，不耗尽预算或把未完成任务算作完成', async () => {
+    const f = await fixture([proposal, textResponse('稍后执行'), textResponse('稍后执行')]);
+    const result = await f.agent.loop.run('完成这个任务');
+    expect(result.turns).toBe(3);
+    expect(f.fake.requests).toHaveLength(3);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+  });
+
+  it('反复查询计划不是执行进度，不能重置空转保护', async () => {
+    const f = await fixture([
+      proposal,
+      textResponse('接下来做'),
+      call('plan_status', {}),
+      textResponse('接下来做'),
+    ]);
+    await f.agent.loop.run('完成这个任务');
+    expect(f.fake.requests).toHaveLength(4);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+  });
+
+  it('模型明确缺少用户信息时保留问题并停止，不自动催促实施', async () => {
+    const f = await fixture([
+      proposal,
+      (req) => {
+        const p = from(req);
+        return call('plan_update', {
+          revision: p.revision,
+          stepId: p.steps[0].id,
+          status: 'blocked',
+          reason: '需要用户提供目标接口地址',
+        });
+      },
+      textResponse('目标接口地址是什么？'),
+    ]);
+    await f.agent.loop.run('完成这个任务');
+    expect(f.fake.requests).toHaveLength(3);
+    expect(f.agent.loop.plan.snapshot!.steps[0].reason).toBe('需要用户提供目标接口地址');
+  });
+
+  it('用户拒绝工具后不因未完成计划重新请求执行', async () => {
+    const f = await fixture(
+      [
+        proposal,
+        (req) => update(req, 0, 'running'),
+        call('write_file', { path: 'denied.txt', content: 'no' }),
+        textResponse('写入被拒绝，任务未完成。'),
+      ],
+      { config: { permissionMode: 'ask' } },
+    );
+    const approvals = vi.fn((event: { resolve(value: { allow: boolean }): void }) =>
+      event.resolve({ allow: false }),
+    );
+    f.agent.events.on('permission_request', approvals);
+    await f.agent.loop.run('完成这个任务');
+    expect(approvals).toHaveBeenCalledTimes(1);
+    expect(f.fake.requests).toHaveLength(4);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+    await expect(readFile(join(f.cwd, 'denied.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('自动推进使用同一次运行的轮数预算', async () => {
+    const f = await fixture([proposal, textResponse('接下来做')], { config: { maxTurns: 2 } });
+    expect((await f.agent.loop.run('完成这个任务')).reason).toBe('max_turns');
+    expect(f.fake.requests).toHaveLength(2);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+  });
+
+  it('输出截断不触发自动续跑', async () => {
+    const truncated = textResponse('未完');
+    const stop = truncated.find((event) => event.type === 'message_stop');
+    if (stop?.type === 'message_stop') stop.stopReason = 'max_tokens';
+    const f = await fixture([proposal, truncated]);
+    expect((await f.agent.loop.run('完成这个任务')).reason).toBe('max_tokens');
+    expect(f.fake.requests).toHaveLength(2);
+  });
+
+  it('含未执行工具调用的异常结束不把不完整历史带入续跑请求', async () => {
+    const malformed = call('write_file', { path: 'unexpected.txt', content: 'no' });
+    const stop = malformed.find((event) => event.type === 'message_stop');
+    if (stop?.type === 'message_stop') stop.stopReason = 'end_turn';
+    const f = await fixture([proposal, malformed]);
+    await f.agent.loop.run('完成这个任务');
+    expect(f.fake.requests).toHaveLength(2);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+    await expect(readFile(join(f.cwd, 'unexpected.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('自动推进的内部消息不替换工具收到的原用户授权', async () => {
+    const origins: unknown[] = [];
+    const probe = definePlugin({
+      manifest: { id: 'test.plan-origin', version: '1.0.0', apiVersion: 1 },
+      setup(ctx) {
+        ctx.provide.tool('origin_probe', {
+          name: 'origin_probe',
+          description: '记录隔离测试中的工具调用来源',
+          risk: 'read',
+          inputSchema: { type: 'object' },
+          async execute(_input, context) {
+            origins.push(context.invocation);
+            return { content: '已核对' };
+          },
+        });
+      },
+    });
+    const f = await fixture(
+      [
+        call('plan_update', { revision: 0, goal: '核对', steps: [{ title: '核对' }] }),
+        textResponse('稍后核对'),
+        (req) => update(req, 0, 'running'),
+        call('origin_probe', {}),
+        (req) => update(req, 0, 'completed', '核对成功'),
+        textResponse('完成'),
+      ],
+      { plugins: [probe] },
+    );
+    f.agent.events.on('permission_request', (event) => event.resolve({ allow: true }));
+    await f.agent.loop.run('核对当前结果');
+    expect(origins).toEqual([
+      expect.objectContaining({ source: 'user', userRequest: '核对当前结果' }),
+    ]);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+  });
+
+  it('续跑请求期间取消，迟到响应不能继续实施', async () => {
+    const entered = gate();
+    const f = await fixture(
+      [proposal, textResponse('接下来做'), call('write_file', { path: 'late.txt', content: 'no' })],
+      {
+        before: async (req, signal) => {
+          const last = req.messages.at(-1);
+          if (last?.role === 'user' && last.source === 'tool') {
+            entered.resolve();
+            await new Promise<void>((resolve) =>
+              signal.addEventListener('abort', () => resolve(), { once: true }),
+            );
+          }
+        },
+      },
+    );
+    const running = f.agent.loop.run('完成这个任务');
+    await entered.promise;
+    await f.agent.dispatchCommand('/plan cancel');
+    expect((await running).reason).toBe('aborted');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('cancelled');
+    await expect(readFile(join(f.cwd, 'late.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 
@@ -250,6 +491,94 @@ describe('不可绕过的只规划边界', () => {
     expect((await writing).isError).toBe(true);
     expect(f.agent.loop.plan.snapshot?.phase).toBe('paused');
     await expect(readFile(join(f.cwd, 'late.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('PR #35/#36/#37 的 Windows 权限与规划续跑组合', () => {
+  it('ask 模式的真实项目读取不打断自动续跑，保持原始用户来源并完成计划', async () => {
+    const task = '读取 ordinary.txt 并核对检索结果';
+    const f = await fixture(
+      [
+        call('plan_update', {
+          revision: 0,
+          goal: task,
+          steps: [{ title: '读取文件' }, { title: '检索验证' }],
+        }),
+        textResponse('计划已经建立，接下来读取。'),
+        (req) => {
+          expect(req.messages.at(-1)).toMatchObject({ role: 'user', source: 'tool' });
+          return update(req, 0, 'running');
+        },
+        call('read_file', { path: 'ordinary.txt' }),
+        (req) => update(req, 0, 'completed', 'read_file 返回 ordinary-sentinel'),
+        textResponse('已读到内容，继续检索验证。'),
+        (req) => update(req, 1, 'running'),
+        call('grep', { pattern: 'ordinary-sentinel', path: '.', glob: 'ordinary.txt' }),
+        (req) => update(req, 1, 'completed', 'grep 找到 ordinary.txt 中相同内容'),
+        textResponse('读取和检索已核对完成'),
+      ],
+      { platform: 'win32', config: { permissionMode: 'ask' } },
+    );
+    await writeFile(join(f.cwd, 'ordinary.txt'), 'ordinary-sentinel');
+    const approvals = vi.fn();
+    f.agent.events.on('permission_request', approvals);
+    expect((await f.agent.loop.run(task)).reason).toBe('completed');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(approvals).not.toHaveBeenCalled();
+    expect(f.fake.requests).toHaveLength(10);
+    expect(
+      f.fake.requests.every((req) =>
+        req.messages.some(
+          (message) =>
+            message.role === 'user' &&
+            message.content === task &&
+            (message.source ?? 'user') === 'user',
+        ),
+      ),
+    ).toBe(true);
+    expect(f.fake.requests.every((req) => req.tools.length > 0)).toBe(true);
+    expect(await readFile(join(f.cwd, 'ordinary.txt'), 'utf8')).toBe('ordinary-sentinel');
+  });
+  it.each([
+    ['sc .env replacement', 'sensitive_target'],
+    ['sc ../outside.txt replacement', 'external_target'],
+    ['git status', 'powershell_unknown'],
+    ['rd -Recurse C:/', 'external_target'],
+  ])('规划执行 %s 的精确 allow 不能越过约束；拒绝后不再自动重试', async (command, reasonCode) => {
+    const f = await fixture(
+      [
+        proposal,
+        (req) => update(req, 0, 'running'),
+        call('bash', { command }),
+        textResponse('操作被拒绝，计划保持阻塞'),
+      ],
+      { platform: 'win32', config: { permissionMode: 'auto' } },
+    );
+    await writeFile(join(f.cwd, '.env'), 'fixture-sentinel');
+    f.agent.permission.addSessionRule('allow', `bash(=${JSON.stringify(command)})`);
+    const approvals = vi.fn(
+      (event: {
+        request: { reasonCode?: string; summary: string };
+        resolve(value: { allow: boolean }): void;
+      }) => {
+        event.resolve({ allow: false });
+      },
+    );
+    f.agent.events.on('permission_request', approvals);
+    await f.agent.loop.run('继续执行任务并完成验证');
+    expect(approvals).toHaveBeenCalledTimes(1);
+    expect(approvals.mock.calls[0]![0].request).toMatchObject({
+      reasonCode,
+      summary: `PowerShell: ${command}`,
+    });
+    if (command === 'rd -Recurse C:/')
+      expect(approvals.mock.calls[0]![0].request).toMatchObject({
+        analysisReasonCode: 'shell_dangerous',
+      });
+    expect(f.fake.requests).toHaveLength(4);
+    expect(f.fake.requests.every((req) => req.tools.length > 0)).toBe(true);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+    expect(await readFile(join(f.cwd, '.env'), 'utf8')).toBe('fixture-sentinel');
   });
 });
 
@@ -385,8 +714,6 @@ describe('计划修订、归属与生命周期', () => {
     expect(planLines(plan.snapshot, false, 3).join('\n')).toContain('下一步: 步骤1');
     expect(planLines(plan.snapshot, true, 8)).toHaveLength(8);
     expect(planLines(plan.snapshot, true, 3)).toHaveLength(3);
-    expect(needsPlan('hello')).toBe(false);
-    expect(needsPlan('实现功能并验证测试')).toBe(true);
   });
 });
 
@@ -437,6 +764,7 @@ describe('独立复审回归与设置竞态', () => {
       (req) => update(req, 0, 'completed', '写入 child-real.txt 成功'),
       textResponse('done'),
     ]);
+    f.agent.permission.addSessionRule('allow', 'write_file(="child-real.txt")');
     await f.agent.dispatchCommand('/plan only');
     f.agent.loop.plan.create('目标', ['委派'], 'only');
     f.agent.loop.plan.execute();
@@ -648,6 +976,7 @@ it.each(['only', 'auto'] as const)(
       textResponse('已完成'),
     ]);
     const plan = f.agent.loop.plan;
+    f.agent.permission.addSessionRule('allow', 'write_file(="result.txt")');
     plan.configure(mode);
     plan.create('创建文件', ['创建'], mode);
     if (mode === 'only') plan.execute();

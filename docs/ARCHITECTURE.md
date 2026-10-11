@@ -110,17 +110,17 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 `src/core/tool-executor.ts` 是所有受支持工具调用的唯一入口；`src/builtin/policy/` 实现默认确定性策略，`src/builtin/reviewer-model/` 实现严格模型审批。默认能力 ID 为 `deterministic` / `model`，默认模式是 `ask`。
 
-审批按顺序处理 deny、不可降级约束、明确 ask、完整验证的精确目标授权，再应用模式默认。ask 默认询问；auto 对完整项目内读取与显式 writeRoots 范围写入可确定性放行，其余符合委托条件的操作交给 reviewer；yolo 仅跳过完整验证的普通项目文件写入。敏感/写保护、项目外、歧义路径、特殊文件、硬链接和危险操作不会被模型降级。
+审批按顺序处理 deny、不可降级约束、明确 ask、精确调用或完整验证的精确目标授权、已验证项目内只读，再应用模式默认。ask 对完整项目内只读直接放行，写入、执行与未知操作才询问；auto 还可对显式 writeRoots 范围写入确定性放行，其余符合委托条件的操作交给 reviewer；yolo 仅跳过完整验证的普通项目文件写入。敏感/写保护、项目外、歧义路径、特殊文件、硬链接和危险操作不会被模型降级。Bash 与未知 MCP 的等于引号精确调用可免审批员；PowerShell 还必须先完成语义与目标分类，未知 PowerShell 不能凭精确规则放行。
 
-Windows 的 read_file/glob/grep 在通用检查通过后于 auto/yolo 直接放行。write_file/edit_file 的项目内完整写入仍保留精确目标规则直接授权，否则 auto/yolo 委托模型、ask 询问；通配规则与 writeRoots 不直接放行这些写入。PowerShell 使用独立 AST 和字面参数绑定，先复用通用路径检查，再决定是否完整；完整普通 cmdlet 可交给 reviewer，未知 PowerShell 直接人工。纯文件读、列目录与搜索 Shell 仍拒绝并引导专用工具。批准执行的完整 cmdlet 按模块限定名、完整参数名和单引号字面值重新构造，避免默认别名或引号在审批后换义。能力边界见 [POLICY.md](POLICY.md)。
+Windows 的 read_file/glob/grep 在通用检查通过后于 ask/auto/yolo 直接放行。write_file/edit_file 的项目内完整写入仍保留精确目标规则直接授权，否则 auto/yolo 委托模型、ask 询问；通配规则与 writeRoots 不直接放行这些写入。PowerShell 使用独立 AST 和字面参数绑定，先复用通用路径检查，再决定是否完整；完整普通 cmdlet 可交给 reviewer，用户记住的等于引号精确调用也可授权，未知 PowerShell 直接人工。纯文件读、列目录与搜索 Shell 仍拒绝并引导专用工具。批准执行的完整 cmdlet 按模块限定名、完整参数名和单引号字面值重新构造，避免默认别名或引号在审批后换义。能力边界见 [POLICY.md](POLICY.md)。
 
-reviewer 的明确 deny 终止本次调用；ask/unknown、非法输出、失败、超时或不可用才回到人工。审批摘要标明实际解释器 PowerShell；未知语义或仅有 execute effect、精确规则无法生效时，面板隐藏“允许并记住此规则”。
+reviewer 的明确 deny 终止本次调用；ask/unknown、非法输出、失败、超时或不可用才回到人工。审批摘要标明实际解释器 PowerShell；已完整分类的调用可记住精确规则，未知 PowerShell、敏感/外部目标、歧义路径、明确 ask 与未验证实现隐藏无效的“允许并记住此规则”。同一次调用中，仅 policyRevision 因其他记住规则改变且输入、工具、配置、会话与分析指纹未变时，可复用用户的本次批准；deny 或分析/环境变化仍重新拒绝或询问。
 
 Bash 的语法与授权分开：`tree-sitter-bash` 解析命令、逻辑连接、管道、重定向和展开等完整 Bash 语法；`tools/shell-readonly.ts` 对可证明的字面量命令逐项验证选项和真实文件路径。`&&`、`||`、`;` 和只读管道必须整条表达式都满足只读合约，不能因首个命令叫 `ls` 就放行后面的写入。动态展开、替换、脚本执行及未支持参数保留明确的不确定原因，交给原审批链；语法树不是任意程序副作用的证明。
 
 确定性放行的 Bash 使用固定可信系统工具、禁用启动配置/继承函数的非交互解释器与受控环境；Git/rg 的可执行配置另外禁用。分析记录经过验证的执行计划，ToolExecutor 最终重验后，Bash 工具还要确认实际计划未扩大，才执行同一计划。未知命令经原有审批授权后仍走普通执行路径。已安装的系统工具是可信依赖，本实现不是 OS 沙箱，不声称能防住恶意宿主二进制或并发文件替换的全部竞态。
 
-规则支持 `tool(glob)` 与 `tool(="字面量目标")`；宽泛 allow 不能替代完整的精确授权。会话规则只在同一 action 类别内先于配置规则，不越过 deny/ask。文件目标同时匹配真实绝对路径与项目相对路径。完整分析、环境重验和版本绑定详见 [POLICY.md](POLICY.md)。
+规则支持 `tool(glob)` 与 `tool(="字面量目标")`；宽泛 allow 不能替代完整的精确授权。bash 与未知 MCP 只接受等于引号形式才能放行该次调用。会话规则只在同一 action 类别内先于配置规则，不越过 deny/ask。文件目标同时匹配真实绝对路径与项目相对路径。完整分析、环境重验和版本绑定详见 [POLICY.md](POLICY.md)。
 
 只有 policy 返回 `review` 才会调用模型。审批员只接受完整、严格的 `decision` / `reasonCode` / `reason` JSON；无效输出、超时、取消、未知结果与缺失审批员都保守询问。完整参数与当前真实用户要求不能被截断后提交。模型结果不缓存，历史批准不成为新授权。预算、独立 provider 和前缀缓存详见 [REVIEWER.md](REVIEWER.md)。
 

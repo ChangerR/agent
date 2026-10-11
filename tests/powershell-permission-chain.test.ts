@@ -89,7 +89,7 @@ function setup(
     unavailable?: boolean;
     timeout?: boolean;
     rules?: Partial<SessionRules>;
-    respond?: (request: PermissionRequest) => UserDecision;
+    respond?: (request: PermissionRequest) => UserDecision | Promise<UserDecision>;
     beforeResponse?: () => Promise<void>;
   } = {},
 ) {
@@ -136,9 +136,9 @@ function setup(
       });
   const requests: PermissionRequest[] = [];
   const events = new EventBus();
-  events.on('permission_request', (event) => {
+  events.on('permission_request', async (event) => {
     requests.push(event.request);
-    event.resolve(options.respond?.(event.request) ?? { allow: false });
+    event.resolve(await (options.respond?.(event.request) ?? { allow: false }));
   });
   const executor = new ToolExecutor({
     cwd,
@@ -318,6 +318,94 @@ describe('真正未知语义直接人工，精确 allow/yolo/provider 都不能�
   });
 });
 
+describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () => {
+  it.each(['echo PS_REMEMBERED', 'sc src/ordinary.txt remembered'])(
+    '%s 完整调用可以记住，下一次相同命令不再询问，其他命令仍需审批',
+    async (command) => {
+      const h = setup({ mode: 'ask', respond: () => ({ allow: true, remember: 'session' }) });
+      expect((await h.run(command)).isError).toBeFalsy();
+      expect(h.requests).toHaveLength(1);
+      expect(canRememberPermission(h.requests[0]!)).toBe(true);
+      expect((await h.run(command)).isError).toBeFalsy();
+      expect(h.requests).toHaveLength(1);
+      expect((await h.analyze(command)).decision.reasonCode).toBe('exact_call_allow');
+      await h.run('echo DIFFERENT_CALL');
+      expect(h.requests).toHaveLength(2);
+      expect(h.provider.requests).toHaveLength(0);
+      expect(h.execute).toHaveBeenCalledTimes(3);
+    },
+  );
+  it('完整写入的 ModelReviewer ask 后可记住精确命令，不能扩大到其他目标', async () => {
+    const command = 'sc src/ordinary.txt remembered';
+    const h = setup({
+      script: response('ask'),
+      respond: () => ({ allow: true, remember: 'session' }),
+    });
+    expect((await h.run(command)).isError).toBeFalsy();
+    expect(h.requests).toHaveLength(1);
+    expect(canRememberPermission(h.requests[0]!)).toBe(true);
+    expect((await h.run(command)).isError).toBeFalsy();
+    expect(h.requests).toHaveLength(1);
+    expect(h.provider.requests).toHaveLength(1);
+    expect(h.execute).toHaveBeenCalledTimes(2);
+    expect((await h.analyze('sc .env remembered')).decision.reasonCode).toBe('sensitive_target');
+  });
+  it.each([
+    ['sc .env x', 'sensitive_target'],
+    ['sc ../outside/sentinel.txt x', 'external_target'],
+    ['sc src/ordinary.txt. x', 'platform_unverified'],
+    ['sc src/hardlink.txt x', 'aliased_target'],
+    ['Set-Content $path x', 'powershell_unknown'],
+    ['git status', 'powershell_unknown'],
+  ])('精确记住规则不能放行 %s', async (command, reasonCode) => {
+    for (const mode of ['ask', 'auto', 'yolo'] as const) {
+      const h = setup({ mode, rules: { allow: [`bash(=${JSON.stringify(command)})`] } });
+      expect((await h.run(command)).isError).toBe(true);
+      expect(h.requests[0]).toMatchObject({ reasonCode });
+      expect(canRememberPermission(h.requests[0]!)).toBe(false);
+      expect(h.provider.requests).toHaveLength(0);
+      expect(h.execute).not.toHaveBeenCalled();
+    }
+  });
+  it('其他记住规则只改变 policyRevision 时，本次批准复用且不跨调用复用', async () => {
+    const h = setup({
+      mode: 'ask',
+      respond: () => {
+        h.policy.controller!.addSessionRule('allow', 'bash(="echo OTHER_CALL")');
+        return { allow: true };
+      },
+    });
+    expect((await h.run('sc src/ordinary.txt ok')).isError).toBeFalsy();
+    expect(h.requests).toHaveLength(1);
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect((await h.run('sc src/ordinary.txt ok')).isError).toBeFalsy();
+    expect(h.requests).toHaveLength(2);
+    expect(h.provider.requests).toHaveLength(0);
+  });
+  it('人工批准时目标换成外部链接，审批复用不能掩盖分析变化', async () => {
+    const path = join(cwd, 'src/human-rebind.txt');
+    await writeFile(path, 'before');
+    let answers = 0;
+    const h = setup({
+      mode: 'ask',
+      respond: async () => {
+        if (answers++ > 0) return { allow: false };
+        await unlink(path);
+        await symlink(join(outside, 'sentinel.txt'), path);
+        return { allow: true };
+      },
+    });
+    expect((await h.run('sc src/human-rebind.txt x')).isError).toBe(true);
+    expect(h.requests.map((request) => request.reasonCode)).toEqual([
+      'ask_mode',
+      'external_target',
+    ]);
+    expect(h.provider.requests).toHaveLength(0);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(await readFile(join(outside, 'sentinel.txt'), 'utf8')).toBe('outside-sentinel');
+  });
+});
+
 describe('完整分析可以真正使用内置 ModelReviewer，协议结果仍由 Executor 控制', () => {
   it.each([
     'Set-Content src/ordinary.txt ok',
@@ -383,7 +471,7 @@ describe('完整分析可以真正使用内置 ModelReviewer，协议结果仍�
       await h.run('echo ok');
       expect(h.execute).not.toHaveBeenCalled();
       expect(h.requests[0]).toMatchObject({ reasonCode, summary: 'PowerShell: echo ok' });
-      expect(canRememberPermission(h.requests[0]!)).toBe(false);
+      expect(canRememberPermission(h.requests[0]!)).toBe(true);
     },
   );
   it('缺少 reviewer 同样回退，ask 模式直接询问', async () => {
@@ -433,8 +521,8 @@ describe('完整分析可以真正使用内置 ModelReviewer，协议结果仍�
     expect(h.requests[0]).toMatchObject({ reasonCode: 'external_target' });
     expect(await readFile(join(outside, 'sentinel.txt'), 'utf8')).toBe('outside-sentinel');
   });
-  it.each(['auto', 'yolo'] as const)(
-    '%s 保留 PR #30 的真实 read_file/glob/grep，零 reviewer/人工',
+  it.each(['ask', 'auto', 'yolo'] as const)(
+    '%s 保留 PR #30/#36 的真实 read_file/glob/grep，零 reviewer/人工',
     async (mode) => {
       const h = setup({ mode });
       expect((await h.runTool('read_file', { path: 'src/ordinary.txt' })).content).toContain(

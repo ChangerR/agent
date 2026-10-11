@@ -194,8 +194,8 @@ describe('AgentLoop', () => {
       mode: 'ask',
       script: [
         toolUseResponse([
-          { id: 'a', name: 'read_file', input: { path: 'a' } },
-          { id: 'b', name: 'read_file', input: { path: 'b' } },
+          { id: 'a', name: 'read_file', input: { path: '.env' } },
+          { id: 'b', name: 'read_file', input: { path: '../outside.txt' } },
         ]),
       ],
     });
@@ -215,7 +215,7 @@ describe('AgentLoop', () => {
     const { loop } = makeLoop({
       events,
       mode: 'ask',
-      script: [toolUseResponse([{ id: 'a', name: 'read_file', input: { path: 'a' } }])],
+      script: [toolUseResponse([{ id: 'a', name: 'write_file', input: { path: 'a', content: 'a' } }])],
     });
     let entered!: () => void;
     const waiting = new Promise<void>((resolve) => {
@@ -355,6 +355,55 @@ describe('AgentLoop', () => {
       expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('2');
     },
   );
+
+  it('ask 模式一轮三个并发 read_file 不询问', async () => {
+    await writeFile(join(tmp, 'a.txt'), 'a');
+    await writeFile(join(tmp, 'b.txt'), 'b');
+    await writeFile(join(tmp, 'c.txt'), 'c');
+    const events = new EventBus();
+    let asks = 0;
+    events.on('permission_request', () => {
+      asks++;
+    });
+    const { loop } = makeLoop({
+      mode: 'ask',
+      events,
+      script: [
+        toolUseResponse([
+          { id: 'a', name: 'read_file', input: { path: 'a.txt' } },
+          { id: 'b', name: 'read_file', input: { path: 'b.txt' } },
+          { id: 'c', name: 'read_file', input: { path: 'c.txt' } },
+        ]),
+        textResponse('done'),
+      ],
+    });
+    await loop.run('read three');
+    expect(asks).toBe(0);
+  });
+
+  it('ask 模式记住 bash 后，第二次相同命令不再询问', async () => {
+    await writeFile(
+      join(tmp, 'package.json'),
+      JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }),
+    );
+    const events = new EventBus();
+    const seen: string[] = [];
+    events.on('permission_request', (event) => {
+      if (event.request.toolUseId) seen.push(event.request.toolUseId);
+      event.resolve({ allow: true, remember: 'session' });
+    });
+    const { loop } = makeLoop({
+      mode: 'ask',
+      events,
+      script: [
+        toolUseResponse([{ id: 't1', name: 'bash', input: { command: 'npm test' } }]),
+        toolUseResponse([{ id: 't2', name: 'bash', input: { command: 'npm test' } }]),
+        textResponse('done'),
+      ],
+    });
+    await loop.run('test twice');
+    expect(seen).toEqual(['t1']);
+  });
 
   it('用户拒绝：反馈以 tool_result 回填', async () => {
     const events = new EventBus();

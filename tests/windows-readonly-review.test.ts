@@ -1,5 +1,5 @@
 /**
- * 原生 Windows 上，通过通用检查的项目内 read_file/glob/grep 在 auto/yolo 直接放行。
+ * 原生 Windows 上，通过通用检查的项目内 read_file/glob/grep 在 ask/auto/yolo 直接放行。
  * 敏感、项目外、歧义路径仍人工确认。PowerShell 完整字面操作可 review，无法解析的语义必须人工。通过 platform 注入覆盖 Windows 分支。
  */
 import { realpathSync } from 'node:fs';
@@ -106,7 +106,7 @@ const fill = (input: Record<string, unknown>) =>
     ]),
   );
 
-describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
+describe('原生 Windows：ask/auto/yolo 项目内只读直接放行', () => {
   const reviewCases: Array<[keyof typeof tools, Record<string, unknown>]> = [
     ['read_file', { path: 'src/a.ts' }],
     ['read_file', { path: '{cwd}/src/a.ts' }],
@@ -120,7 +120,7 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
   ];
   it.each(
     reviewCases.flatMap(([name, input]) =>
-      (['auto', 'yolo'] as const).map((mode) => [mode, name, input] as const),
+      (['ask', 'auto', 'yolo'] as const).map((mode) => [mode, name, input] as const),
     ),
   )('%s %s %j → allow（safe_read）', async (mode, name, input) => {
     const result = await decide(mode, name, fill(input));
@@ -142,10 +142,6 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
     ['yolo', 'bash', { command: 'git status' }, 'powershell_unknown'],
     ['ask', 'bash', { command: 'git status --short' }, 'powershell_unknown'],
     ['auto', 'bash', { command: 'git push origin HEAD --force' }, 'danger_constraint'],
-    // ask 模式默认询问
-    ['ask', 'read_file', { path: 'src/a.ts' }, 'ask_mode'],
-    ['ask', 'glob', { pattern: '**/*.ts' }, 'ask_mode'],
-    ['ask', 'grep', { pattern: 'needle' }, 'ask_mode'],
     // 能静态判定的敏感 / 项目外目标
     ['auto', 'read_file', { path: '.env' }, 'sensitive_target'],
     ['auto', 'read_file', { path: 'mcp.json' }, 'sensitive_target'],
@@ -212,6 +208,29 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
         : 'powershell_unknown',
     });
   });
+
+  it.each(['ask', 'auto'] as const)('完整 PowerShell 精确命令规则在 %s 放行', async (mode) => {
+    expect(
+      await decide(mode, 'bash', { command: 'echo one' }, 'win32', {
+        allow: ['bash(="echo one")'],
+        ask: [],
+        deny: [],
+      }),
+    ).toMatchObject({ kind: 'allow', reasonCode: 'exact_call_allow' });
+  });
+
+  it.each(['ask', 'auto', 'yolo'] as const)(
+    '未知 PowerShell 的精确 npm test 规则在 %s 不能补全语义',
+    async (mode) => {
+      expect(
+        await decide(mode, 'bash', { command: 'npm test' }, 'win32', {
+          allow: ['bash(="npm test")'],
+          ask: [],
+          deny: [],
+        }),
+      ).toMatchObject({ kind: 'ask', reasonCode: 'powershell_unknown' });
+    },
+  );
 
   it('用户 deny 规则优先于读文件类 PowerShell 的专用工具拒绝', async () => {
     expect(

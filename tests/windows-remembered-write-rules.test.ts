@@ -1,7 +1,7 @@
 /**
  * 原生 Windows 写入：用户亲自配置或记住的精确、无通配符规则直接放行 write_file/edit_file；
  * 未命中精确规则的项目内普通写入在 auto/yolo 交给模型审批；敏感/写保护、项目外、硬链接、歧义路径与 ask 模式仍人工。
- * 未验收的 Windows Shell 在 auto 交给 reviewer，精确规则不能直接放行。
+ * 完整分类的 PowerShell 支持精确调用规则，未知 PowerShell 仍直接人工。
  * 通过 platform 注入覆盖 Windows 分支，在所有宿主上运行，不按宿主平台跳过。
  */
 import { realpathSync } from 'node:fs';
@@ -263,17 +263,26 @@ describe('原生 Windows 写入：仍人工的边界（精确规则也不能越�
     ).toMatchObject({ kind: 'ask', reasonCode });
   });
 
-  it('未验收的 Windows Shell：auto 交给 reviewer，ask/yolo 仍人工，精确规则不直接放行', async () => {
-    const allowed = rules({ allow: ['bash(echo one)', 'bash(="echo one")'] });
-    expect(await decide('auto', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+  it('完整静态 PowerShell：等于引号精确规则放行，字面量模式仍不放行', async () => {
+    const exact = rules({ allow: ['bash(="echo one")'] });
+    expect(await decide('auto', 'bash', { command: 'echo one' }, exact)).toMatchObject({
+      kind: 'allow',
+      reasonCode: 'exact_call_allow',
+    });
+    expect(await decide('ask', 'bash', { command: 'echo one' }, exact)).toMatchObject({
+      kind: 'allow',
+      reasonCode: 'exact_call_allow',
+    });
+    const literal = rules({ allow: ['bash(echo one)'] });
+    expect(await decide('auto', 'bash', { command: 'echo one' }, literal)).toMatchObject({
       kind: 'review',
       reasonCode: 'review_uncertain',
     });
-    expect(await decide('yolo', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+    expect(await decide('yolo', 'bash', { command: 'echo one' }, literal)).toMatchObject({
       kind: 'ask',
       reasonCode: 'unknown_ask',
     });
-    expect(await decide('ask', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+    expect(await decide('ask', 'bash', { command: 'echo one' }, literal)).toMatchObject({
       kind: 'ask',
       reasonCode: 'ask_mode',
     });

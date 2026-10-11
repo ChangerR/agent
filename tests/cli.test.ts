@@ -11,7 +11,7 @@ import {
   type MarkdownTheme,
   type Terminal,
 } from '@earendil-works/pi-tui';
-import { startTui } from '../src/cli/app.js';
+import { canRememberPermission, startTui } from '../src/cli/app.js';
 import {
   DetailRegistry,
   renderHistory,
@@ -761,7 +761,14 @@ describe('真实 TUI 离线交互', () => {
         type: 'permission_request',
         signal: controller.signal,
         resolve: vi.fn(),
-        request: { toolName: 'custom_plugin', input: {}, summary: '插件调用', reason: '确认' },
+        request: {
+          toolName: 'custom_plugin',
+          reasonCode: 'ask_mode',
+          policyReasonCode: 'ask_mode',
+          input: {},
+          summary: '插件调用',
+          reason: '确认',
+        },
       });
       ui.terminal.input?.('\x1b[B');
       ui.terminal.input?.('\x1b[B');
@@ -815,6 +822,8 @@ describe('真实 TUI 离线交互', () => {
         resolve,
         request: {
           toolName: 'read_file',
+          reasonCode: 'ask_mode',
+          policyReasonCode: 'ask_mode',
           input: { path: 'note.txt' },
           summary: '读取 note.txt',
           reason: '请确认',
@@ -955,6 +964,34 @@ describe('真实 TUI 离线交互', () => {
     }
   });
 
+  it('canRememberPermission 只对可生效的询问原因显示记住', () => {
+    expect(
+      canRememberPermission({
+        reasonCode: 'ask_mode',
+        analysisReasonCode: 'powershell_bounded',
+        toolName: 'bash',
+      }),
+    ).toBe(true);
+    expect(
+      canRememberPermission({
+        reasonCode: 'model_ask',
+        policyReasonCode: 'powershell_write_review',
+        analysisReasonCode: 'powershell_file_operation',
+        toolName: 'bash',
+      }),
+    ).toBe(true);
+    expect(canRememberPermission({ reasonCode: 'explicit_ask', toolName: 'write_file' })).toBe(
+      false,
+    );
+    expect(
+      canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' }),
+    ).toBe(false);
+    expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'grep' })).toBe(false);
+    expect(
+      canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash', agentId: 'child-1' }),
+    ).toBe(false);
+  });
+
   it.each([
     {
       toolName: 'bash',
@@ -965,9 +1002,9 @@ describe('真实 TUI 离线交互', () => {
     },
     {
       toolName: 'bash',
-      reasonCode: 'model_ask',
-      policyReasonCode: 'review_uncertain',
-      analysisReasonCode: 'powershell_bounded',
+      reasonCode: 'powershell_unknown',
+      policyReasonCode: 'powershell_unknown',
+      analysisReasonCode: 'powershell_unresolved',
       input: { command: 'git status --short' },
     },
     {
@@ -1028,6 +1065,8 @@ describe('真实 TUI 离线交互', () => {
         resolve,
         request: {
           toolName: 'bash',
+          reasonCode: 'ask_mode',
+          policyReasonCode: 'ask_mode',
           summary: `发布 ${'很长的命令 '.repeat(200)}`,
           reason: '需要确认远端写入范围',
           input: { command: `${'command argument\n'.repeat(80)}END_PARAMETER_UNIQUE` },
@@ -1198,7 +1237,7 @@ describe('真实 TUI 离线交互', () => {
         join(dir, 'agent.config.json'),
         JSON.stringify({ provider: 'fake', permissionMode: 'ask' }),
       );
-      await writeFile(join(dir, 'demo.txt'), '演示内容');
+      await writeFile(join(dir, 'secrets.txt'), '演示内容');
       const agent = await createAgent(dir);
       const terminal = new MemoryTerminal();
       const exit = vi.fn();
@@ -1207,7 +1246,7 @@ describe('真实 TUI 离线交互', () => {
       const screen = () => renderer!.getScreenLines().map(stripTerminalSequences);
       expect(screen()).toHaveLength(24);
       expect(screen().slice(-8).join('\n')).toContain('Enter 发送');
-      terminal.input?.('读取 demo.txt');
+      terminal.input?.('读取 secrets.txt');
       terminal.input?.('\r');
       await vi.waitFor(() => expect(stripTerminalSequences(terminal.output)).toContain('请求权限'));
       terminal.input?.('\x03');

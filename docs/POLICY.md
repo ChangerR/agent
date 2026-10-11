@@ -26,15 +26,15 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 1. 明确 `deny`
 2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell，以及无法完整解析的 PowerShell 操作
 3. 明确 `ask`
-4. 已完整验证操作的精确目标规则
-5. `ask` 模式默认询问
-6. 显式 `writeRoots` 目录授权；已验证的普通文件读取与受控项目搜索
+4. bash 与未知 MCP 的等于引号精确调用规则（`exact_call_allow`），以及已完整验证操作的精确目标规则
+5. 已验证的项目内完整只读（`safe_read`）；`ask` 模式同样直接放行
+6. `ask` 模式对写入、执行与未知操作默认询问；随后才是显式 `writeRoots` 目录授权
 7. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
 8. `auto` 的剩余不确定操作可委托一次 reviewer；明确 reviewer deny 终止；ask/unknown、缺少 reviewer、非法输出、失败或超时回到人工
 
 会话规则只在同一 action 类别内优先于配置规则，不会让 session allow 越过配置 ask/deny。
 
-精确规则使用 JSON 字面量目标，例如 `write_file(="src/new.ts")`，或不含 glob 元字符的字面量模式。其权限范围仍按实际匹配字段解释：文件规则匹配路径，不声称同时限定内容。宽泛的 `write_file` 或 `write_file(src/**)` 不足以让未知操作自动执行。敏感路径和不完整效果也不能借精确规则放行。
+精确规则使用 JSON 字面量目标，例如 `write_file(="src/new.ts")` 或 `bash(="pnpm test")`。其权限范围仍按实际匹配字段解释：文件规则匹配路径，不声称同时限定内容。宽泛的 `write_file`、`bash` 或 `bash(npm *)` 只作说明，不会放行。敏感路径、项目外目标、危险命令和明确 ask 不能借精确规则放行。Bash 与未知 MCP 的等于引号 JSON 规则可以放行该次不完整调用；PowerShell 必须先完整分类语义与目标，未知 PowerShell 仍人工确认。字面量模式和通配规则不提供新增的精确调用授权。
 
 已知文件工具与搜索工具还会用全部实际候选的真实绝对路径与项目相对路径匹配 deny/ask，避免 `./`、`..` 或符号链接别名绕过相同文件的 ask/deny。
 
@@ -54,7 +54,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 
 这表示在新的 auto 会话中，允许已知内置 `write_file` / `edit_file` 对 `src` 内普通文件进行完整、已验证的写入。默认目录列表为空，不存在隐式整项目写授权。项目外目录、敏感目录和非目录根会被拒绝；不存在的目录必须有可验证的目录父节点。
 
-目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式仍要求本次确认或精确规则，不因目录授权跳过默认询问。
+目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式的写入仍要求本次确认或精确规则，不因目录授权跳过询问。
 
 `/settings` 中的“明确写入目录授权”支持独立输入、验证和一次提交自动保存，无额外确认；保存走配置 fingerprint/CAS、原子写、未知字段保留和符号链接保护。保存只改变下一会话配置，不热更新活动策略。更改写入目录属于明确扩大授权范围，界面说明这一含义。
 
@@ -67,7 +67,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - `glob` / `grep`：分析与执行共用受控目录枚举，只处理项目内普通文件；默认根目录、子目录、递归、空匹配与重复搜索在 auto 中均无需 reviewer 或人工确认。用户 glob 只过滤项目树并用于安全剪枝，不控制外部遍历根。排除隐藏/敏感路径、配置插件入口、symlink、多硬链接文件、node_modules 和 dist；`plugins/`、AGENTS/CLAUDE 说明与 agent.config.json 作为普通文件参与搜索。指向项目内的绝对 pattern（如 `/repo/src/**/*.ts`）在分析与执行中统一转换为项目相对 pattern；含 `..`、指向项目外，或相对部分以 `!`/`#` 开头（minimatch 会解释为取反/注释）的绝对 pattern 不转换，保持字面语义并按项目外要求确认；不使用反斜杠转义，因为 Windows 上反斜杠是路径分隔符。遇到 EACCES/EPERM 的目录或 ignore 文件在分析与执行中一致跳过，不让整次搜索变成 analysis_error。显式敏感、项目外路径及链接逃逸仍要求人工确认。搜索工具始终遵守此范围；需要读取被排除的具体文件时使用 `read_file` 并按策略确认。
 - 两种搜索工具统一遵守项目与嵌套 `.gitignore`（使用 `ignore` 包处理 negation）；被排除的父目录不会被子目录规则恢复。显式 pattern/glob 不覆盖 ignore；不读取项目外的全局 ignore 或链接形式的 ignore 配置。`glob('*.ts')` 只匹配当前层，`grep` 的 `glob: '*.ts'` 可匹配各层文件名。
 - `grep` 保留宿主提供的 ripgrep 及其正则语义，只向它传入已核验的文件列表，禁用 rg 配置、预处理器与链接跟随，清除相关动态加载环境，使用 `--` 分隔文件参数并分批运行；无 rg 时使用同一候选列表的 JS 正则扫描。空候选不退回目录搜索。宿主安装的 rg 仍是受信任依赖，不能据此宣称任意替换二进制也安全。
-- 搜索的 deny/ask 检查原请求与全部候选路径。一个文件的精确 allow 不能授权通配搜索的其他文件；grep 的 regex 精确匹配也不是文件范围授权。ask 模式的递归搜索仍询问。
+- 搜索的 deny/ask 检查原请求与全部候选路径。一个文件的精确 allow 不能授权通配搜索的其他文件；grep 的 regex 精确匹配也不是文件范围授权。ask 模式的已验证项目内递归搜索直接放行；敏感、项目外与明确 ask 仍询问。
 - 每次最终重验重新枚举、比较文件集和元数据；执行时再核验并绑定已批准目标。若最终重验后新增候选，返回 `approval_stale`，需要重新搜索，不能把新文件悄悄并入已批准操作。
 - Bash 使用成熟 `tree-sitter-bash` 语法树，区分语法解析与具体语义授权。支持字面量命令、单/双引号、转义空格、混合引号、`&&` / `||` / `;` 与只读管道；整条表达式所有命令和选项都要验证。可判定的命令包括 `ls`、`pwd`、`echo`、受限格式 `printf`、`cat`、`head`、`tail`、`wc`、`grep`、`rg`、只列举元数据的 `find`、受控本地仓库 `git status` / `git diff`。工具名称本身不能覆盖危险参数。
 - 读取内容的目标检查真实路径、敏感/外部作用域、普通文件与硬链接；路径中的符号链接再接 `..` 按内核实际路径语义处理。列表元数据不等同读取秘密内容，因此 `ls -la` 或非 verbose `git status` 可列出 `.env` 文件名，`cat .env` / `git diff -- .env` 仍必须询问。shell 的 deny/ask 同时匹配原命令与解析后的真实目标。
@@ -75,7 +75,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - 重定向、命令/进程替换、变量/算术/通配展开、后台执行、函数、脚本、未知选项与任意子进程不自动放行。反斜杠续行目前明确不确定，避免语法树与 Bash 去续行后的 argv 差异。解析结果给出命令、effects 与 unresolved 原因；不声称能静态推断任意程序目的。
 - 递归 grep/rg 保留原工具与过滤语义，不悄悄删掉敏感候选；如果保守候选范围包含敏感/未知文件则询问。Git worktree/gitfile、submodule、partial clone、额外 filter/include 配置等不在确定性支持范围。普通 status 不遍历被忽略的 node_modules 或禁用的 hooks；diff 额外验证对象/引用存储，超过 20,000 项扫描预算明确回退审批。已安装系统工具是受信任依赖，不引入恶意宿主二进制的无限威胁模型。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
 
-原生 Windows 上，内置 read_file/glob/grep 保留与其他平台相同的真实路径、边界、敏感名称、链接、多硬链接、文件类型和受控搜索检查。项目内完整读取在 auto/yolo 直接放行（safe_read），不调用 reviewer。用户 deny 优先终止，ask 优先询问；敏感、项目外和歧义路径仍需人工。NTFS ADS、设备名、8.3 短名、junction 等原生语义尚未实机验收。
+原生 Windows 上，内置 read_file/glob/grep 保留与其他平台相同的真实路径、边界、敏感名称、链接、多硬链接、文件类型和受控搜索检查。项目内完整读取在 ask/auto/yolo 直接放行（safe_read），不调用 reviewer。用户 deny 优先终止，明确 ask 优先询问；敏感、项目外和歧义路径仍需人工。NTFS ADS、设备名、8.3 短名、junction 等原生语义尚未实机验收。
 
 ### PowerShell 的完整分析与边界
 
@@ -89,7 +89,7 @@ Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态�
 
 变量、插值、子表达式、splat、脚本块、函数/别名修改、调用运算符、混合引号/转义、数组、多目标通配、非文件 provider、tilde、drive-relative 路径、未知参数/命令，以及语法树错误/缺失节点均保留 partial/unknown（powershell_unresolved）。普通 Git/npm 等原生程序会读取配置或执行脚本，目前没有 PowerShell 的完整原生程序契约，git status/log 也不被伪称已验证安全；它们仍可在人工授权后执行。UNC、ADS、保留设备名、短名和尾随点/空格仍使用平台人工约束。这些未知情况在所有模式下先人工确认，精确 allow、yolo 或模型 allow 均不能补全缺失语义。
 
-只有已完整分类、排除敏感/项目外/危险与用户限制的普通操作，才能在 auto 进入 ModelReviewer。这里 complete 仅指已声明子集的解析和通用文件前提完整，不声称原生 Windows 安全已实机验收，也不证明任意程序没有副作用。reviewer 明确 deny 终止调用，绝不自动转成批准；ask/unknown、失败、超时、非法输出或不可用才回到人工。面板显示 PowerShell，未知分析或仅 execute effect 的无效记住选项隐藏。
+只有已完整分类、排除敏感/项目外/危险与用户限制的普通操作，才能在 auto 进入 ModelReviewer。这里 complete 仅指已声明子集的解析和通用文件前提完整，不声称原生 Windows 安全已实机验收，也不证明任意程序没有副作用。reviewer 明确 deny 终止调用，绝不自动转成批准；ask/unknown、失败、超时、非法输出或不可用才回到人工。面板显示 PowerShell。策略原因为 ask_mode、review_uncertain、platform_write_review 或 powershell_write_review 时，完整普通 PowerShell 调用可提供有效的精确记住选项，包括仅 execute effect 的静态输出；未知 PowerShell、歧义路径、未验证实现、明确 ask、敏感/外部目标、grep/glob 和子代理请求仍隐藏不能生效的记住选项。
 
 参数与别名依据 [Microsoft 的解析说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_parsing?view=powershell-5.1)、[Remove-Item](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/remove-item?view=powershell-5.1)、[Set-Content](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/set-content?view=powershell-5.1)；语法树使用 [tree-sitter-powershell](https://github.com/airbus-cert/tree-sitter-powershell)。语法树是解析器，不是任意 PowerShell 程序的安全证明。
 
@@ -115,10 +115,10 @@ Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态�
 - `tests/deterministic-policy.test.ts`：优先级、路径、链接、凭据、Windows、Shell、MCP、缓存与环境变化
 - `tests/auto-readonly-scope.test.ts`：auto 只读放行矩阵（缺失/目录读取、说明与插件目录读写区分、多硬链接含外部密钥硬链接进 node_modules、绝对 glob 及开头 `!`、无权限目录）与零审批端到端
 - `tests/windows-remembered-write-rules.test.ts`：注入 win32 平台，覆盖精确/会话记住规则直接放行写入、通配规则与 writeRoots 不直接放行、未命中→模型审批、ask 模式、敏感/写保护/项目外/硬链接/歧义路径与 bash→人工、deny 优先、Linux 行为不变、真实严格审查合约可返回 allow，以及 ToolExecutor 端到端（记住规则只询问一次、执行前重验绑定）
-- `tests/windows-readonly-review.test.ts`：注入 win32 平台，覆盖项目内只读直接放行、写入/Shell/ask 模式/敏感/项目外/歧义路径→人工，以及只读不调用 reviewer 的端到端
+- `tests/windows-readonly-review.test.ts`：注入 win32 平台，覆盖项目内只读（含 ask 模式）直接放行、写入/无精确规则的 Shell/敏感/项目外/歧义路径→人工，以及只读不调用 reviewer 的端到端
 - `tests/windows-policy-path-guards.test.ts`：Windows 路径 deny/ask 大小写限制、真实路径歧义、目标替换重验，以及非 Windows 和命令/正则字面语义不变
 - `tests/windows-default-runtime.test.ts`：默认 runtime、真实 reviewer + FakeProvider 的写入执行、会话规则与显式持久化规则重启回归；仅注入平台，不代表 Windows 实机验收
-- `tests/windows-permission-ui.test.ts`：Windows 项目内只读零 reviewer/零人工；ask 只读保留记住选项，普通写入回退保留精确规则入口
+- `tests/windows-permission-ui.test.ts`：Windows 项目内只读（含 ask 模式）零 reviewer/零人工；记住选项只对 ask_mode、review_uncertain、platform_write_review 白名单显示，普通写入回退保留精确规则入口
 - `tests/policy-runtime.test.ts`：真实 runtime 中 reviewer 次数和拒绝边界
 - `tests/search-runtime.test.ts` / `tests/search-tools.test.ts`：真实 rg/fallback、全部常用只读工具、零 judge/零人工、ignore、敏感/外部/规则与重验竞态
 - `tests/shell-runtime.test.ts` / `tests/shell-contract-binding.test.ts`：真实 Bash 输出、审批次数、组合/参数/路径与执行绑定

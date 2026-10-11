@@ -26,7 +26,7 @@
 - **MCP**：stdio + streamable-http，工具以 `mcp__server__tool` 桥接
 - **Skill**：渐进式披露（清单进 system prompt，全文按需 `use_skill` 加载）
 - **上下文压缩**：超阈值自动摘要老消息
-- **自动规划 / Plan**：复杂任务先显示结构化计划再实施；`/plan only` 只规划、`/plan auto` 规划后执行，支持修订/暂停/取消与 child 步骤绑定。用法和验证范围见 [规划文档](docs/PLANNING.md)
+- **自动规划与执行**：直接描述任务，agent 按上下文判断复杂度、拆解步骤并持续执行与验证，无需先选择模式或学习命令。简单任务直接处理；只想看方案时也可选择只规划。行为和验证范围见 [规划文档](docs/PLANNING.md)
 - **子 agent**：默认四个并行 child，独立 fresh/snapshot 上下文、五个控制操作和共享安全执行门；父聊天显示实时进度，`/agents` 列表/详情/补充/取消，`/agent-limit` 单选自动保存
 - **[pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui) TUI**：消息区独立滚动、固定输入框、Markdown 流式输出、工具结果合并与折叠、权限确认弹层、slash 命令补全、阶段与耗时提示
 
