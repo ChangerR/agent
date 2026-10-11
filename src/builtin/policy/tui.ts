@@ -116,8 +116,8 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     if (windows)
       return {
         ask: 'Windows 内置写入工具的项目内普通文件可由精确目标 allow 放行；其余默认询问。只读操作即使命中精确 allow 仍询问，writeRoots 不自动放行。',
-        auto: 'Windows 项目内普通文件读写通过通用检查后交审批模型；写入命中精确目标 allow 可直接放行，writeRoots 与宽规则不自动授权。模型不确定、失败或未加载时转人工；Bash、敏感目标与项目外路径仍需人工确认。',
-        yolo: 'Windows 与 auto 相同：通过通用检查的项目内普通文件读写交审批模型，写入的精确目标 allow 可放行；writeRoots 不自动授权。模型不确定、失败或未加载时转人工；不跳过 Bash、敏感目标或项目外路径。',
+        auto: 'Windows 项目内普通文件读写通过通用检查后交审批模型；写入命中精确目标 allow 可直接放行，writeRoots 与宽规则不自动授权。模型不确定、失败或未加载时转人工。读文件、列目录、搜索内容的 PowerShell 会直接拒绝并改走专用工具；其余 Bash、敏感目标与项目外路径仍需人工确认。',
+        yolo: 'Windows 与 auto 相同：通过通用检查的项目内普通文件读写交审批模型，写入的精确目标 allow 可放行；writeRoots 不自动授权。模型不确定、失败或未加载时转人工。读文件类 PowerShell 直接拒绝；不跳过其余 Bash、敏感目标或项目外路径。',
       }[mode];
     return {
       ask: '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',

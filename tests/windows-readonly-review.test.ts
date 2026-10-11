@@ -8,7 +8,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PermissionMode } from '../src/core/config.js';
-import { createDeterministicPolicy, windowsAmbiguousPath } from '../src/builtin/policy/index.js';
+import {
+  createDeterministicPolicy,
+  windowsAmbiguousPath,
+  windowsDedicatedFileCommand,
+} from '../src/builtin/policy/index.js';
 import { EventBus } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry, type Tool } from '../src/core/registry.js';
@@ -136,7 +140,8 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
   });
 
   const humanCases: Array<[PermissionMode, keyof typeof tools, Record<string, unknown>, string]> = [
-    // Shell 仍然整体未验证，人工确认；写入的 Windows 语义见 windows-remembered-write-rules.test.ts（敏感写入仍人工）
+    // 构建、测试、git 等 Shell 仍然整体未验证，人工确认。读文件类 PowerShell 见下方，直接拒绝。
+    // 写入的 Windows 语义见 windows-remembered-write-rules.test.ts（敏感写入仍人工）
     ['auto', 'write_file', { path: 'AGENTS.md', content: 'x' }, 'sensitive_target'],
     [
       'auto',
@@ -144,10 +149,10 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
       { path: '.env', old_string: 'TOKEN', new_string: 'X' },
       'sensitive_target',
     ],
-    ['auto', 'bash', { command: 'ls' }, 'platform_unverified'],
-    ['auto', 'bash', { command: 'cat src/a.ts' }, 'platform_unverified'],
+    ['auto', 'bash', { command: 'echo one' }, 'platform_unverified'],
+    ['auto', 'bash', { command: 'npm test' }, 'platform_unverified'],
     ['yolo', 'write_file', { path: 'src/new.ts:stream', content: 'x' }, 'platform_unverified'],
-    ['yolo', 'bash', { command: 'ls' }, 'platform_unverified'],
+    ['yolo', 'bash', { command: 'git status' }, 'platform_unverified'],
     // ask 模式默认询问
     ['ask', 'read_file', { path: 'src/a.ts' }, 'ask_mode'],
     ['ask', 'glob', { pattern: '**/*.ts' }, 'ask_mode'],
@@ -174,6 +179,49 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
   ];
   it.each(humanCases)('%s %s %j → 人工 ask（%s）', async (mode, name, input, reasonCode) => {
     expect(await decide(mode, name, fill(input))).toMatchObject({ kind: 'ask', reasonCode });
+  });
+
+  const dedicatedCommands = [
+    'ls',
+    'cat src/a.ts',
+    'Get-ChildItem -Force | Select-Object Name; Get-Content package.json -Raw',
+    'Get-Content "package.json" -Raw',
+    'gci -Name',
+    'Select-String -Path package.json -Pattern name',
+    'Get-ChildItem src | Select-Object Name',
+  ];
+  it.each(dedicatedCommands)('auto 下读文件类 PowerShell %j 直接拒绝，不询问', async (command) => {
+    expect(windowsDedicatedFileCommand(command)).toBe(true);
+    const result = await decide('auto', 'bash', { command });
+    expect(result).toMatchObject({ kind: 'deny', reasonCode: 'use_dedicated_tool' });
+    expect(result.reason).toContain('read_file');
+    expect(result.analysis.reasonCode).toBe('windows_shell_dedicated_tool');
+  });
+
+  it.each([
+    'Get-Content a; Remove-Item b',
+    'Get-Content $(x)',
+    'Get-Content a > b',
+    'Get-ChildItem | Where-Object { $_.Name -eq "a" }',
+    'Invoke-Expression Get-ChildItem',
+    'npm test',
+    'echo one',
+  ])('含其他副作用的 PowerShell %j 仍人工确认', async (command) => {
+    expect(windowsDedicatedFileCommand(command)).toBe(false);
+    expect(await decide('auto', 'bash', { command })).toMatchObject({
+      kind: 'ask',
+      reasonCode: 'platform_unverified',
+    });
+  });
+
+  it('用户 deny 规则优先于读文件类 PowerShell 的专用工具拒绝', async () => {
+    expect(
+      await decide('auto', 'bash', { command: 'ls' }, 'win32', {
+        allow: [],
+        ask: [],
+        deny: ['bash'],
+      }),
+    ).toMatchObject({ kind: 'deny', reasonCode: 'deny_rule' });
   });
 
   it('用户规则优先：deny 拒绝、ask 人工，均不交给模型', async () => {
@@ -260,7 +308,7 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
 describe('原生 Windows 端到端：ToolExecutor 把只读调用交给 reviewer', () => {
   function executor(reviewerDecision: ReviewResult['decision']) {
     const registry = new ToolRegistry();
-    for (const tool of [tools.read_file, tools.glob, tools.grep, tools.write_file])
+    for (const tool of [tools.read_file, tools.glob, tools.grep, tools.write_file, tools.bash])
       registry.register(tool);
     const policy = createDeterministicPolicy({
       cwd,
@@ -327,6 +375,12 @@ describe('原生 Windows 端到端：ToolExecutor 把只读调用交给 reviewer
       expect(humanRequests).toHaveLength(1);
     }
     const { run, humanRequests, reviews } = executor('allow');
+    const listed = await run('bash', {
+      command: 'Get-ChildItem -Force | Select-Object Name; Get-Content package.json -Raw',
+    });
+    expect(listed.isError).toBe(true);
+    expect(listed.content).toContain('read_file');
+    expect(listed.content).toContain('glob');
     expect((await run('read_file', { path: '.env' })).content).not.toContain('TOKEN');
     await run('write_file', { path: 'AGENTS.md', content: 'x' });
     expect(reviews).toHaveLength(0);

@@ -1,4 +1,7 @@
-/** 只读 shell 的同一份分析/执行契约：语法、选项、文件边界与宿主环境一起验证。 */
+/**
+ * bash 只读分析/执行契约：语法、选项、文件边界与宿主环境一起验证。
+ * 只认 bash 语法树。Windows PowerShell 的命令形状在 powershell.ts，不要写进这里。
+ */
 import { access, lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -1004,6 +1007,7 @@ export async function analyzeReadOnlyShell(
     command.includes('\0')
   )
     return empty('shell_input_limit');
+  // PowerShell 不走 bash 语法树。调用方在 win32 上应先走 powershell.ts。
   if (process.platform === 'win32') return empty('native_windows_unverified');
   if (/\\\r?\n/.test(command)) unresolved.push('shell_line_continuation_unverified');
   const boundary = new Boundary(
