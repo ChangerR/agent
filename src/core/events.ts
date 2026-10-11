@@ -19,6 +19,8 @@ export interface PermissionRequest {
   /** 请求对应的模型工具调用及实际触发审批的决策来源。 */
   toolUseId?: string;
   decisionSource?: Decision['source'];
+  /** 触发人工询问的策略原因码，例如 platform_unverified；界面据此隐藏不会生效的选项。 */
+  reasonCode?: string;
   matchedRule?: string;
   cwd?: string;
   input: unknown;

@@ -18,7 +18,7 @@
 审批顺序是：
 
 1. 明确 `deny`
-2. 不能由模型降级的约束：敏感/项目外目标、未验证的平台路径（原生 Windows 的写入/Shell 及歧义路径形态）、特殊文件、硬链接别名、危险 Shell
+2. 不能由模型降级的约束：敏感/项目外目标、未验证的平台路径（原生 Windows 的 Shell、未知工具及歧义路径形态）、特殊文件、硬链接别名、危险 Shell
 3. 明确 `ask`
 4. 已完整验证操作的精确目标规则
 5. `ask` 模式默认询问
@@ -69,7 +69,9 @@
 - 重定向、命令/进程替换、变量/算术/通配展开、后台执行、函数、脚本、未知选项与任意子进程不自动放行。反斜杠续行目前明确不确定，避免语法树与 Bash 去续行后的 argv 差异。解析结果给出命令、effects 与 unresolved 原因；不声称能静态推断任意程序目的。
 - 递归 grep/rg 保留原工具与过滤语义，不悄悄删掉敏感候选；如果保守候选范围包含敏感/未知文件则询问。Git worktree/gitfile、submodule、partial clone、额外 filter/include 配置等不在确定性支持范围。普通 status 不遍历被忽略的 node_modules 或禁用的 hooks；diff 额外验证对象/引用存储，超过 20,000 项扫描预算明确回退审批。已安装系统工具是受信任依赖，不引入恶意宿主二进制的无限威胁模型。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
 
-原生 Windows 的确定性文件授予目前明确禁用：NTFS ADS、设备名、尾随点/空格、8.3 短名、junction 和 PowerShell 的完整语义尚未实机验收。写入（write_file/edit_file）、bash 与未知工具统一返回不可降级的人工询问（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过。
+原生 Windows 的确定性文件授予目前明确禁用：NTFS ADS、设备名、尾随点/空格、8.3 短名、junction 和 PowerShell 的完整语义尚未实机验收。bash 与未知工具统一返回不可降级的人工询问（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过；这类审批面板不提供“允许并记住此规则”（记住的规则不会生效），只提供“允许一次”与“拒绝”。
+
+写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用，因此“本次会话始终允许”在 Windows 上只询问一次；未命中时 ask 模式默认询问（`ask_mode`），auto/yolo 委托 reviewer（`platform_write_review`）。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
 
 例外：内置 `read_file` / `glob` / `grep` 在 auto 与 yolo 中改为委托一次模型审批（`platform_read_review`）。分析器先执行与其他平台相同的通用检查（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件、受控搜索枚举与候选绑定），只有通用逻辑判定为项目内完整读取的操作才标记为 `native_windows_read_unverified`。通用分析本身是完整的，所以 `completeness` 保持 `complete`，不触发审查合约中“分析不完整则返回 ask/unknown”的规则；平台风险通过 reason code 和证据表达。策略在精确 allow、safe_read 与 yolo 之前截住该 reason code，所以只能委托 reviewer，不会确定性放行。并在证据和决策理由中注明“Windows 平台未做文件系统校验”。敏感/项目外目标、用户 deny/ask 规则以及含 UNC/`\\?\` 前缀、备用数据流冒号、尾随点/空格、`~数字` 短名或保留设备名的路径仍直接人工确认；ask 模式照旧默认询问；精确 allow 规则不能把 Windows 读取变成确定性放行。模型返回 ask/unknown、超时或调用失败时回落人工确认。yolo 与 auto 保持一致：yolo 只跳过已完整验证的操作，Windows 读取未完整验证所以不直接放行，但也不应比 auto 更严格。平台判断可通过 `platform` 选项注入，Windows 分支测试因此在所有宿主上运行。Linux 上的 Windows 字符串样例仅验证保守分类，不宣称证明了 Windows 安全。工具执行仍保留平台适配；平台适配不等于已经完成安全分析验收。
 
@@ -87,6 +89,7 @@
 - `src/tools/shell-readonly.ts`：Bash AST、逐命令参数语义、受控执行合约
 - `tests/deterministic-policy.test.ts`：优先级、路径、链接、凭据、Windows、Shell、MCP、缓存与环境变化
 - `tests/auto-readonly-scope.test.ts`：auto 只读放行矩阵（缺失/目录读取、说明与插件目录读写区分、多硬链接含外部密钥硬链接进 node_modules、绝对 glob 及开头 `!`、无权限目录）与零审批端到端
+- `tests/windows-remembered-write-rules.test.ts`：注入 win32 平台，覆盖精确/会话记住规则直接放行写入、通配规则与 writeRoots 不直接放行、未命中→模型审批、ask 模式、敏感/写保护/项目外/硬链接/歧义路径与 bash→人工、deny 优先、Linux 行为不变、真实严格审查合约可返回 allow，以及 ToolExecutor 端到端（记住规则只询问一次、执行前重验绑定）
 - `tests/windows-readonly-review.test.ts`：注入 win32 平台，覆盖只读→模型审批、写入/Shell/ask 模式/敏感/项目外/歧义路径→人工、reviewer allow/ask 的端到端，以及真实严格审查合约（STRICT_REVIEWER_SYSTEM + 合约解析）下 completeness 为 complete 且可接受 allow
 - `tests/policy-runtime.test.ts`：真实 runtime 中 reviewer 次数和拒绝边界
 - `tests/search-runtime.test.ts` / `tests/search-tools.test.ts`：真实 rg/fallback、全部常用只读工具、零 judge/零人工、ignore、敏感/外部/规则与重验竞态

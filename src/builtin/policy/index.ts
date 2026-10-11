@@ -60,6 +60,15 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       if (analysis.reasonCode === 'shell_dangerous') return decision('ask', 'danger_constraint', '危险操作属于 不可降级约束，必须人工确认', 'danger');
       const asked = matched('ask', targets);
       if (asked) return decision('ask', 'explicit_ask', `命中 ask 规则 "${asked.raw}"（中优先于 allow）`, asked.source, asked.raw);
+      // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；
+      // 通配符/工具级规则和 writeRoots 目录授权都不放行，auto/yolo 交给 reviewer，ask 模式照旧询问。
+      // 敏感/写保护、项目外、特殊文件、硬链接与歧义路径在上方已人工，精确规则同样不能越过。
+      if (analysis.reasonCode === 'native_windows_write_unverified') {
+        const exact = analysis.completeness === 'complete' ? matched('allow', targets, (rule) => literalTarget(rule) !== undefined) : undefined;
+        if (exact) return decision('allow', 'exact_allow', `命中精确目标 allow 规则 "${exact.raw}"（Windows 写入只接受精确目标规则）`, exact.source, exact.raw);
+        if (controller.mode === 'ask') return decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
+        return decision('review', 'platform_write_review', 'Windows 平台未做文件系统校验：内置写入工具的项目内普通文件写入已完成通用分析并排除敏感/写保护/项目外目标，且未命中精确目标规则，委托 reviewer 判断当前完整操作', 'mode');
+      }
       // Windows 只读的分析是完整的，但平台语义未验收：必须在精确 allow / safe_read / yolo 之前截住，只能委托 reviewer。
       // ask 模式照旧询问；yolo 与 auto 一致（未完整验证平台不能确定性放行，但也不比 auto 更严格）。
       if (analysis.reasonCode === 'native_windows_read_unverified') return controller.mode === 'ask'
