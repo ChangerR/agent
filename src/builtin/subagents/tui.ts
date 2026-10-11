@@ -85,12 +85,15 @@ export function createSubagentsTui(context: BuiltinTuiContext): TuiAdapter {
     statusItems: {
       subagents: () => {
         const records = agent.agents.status();
-        const running = records.filter((record) =>
-          ['running', 'queued', 'cancelling'].includes(record.runs.at(-1)?.status ?? ''),
-        ).length;
+        const active = records.flatMap((record) => {
+          const run = record.runs.at(-1);
+          return run && ['running', 'queued', 'cancelling'].includes(run.status)
+            ? [`${record.name} ${run.activity}`]
+            : [];
+        });
         const { self, tree } = agent.agents.usage();
         return records.length
-          ? `agents ${running}/${records.length} · 自身 ↑${self.inputTokens} ↓${self.outputTokens} · 全树 ↑${tree.inputTokens} ↓${tree.outputTokens}`
+          ? `agents ${active.length}/${records.length}${active.length ? ` · ${active.slice(0, 2).join(' · ')}` : ''} · 自身 ↑${self.inputTokens} ↓${self.outputTokens} · 全树 ↑${tree.inputTokens} ↓${tree.outputTokens}`
           : '';
       },
     },

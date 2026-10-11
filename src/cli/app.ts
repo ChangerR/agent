@@ -41,6 +41,7 @@ import {
   PermissionMessage,
   renderHistory,
   StreamMessages,
+  SubagentTrace,
   ToolMessage,
   UserMessage,
 } from './messages.js';
@@ -90,6 +91,44 @@ export function canRememberPermission(
     request.analysisReasonCode !== 'native_windows_unverified' &&
     request.analysisReasonCode !== 'native_windows_shell_unverified'
   );
+}
+
+function subagentAction(detail: Record<string, unknown> | undefined) {
+  if (!detail) return;
+  const type = detail.type;
+  if (type === 'tool_call') {
+    const toolUse = detail.toolUse;
+    if (!toolUse || typeof toolUse !== 'object') return;
+    const call = toolUse as { id?: unknown; name?: unknown; input?: unknown };
+    if (typeof call.id !== 'string' || typeof call.name !== 'string') return;
+    return { type: 'tool_call' as const, id: call.id, name: call.name, input: call.input };
+  }
+  if (type === 'tool_result') {
+    const id = detail.toolUseId;
+    const name = detail.name;
+    const result = detail.result;
+    if (typeof id !== 'string' || typeof name !== 'string' || !result || typeof result !== 'object')
+      return;
+    const outcome = result as { content?: unknown; isError?: unknown };
+    return {
+      type: 'tool_result' as const,
+      id,
+      name,
+      isError: outcome.isError === true,
+      content: typeof outcome.content === 'string' ? outcome.content : '',
+    };
+  }
+  if (type === 'error') {
+    const error = detail.error;
+    const message =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === 'object' && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : '';
+    return message ? { type: 'error' as const, message } : undefined;
+  }
+  if (type === 'thinking_delta') return { type: 'thinking_delta' as const };
 }
 
 function summarizeToolCall(tools: Agent['tools'], name: string, input: unknown): string {
@@ -278,6 +317,21 @@ export function startTui(
   const say = (text: string) => addMessage(new Text(chalk.yellow(text), 1, 0));
   const err = (text: string) => addMessage(new Text(chalk.red(text), 1, 0));
   const streams = new StreamMessages(markdownTheme, () => expanded, addMessage, render, details);
+  const traces = new Map<string, SubagentTrace>();
+  let traceTimer: ReturnType<typeof setTimeout> | undefined;
+  const flushTraces = () => {
+    traceTimer = undefined;
+    render();
+  };
+  const scheduleTrace = (immediate: boolean) => {
+    if (immediate) {
+      if (traceTimer) clearTimeout(traceTimer);
+      traceTimer = undefined;
+      render();
+      return;
+    }
+    traceTimer ??= setTimeout(flushTraces, 60);
+  };
   const turns = new TurnQueue(
     async (text) => {
       startedAt = Date.now();
@@ -301,6 +355,7 @@ export function startTui(
     agent.loop.abort_current();
     streams.finish();
     clearInterval(statusTimer);
+    if (traceTimer) clearTimeout(traceTimer);
     unsubscribe.forEach((off) => off());
     tui.stop();
   };
@@ -488,9 +543,49 @@ export function startTui(
   // --- 事件订阅 ---
   unsubscribe.push(
     agent.events.on('subagent_event', (event) => {
-      if (event.kind === 'complete')
-        say(`子任务 ${event.name} · ${event.status} · /agents 查看结果`);
-      render();
+      const key = `${event.agentId}:${event.runId}`;
+      let card = traces.get(key);
+      if (!card) {
+        let task = '';
+        try {
+          task =
+            agent.agents.status(event.agentId)[0]?.runs.find((run) => run.runId === event.runId)
+              ?.task ?? '';
+        } catch {
+          task = '';
+        }
+        card = new SubagentTrace(
+          () => expanded,
+          key,
+          event.name,
+          task,
+          event.status,
+          event.activity,
+        );
+        traces.set(key, card);
+        addMessage(card);
+      }
+      const action = subagentAction(event.detail);
+      card.setProgress(event.status, event.activity);
+      if (event.kind === 'text') card.appendText(event.text ?? '');
+      else if (event.kind === 'complete') {
+        let error = '';
+        try {
+          error =
+            agent.agents.status(event.agentId)[0]?.runs.find((run) => run.runId === event.runId)
+              ?.error ?? '';
+        } catch {
+          error = '';
+        }
+        card.complete(event.status, event.activity, error);
+      } else if (event.kind === 'status') {
+        if (action?.type === 'tool_call')
+          card.beginTool(action.id, summarizeToolCall(agent.tools, action.name, action.input));
+        else if (action?.type === 'tool_result')
+          card.finishTool(action.id, action.name, action.isError, action.content);
+        else if (action?.type === 'error') card.noteError(action.message);
+      }
+      scheduleTrace(event.kind !== 'text' && action?.type !== 'thinking_delta');
     }),
   );
   unsubscribe.push(

@@ -105,7 +105,10 @@ child 的原始 text_delta/loop_end/session_restored 不混入父总线；专用
 携带 agentId/runId/单调 seq，汇总各自状态、文本、usage 和完成。
 完成主动通知所属父 loop，每 run 去重；父 inbox 满时结果仍可在控制面查看。
 审批单独接入现有 FIFO，明确 child 名称、任务、操作；取消删除过期请求。
+活动会在等待模型、正在思考、正在回复、执行具体工具、审核权限和压缩上下文之间更新。
+父聊天用进度卡片跟随每个 run 的活动、最近工具和输出预览，卡片不进入父模型上下文。
 父输入独立可用，`/agents` 列表与详情随事件刷新，支持完整结果、补充和取消。
+底栏同时显示正在运行的 child 活动。
 child 等人工审批时 Ctrl+G 在审批和父输入间切换；父 Enter 不批准 child，回到面板
 仍需明确选择。草稿保持，root 自身审批继续使用现有确认行为。
 headless 无审批 responder 时返回 approval_required，不等待不存在的界面。

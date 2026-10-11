@@ -75,7 +75,13 @@ it.skipIf(process.platform !== 'linux')(
           .every((r) => r.model === 'offline-current'),
       ).toBe(true);
       expect(rows().some((r) => r.event?.kind === 'complete')).toBe(false);
-      expect(terminal.output).not.toContain('PRIVATE_CHILD_');
+      await terminal.wait(
+        () =>
+          terminal.output.includes('子任务 agent-1') &&
+          terminal.output.includes('PRIVATE_CHILD_A') &&
+          terminal.output.includes('PRIVATE_CHILD_B'),
+        '子任务进度未显示',
+      );
       terminal.send('PARENT');
       await terminal.wait(
         () => rows().some((r) => r.event?.type === 'loop_end'),
