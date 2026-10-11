@@ -174,6 +174,7 @@ export interface CommandInspection {
   tools: readonly { name: string; risk: string }[];
 }
 export interface CommandContext {
+  run?: (text: string) => Promise<unknown>;
   readonly cwd: string;
   readonly signal: AbortSignal;
   invokeTool(name: string, input: Record<string, unknown>): Promise<ToolResult>;

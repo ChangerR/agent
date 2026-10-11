@@ -10,7 +10,9 @@ export class ChildEventBus extends EventBus {
       : super.hasListeners(type);
   }
   override emit(event: AgentEvent): void {
-    if (event.type === 'permission_request') this.parent.emit(event);
-    else super.emit(event);
+    if (event.type === 'permission_request') {
+      super.emit(event);
+      this.parent.emit(event);
+    } else super.emit(event);
   }
 }

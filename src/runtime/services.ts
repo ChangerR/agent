@@ -4,6 +4,15 @@ import type { SessionManager } from '../core/session/coordinator.js';
 import type { PermissionController } from '../sdk/index.js';
 import type { AgentSupervisor, SubagentLimits } from './subagents.js';
 export interface RuntimeServices {
+  loop(): import('../core/loop.js').AgentLoop;
+  plan(agentId?: string): import('../core/plan.js').PlanController;
+  run(text: string): Promise<unknown>;
+  stopPlan(kind: 'paused' | 'cancelled', reason: string): void;
+  configurePlanning(
+    strategy: import('../core/plan.js').PlanningStrategy,
+    mode: import('../core/plan.js').PlanningMode,
+  ): void;
+
   model(): string;
   setModel(value: string): void;
   thinking(): ThinkingLevel;

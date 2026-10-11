@@ -7,7 +7,8 @@ export function createSubagentsTui(context: BuiltinTuiContext): TuiAdapter {
     const record = agent.agents.status(id)[0];
     const body = () => {
       const current = agent.agents.status(id)[0];
-      return `${current.name} · ${current.agentId}\n上下文: ${current.context} · 深度 ${current.depth}\n子会话: ${current.sessionId}\n${current.runs.map((run) => `${run.runId}\n${run.status} · ${run.activity}\n任务: ${run.task}\ntokens ↑${run.usage.inputTokens} ↓${run.usage.outputTokens} cache ${run.usage.cacheReadTokens}/${run.usage.cacheWriteTokens}\n${run.error ?? ''}\n${run.output}${run.truncated ? '\n[输出达到限制，已保留部分结果]' : ''}`).join('\n\n')}`;
+      const localPlan = agent.agents.plan(id).snapshot;
+      return `${localPlan ? `所属 child 计划：${JSON.stringify(localPlan)}\n` : ''}${current.name} · ${current.agentId}\n上下文: ${current.context} · 深度 ${current.depth}\n子会话: ${current.sessionId}\n${current.runs.map((run) => `${run.runId}\n${run.status} · ${run.activity}\n任务: ${run.task}\ntokens ↑${run.usage.inputTokens} ↓${run.usage.outputTokens} cache ${run.usage.cacheReadTokens}/${run.usage.cacheWriteTokens}\n${run.error ?? ''}\n${run.output}${run.truncated ? '\n[输出达到限制，已保留部分结果]' : ''}`).join('\n\n')}`;
     };
     context.showPicker(
       `${record.name} · 子 agent 详情`,

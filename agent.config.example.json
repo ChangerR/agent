@@ -28,6 +28,9 @@
       "previewChars": 8192,
       "maxAgents": 32,
       "maxRuns": 32
+    },
+    "agentlab.planning": {
+      "mode": "auto"
     }
   }
 }

@@ -62,6 +62,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { SettingsInputPanel } from './settings-input.js';
 import { settingsErrorMessage } from '../runtime/config-store.js';
+import { createPlanningTui } from '../builtin/planning/tui.js';
 import { createSubagentsTui } from '../builtin/subagents/tui.js';
 
 // ---------------------------------------------------------------------------
@@ -248,8 +249,30 @@ export function startTui(
         width,
       ),
       ...renderPluginStatus(width),
+      ...renderPluginPanels(width),
     ],
   };
+  function renderPluginPanels(width: number): string[] {
+    const height = Math.max(3, Math.min(8, Math.floor(terminal.rows / 4)));
+    const lines: string[] = [];
+    for (const adapter of adapters)
+      for (const [id, read] of Object.entries(adapter.statusPanels ?? {})) {
+        const key = 'panel:' + id;
+        if (failedStatuses.has(key)) continue;
+        try {
+          const panel = read(width, height);
+          if (!Array.isArray(panel) || panel.some((line) => typeof line !== 'string'))
+            throw new Error('状态面板必须返回文本行');
+          lines.push(
+            ...panel.slice(0, height).map((line) => truncateToWidth(safeTerminalText(line), width)),
+          );
+        } catch (error) {
+          failedStatuses.add(key);
+          console.error('可选状态面板失败:', id, error);
+        }
+      }
+    return lines;
+  }
   function renderPluginStatus(width: number): string[] {
     const values: string[] = [];
     for (const adapter of adapters)
@@ -542,6 +565,9 @@ export function startTui(
 
   // --- 事件订阅 ---
   unsubscribe.push(
+    agent.events.on('plan_changed', () => {
+      if (!stopped) tui.requestRender(true);
+    }),
     agent.events.on('subagent_event', (event) => {
       const key = `${event.agentId}:${event.runId}`;
       let card = traces.get(key);
@@ -674,7 +700,7 @@ export function startTui(
   );
   unsubscribe.push(
     agent.events.on('session_saved', (e) => {
-      if (e.trimmed > 0) say(`尾部 ${e.trimmed} 条未完成的工具调用未写入`);
+      if (e.trimmed > 0 && !e.background) say(`尾部 ${e.trimmed} 条未完成的工具调用未写入`);
     }),
   );
   // 并行工具可能同时询问；审批逐个显示，避免争抢底部交互区。
@@ -781,7 +807,12 @@ export function startTui(
         focusInteraction();
         return { consume: true };
       }
-      if (matchesKey(data, Key.escape) && turns.running && !activePanel() && !tui.hasOverlay()) {
+      if (
+        matchesKey(data, Key.escape) &&
+        (turns.running || agent.loop.running) &&
+        !activePanel() &&
+        !tui.hasOverlay()
+      ) {
         interrupt();
         return { consume: true };
       }
@@ -849,7 +880,9 @@ export function startTui(
   const adapterContext: BuiltinTuiContext = {
     agent,
     cwd: agent.cwd,
-    dispatchCommand: agent.dispatchCommand,
+    dispatchCommand: (line, options) =>
+      agent.dispatchCommand(line, { ...options, run: (text) => turns.submit(text) }),
+    run: (text) => turns.submit(text),
     invokeTool: agent.invokeTool,
     inspect: () =>
       observationSnapshot({
@@ -909,7 +942,13 @@ export function startTui(
   const { agent: _privateAgent, ...publicContext } = adapterContext;
   Object.freeze(publicContext);
   const installAdapter = (adapter: TuiAdapter) => {
-    for (const key of ['commands', 'settings', 'toolRenderers', 'statusItems'] as const) {
+    for (const key of [
+      'commands',
+      'settings',
+      'toolRenderers',
+      'statusItems',
+      'statusPanels',
+    ] as const) {
       for (const [id, handler] of Object.entries(adapter[key] ?? {})) {
         if (typeof handler !== 'function') throw new Error(`无效 TUI ${key}: ${id}`);
         if (adapters.some((existing) => existing[key]?.[id]))
@@ -924,6 +963,10 @@ export function startTui(
     // 内置入口随 CLI 同步加载，保留首个按键和连续输入的原有时序。
     if (descriptor.entry === 'agentlab:builtin-ui') {
       installAdapter(createTuiAdapter(adapterContext));
+      continue;
+    }
+    if (descriptor.entry === 'agentlab:planning-ui') {
+      installAdapter(createPlanningTui(adapterContext));
       continue;
     }
     if (descriptor.entry === 'agentlab:subagents-ui') {

@@ -46,6 +46,7 @@ export interface Agent {
   dispatchCommand(
     line: string,
     options?: {
+      run?: (text: string) => Promise<unknown>;
       signal?: AbortSignal;
       interact?: (request: InteractionRequest) => Promise<string | undefined>;
     },

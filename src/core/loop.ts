@@ -22,6 +22,7 @@
  * 用户拒绝工具调用时，反馈同样以 tool_result(isError) 回填给模型 ——
  * 模型据此调整后续行为，这是"人在回路"的标准实现方式。
  */
+import { PlanController, type Plan, type PlanningStrategy } from './plan.js';
 import { randomUUID } from 'node:crypto';
 import type { EventBus, LoopEndReason } from './events.js';
 import type { HookRunner } from './hooks.js';
@@ -51,6 +52,8 @@ import { assertSafeHistory, trimToSafeTail } from './session/history.js';
 import type { InputSource, InvocationOrigin } from './agents.js';
 
 export interface AgentLoopOptions {
+  planning?: () => PlanningStrategy | undefined;
+  planningMode?: () => import('./plan.js').PlanningMode;
   provider: Provider;
   model: string;
   tools: ToolRegistry;
@@ -100,6 +103,7 @@ export interface AgentLoopOptions {
 
 /** 给会话层的内存快照。trimmed 是裁掉的尾部条数，messages 已是副本。 */
 export interface SessionSnapshot {
+  plan?: Plan;
   messages: Message[];
   model: string;
   thinking: ThinkingLevel;
@@ -138,6 +142,7 @@ export class UnresolvedExecutionError extends Error {
 }
 
 export class AgentLoop {
+  readonly plan: PlanController;
   private messages: Message[] = [];
   private abort: AbortController | null = null;
   /** 第一次 stream 前冻结，避免会话中途注册工具把前缀打散 */
@@ -164,13 +169,32 @@ export class AgentLoop {
   private inboxLimit?: number;
 
   constructor(private opts: AgentLoopOptions) {
+    this.plan = new PlanController(opts.events, opts.agentId);
+    this.plan.configure(opts.planningMode?.() ?? 'off');
     this.executor =
       opts.toolExecutor ??
       new ToolExecutor({
         ...opts,
+        configRevision: () => `${opts.configRevision?.() ?? 0}:${this.plan.generation}`,
+        restrict: (operation) =>
+          this.plan.restrict(operation, opts.planning?.()) ?? opts.restrict?.(operation),
         sessionId: opts.sessionId ?? (() => this.sessionId),
         runActive: (runId) => this.activeRunId === runId || this.detachedRunIds.has(runId),
       });
+    opts.events.on('tool_execution', (e) => {
+      if (
+        e.phase === 'validation' &&
+        e.reasonCode === 'input_valid' &&
+        !opts.isControlTool?.(opts.tools.get(e.toolName)!)
+      )
+        this.plan.toolStarted(e.toolCallId);
+    });
+    opts.events.onAll((e) => {
+      if (e.type === 'permission_request') this.plan.waiting(`等待审批: ${e.request.reason}`);
+    });
+    opts.events.on('tool_result', (e) =>
+      this.plan.toolFinished(e.toolUseId, e.result.isError === true, e.result.content),
+    );
     this.configuredThreshold = opts.context.threshold;
     this.configuredMaxTokens = opts.maxTokens;
     this.applyModelInfo(opts.model);
@@ -295,6 +319,7 @@ export class AgentLoop {
   exportSession(): SessionSnapshot {
     const trimmed = trimToSafeTail(this.messages);
     return {
+      plan: this.plan.snapshot,
       messages: structuredClone(trimmed.messages),
       model: this.model,
       thinking: this.thinking,
@@ -307,6 +332,7 @@ export class AgentLoop {
    * 不发事件、不重放工具、不调用 provider。
    */
   importSession(snapshot: {
+    plan?: Plan;
     messages: readonly Message[];
     model?: string;
     thinking?: ThinkingLevel;
@@ -315,6 +341,7 @@ export class AgentLoop {
     if (this.hasPendingActivity)
       throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
     assertSafeHistory(snapshot.messages);
+    this.plan.restore(snapshot.plan);
     this.messages = structuredClone(snapshot.messages) as Message[];
     this.executor.clear();
     this.sessionId = randomUUID();
@@ -420,6 +447,7 @@ export class AgentLoop {
     });
     const finish = (reason: LoopEndReason, error?: string): AgentRunResult => {
       this.accepting = false;
+      this.plan.finish(reason);
       events.emit({
         type: 'loop_end',
         reason,
@@ -440,6 +468,37 @@ export class AgentLoop {
         ...(origin.source !== 'user' ? { source: origin.source } : {}),
       });
       await Promise.all([...this.startTasks].map((task) => task()));
+      if (this.plan.snapshot?.phase === 'completed') this.plan.clear();
+      const strategy = this.opts.planning?.();
+      if (strategy && !this.plan.snapshot && this.plan.mode !== 'off') {
+        const generation = this.plan.generation;
+        this.plan.preparing = true;
+        const proposal = await strategy.prepare({
+          input: userInput,
+          mode: this.plan.mode,
+          force: this.plan.force,
+          provider,
+          model: this.model,
+          thinking: this.thinking,
+          signal,
+          events,
+          runId,
+        });
+        signal.throwIfAborted();
+        if (generation !== this.plan.generation)
+          throw new Error('Planning changed while preparing; resubmit your direction');
+        this.plan.preparing = false;
+        this.plan.force = false;
+        if (proposal)
+          this.plan.create(
+            proposal.goal,
+            proposal.steps,
+            this.plan.mode === 'only' ? 'only' : 'auto',
+          );
+      }
+      // 把已发布计划交给事件订阅者，再开始实施请求；不依赖某个 UI 实现。
+      if (this.plan.snapshot) await new Promise<void>((resolve) => setImmediate(resolve));
+      signal.throwIfAborted();
       await this.maybeCompact(signal);
 
       while (turns < Math.min(options.maxTurns ?? this.opts.maxTurns, this.opts.maxTurns)) {
@@ -464,13 +523,39 @@ export class AgentLoop {
 
         // --- 调用模型，流式产出 ---
         this.toolsSnapshot ??= structuredClone(tools.definitions());
+        const planGeneration = this.plan.generation;
         const stream = observedStream(
           provider,
           {
             model: this.opts.model,
-            system: this.opts.systemPrompt,
+            system:
+              this.opts.systemPrompt +
+              (this.opts.planning?.()
+                ? `\n当前规划方式: ${this.plan.snapshot?.mode ?? this.plan.mode}。off 时不自动创建计划。`
+                : '') +
+              (this.plan.snapshot
+                ? '\n当前所属计划（版本变化后须重新读取）: ' +
+                  JSON.stringify(this.plan.snapshot) +
+                  (this.plan.readOnly
+                    ? '\n当前只规划：仅做必要的只读调研和计划修订，然后向用户展示方案并结束。不要开始实施步骤，不要尝试写入或委派；这是用户选择的模式，不是权限故障。告知用户可用 /plan execute 实施。'
+                    : '\n先 plan_update 将步骤设为 running，再实施；完成必须提供真实执行依据。子任务 spawn 不代表完成。')
+                : ''),
             messages: structuredClone(this.messages),
-            tools: structuredClone(this.toolsSnapshot),
+            tools: structuredClone(
+              this.toolsSnapshot.filter((definition) => {
+                if (!this.plan.readOnly) return true;
+                const strategy = this.opts.planning?.();
+                const tool = tools.get(definition.name);
+                if (!tool) return false;
+                return [
+                  ...(strategy?.readTools ?? []),
+                  ...(strategy?.controlTools.filter((t) => t.planningSafe !== false) ?? []),
+                ].some(
+                  (allowed) =>
+                    allowed.name === tool.name && allowed.ownerPlugin === tool.ownerPlugin,
+                );
+              }),
+            ),
             maxTokens: this.opts.maxTokens,
             thinking: this.opts.thinking,
             cache: this.buildCachePolicy(),
@@ -514,13 +599,21 @@ export class AgentLoop {
 
         // --- 执行工具，回填结果 ---
         const toolStarted = Date.now();
-        const results = await this.executeTools(toolUses, {
-          signal,
-          runId,
-          userRequest: origin.userRequest,
-          origin,
-          messages: structuredClone(this.messages),
-        });
+        const results =
+          planGeneration !== this.plan.generation
+            ? toolUses.map((t) => ({
+                type: 'tool_result' as const,
+                toolUseId: t.id,
+                content: 'plan_stale: plan changed during model response; refresh and retry',
+                isError: true,
+              }))
+            : await this.executeTools(toolUses, {
+                signal,
+                runId,
+                userRequest: origin.userRequest,
+                origin,
+                messages: structuredClone(this.messages),
+              });
         this.lastToolBatchMs = Date.now() - toolStarted;
         this.messages.push({ role: 'user', content: results });
         signal.throwIfAborted();
@@ -534,6 +627,7 @@ export class AgentLoop {
         return finish('error', err instanceof Error ? err.message : String(err));
       }
     } finally {
+      this.plan.preparing = false;
       this.accepting = false;
       if (!findUnsafeTail(this.messages)) {
         for (const input of this.inbox.splice(0))
@@ -652,6 +746,7 @@ export class AgentLoop {
     const results: ToolResultBlock[] = [];
     let i = 0;
     while (i < toolUses.length) {
+      const generation = this.plan.generation;
       const t = this.opts.tools.get(toolUses[i].name);
       if (t?.isConcurrencySafe) {
         // 收集连续的可并行工具
@@ -668,6 +763,8 @@ export class AgentLoop {
         results.push(await this.executor.execute(toolUses[i], context));
         i++;
       }
+      if (generation !== this.plan.generation)
+        await new Promise<void>((resolve) => setImmediate(resolve));
     }
     return results;
   }
