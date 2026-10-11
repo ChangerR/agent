@@ -169,11 +169,13 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           'use_dedicated_tool',
           '读文件用 read_file，列目录和按名字找文件用 glob，搜索内容用 grep。这条 PowerShell 没有执行，不需要人工确认。',
         );
+      // 只拦歧义路径。未验收的 Windows Shell（native_windows_shell_unverified）不在这里改成人工，
+      // 否则 auto 的 reviewer 被跳过。它继续往下走：ask 询问，yolo 对不完整副作用仍人工，auto 委托 reviewer。
       if (analysis.reasonCode === 'native_windows_unverified')
         return decision(
           'ask',
           'platform_unverified',
-          '原生 Windows 的文件系统/解释器安全分析尚未验收，必须人工确认',
+          '原生 Windows 的歧义路径尚未验收，必须人工确认',
         );
       if (analysis.effects.some((effect) => effect.scope === 'sensitive'))
         return decision(

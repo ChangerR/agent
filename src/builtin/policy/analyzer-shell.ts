@@ -1,55 +1,16 @@
-/** Shell 分析：Windows 走 PowerShell 形状，其他平台走 bash 语法树。 */
+/** bash 只读语法树分析。PowerShell 在 analyzer-powershell.ts。 */
 import { resolve } from 'node:path';
 import type { AnalysisInput, ToolAnalysis } from '../../sdk/capabilities.js';
-import { windowsDedicatedFileCommand } from '../../tools/powershell.js';
 import { analyzeReadOnlyShell } from '../../tools/shell-readonly.js';
-import { pathFingerprint, prepare, windowsUnverified } from './analyzer-paths.js';
+import { pathFingerprint, prepare } from './analyzer-paths.js';
 import {
   described,
   hash,
-  operationKey,
   type AnalyzerContext,
   type ShellOperation,
 } from './analyzer-types.js';
 
 export async function analyzeShell(
-  ctx: AnalyzerContext,
-  input: AnalysisInput,
-  parsed: ShellOperation,
-  windows: boolean,
-  signal: AbortSignal,
-): Promise<ToolAnalysis> {
-  if (windows && windowsDedicatedFileCommand(parsed.command))
-    return powershellFileRead(input, parsed.command, ctx);
-  if (windows) return windowsUnverified(ctx, input, signal);
-  return analyzeBash(ctx, input, parsed, signal);
-}
-
-function powershellFileRead(
-  input: AnalysisInput,
-  command: string,
-  ctx: AnalyzerContext,
-): ToolAnalysis {
-  return {
-    ...described({
-      $operation: operationKey(input),
-      $policyOptions: hash({ writeRoots: ctx.writeRoots, pluginEntries: ctx.pluginEntries }),
-    }),
-    completeness: 'unknown',
-    effects: [{ kind: 'read', scope: 'unknown' }],
-    reasonCode: 'windows_shell_dedicated_tool',
-    evidence: [
-      {
-        source: 'platform-support',
-        detail:
-          '命令只包含读文件、列目录或搜索内容的 PowerShell。这些事已有 read_file、glob、grep，不执行 shell。',
-      },
-    ],
-    summary: `bash: ${command}`,
-  };
-}
-
-async function analyzeBash(
   ctx: AnalyzerContext,
   input: AnalysisInput,
   parsed: ShellOperation,

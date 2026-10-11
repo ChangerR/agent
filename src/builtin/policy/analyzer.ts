@@ -2,7 +2,7 @@
  * 工具调用分析的入口：只读取前提，不执行工具，不缓存环境或批准。
  *
  * route() 按种类分发：
- * - shell → analyzer-shell.ts（Windows 是 PowerShell，其余是 bash）
+ * - shell → analyzer-powershell.ts 或 analyzer-shell.ts（Windows 是 PowerShell，其余是 bash）
  * - 文件和搜索 → analyzer-files.ts
  * - 未知工具留在本文件，不猜测副作用
  * 路径绑定在 analyzer-paths.ts。
@@ -13,6 +13,7 @@ import { analyzeCommand } from '../../tools/bash.js';
 import { createEnvironmentAnalyzer } from './environment.js';
 import { analyzeFilesystem, stampWindowsFilesystem, windowsInputIsAmbiguous } from './analyzer-files.js';
 import { prepare, windowsUnverified } from './analyzer-paths.js';
+import { analyzePowerShell } from './analyzer-powershell.js';
 import { analyzeShell } from './analyzer-shell.js';
 import {
   ANALYZER_ID,
@@ -89,7 +90,10 @@ async function route(
   signal: AbortSignal,
 ): Promise<ToolAnalysis> {
   const windows = ctx.platform === 'win32';
-  if (parsed.kind === 'shell') return analyzeShell(ctx, input, parsed, windows, signal);
+  if (parsed.kind === 'shell')
+    return windows
+      ? analyzePowerShell(ctx, input, parsed, signal)
+      : analyzeShell(ctx, input, parsed, signal);
   if (parsed.kind === 'unknown') return analyzeUnknown(ctx, input, parsed, signal);
   if (windows && windowsInputIsAmbiguous(parsed)) return windowsUnverified(ctx, input, signal);
   const result = await analyzeFilesystem(ctx, input, parsed, signal);

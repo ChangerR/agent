@@ -1,6 +1,6 @@
 /**
  * 原生 Windows 上，通过通用检查的项目内 read_file/glob/grep 在 auto/yolo 直接放行。
- * 敏感、项目外、歧义路径和真正的 shell 仍人工确认。通过 platform 注入覆盖 Windows 分支。
+ * 敏感、项目外、歧义路径仍人工确认。未验收的 PowerShell 在 auto 交给 reviewer，不在策略里直接改成人工。通过 platform 注入覆盖 Windows 分支。
  */
 import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -130,7 +130,6 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
   });
 
   const humanCases: Array<[PermissionMode, keyof typeof tools, Record<string, unknown>, string]> = [
-    // 构建、测试、git 等 Shell 仍然整体未验证，人工确认。读文件类 PowerShell 见下方，直接拒绝。
     // 写入的 Windows 语义见 windows-remembered-write-rules.test.ts（敏感写入仍人工）
     ['auto', 'write_file', { path: 'AGENTS.md', content: 'x' }, 'sensitive_target'],
     [
@@ -139,10 +138,10 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
       { path: '.env', old_string: 'TOKEN', new_string: 'X' },
       'sensitive_target',
     ],
-    ['auto', 'bash', { command: 'echo one' }, 'platform_unverified'],
-    ['auto', 'bash', { command: 'npm test' }, 'platform_unverified'],
     ['yolo', 'write_file', { path: 'src/new.ts:stream', content: 'x' }, 'platform_unverified'],
-    ['yolo', 'bash', { command: 'git status' }, 'platform_unverified'],
+    ['yolo', 'bash', { command: 'git status' }, 'unknown_ask'],
+    ['ask', 'bash', { command: 'git status --short' }, 'ask_mode'],
+    ['auto', 'bash', { command: 'git push origin HEAD --force' }, 'danger_constraint'],
     // ask 模式默认询问
     ['ask', 'read_file', { path: 'src/a.ts' }, 'ask_mode'],
     ['ask', 'glob', { pattern: '**/*.ts' }, 'ask_mode'],
@@ -196,12 +195,11 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
     'Invoke-Expression Get-ChildItem',
     'npm test',
     'echo one',
-  ])('含其他副作用的 PowerShell %j 仍人工确认', async (command) => {
+  ])('含其他副作用的 PowerShell %j 在 auto 交给 reviewer，不直接人工', async (command) => {
     expect(windowsDedicatedFileCommand(command)).toBe(false);
-    expect(await decide('auto', 'bash', { command })).toMatchObject({
-      kind: 'ask',
-      reasonCode: 'platform_unverified',
-    });
+    const result = await decide('auto', 'bash', { command });
+    expect(result).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
+    expect(result.analysis.reasonCode).toBe('native_windows_shell_unverified');
   });
 
   it('用户 deny 规则优先于读文件类 PowerShell 的专用工具拒绝', async () => {
