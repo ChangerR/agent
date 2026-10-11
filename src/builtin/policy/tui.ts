@@ -115,14 +115,14 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
       return `${safeText(policyId())} 的 ${mode} 模式；请查看该策略设置与说明，宿主不假定其放行规则。`;
     if (windows)
       return {
-        ask: 'Windows 内置读写的项目内普通文件可由精确目标 allow 放行；其余默认询问。writeRoots 不自动放行。',
-        auto: 'Windows 上已通过通用检查的项目内只读直接放行。写入命中精确目标 allow 可直接放行，否则交审批模型；writeRoots 与宽规则不自动授权。模型不确定、失败或未加载时转人工。读文件、列目录、搜索内容的 PowerShell 会直接拒绝并改走专用工具；其余 Bash、敏感目标与项目外路径仍需人工确认。',
-        yolo: 'Windows 与 auto 相同：通过通用检查的项目内只读直接放行；写入的精确目标 allow 可放行，否则交审批模型，writeRoots 不自动授权。模型不确定、失败或未加载时转人工。读文件类 PowerShell 直接拒绝；不跳过其余 Bash、敏感目标或项目外路径。',
+        ask: '项目内已验证的只读操作直接放行；写入、执行与未知操作询问，精确 allow 可放行；明确 ask 优先。项目内普通文件可由精确目标 allow 放行。writeRoots 不自动放行。',
+        auto: 'Windows 上已通过通用检查的项目内只读直接放行。写入命中精确目标 allow 可直接放行，否则交审批模型；精确命令规则可免审批员。writeRoots 与宽规则不自动授权。模型不确定、失败或未加载时转人工。读文件、列目录、搜索内容的 PowerShell 会直接拒绝并改走专用工具；其余未记住的 Bash、敏感目标与项目外路径仍需人工确认。',
+        yolo: 'Windows 与 auto 相同：通过通用检查的项目内只读直接放行；写入的精确目标 allow 可放行，否则交审批模型，精确命令规则可免审批员，writeRoots 不自动授权。模型不确定、失败或未加载时转人工。读文件类 PowerShell 直接拒绝；不跳过其余未记住的 Bash、敏感目标或项目外路径。',
       }[mode];
     return {
-      ask: '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
-      auto: `只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy']?.writeRoots ?? []))}）。经 AST 与执行环境验证的只读 Bash 组合直接放行；其余未知操作才交审批模型。`,
-      yolo: '仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
+      ask: '项目内已验证的只读操作直接放行；写入、执行与未知操作询问，精确 allow 可放行；明确 ask 优先。',
+      auto: `只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy']?.writeRoots ?? []))}）。经 AST 与执行环境验证的只读 Bash 组合直接放行；精确命令规则可免审批员。其余未知操作才交审批模型。`,
+      yolo: '仅自动执行已完整验证的项目内普通文件读写；精确命令规则可免审批员。敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
     }[mode];
   };
   const reportError = (error: unknown) =>
@@ -571,7 +571,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
             value: 'add',
             label: '+ 添加规则',
             description:
-              '规则示例：read_file、edit_file(src/**)、bash(="npm test")。工具名本身表示该工具的所有调用。',
+              '规则示例：bash(="pnpm test")、write_file(="src/a.ts")。宽 allow（如 bash、bash(npm *)）只作说明，不会放行。',
           },
           ...snapshot.permissions[kind].map((raw, i) => ({
             value: String(i),
@@ -620,7 +620,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
         title: `${index === undefined ? '添加' : '编辑'}${label} ${kind} 规则`,
         value,
         description:
-          '示例 read_file、edit_file(src/**)、bash(="npm test")。Enter 自动保存，重启后生效；Esc 取消未提交输入。',
+          '示例 bash(="pnpm test")、write_file(="src/a.ts")。宽 allow 只作说明，不会放行。Enter 自动保存，重启后生效；Esc 取消未提交输入。',
         validate: validatePermissionRule,
         onSubmit: (value) => {
           const next = copyPermissionDraft(snapshot);

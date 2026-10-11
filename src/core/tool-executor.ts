@@ -225,6 +225,19 @@ export class ToolExecutor {
       input = freeze(jsonInput(hook.input ?? input, tool.inputSchema));
       audit('validation', 'input_valid');
 
+      // 同一次调用里，用户已经批准过的 ask/review 可以在仅 policyRevision 变化时复用。
+      // 配置、工具身份或分析指纹变化仍重新询问；deny 不复用。
+      let humanApproval:
+        | {
+            inputHash: string;
+            toolDefinitionHash: string;
+            toolIdentityHash: string;
+            sessionId: string;
+            configRevision: string | number;
+            analysisFingerprint: string;
+            remember?: 'session' | 'project';
+          }
+        | undefined = undefined;
       // 配置或环境在询问期间改变时重新评估，绝不复用之前的一次性批准。
       for (let attempt = 0; attempt < 3; attempt++) {
         if (signal.aborted) return cancelled();
@@ -343,8 +356,29 @@ export class ToolExecutor {
           binding,
         );
 
-        // 明确 ask/deny 不可被 reviewer 改写，只有 policy 的 review 才能委托一次。
-        if (policyDecision.kind === 'review') {
+        let remember: 'session' | 'project' | undefined;
+        const approvalReused =
+          humanApproval !== undefined &&
+          (policyDecision.kind === 'ask' || policyDecision.kind === 'review') &&
+          humanApproval.inputHash === binding.inputHash &&
+          humanApproval.toolDefinitionHash === binding.toolDefinitionHash &&
+          humanApproval.toolIdentityHash === binding.toolIdentityHash &&
+          humanApproval.sessionId === binding.sessionId &&
+          humanApproval.configRevision === binding.configRevision &&
+          humanApproval.analysisFingerprint === approvalAnalysisFingerprint(analysis);
+        if (approvalReused && humanApproval) {
+          decision = {
+            kind: 'allow',
+            source: 'user',
+            reason: '用户确认本次操作',
+            reasonCode: 'user_allow',
+          };
+          remember = humanApproval.remember;
+          this.recordDecision(descriptor, input, decision);
+          emitDecision('user');
+          audit('human', 'user_allow_reused', 'allow', binding);
+        } else if (policyDecision.kind === 'review') {
+          // 明确 ask/deny 不可被 reviewer 改写，只有 policy 的 review 才能委托一次。
           const finalRestriction = this.opts.restrict?.(operation);
           if (finalRestriction) return fail(`Permission denied: ${finalRestriction}`);
           const started = Date.now();
@@ -360,6 +394,7 @@ export class ToolExecutor {
             Date.now() - started,
           );
         }
+
         if (decision.kind === 'deny') {
           this.history?.record(
             descriptor,
@@ -371,7 +406,6 @@ export class ToolExecutor {
           return fail(`Permission denied: ${decision.reason}`);
         }
 
-        let remember: 'session' | 'project' | undefined;
         if (decision.kind === 'ask') {
           const summary =
             analysis?.summary ?? descriptor.analyzeInput?.(input).summary ?? tool.name;
@@ -422,6 +456,17 @@ export class ToolExecutor {
           this.recordDecision(descriptor, input, decision);
           emitDecision('user');
           audit('human', decision.reasonCode!, decision.kind, binding);
+          if (userDecision.allow) {
+            humanApproval = {
+              inputHash: binding.inputHash,
+              toolDefinitionHash: binding.toolDefinitionHash,
+              toolIdentityHash: binding.toolIdentityHash,
+              sessionId: binding.sessionId,
+              configRevision: binding.configRevision,
+              analysisFingerprint: approvalAnalysisFingerprint(analysis),
+              ...(userDecision.remember ? { remember: userDecision.remember } : {}),
+            };
+          }
           if (!userDecision.allow) {
             this.history?.record(
               descriptor,
@@ -830,6 +875,13 @@ function definitionHash(tool: Tool): string {
     risk: tool.risk,
     inputSchema: tool.inputSchema,
   });
+}
+/** 分析指纹不包含 $operation：它嵌入 policyRevision，记住规则本身不应使同一次批准失效。 */
+function approvalAnalysisFingerprint(analysis: ToolAnalysis | undefined): string {
+  if (!analysis?.environment) return fingerprint(analysis ?? null);
+  const environment = { ...analysis.environment };
+  delete environment['$operation'];
+  return fingerprint({ ...analysis, environment });
 }
 function fingerprint(value: unknown): string {
   return createHash('sha256')

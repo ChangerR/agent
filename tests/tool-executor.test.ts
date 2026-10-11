@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, symlink, unlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,11 @@ import {
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry, type Tool } from '../src/core/registry.js';
 import { PermissionController, createDeterministicPolicy } from '../src/builtin/policy/index.js';
+import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
+import { FakeProvider, textResponse } from '../src/providers/fake.js';
+import { bashTool } from '../src/tools/bash.js';
+import { editFileTool } from '../src/tools/edit.js';
+import { writeFileTool } from '../src/tools/write.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../src/sdk/capabilities.js';
 import { emptyUsage } from '../src/core/protocol/types.js';
 import { ToolScheduler } from '../src/core/tool-scheduler.js';
@@ -666,5 +671,228 @@ describe('ToolExecutor 唯一授权门', () => {
     expect((await f.run({ path: 'link' })).content).toContain('User denied');
     expect(requests).toBe(2);
     expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it('并发审批里记住一条不会让已允许一次的另一次调用再次询问', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'executor-concurrent-'));
+    folders.push(cwd);
+    await mkdir(join(cwd, 'src'), { recursive: true });
+    await writeFile(join(cwd, 'src/a.ts'), 'before');
+    const policy = createDeterministicPolicy({
+      cwd,
+      mode: 'ask',
+      rules: { allow: [], ask: [], deny: [] },
+    });
+    const events = new EventBus();
+    const tools = new ToolRegistry();
+    const writeExecute = vi.fn(writeFileTool.execute.bind(writeFileTool));
+    const editExecute = vi.fn(editFileTool.execute.bind(editFileTool));
+    tools.register({
+      ...writeFileTool,
+      ownerPlugin: 'agentlab.local-tools',
+      version: '1.0.0',
+      execute: writeExecute,
+    });
+    tools.register({
+      ...editFileTool,
+      ownerPlugin: 'agentlab.local-tools',
+      version: '1.0.0',
+      execute: editExecute,
+    });
+    const requests: Array<{
+      request: PermissionRequest;
+      resolve: (decision: UserDecision) => void;
+    }> = [];
+    events.on('permission_request', (event) => {
+      requests.push({ request: event.request, resolve: event.resolve });
+    });
+    const executor = new ToolExecutor({ tools, policy, events, hooks: new HookRunner(), cwd });
+    const context = {
+      signal: new AbortController().signal,
+      runId: 'concurrent-remember',
+      userRequest: 'update sources',
+      messages: [],
+    };
+    const writing = executor.invokeTool('write_file', { path: 'src/new.ts', content: 'x' }, context);
+    const editing = executor.invokeTool(
+      'edit_file',
+      { path: 'src/a.ts', old_string: 'before', new_string: 'after' },
+      context,
+    );
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    requests.find((item) => item.request.toolName === 'write_file')!.resolve({
+      allow: true,
+      remember: 'session',
+    });
+    expect((await writing).isError).toBeFalsy();
+    requests.find((item) => item.request.toolName === 'edit_file')!.resolve({ allow: true });
+    expect((await editing).isError).toBeFalsy();
+    expect(requests).toHaveLength(2);
+    expect(writeExecute).toHaveBeenCalledTimes(1);
+    expect(editExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('审批期间新增 deny 规则时，另一个已等待的调用被拒绝', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'executor-deny-'));
+    folders.push(cwd);
+    await mkdir(join(cwd, 'src'), { recursive: true });
+    const policy = createDeterministicPolicy({
+      cwd,
+      mode: 'ask',
+      rules: { allow: [], ask: [], deny: [] },
+    });
+    const events = new EventBus();
+    const tools = new ToolRegistry();
+    const execute = vi.fn(writeFileTool.execute.bind(writeFileTool));
+    tools.register({
+      ...writeFileTool,
+      ownerPlugin: 'agentlab.local-tools',
+      version: '1.0.0',
+      execute,
+    });
+    const requests: Array<{
+      request: PermissionRequest;
+      resolve: (decision: UserDecision) => void;
+    }> = [];
+    events.on('permission_request', (event) => {
+      requests.push({ request: event.request, resolve: event.resolve });
+    });
+    const executor = new ToolExecutor({ tools, policy, events, hooks: new HookRunner(), cwd });
+    const context = {
+      signal: new AbortController().signal,
+      runId: 'concurrent-deny',
+      userRequest: 'update sources',
+      messages: [],
+    };
+    const first = executor.invokeTool('write_file', { path: 'src/a.ts', content: 'a' }, context);
+    const second = executor.invokeTool('write_file', { path: 'src/b.ts', content: 'b' }, context);
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    const pathOf = (request: PermissionRequest) =>
+      request.input && typeof request.input === 'object' && 'path' in request.input
+        ? request.input.path
+        : undefined;
+    const allowed = requests.find((item) => pathOf(item.request) === 'src/a.ts')!;
+    const denied = requests.find((item) => pathOf(item.request) === 'src/b.ts')!;
+    allowed.resolve({ allow: true, remember: 'session' });
+    expect((await first).isError).toBeFalsy();
+    policy.controller!.addSessionRule('deny', 'write_file(="src/b.ts")');
+    denied.resolve({ allow: true });
+    expect((await second).content).toContain('Permission denied');
+    expect(requests).toHaveLength(2);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('审批期间 configRevision 变化仍重新询问', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'executor-config-'));
+    folders.push(cwd);
+    await mkdir(join(cwd, 'src'), { recursive: true });
+    let revision = 1;
+    const prompts: PermissionRequest[] = [];
+    const responder = vi.fn(async (request: PermissionRequest) => {
+      prompts.push(request);
+      if (revision === 1) {
+        revision = 2;
+        return { allow: true } as const;
+      }
+      return { allow: false } as const;
+    });
+    const execute = vi.fn(async () => ({ content: 'wrote' }));
+    const tools = new ToolRegistry();
+    tools.register({
+      ...writeFileTool,
+      ownerPlugin: 'agentlab.local-tools',
+      version: '1.0.0',
+      execute,
+    });
+    const events = new EventBus();
+    const audits: Extract<AgentEvent, { type: 'tool_execution' }>[] = [];
+    events.on('tool_execution', (event) => audits.push(event));
+    const executor = new ToolExecutor({
+      tools,
+      events,
+      hooks: new HookRunner(),
+      cwd,
+      policy: createDeterministicPolicy({
+        cwd,
+        mode: 'ask',
+        rules: { allow: [], ask: [], deny: [] },
+      }),
+      configRevision: () => revision,
+      approvalResponder: responder,
+    });
+    const result = await executor.invokeTool(
+      'write_file',
+      { path: 'src/a.ts', content: 'a' },
+      {
+        signal: new AbortController().signal,
+        runId: 'config-revision',
+        userRequest: 'write',
+        messages: [],
+      },
+    );
+    expect(result.content).toContain('User denied');
+    expect(responder).toHaveBeenCalledTimes(2);
+    expect(execute).not.toHaveBeenCalled();
+    expect(audits.some((event) => event.reasonCode === 'approval_stale')).toBe(true);
+    expect(audits.some((event) => event.reasonCode === 'user_allow_reused')).toBe(false);
+    expect(new Set(prompts.map((prompt) => prompt.requestId)).size).toBe(2);
+    expect(new Set(prompts.map((prompt) => prompt.toolRequestId)).size).toBe(1);
+  });
+
+  it('auto 模式记住的命令规则不调用审批员', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'executor-judge-'));
+    folders.push(cwd);
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }),
+    );
+    const events = new EventBus();
+    const judges: string[] = [];
+    events.on('model_request', (event) => {
+      if (event.purpose === 'judge') judges.push(event.requestId);
+    });
+    const asks: string[] = [];
+    events.on('permission_request', (event) => {
+      asks.push(event.request.toolName);
+      event.resolve({ allow: false });
+    });
+    const tools = new ToolRegistry();
+    tools.register({ ...bashTool, ownerPlugin: 'agentlab.local-tools', version: '1.0.0' });
+    const provider = new FakeProvider([
+      textResponse(
+        JSON.stringify({ decision: 'allow', reasonCode: 'model_allow', reason: '不应被调用' }),
+      ),
+    ]);
+    const executor = new ToolExecutor({
+      tools,
+      events,
+      hooks: new HookRunner(),
+      cwd,
+      policy: createDeterministicPolicy({
+        cwd,
+        mode: 'auto',
+        rules: { allow: ['bash(="npm test")'], ask: [], deny: [] },
+      }),
+      reviewer: createModelReviewer({
+        provider,
+        model: 'offline-reviewer',
+        modelInfo: () => ({ contextWindow: 128_000, maxOutputTokens: 8192 }),
+      }),
+    });
+    const result = await executor.invokeTool(
+      'bash',
+      { command: 'npm test' },
+      {
+        signal: new AbortController().signal,
+        runId: 'remembered-command',
+        userRequest: 'run tests',
+        messages: [],
+      },
+    );
+    expect(result.content).not.toContain('approval_required');
+    expect(result.content).not.toContain('Permission denied');
+    expect(judges).toEqual([]);
+    expect(asks).toEqual([]);
+    expect(provider.requests).toHaveLength(0);
   });
 });

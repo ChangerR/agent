@@ -437,15 +437,15 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
     (['config', 'session'] as const).flatMap((source) =>
       (['grep', 'glob'] as const).map((name) => ({ source, name })),
     ),
-  )('$source 单候选 allow 不会在 ask 模式授权 $name 的整批文件', async ({ source, name }) => {
+  )('$source 单候选 allow 存在时，ask 模式已验证的 $name 搜索仍然直接执行', async ({ source, name }) => {
     const grant = `${name}(="src/a.ts")`;
     const f = await fixture({ mode: 'ask', rules: { allow: source === 'config' ? [grant] : [] } });
     if (source === 'session') f.agent.permission.addSessionRule('allow', grant);
     const input =
       name === 'glob' ? { pattern: 'src/**/*.ts' } : { pattern: 'needle', glob: 'src/**/*.ts' };
     const result = await f.run([{ name, input }]);
-    expect(result).toMatchObject({ judge: 0, human: 1, executed: 0 });
-    expect(result.results[0]!.isError).toBe(true);
+    expect(result).toMatchObject({ judge: 0, human: 0, executed: 1 });
+    expect(result.results[0]!.isError).not.toBe(true);
   });
 
   it('同一 runtime 调用间新增普通文件重新枚举，并对新增文件应用既有 deny', async () => {
@@ -662,7 +662,7 @@ it.each(['grep', 'glob'] as const)(
   },
 );
 
-it('literal glob 精确授权只匹配真实请求文件，辅助ignore和根目录不能放行其他文件', async () => {
+it('ask 模式已验证的 glob 直接执行，精确规则不必覆盖每个文件', async () => {
   const state = await fixture({
     mode: 'ask',
     rules: { allow: ['glob(=".gitignore")', 'glob(="src/a.ts")'] },
@@ -674,12 +674,14 @@ it('literal glob 精确授权只匹配真实请求文件，辅助ignore和根目
   expect(allowed.judge).toBe(0);
   expect(allowed.human).toBe(0);
   expect(allowed.results[0].content).toBe('a.ts');
-  const refused = await state.run([{ name: 'glob', input: { pattern: 'a.txt', path: 'src' } }]);
-  expect(refused.judge).toBe(0);
-  expect(refused.human).toBe(1);
-  expect(refused.executed).toBe(0);
+  const other = await state.run([{ name: 'glob', input: { pattern: 'a.txt', path: 'src' } }]);
+  expect(other.judge).toBe(0);
+  expect(other.human).toBe(0);
+  expect(other.executed).toBe(1);
+  expect(other.results[0].content).toBe('a.txt');
   state.agent.permission.addSessionRule('allow', `glob(=${JSON.stringify(state.cwd)})`);
   const rootOnly = await state.run([{ name: 'glob', input: { pattern: 'README.md' } }]);
-  expect(rootOnly.human).toBe(1);
-  expect(rootOnly.executed).toBe(0);
+  expect(rootOnly.human).toBe(0);
+  expect(rootOnly.executed).toBe(1);
+  expect(rootOnly.results[0].content).toBe('README.md');
 });

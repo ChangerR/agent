@@ -80,17 +80,19 @@ AGENTLAB_SCREEN=main 使用终端原生滚动历史；AGENTLAB_FULL_REDRAW=1 关
 export function canRememberPermission(
   request: Pick<
     PermissionRequest,
-    'reasonCode' | 'policyReasonCode' | 'analysisReasonCode' | 'agentId'
+    'reasonCode' | 'policyReasonCode' | 'analysisReasonCode' | 'agentId' | 'toolName'
   >,
 ): boolean {
   const policyReason = request.policyReasonCode ?? request.reasonCode;
   return (
     !request.agentId &&
-    policyReason !== 'platform_unverified' &&
-    policyReason !== 'platform_read_review' &&
-    request.analysisReasonCode !== 'native_windows_read_unverified' &&
+    (policyReason === 'ask_mode' ||
+      policyReason === 'review_uncertain' ||
+      policyReason === 'platform_write_review') &&
     request.analysisReasonCode !== 'native_windows_unverified' &&
-    request.analysisReasonCode !== 'native_windows_shell_unverified'
+    request.analysisReasonCode !== 'unverified_tool_implementation' &&
+    request.toolName !== 'grep' &&
+    request.toolName !== 'glob'
   );
 }
 

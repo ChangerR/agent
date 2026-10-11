@@ -65,14 +65,14 @@ afterEach(async () => {
 });
 
 describe('deterministic policy', () => {
-  it('完整的项目内普通文件 read 在 auto 中确定性放行，ask 模式仍询问', async () => {
+  it('完整的项目内普通文件 read 在 auto 与 ask 中确定性放行', async () => {
     expect(await policy().decide(operation(), signal())).toMatchObject({
       kind: 'allow',
       reasonCode: 'safe_read',
     });
     expect(await policy('ask').decide(operation(), signal())).toMatchObject({
-      kind: 'ask',
-      reasonCode: 'ask_mode',
+      kind: 'allow',
+      reasonCode: 'safe_read',
     });
   });
 
@@ -257,15 +257,20 @@ describe('deterministic policy', () => {
       expect(
         await value.decide(operation(write, { path: '.env', content: 'x' }), signal()),
       ).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
-      for (const input of [
-        operation(bash, { command: 'npm test' }),
-        operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' }),
-      ]) {
-        expect(await value.decide(input, signal())).toMatchObject({
-          kind: mode === 'ask' ? 'ask' : 'review',
-          reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-        });
-      }
+      expect(await value.decide(operation(bash, { command: 'npm test' }), signal())).toMatchObject({
+        kind: 'allow',
+        reasonCode: 'exact_call_allow',
+        matchedRule: 'bash(="npm test")',
+      });
+      expect(
+        await value.decide(
+          operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' }),
+          signal(),
+        ),
+      ).toMatchObject({
+        kind: mode === 'ask' ? 'ask' : 'review',
+        reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
+      });
     });
   });
 
@@ -399,10 +404,23 @@ describe('deterministic policy', () => {
   });
 
   it.each(['pwd', 'echo "hello"', "printf '%s\\n' 'hello'"])(
-    '受控字面量 Shell %s 在 auto 确定性放行',
+    '受控字面量 Shell %s 在 auto 确定性放行，已验证只读在 ask 中同样放行',
     async (command) => {
-      expect((await policy().decide(operation(bash, { command }), signal())).kind).toBe('allow');
-      expect((await policy('ask').decide(operation(bash, { command }), signal())).kind).toBe('ask');
+      if (process.platform === 'win32') {
+        expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject({
+          kind: 'ask',
+          reasonCode: 'ask_mode',
+        });
+        return;
+      }
+      expect(await policy().decide(operation(bash, { command }), signal())).toMatchObject({
+        kind: 'allow',
+        reasonCode: 'safe_read',
+      });
+      expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject({
+        kind: 'allow',
+        reasonCode: 'safe_read',
+      });
       expect((await policy('yolo').decide(operation(bash, { command }), signal())).kind).toBe(
         'allow',
       );
@@ -440,6 +458,104 @@ describe('deterministic policy', () => {
         signal(),
       ),
     ).toMatchObject({ kind: 'ask', reasonCode: 'danger_constraint' });
+  });
+
+  it('ask 模式只放行已验证只读，敏感、项目外、明确 ask 与写入仍询问', async () => {
+    await writeFile(join(cwd, '.env'), 'TOKEN=fixture');
+    expect(await policy('ask').decide(operation(read, { path: '.env' }), signal())).toMatchObject({
+      kind: 'ask',
+      reasonCode: 'sensitive_target',
+    });
+    expect(
+      await policy('ask').decide(operation(read, { path: '../outside/data.txt' }), signal()),
+    ).toMatchObject({ kind: 'ask', reasonCode: 'external_target' });
+    expect(
+      await policy('ask', { ask: ['read_file(src/**)'] }).decide(operation(), signal()),
+    ).toMatchObject({ kind: 'ask', reasonCode: 'explicit_ask' });
+    expect(
+      await policy('ask').decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
+    ).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
+  });
+
+  it('危险命令、deny 与明确 ask 优先于完全相同的精确调用规则', async () => {
+    const command = 'sudo rm -rf /opt';
+    const exact = `bash(=${JSON.stringify(command)})`;
+    const remembered = 'bash(="npm test")';
+    expect(
+      await policy('ask', { allow: [exact] }).decide(operation(bash, { command }), signal()),
+    ).toMatchObject({ kind: 'ask', reasonCode: 'danger_constraint' });
+    expect(
+      await policy('auto', { allow: [remembered], deny: [remembered] }).decide(
+        operation(bash, { command: 'npm test' }),
+        signal(),
+      ),
+    ).toMatchObject({ kind: 'deny', reasonCode: 'deny_rule' });
+    expect(
+      await policy('ask', { allow: ['bash(="npm test")'], ask: ['bash(="npm test")'] }).decide(
+        operation(bash, { command: 'npm test' }),
+        signal(),
+      ),
+    ).toMatchObject({ kind: 'ask', reasonCode: 'explicit_ask' });
+  });
+
+  it('bash 通配、裸工具名和字面量模式都不能放行', async () => {
+    for (const mode of ['ask', 'auto'] as const)
+      for (const allow of ['bash(npm *)', 'bash', 'bash(npm test)'])
+        expect(
+          await policy(mode, { allow: [allow] }).decide(
+            operation(bash, { command: 'npm test' }),
+            signal(),
+          ),
+        ).toMatchObject({
+          kind: mode === 'ask' ? 'ask' : 'review',
+          reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
+        });
+  });
+
+  it('MCP 工具的规范化输入 JSON 精确规则可放行，输入不同则不放行', async () => {
+    const input = { b: 1, a: 'src/[a]*.ts' };
+    const canonical = JSON.stringify(input, (_key, value) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [key, (value as Record<string, unknown>)[key]]),
+          )
+        : value,
+    );
+    const tool: Tool = {
+      name: 'mcp__demo__echo',
+      ownerPlugin: 'agentlab.local-tools',
+      version: '1.0.0',
+      description: 'mcp echo',
+      risk: 'write',
+      inputSchema: { type: 'object' },
+      analyzeInput: (data) => ({
+        patternTarget: JSON.stringify(data, (_key, value) =>
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? Object.fromEntries(
+                Object.keys(value)
+                  .sort()
+                  .map((key) => [key, (value as Record<string, unknown>)[key]]),
+              )
+            : value,
+        ),
+        summary: 'mcp echo',
+      }),
+      execute: async () => ({ content: 'no' }),
+    };
+    const rule = `${tool.name}(=${JSON.stringify(canonical)})`;
+    expect(await policy('ask', { allow: [rule] }).decide(operation(tool, input), signal())).toMatchObject(
+      { kind: 'allow', reasonCode: 'exact_call_allow', source: 'config', matchedRule: rule },
+    );
+    expect(
+      (
+        await policy('ask', { allow: [rule] }).decide(
+          operation(tool, { ...input, a: 'other' }),
+          signal(),
+        )
+      ).kind,
+    ).not.toBe('allow');
   });
 
   it('yolo 仅跳过完整普通文件写入；auto 写入仍交给 reviewer', async () => {
