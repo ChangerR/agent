@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import { definePlugin } from '../src/sdk/index.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
 import type { AgentEvent } from '../src/core/events.js';

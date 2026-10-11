@@ -29,10 +29,13 @@ async function fixture(
     save?: boolean;
     before?: (req: ChatRequest, signal: AbortSignal) => Promise<void>;
     platform?: NodeJS.Platform;
+    /** 语义规划请求单独编排，执行剧本不再隐式假定规划器存在。 */
+    planning?: ScriptedResponse[];
   } = {},
 ) {
   const cwd = await mkdtempProject(join(tmpdir(), 'agent-planning-'));
   const fake = new FakeProvider(script);
+  const planner = new FakeProvider(options.planning ?? [() => textResponse('null')]);
   const provider = definePlugin({
     manifest: { id: 'test.planning', version: '1.0.0', apiVersion: 1 },
     setup(ctx) {
@@ -40,6 +43,10 @@ async function fixture(
         name: 'planning-test',
         capabilities: fake.capabilities,
         async *stream(req, signal) {
+          if (req.system.startsWith('[agentlab planning:auto]')) {
+            yield* planner.stream(req, signal);
+            return;
+          }
           await options.before?.(req, signal);
           yield* fake.stream(req, signal);
         },
@@ -85,7 +92,7 @@ async function fixture(
     await agent.dispose();
     await rm(cwd, { recursive: true, force: true });
   });
-  return { agent, cwd, fake };
+  return { agent, cwd, fake, planner };
 }
 const from = (req: ChatRequest): Plan =>
   JSON.parse(req.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\n')[0]);
@@ -141,10 +148,11 @@ describe('规划到执行', () => {
     expect(f.fake.requests.every((req) => req.model === 'current-model')).toBe(true);
     expect(f.fake.requests[0].tools.some((tool) => tool.name === 'plan_update')).toBe(true);
   });
-  it('简单问答不额外规划，显式 only 入口总是规划且保存配置', async () => {
+  it('简单问答不建计划，显式 only 入口总是规划且保存配置', async () => {
     const f = await fixture([textResponse('你好'), proposal, textResponse('计划供审阅')]);
     await f.agent.loop.run('你好');
     expect(f.fake.requests).toHaveLength(1);
+    expect(f.planner.requests).toHaveLength(1);
     expect(f.agent.loop.plan.snapshot).toBeUndefined();
     await f.agent.dispatchCommand('/plan only 新任务');
     expect(f.agent.loop.plan.snapshot).toMatchObject({ mode: 'only', phase: 'ready' });
@@ -208,6 +216,68 @@ describe('规划到执行', () => {
 });
 
 describe('直接描述任务，自动规划并持续执行', () => {
+  it('查看项目优化点：执行模型不创建计划，也会先发布计划和当前步骤再读取项目', async () => {
+    const task = '帮我看下当前的项目，看看还有什么优化点';
+    const f = await fixture(
+      [
+        call('read_file', { path: 'README.md' }),
+        (req) => update(req, 0, 'completed', 'README 描述项目结构'),
+        (req) => update(req, 1, 'running'),
+        call('read_file', { path: 'service.ts' }),
+        (req) => update(req, 1, 'completed', 'service.ts 存在重复遍历'),
+        (req) => update(req, 2, 'running'),
+        call('read_file', { path: 'service.ts' }),
+        (req) => update(req, 2, 'completed', '已重新核对重复遍历位置与影响'),
+        textResponse('建议合并重复遍历，未修改文件。'),
+      ],
+      {
+        planning: [
+          (req) => {
+            expect(req.messages.at(-1)?.content).toBe(task);
+            expect(req.system).toContain('优化点');
+            expect(req.system).toContain('不安排修改、安装或部署');
+            return textResponse(
+              JSON.stringify({
+                goal: '检查项目优化点',
+                steps: ['了解项目结构', '分析代码问题', '核对优化建议'],
+              }),
+            );
+          },
+        ],
+        before: async (req) => {
+          const plan = from(req);
+          if (f.fake.requests.length === 0) expect(plan.steps[0].status).toBe('running');
+        },
+      },
+    );
+    await writeFile(join(f.cwd, 'README.md'), '项目说明');
+    await writeFile(join(f.cwd, 'service.ts'), 'items.map(f); items.map(g);');
+    const sequence: string[] = [];
+    f.agent.events.on('plan_changed', (event) => {
+      if (event.plan?.steps[0].status === 'running') sequence.push('current');
+    });
+    f.agent.events.on('tool_call', (event) => sequence.push(event.toolUse.name));
+    await f.agent.loop.run(task);
+    expect(f.planner.requests).toHaveLength(1);
+    expect(sequence.indexOf('current')).toBeLessThan(sequence.indexOf('read_file'));
+    expect(sequence).not.toContain('write_file');
+    expect(sequence).not.toContain('bash');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(await readFile(join(f.cwd, 'service.ts'), 'utf8')).toBe('items.map(f); items.map(g);');
+    await expect(readFile(join(f.cwd, 'agent.config.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('默认规划无效时明确报错，不能静默跳过计划开始实施', async () => {
+    const f = await fixture([call('write_file', { path: 'no.txt', content: 'no' })], {
+      planning: [textResponse('我准备先看代码')],
+    });
+    expect((await f.agent.loop.run('帮我看下当前的项目，看看还有什么优化点')).reason).toBe('error');
+    expect(f.fake.requests).toHaveLength(0);
+    await expect(readFile(join(f.cwd, 'no.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('普通任务保留对话上下文，自行建计划；两次中途汇报后继续至验证完成', async () => {
     const task = '就按刚才说的，把这件事做完';
     const f = await fixture(
@@ -242,6 +312,11 @@ describe('直接描述任务，自动规划并持续执行', () => {
     });
     await f.agent.loop.run('result.txt 应包含 ok');
     const result = await f.agent.loop.run(task);
+    expect(
+      f.planner.requests
+        .at(-1)
+        ?.messages.some((message) => message.content === 'result.txt 应包含 ok'),
+    ).toBe(true);
     expect(result.reason).toBe('completed');
     expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
     expect(await readFile(join(f.cwd, 'result.txt'), 'utf8')).toBe('ok');

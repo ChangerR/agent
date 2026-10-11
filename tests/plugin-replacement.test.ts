@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import type { AgentEvent } from '../src/core/events.js';
 import { EventBus } from '../src/core/events.js';
 import { AgentLoop } from '../src/core/loop.js';

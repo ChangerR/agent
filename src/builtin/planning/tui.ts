@@ -37,7 +37,7 @@ export function planLines(
   return lines.slice(0, height);
 }
 export function createPlanningTui(context: BuiltinTuiContext): TuiAdapter {
-  let expanded = false;
+  let expanded = true;
   let offset = 0;
   return {
     statusPanels: {

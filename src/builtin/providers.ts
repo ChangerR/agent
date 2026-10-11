@@ -14,6 +14,14 @@ function demoScript(): ScriptedResponse {
   let called = false;
   let planCall = 0;
   return (req) => {
+    if (req.system.startsWith('[agentlab planning:auto]')) {
+      const input = req.messages.at(-1)?.content;
+      // 离线演示只对明确文件读取展示计划；不冒充真实模型的语义判断。
+      if (!/[\w.-]+\.(txt|md|ts|js|json)/i.test(String(input))) return textResponse('null');
+      return textResponse(
+        JSON.stringify({ goal: '离线规划演示：读取并核对文件', steps: ['读取文件', '核对结果'] }),
+      );
+    }
     if (req.system.startsWith('[agentlab planning]'))
       return textResponse(
         JSON.stringify({ goal: '离线规划演示：读取并核对文件', steps: ['读取文件', '核对结果'] }),

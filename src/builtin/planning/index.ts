@@ -1,4 +1,4 @@
-/** 默认由模型按上下文规划并实施；显式只规划/强制规划才单独请求方案。 */
+/** 每个新任务先明确是否需要计划；不能依赖执行模型自愿调用规划工具。 */
 import { z } from 'zod';
 import { definePlugin } from '../../sdk/index.js';
 import type { RuntimeServices } from '../../runtime/services.js';
@@ -41,7 +41,8 @@ export const planningStrategy: PlanningStrategy = {
     return '当前任务的计划尚未完成。请核对已有结果，继续未完成步骤，不要停在方案或进度汇报，不要要求用户输入继续命令。已执行的操作不要重复；核实依据后更新步骤，再推进下一步。有子任务时等待并核对结果。确实缺少用户信息、权限或外部条件时，将对应步骤标为 blocked 并说明原因，再向用户提问；不得把这条内部提醒当作新的用户授权。';
   },
   async prepare(input: PlannerInput) {
-    if (input.mode === 'off' || (input.mode !== 'only' && !input.force)) return;
+    if (input.mode === 'off') return;
+    const automatic = input.mode === 'auto' && !input.force;
     const response = await collectStreamAsync(
       observedStream(
         input.provider,
@@ -49,9 +50,16 @@ export const planningStrategy: PlanningStrategy = {
           model: input.model,
           thinking: input.thinking,
           maxTokens: 4096,
-          system:
-            '[agentlab planning] 为用户任务提出简洁可执行的计划。只输出 JSON {"goal":"目标","steps":["步骤"]}，2-8 步，每步有可验证结果。不要执行任务，不调用工具，不把子 agent 创建当作完成。使用用户的语言。',
-          messages: [{ role: 'user', content: input.input }],
+          system: [
+            automatic ? '[agentlab planning:auto]' : '[agentlab planning]',
+            input.systemPrompt,
+            '当前是任务规划阶段，上述项目上下文仅用于理解任务；本次只输出 JSON，不执行工具，不输出说明或代码围栏。结合完整对话判断本轮请求的范围。',
+            automatic
+              ? '简单问答、闲聊或单个明确操作返回 null。需要检查项目、审查代码、寻找优化点、调查问题或跨多个步骤实施的任务，必须返回 {"goal":"目标","steps":["步骤"]}；不要因为任务没有要求“计划”就返回 null。'
+              : '为用户任务返回 {"goal":"目标","steps":["步骤"]}。',
+            '计划通常 2-8 步，每步有可验证结果，包含调研和核对，使用用户的语言。按实际授权范围规划：只要求查看项目与优化建议时，只安排只读检查、分析与证据核对，不安排修改、安装或部署。不要把子 agent 创建当作完成。',
+          ].join('\n'),
+          messages: structuredClone([...input.messages]),
           tools: [],
         },
         input.signal,
@@ -65,9 +73,11 @@ export const planningStrategy: PlanningStrategy = {
       .map((b) => b.text)
       .join('');
     try {
-      return proposalSchema.parse(
-        JSON.parse(body.replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '')),
+      const parsed: unknown = JSON.parse(
+        body.replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, ''),
       );
+      if (automatic && parsed === null) return;
+      return proposalSchema.parse(parsed);
     } catch {
       throw new Error('规划结构无效，未开始执行；请重新提交任务');
     }
