@@ -1,6 +1,6 @@
 /**
  * 原生 Windows 上，通过通用检查的项目内 read_file/glob/grep 在 auto/yolo 直接放行。
- * 敏感、项目外、歧义路径仍人工确认。未验收的 PowerShell 在 auto 交给 reviewer，不在策略里直接改成人工。通过 platform 注入覆盖 Windows 分支。
+ * 敏感、项目外、歧义路径仍人工确认。PowerShell 完整字面操作可 review，无法解析的语义必须人工。通过 platform 注入覆盖 Windows 分支。
  */
 import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -139,8 +139,8 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
       'sensitive_target',
     ],
     ['yolo', 'write_file', { path: 'src/new.ts:stream', content: 'x' }, 'platform_unverified'],
-    ['yolo', 'bash', { command: 'git status' }, 'unknown_ask'],
-    ['ask', 'bash', { command: 'git status --short' }, 'ask_mode'],
+    ['yolo', 'bash', { command: 'git status' }, 'powershell_unknown'],
+    ['ask', 'bash', { command: 'git status --short' }, 'powershell_unknown'],
     ['auto', 'bash', { command: 'git push origin HEAD --force' }, 'danger_constraint'],
     // ask 模式默认询问
     ['ask', 'read_file', { path: 'src/a.ts' }, 'ask_mode'],
@@ -187,19 +187,30 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
     expect(result.analysis.reasonCode).toBe('windows_shell_dedicated_tool');
   });
 
+  it.each(['Get-Content a; Remove-Item b', 'Get-Content a > b', 'echo one'])(
+    '完整字面 PowerShell %j 在 auto 交给 reviewer',
+    async (command) => {
+      expect(windowsDedicatedFileCommand(command)).toBe(false);
+      const result = await decide('auto', 'bash', { command });
+      expect(result).toMatchObject({
+        kind: 'review',
+        reasonCode: command === 'echo one' ? 'review_uncertain' : 'powershell_write_review',
+      });
+      expect(result.analysis.completeness).toBe('complete');
+    },
+  );
   it.each([
-    'Get-Content a; Remove-Item b',
     'Get-Content $(x)',
-    'Get-Content a > b',
     'Get-ChildItem | Where-Object { $_.Name -eq "a" }',
     'Invoke-Expression Get-ChildItem',
     'npm test',
-    'echo one',
-  ])('含其他副作用的 PowerShell %j 在 auto 交给 reviewer，不直接人工', async (command) => {
-    expect(windowsDedicatedFileCommand(command)).toBe(false);
-    const result = await decide('auto', 'bash', { command });
-    expect(result).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
-    expect(result.analysis.reasonCode).toBe('native_windows_shell_unverified');
+  ])('无法解析的 PowerShell %j 不委托 reviewer', async (command) => {
+    expect(await decide('auto', 'bash', { command })).toMatchObject({
+      kind: 'ask',
+      reasonCode: command.startsWith('Invoke-Expression')
+        ? 'danger_constraint'
+        : 'powershell_unknown',
+    });
   });
 
   it('用户 deny 规则优先于读文件类 PowerShell 的专用工具拒绝', async () => {

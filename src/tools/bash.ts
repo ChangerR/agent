@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { decodeShellOutput, detectPlatform, shellInvocation } from '../core/platform.js';
 import type { Tool } from '../core/registry.js';
 import { envWithRg } from './grep.js';
+import { parsePowerShell } from './powershell.js';
 import {
   analyzeReadOnlyShell,
   readOnlyShellEnvironment,
@@ -84,6 +85,17 @@ export const bashTool: Tool = {
     const timeout = Number(input.timeout ?? DEFAULT_TIMEOUT_MS);
     let invocation = shellInvocation(command);
     let env = envWithRg(process.env);
+    const powerShellCommand = ctx.analysis?.environment?.['$powershellCommand'];
+    if (powerShellCommand) {
+      const current = parsePowerShell(command);
+      if (
+        process.platform !== 'win32' ||
+        !current.complete ||
+        current.command !== powerShellCommand
+      )
+        throw new Error('approval_stale: PowerShell command contract changed');
+      invocation = shellInvocation(powerShellCommand, 'win32');
+    }
     const approved = ctx.analysis?.environment?.['$shellContract'];
     if (approved) {
       const entries: string[] = JSON.parse(

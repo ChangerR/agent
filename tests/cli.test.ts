@@ -967,7 +967,7 @@ describe('真实 TUI 离线交互', () => {
       toolName: 'bash',
       reasonCode: 'model_ask',
       policyReasonCode: 'review_uncertain',
-      analysisReasonCode: 'native_windows_shell_unverified',
+      analysisReasonCode: 'powershell_bounded',
       input: { command: 'git status --short' },
     },
     {

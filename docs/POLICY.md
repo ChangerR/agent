@@ -24,13 +24,13 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 审批顺序是：
 
 1. 明确 `deny`
-2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell。尚未验收的原生 Windows Shell 不在此列，auto 把它交给 reviewer
+2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell，以及无法完整解析的 PowerShell 操作
 3. 明确 `ask`
 4. 已完整验证操作的精确目标规则
 5. `ask` 模式默认询问
 6. 显式 `writeRoots` 目录授权；已验证的普通文件读取与受控项目搜索
 7. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
-8. `auto` 的剩余不确定操作可委托一次 reviewer；缺少 reviewer、非法输出、unknown、失败或超时均不会自动放行
+8. `auto` 的剩余不确定操作可委托一次 reviewer；明确 reviewer deny 终止；ask/unknown、缺少 reviewer、非法输出、失败或超时回到人工
 
 会话规则只在同一 action 类别内优先于配置规则，不会让 session allow 越过配置 ask/deny。
 
@@ -75,7 +75,23 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - 重定向、命令/进程替换、变量/算术/通配展开、后台执行、函数、脚本、未知选项与任意子进程不自动放行。反斜杠续行目前明确不确定，避免语法树与 Bash 去续行后的 argv 差异。解析结果给出命令、effects 与 unresolved 原因；不声称能静态推断任意程序目的。
 - 递归 grep/rg 保留原工具与过滤语义，不悄悄删掉敏感候选；如果保守候选范围包含敏感/未知文件则询问。Git worktree/gitfile、submodule、partial clone、额外 filter/include 配置等不在确定性支持范围。普通 status 不遍历被忽略的 node_modules 或禁用的 hooks；diff 额外验证对象/引用存储，超过 20,000 项扫描预算明确回退审批。已安装系统工具是受信任依赖，不引入恶意宿主二进制的无限威胁模型。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
 
-原生 Windows 上，内置 `read_file` / `glob` / `grep` 与其他平台走同一套通用检查（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件、受控搜索枚举与候选绑定）。通过这些检查的项目内完整读取，在 auto 与 yolo 中直接放行（`safe_read`），不交给 reviewer，也不询问人工。歧义路径仍不能走这条放行：含 UNC/`\\?\` 前缀、备用数据流冒号、尾随点/空格、`~数字` 短名或保留设备名的路径，以及敏感、项目外、用户 deny/ask 规则，继续人工确认。ask 模式默认询问，精确 allow 可以放行。NTFS ADS、设备名、8.3 短名和 junction 的完整语义仍未实机验收，所以未通过通用检查或带歧义形态的路径不会确定性放行。歧义路径与未知工具里属于不可降级约束的部分继续人工确认（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过；这类审批面板不提供“允许并记住此规则”（记住的规则不会生效），只提供“允许一次”与“拒绝”。不能确定只是在读文件、列目录或搜索内容的 PowerShell 不再在策略里直接改成人工：分析记为 `native_windows_shell_unverified`，auto 交给 reviewer（`review_uncertain`），ask 模式默认询问，yolo 对不完整副作用仍人工确认。审批模型拒绝、失败或不可用时才回到人工；这类面板同样不提供不会生效的“允许并记住此规则”。整条命令只由 Get-Content、Get-ChildItem、Select-String、Get-Item 及其默认别名（可接 Select-Object 等格式化管道）组成时，直接拒绝且不执行（`use_dedicated_tool`），理由要求改用 read_file、glob、grep，不弹人工确认，也不交给 reviewer。含子表达式、调用运算符、重定向、脚本块或其他命令时走上面的 reviewer 兜底，危险命令仍人工确认。
+原生 Windows 上，内置 read_file/glob/grep 保留与其他平台相同的真实路径、边界、敏感名称、链接、多硬链接、文件类型和受控搜索检查。项目内完整读取在 auto/yolo 直接放行（safe_read），不调用 reviewer。用户 deny 优先终止，ask 优先询问；敏感、项目外和歧义路径仍需人工。NTFS ADS、设备名、8.3 短名、junction 等原生语义尚未实机验收。
+
+### PowerShell 的完整分析与边界
+
+工具名仍为 bash，Windows 实际解释器是 powershell.exe（Windows PowerShell 5.1）。独立 tree-sitter-powershell AST 解析整条语句列表、普通管道和文件/流重定向；命令名、参数缩写与默认别名先规范化，再绑定位置参数。缩写必须在完整参数集合中唯一，不在支持子集中猜测；未支持参数也参与消歧。Path/LiteralPath 参数集、大小写、参数次序、冒号值及静态布尔开关均保留明确语义。
+
+当前可以验证字面 Set-Content/sc、Add-Content/ac、Clear-Content/clc、Remove-Item/rm/ri/rd/del/erase/rmdir、Copy-Item/cp/cpi/copy、Move-Item/mv/mi/move、显式 ItemType File 的 New-Item/ni、Out-File/of、Test-Path、Get-Location/pwd/gl 和 Write-Output/echo/write。每个已知文件操作复用通用路径检查和环境绑定；复制/移动到已有目录会分类目录下实际目标文件，移动同时分类源写入。删除磁盘根的危险性来自规范化语义，不依赖拼写或参数排列。删除/复制/移动链接本身、目录树操作仍无法完整验证。完整普通文件操作的精确原命令规则可授权；未命中时，纯文件写入在 auto/yolo 委托 reviewer（powershell_write_review），ask 默认询问，与原生文件工具的平台写入约束一致。writeRoots 不授权 Shell。
+
+Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态格式化管道组成的纯文件 Shell 仍直接拒绝（use_dedicated_tool），引导 read_file/glob/grep，不交给模型或人工批准。Get-ChildItem 的 provider 枚举没有被冒充为专用搜索工具的受控枚举。Test-Path 和 Get-Location 的完整项目内元数据读取可直接放行。
+
+单引号字符串（含双写单引号）与无插值/转义的双引号可解码；分号、换行和普通静态管道必须整条分析。静态 Write-Output/Get-Content 管道可给固定目标的 Set-Content/Add-Content 提供内容；Out-File 必须有显式固定目标。其他对象/路径管道绑定未支持。文件重定向也分类真实写入目标；流合并不制造文件目标。批准的完整 cmdlet 以模块限定名、完整参数和单引号字面值执行，执行前核对同一解析契约；文件/环境变化由唯一 Executor 重验。
+
+变量、插值、子表达式、splat、脚本块、函数/别名修改、调用运算符、混合引号/转义、数组、多目标通配、非文件 provider、tilde、drive-relative 路径、未知参数/命令，以及语法树错误/缺失节点均保留 partial/unknown（powershell_unresolved）。普通 Git/npm 等原生程序会读取配置或执行脚本，目前没有 PowerShell 的完整原生程序契约，git status/log 也不被伪称已验证安全；它们仍可在人工授权后执行。UNC、ADS、保留设备名、短名和尾随点/空格仍使用平台人工约束。这些未知情况在所有模式下先人工确认，精确 allow、yolo 或模型 allow 均不能补全缺失语义。
+
+只有已完整分类、排除敏感/项目外/危险与用户限制的普通操作，才能在 auto 进入 ModelReviewer。这里 complete 仅指已声明子集的解析和通用文件前提完整，不声称原生 Windows 安全已实机验收，也不证明任意程序没有副作用。reviewer 明确 deny 终止调用，绝不自动转成批准；ask/unknown、失败、超时、非法输出或不可用才回到人工。面板显示 PowerShell，未知分析或仅 execute effect 的无效记住选项隐藏。
+
+参数与别名依据 [Microsoft 的解析说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_parsing?view=powershell-5.1)、[Remove-Item](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/remove-item?view=powershell-5.1)、[Set-Content](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/set-content?view=powershell-5.1)；语法树使用 [tree-sitter-powershell](https://github.com/airbus-cert/tree-sitter-powershell)。语法树是解析器，不是任意 PowerShell 程序的安全证明。
 
 写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用，因此“本次会话始终允许”在 Windows 上只询问一次；未命中时 ask 模式默认询问（`ask_mode`），auto/yolo 委托 reviewer（`platform_write_review`）。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先；Windows 文件路径限制按大小写不敏感匹配，以保护尚未创建的大小写变体目标，allow 不因此扩大，Shell 命令与 grep 正则仍保持字面语义。原始路径普通、但规范化目标或项目根含 Windows 歧义形式时，同样必须人工确认，不能退回通用自动放行。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
 

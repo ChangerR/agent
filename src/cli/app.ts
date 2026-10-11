@@ -90,7 +90,7 @@ export function canRememberPermission(
     policyReason !== 'platform_read_review' &&
     request.analysisReasonCode !== 'native_windows_read_unverified' &&
     request.analysisReasonCode !== 'native_windows_unverified' &&
-    request.analysisReasonCode !== 'native_windows_shell_unverified'
+    !['powershell_unresolved', 'powershell_bounded'].includes(request.analysisReasonCode ?? '')
   );
 }
 

@@ -68,6 +68,11 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         input.tool.ownerPlugin === 'agentlab.local-tools' &&
         input.tool.version === '1.0.0' &&
         ['read_file', 'write_file', 'edit_file', 'glob', 'grep'].includes(input.tool.name);
+      const windowsShell =
+        platform === 'win32' &&
+        input.tool.name === 'bash' &&
+        input.tool.ownerPlugin === 'agentlab.local-tools' &&
+        input.tool.version === '1.0.0';
       // grep 的原始 target 是搜索文本，只有分析返回的真实文件目标才采用 Windows 路径大小写语义。
       const rawTarget = { value: target, filePath: windowsFile && input.tool.name !== 'grep' };
       const matched = (
@@ -153,7 +158,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
                   relative(input.cwd, path).replace(/\\/g, '/'),
                 ]),
               ),
-            ].map((value) => ({ value, filePath: windowsFile })),
+            ].map((value) => ({ value, filePath: windowsFile || windowsShell })),
           ]
         : [rawTarget];
       const canonicalDeny = matched('deny', targets);
@@ -171,8 +176,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           'use_dedicated_tool',
           '读文件用 read_file，列目录和按名字找文件用 glob，搜索内容用 grep。这条 PowerShell 没有执行，不需要人工确认。',
         );
-      // 只拦歧义路径。未验收的 Windows Shell（native_windows_shell_unverified）不在这里改成人工，
-      // 否则 auto 的 reviewer 被跳过。它继续往下走：ask 询问，yolo 对不完整副作用仍人工，auto 委托 reviewer。
+      // 歧义路径与未解析的 PowerShell 是确定性人工约束，模型 allow 不能补全缺失语义。
       if (analysis.reasonCode === 'native_windows_unverified')
         return decision(
           'ask',
@@ -215,6 +219,12 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           asked.source,
           asked.raw,
         );
+      if (analysis.reasonCode === 'powershell_unresolved')
+        return decision(
+          'ask',
+          'powershell_unknown',
+          'PowerShell 的参数、路径或副作用未完整解析，必须人工确认',
+        );
       if (isPlanControl(input.tool) && analysis.reasonCode === 'agent_control')
         return decision('allow', 'plan_control', '更新会话计划；真实工具另行审批');
       if (isSubagentControl(input.tool) && analysis.reasonCode === 'agent_control')
@@ -222,10 +232,22 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；
       // 通配符/工具级规则和 writeRoots 目录授权都不放行，auto/yolo 交给 reviewer，ask 模式照旧询问。
       // 敏感/写保护、项目外、特殊文件、硬链接与歧义路径在上方已人工，精确规则同样不能越过。
-      if (analysis.reasonCode === 'native_windows_write_unverified') {
+      const windowsShellWrite =
+        windowsShell &&
+        analysis.completeness === 'complete' &&
+        analysis.effects.some((effect) => effect.kind === 'write') &&
+        analysis.effects.every(
+          (effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind),
+        );
+      // PowerShell 的项目文件写入同样不因为 yolo 而跳过尚未实机验收的平台写入约束。
+      if (analysis.reasonCode === 'native_windows_write_unverified' || windowsShellWrite) {
         const exact =
           analysis.completeness === 'complete'
-            ? matched('allow', targets, (rule) => literalTarget(rule) !== undefined)
+            ? matched(
+                'allow',
+                windowsShellWrite ? [rawTarget] : targets,
+                (rule) => literalTarget(rule) !== undefined,
+              )
             : undefined;
         if (exact)
           return decision(
@@ -239,8 +261,8 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           return decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
         return decision(
           'review',
-          'platform_write_review',
-          'Windows 平台未做文件系统校验：内置写入工具的项目内普通文件写入已完成通用分析并排除敏感/写保护/项目外目标，且未命中精确目标规则，委托 reviewer 判断当前完整操作',
+          windowsShellWrite ? 'powershell_write_review' : 'platform_write_review',
+          'Windows 平台未做文件系统校验：项目内普通文件写入已完成通用分析并排除敏感/写保护/项目外目标，且未命中精确目标规则，委托 reviewer 判断当前完整操作',
           'mode',
         );
       }
