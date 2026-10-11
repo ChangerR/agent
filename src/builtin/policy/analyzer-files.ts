@@ -25,10 +25,6 @@ import {
 } from './analyzer-types.js';
 import type { AnalyzerContext } from './analyzer-types.js';
 
-const WINDOWS_READ_NOTE =
-  'Windows 平台未做文件系统校验：通用分析已完整执行（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件与受控搜索枚举均已检查并绑定），' +
-  '但 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等平台特有语义未经实机验收，且已拦截这些歧义路径形态；' +
-  '因此策略不确定性放行，而是委托模型按当前用户要求审查这次项目内只读操作。';
 const WINDOWS_WRITE_NOTE =
   'Windows 平台未做文件系统校验：通用分析已完整执行（真实路径、项目边界、敏感与写保护目标、链接逃逸、多硬链接、非普通文件、新文件实际父目录均已检查并绑定），' +
   '但 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等平台特有语义未经实机验收，且已拦截这些歧义路径形态；' +
@@ -44,8 +40,6 @@ export function stampWindowsFilesystem(analysis: ToolAnalysis): ToolAnalysis {
   if ((analysis.targets ?? []).some(windowsAmbiguousPath)) return windowsPathUnverified(analysis);
   const { effects } = analysis;
   const complete = analysis.completeness === 'complete' && effects.length > 0;
-  if (complete && effects.every((effect) => effect.kind === 'read' && effect.scope === 'project'))
-    return noteWindows(analysis, 'native_windows_read_unverified', WINDOWS_READ_NOTE);
   if (complete && effects.every((effect) => effect.kind === 'write' && effect.scope === 'project'))
     return noteWindows(analysis, 'native_windows_write_unverified', WINDOWS_WRITE_NOTE);
   return analysis;

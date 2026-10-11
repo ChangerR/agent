@@ -313,7 +313,7 @@ describe('Windows 文件限制规则：大小写别名不能越过 deny / ask', 
             { rules: rules({ [kind]: [exact('grep', 'NEEDLE')] }) },
           )
         ).decision,
-      ).toMatchObject({ kind: 'review', reasonCode: 'platform_read_review' });
+      ).toMatchObject({ kind: 'allow', reasonCode: 'safe_read' });
     }
     const policy = createDeterministicPolicy({
       cwd,
