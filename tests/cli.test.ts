@@ -484,6 +484,26 @@ describe('真实 TUI 离线交互', () => {
     } finally { await ui.dispose(); }
   });
 
+  it('原生 Windows 未验证操作（platform_unverified）不提供不会生效的“允许并记住此规则”', async () => {
+    const ui = await mountTui();
+    const controller = new AbortController();
+    const resolve = vi.fn();
+    try {
+      ui.agent.events.emit({ type: 'permission_request', signal: controller.signal, resolve, request: {
+        toolName: 'bash', summary: 'bash: ls', reason: '原生 Windows 的文件系统/解释器安全分析尚未验收，必须人工确认',
+        decisionSource: 'builtin', reasonCode: 'platform_unverified', input: { command: 'ls' },
+      } });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('请求权限'));
+      const shown = ui.screen().join('\n');
+      expect(shown).toContain('允许一次'); expect(shown).toContain('拒绝');
+      expect(shown).not.toContain('允许并记住此规则');
+      // 与 3 选项面板相同的按键（两次向下 + Enter）原本选中“记住”，现在第二项是“拒绝”
+      ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\x1b[B'); ui.terminal.input?.('\r');
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith({ allow: false });
+    } finally { controller.abort(); await ui.dispose(); }
+  });
+
   it('长审批正文不能挤走选项，窄屏能滚动到完整参数末尾，浏览详情不会误批准', async () => {
     const ui = await mountTui();
     const controller = new AbortController();

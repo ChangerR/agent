@@ -267,9 +267,11 @@ export function startTui(
     const origin = request.decisionSource ? ({ mode: '权限模式', danger: '危险检测', config: '配置规则', session: '会话规则', judge: '自动审批员', builtin: '内置检查', user: '用户' }[request.decisionSource]) : '权限检查';
     const dangerNotice = '拒绝规则与危险检测仍优先';
     const rememberedScope = target === undefined ? `${request.toolName} 的所有调用` : `${request.toolName} 的相同匹配目标: ${JSON.stringify(target)}`;
+    // 原生 Windows 上未验证的操作（如 bash、歧义路径）每次都必须人工确认，记住的规则不会生效，所以不提供该选项。
+    const rememberIneffective = request.reasonCode === 'platform_unverified';
     const options: Array<{ label: string; description: string; decision: UserDecision }> = [
-      { label: '允许一次', description: '只允许这一次调用，不新增规则。', decision: { allow: true } },
-      { label: '允许并记住此规则', description: `记录 ${rememberedScope} 的允许规则；实际放行仍由策略安全约束决定。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } },
+      { label: '允许一次', description: rememberIneffective ? '只允许这一次调用。原生 Windows 上该操作未经平台校验，每次都需人工确认，记住规则不会生效。' : '只允许这一次调用，不新增规则。', decision: { allow: true } },
+      ...(rememberIneffective ? [] : [{ label: '允许并记住此规则', description: `记录 ${rememberedScope} 的允许规则；实际放行仍由策略安全约束决定。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } as UserDecision }]),
       { label: '拒绝', description: '拒绝这一次调用，Agent 会收到拒绝结果。', decision: { allow: false } },
     ];
     let settled = false;
