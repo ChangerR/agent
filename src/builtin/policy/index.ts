@@ -236,17 +236,6 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           'mode',
         );
       }
-      // Windows 只读的分析是完整的，但平台语义未验收：必须在精确 allow / safe_read / yolo 之前截住，只能委托 reviewer。
-      // ask 模式照旧询问；yolo 与 auto 一致（未完整验证平台不能确定性放行，但也不比 auto 更严格）。
-      if (analysis.reasonCode === 'native_windows_read_unverified')
-        return controller.mode === 'ask'
-          ? decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode')
-          : decision(
-              'review',
-              'platform_read_review',
-              'Windows 平台未做文件系统校验：内置只读工具的项目内读取已完成通用分析并排除敏感/项目外目标，委托 reviewer 判断当前完整操作',
-              'mode',
-            );
       const complete =
         analysis.completeness === 'complete' &&
         analysis.effects.length > 0 &&

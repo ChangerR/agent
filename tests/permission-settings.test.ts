@@ -145,7 +145,7 @@ describe('TUI 权限自动保存', () => {
     const before = readFileSync(h.path, 'utf8');
     h.settings.openModes();
     const ask = h.picker.items.find((item) => item.value === 'ask')!.description!;
-    expect(ask).toContain('只读操作即使命中精确 allow 仍询问');
+    expect(ask).toContain('项目内普通文件可由精确目标 allow 放行');
     expect(h.picker.items.find((item) => item.value === 'auto')!.description).toContain(
       'writeRoots 与宽规则不自动授权',
     );

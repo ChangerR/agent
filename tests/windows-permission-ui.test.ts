@@ -5,10 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
-import {
-  createModelReviewer,
-  STRICT_REVIEWER_SYSTEM,
-} from '../src/builtin/reviewer-model/index.js';
+import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
 import { canRememberPermission } from '../src/cli/app.js';
 import type { PermissionMode } from '../src/core/config.js';
 import { EventBus, type PermissionRequest, type UserDecision } from '../src/core/events.js';
@@ -128,54 +125,12 @@ function setup(
   return { run, requests, rememberChoices, provider, policy };
 }
 
-describe.each(['auto', 'yolo'] as const)('Windows %s 只读审核回退的记忆选项', (mode) => {
-  it.each(
-    readCases.flatMap(([name, input]) =>
-      fallbacks.map(([reason, script]) => ({ name, input, reason, script })),
-    ),
-  )(
-    '$name / $reason 保留原策略来源，CLI 不提供无效记住选项',
-    async ({ name, input, reason, script }) => {
-      const h = setup(mode, script);
-      expect((await h.run(name, input)).isError).toBe(true);
-      expect(h.requests).toHaveLength(1);
-      expect(h.rememberChoices).toEqual([false]);
-      expect(h.requests[0]).toMatchObject({
-        reasonCode: reason,
-        policyReasonCode: 'platform_read_review',
-        analysisReasonCode: 'native_windows_read_unverified',
-        decisionSource: 'judge',
-      });
-      if (h.provider) {
-        expect(h.provider.requests).toHaveLength(1);
-        expect(h.provider.requests[0].system).toBe(STRICT_REVIEWER_SYSTEM);
-        const body = JSON.parse(h.provider.requests[0].messages[0].content as string);
-        expect(body.policy.decision).toMatchObject({
-          kind: 'review',
-          reasonCode: 'platform_read_review',
-        });
-        expect(body.analysis.reasonCode).toBe('native_windows_read_unverified');
-      }
-      expect(h.policy.controller!.getSessionRules().allow).toEqual([]);
-    },
-  );
-
-  it('真实模型 reviewer 超时同样保留来源，CLI 不显示记住', async () => {
-    const h = setup(mode, [], 'win32', undefined, true);
-    expect((await h.run('read_file', { path: 'src/read.ts' })).isError).toBe(true);
-    expect(h.requests[0]).toMatchObject({
-      reasonCode: 'timeout',
-      policyReasonCode: 'platform_read_review',
-    });
-    expect(h.rememberChoices).toEqual([false]);
-    expect(h.provider!.requests).toHaveLength(1);
-  });
-
-  it('真实模型 reviewer 允许只读时不产生人工请求', async () => {
-    const h = setup(mode, jsonResponse('allow'));
-    expect((await h.run('read_file', { path: 'src/read.ts' })).isError).toBeFalsy();
+describe.each(['auto', 'yolo'] as const)('Windows %s 项目内只读直接放行', (mode) => {
+  it.each(readCases)('%s 不调用 reviewer，也不询问', async (name, input) => {
+    const h = setup(mode, jsonResponse('ask'));
+    expect((await h.run(name, input)).isError).toBeFalsy();
     expect(h.requests).toEqual([]);
-    expect(h.provider!.requests).toHaveLength(1);
+    expect(h.provider!.requests).toHaveLength(0);
   });
 
   it.each(fallbacks)('写入 / %s 回退保留有效的记住选项', async (reasonCode, script) => {
@@ -227,15 +182,15 @@ describe.each(['auto', 'yolo'] as const)('Windows %s 只读审核回退的记忆
 });
 
 describe('人工模式和非 Windows 不被 reviewer 原因码误判', () => {
-  it.each(readCases)('Windows ask %s 通过分析来源隐藏无效记住选项', async (name, input) => {
+  it.each(readCases)('Windows ask %s 与其他平台一样提供记住选项', async (name, input) => {
     const h = setup('ask', jsonResponse('allow'));
     await h.run(name, input);
     expect(h.requests[0]).toMatchObject({
       reasonCode: 'ask_mode',
       policyReasonCode: 'ask_mode',
-      analysisReasonCode: 'native_windows_read_unverified',
     });
-    expect(h.rememberChoices).toEqual([false]);
+    expect(h.requests[0]?.analysisReasonCode).not.toBe('native_windows_read_unverified');
+    expect(h.rememberChoices).toEqual([true]);
     expect(h.provider!.requests).toHaveLength(0);
   });
 
