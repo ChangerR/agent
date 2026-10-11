@@ -437,16 +437,22 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
     (['config', 'session'] as const).flatMap((source) =>
       (['grep', 'glob'] as const).map((name) => ({ source, name })),
     ),
-  )('$source 单候选 allow 存在时，ask 模式已验证的 $name 搜索仍然直接执行', async ({ source, name }) => {
-    const grant = `${name}(="src/a.ts")`;
-    const f = await fixture({ mode: 'ask', rules: { allow: source === 'config' ? [grant] : [] } });
-    if (source === 'session') f.agent.permission.addSessionRule('allow', grant);
-    const input =
-      name === 'glob' ? { pattern: 'src/**/*.ts' } : { pattern: 'needle', glob: 'src/**/*.ts' };
-    const result = await f.run([{ name, input }]);
-    expect(result).toMatchObject({ judge: 0, human: 0, executed: 1 });
-    expect(result.results[0]!.isError).not.toBe(true);
-  });
+  )(
+    '$source 单候选 allow 存在时，ask 模式已验证的 $name 搜索仍然直接执行',
+    async ({ source, name }) => {
+      const grant = `${name}(="src/a.ts")`;
+      const f = await fixture({
+        mode: 'ask',
+        rules: { allow: source === 'config' ? [grant] : [] },
+      });
+      if (source === 'session') f.agent.permission.addSessionRule('allow', grant);
+      const input =
+        name === 'glob' ? { pattern: 'src/**/*.ts' } : { pattern: 'needle', glob: 'src/**/*.ts' };
+      const result = await f.run([{ name, input }]);
+      expect(result).toMatchObject({ judge: 0, human: 0, executed: 1 });
+      expect(result.results[0]!.isError).not.toBe(true);
+    },
+  );
 
   it('同一 runtime 调用间新增普通文件重新枚举，并对新增文件应用既有 deny', async () => {
     const f = await fixture();

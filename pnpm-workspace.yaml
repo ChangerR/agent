@@ -4,8 +4,10 @@ onlyBuiltDependencies:
   - esbuild
   - tree-sitter
   - tree-sitter-bash
+  - tree-sitter-powershell
 allowBuilds:
   esbuild: true
   koffi: true
   tree-sitter: true
   tree-sitter-bash: true
+  tree-sitter-powershell: true

@@ -545,9 +545,14 @@ describe('deterministic policy', () => {
       execute: async () => ({ content: 'no' }),
     };
     const rule = `${tool.name}(=${JSON.stringify(canonical)})`;
-    expect(await policy('ask', { allow: [rule] }).decide(operation(tool, input), signal())).toMatchObject(
-      { kind: 'allow', reasonCode: 'exact_call_allow', source: 'config', matchedRule: rule },
-    );
+    expect(
+      await policy('ask', { allow: [rule] }).decide(operation(tool, input), signal()),
+    ).toMatchObject({
+      kind: 'allow',
+      reasonCode: 'exact_call_allow',
+      source: 'config',
+      matchedRule: rule,
+    });
     expect(
       (
         await policy('ask', { allow: [rule] }).decide(

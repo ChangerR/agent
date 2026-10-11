@@ -16,6 +16,7 @@ import type { ChatRequest } from '../src/core/provider.js';
 import { PlanController, type Plan } from '../src/core/plan.js';
 import { EventBus } from '../src/core/events.js';
 import { planLines } from '../src/builtin/planning/tui.js';
+import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const f of cleanup.splice(0).reverse()) await f();
@@ -27,6 +28,7 @@ async function fixture(
     plugins?: Plugin[];
     save?: boolean;
     before?: (req: ChatRequest, signal: AbortSignal) => Promise<void>;
+    platform?: NodeJS.Platform;
   } = {},
 ) {
   const cwd = await mkdtempProject(join(tmpdir(), 'agent-planning-'));
@@ -45,13 +47,37 @@ async function fixture(
     },
   });
   const agent = await createAgent(cwd, {
-    plugins: [provider, ...(options.plugins ?? [])],
+    plugins: [
+      provider,
+      ...(options.platform
+        ? [
+            definePlugin({
+              manifest: { id: 'test.planning-platform', version: '1.0.0', apiVersion: 1 },
+              setup(ctx) {
+                ctx.provide.policy(
+                  'planning-platform',
+                  createDeterministicPolicy({
+                    cwd,
+                    platform: options.platform,
+                    mode: options.config?.permissionMode ?? 'yolo',
+                    rules: options.config?.permissions ?? { allow: [], ask: [], deny: [] },
+                  }),
+                );
+              },
+            }),
+          ]
+        : []),
+      ...(options.plugins ?? []),
+    ],
     autoSaveSessions: options.save ?? false,
     config: {
       provider: 'planning-test',
       model: 'current-model',
       permissionMode: 'yolo',
-      capabilities: { reviewer: false },
+      capabilities: {
+        reviewer: false,
+        ...(options.platform ? { policy: 'planning-platform' } : {}),
+      },
       ...options.config,
     },
   });
@@ -465,6 +491,94 @@ describe('不可绕过的只规划边界', () => {
     expect((await writing).isError).toBe(true);
     expect(f.agent.loop.plan.snapshot?.phase).toBe('paused');
     await expect(readFile(join(f.cwd, 'late.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('PR #35/#36/#37 的 Windows 权限与规划续跑组合', () => {
+  it('ask 模式的真实项目读取不打断自动续跑，保持原始用户来源并完成计划', async () => {
+    const task = '读取 ordinary.txt 并核对检索结果';
+    const f = await fixture(
+      [
+        call('plan_update', {
+          revision: 0,
+          goal: task,
+          steps: [{ title: '读取文件' }, { title: '检索验证' }],
+        }),
+        textResponse('计划已经建立，接下来读取。'),
+        (req) => {
+          expect(req.messages.at(-1)).toMatchObject({ role: 'user', source: 'tool' });
+          return update(req, 0, 'running');
+        },
+        call('read_file', { path: 'ordinary.txt' }),
+        (req) => update(req, 0, 'completed', 'read_file 返回 ordinary-sentinel'),
+        textResponse('已读到内容，继续检索验证。'),
+        (req) => update(req, 1, 'running'),
+        call('grep', { pattern: 'ordinary-sentinel', path: '.', glob: 'ordinary.txt' }),
+        (req) => update(req, 1, 'completed', 'grep 找到 ordinary.txt 中相同内容'),
+        textResponse('读取和检索已核对完成'),
+      ],
+      { platform: 'win32', config: { permissionMode: 'ask' } },
+    );
+    await writeFile(join(f.cwd, 'ordinary.txt'), 'ordinary-sentinel');
+    const approvals = vi.fn();
+    f.agent.events.on('permission_request', approvals);
+    expect((await f.agent.loop.run(task)).reason).toBe('completed');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(approvals).not.toHaveBeenCalled();
+    expect(f.fake.requests).toHaveLength(10);
+    expect(
+      f.fake.requests.every((req) =>
+        req.messages.some(
+          (message) =>
+            message.role === 'user' &&
+            message.content === task &&
+            (message.source ?? 'user') === 'user',
+        ),
+      ),
+    ).toBe(true);
+    expect(f.fake.requests.every((req) => req.tools.length > 0)).toBe(true);
+    expect(await readFile(join(f.cwd, 'ordinary.txt'), 'utf8')).toBe('ordinary-sentinel');
+  });
+  it.each([
+    ['sc .env replacement', 'sensitive_target'],
+    ['sc ../outside.txt replacement', 'external_target'],
+    ['git status', 'powershell_unknown'],
+    ['rd -Recurse C:/', 'external_target'],
+  ])('规划执行 %s 的精确 allow 不能越过约束；拒绝后不再自动重试', async (command, reasonCode) => {
+    const f = await fixture(
+      [
+        proposal,
+        (req) => update(req, 0, 'running'),
+        call('bash', { command }),
+        textResponse('操作被拒绝，计划保持阻塞'),
+      ],
+      { platform: 'win32', config: { permissionMode: 'auto' } },
+    );
+    await writeFile(join(f.cwd, '.env'), 'fixture-sentinel');
+    f.agent.permission.addSessionRule('allow', `bash(=${JSON.stringify(command)})`);
+    const approvals = vi.fn(
+      (event: {
+        request: { reasonCode?: string; summary: string };
+        resolve(value: { allow: boolean }): void;
+      }) => {
+        event.resolve({ allow: false });
+      },
+    );
+    f.agent.events.on('permission_request', approvals);
+    await f.agent.loop.run('继续执行任务并完成验证');
+    expect(approvals).toHaveBeenCalledTimes(1);
+    expect(approvals.mock.calls[0]![0].request).toMatchObject({
+      reasonCode,
+      summary: `PowerShell: ${command}`,
+    });
+    if (command === 'rd -Recurse C:/')
+      expect(approvals.mock.calls[0]![0].request).toMatchObject({
+        analysisReasonCode: 'shell_dangerous',
+      });
+    expect(f.fake.requests).toHaveLength(4);
+    expect(f.fake.requests.every((req) => req.tools.length > 0)).toBe(true);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+    expect(await readFile(join(f.cwd, '.env'), 'utf8')).toBe('fixture-sentinel');
   });
 });
 

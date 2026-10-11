@@ -26,6 +26,89 @@
 
 ## 本次 Linux 验证记录
 
+### 2026-10-11：PR #35 同步 #36 权限与 #37 规划续跑
+
+发布前核对 PR #35 的远端 head 仍为 `77f08525e2e6ac8b9ea21dbd311ddb86225a837c`。
+本次 master 基线为 `d35bd70c273f3ad948961b20479ea74f333a0875`，包含 #36 的
+`ec69577871a7b8fe56ffc0e4cffa2fe35c771408` 与 #37 的合并修改。原分支使用本地
+merge 提交 `b3cf7a0b4de881f14477f2b20046310fca9d0254` 保留两侧历史，再补格式与本记录；
+更新原 Draft PR #35，不改写已发布历史，不另开 PR，不合并远端 PR。
+
+逐处处理 `docs/ARCHITECTURE.md`、`docs/POLICY.md`、`src/cli/app.ts` 和
+`tests/cli.test.ts` 四个文本冲突。保留 #36 的 ask 模式已验证只读放行、等于引号精确调用
+规则和同次审批复用；保留 #35 的 PowerShell 敏感/外部/危险/歧义与未知语义约束先于精确
+规则及模型。审批面板允许完整静态输出或普通写入记住精确调用，包括
+`powershell_write_review`；未知 PowerShell 与受限目标继续隐藏无效记住选项。
+
+上游两条“未知 npm test 可凭 PowerShell 精确规则放行”的测试调整为完整静态调用的正例，
+新增 ask/auto/yolo 下未知 npm test 仍人工的反例。新增组合回归涵盖：完整调用记住后免重复
+审批且不扩大到其他命令、ModelReviewer ask 后记住写入、仅 policyRevision 改变复用本次
+批准且不跨调用复用、人工批准时目标变为外部链接仍重新询问，以及 Windows ask 普通读取
+和检索持续推进计划、拒绝敏感/外部/未知/危险别名命令后停止自动重试。
+
+单独复查确认 `src/core/tool-executor.ts`、loop/plan 与规划插件源码逐字等于本次 master；
+PowerShell 解析/路径分类与 Bash AST 源码逐字等于原已发布 head，未恢复原 Windows 缺口。
+五个上游测试文件仅修正 Prettier 格式，TypeScript AST 复核无语义变化。#36 的 MCP owner
+线索未扩张修复；#37 的只规划边界源码未修改，由另一任务处理。
+
+最终在 Linux、Node `24.19.0`、pnpm `11.25.0` 下完成格式、类型、全量测试、构建和 diff
+检查：**71 个文件、1319 项通过、2 项跳过（1321 总计）**。PowerShell 链路为 103 项，
+102 项通过、1 项原生 Windows 跳过；规划 43 项全通过（新增 5 项组合）。四个 PTY 文件
+共五项用例全部通过，均实际启动仓库原样 `pnpm dev`，包括 CLI、子任务、两种规划终端
+尺寸与 PowerShell 审批。日志在 `/tmp/agent-permission-validation/*-sync-final.log`。
+
+全部模型使用 FakeProvider 或受控 provider，新增真实模型请求为 0。原生 Windows 与真实
+模型仍未实测；跳过的两项仍是原生 Windows cwd 大小写恢复和安全 PowerShell 输出/元数据。
+危险与外部 Shell 命令只验证决策并拒绝执行，完整命令使用无副作用替身；Linux 上注入
+Windows policy 不能代替 Windows 实机证据。
+
+### 2026-10-11：PR #32 PowerShell 权限修复
+
+只读复核基线为 `44aaf9dcb777ac7907cb5ff49995ad1c6bfff5cb`，初次最新 master 为
+`9e19d86f9fb92f5503ed4ed0e7ce4f7c260cb940`（#33）。检查确认 #33 没有修改 #32 的
+analyzer/policy/reviewer/executor，五条 review 仍成立。之后同步已合并 #34 的 master
+`464023d1105010b11a7dea826b10aa606b6fe3bf`，保留 Plan 控制工具识别；未改动另一环境的工作树。
+最终源码为 `ef69b3c2b583b61acb720aa1f983455dec29e494`，独立分支
+`fix/powershell-permission-semantics-20261011`。验收记录提交仅更新本文件，未发布、推送或创建 PR。
+
+| #32 review                                                                     | 复核与修复证据                                                                                                                                                                             |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [4240509467](https://github.com/ChangerR/agent/pull/32#discussion_r4240509467) | 基线只记录 cwd/unknown execute，敏感和项目外命令进入 review。修复先解析操作数，复用真实路径、敏感、外部、链接、特殊文件及用户规则检查；无法完整验证时直接人工，provider allow 不会被调用。 |
+| [4240509468](https://github.com/ChangerR/agent/pull/32#discussion_r4240509468) | 基线遗漏 rm/rd/del 等默认别名与倒序参数。修复依据 AST 的规范化命令、参数及根目标分类危险；字符串和注释中的危险词不被冒充为调用。                                                           |
+| [4240509471](https://github.com/ChangerR/agent/pull/32#discussion_r4240509471) | 保留明确 reviewer deny 终止；文档改为 ask/unknown、失败、超时、非法输出或不可用回到人工。deny 不被自动改成批准。                                                                           |
+| [4240509472](https://github.com/ChangerR/agent/pull/32#discussion_r4240509472) | 分析摘要显示 PowerShell；真实 ModelReviewer ask → Executor → 原样 pnpm dev 审批/详情已验证。                                                                                               |
+| [4240509473](https://github.com/ChangerR/agent/pull/32#discussion_r4240509473) | 完整支持子集提供真实目标、effects、参数和执行契约；受控 provider 在内置 ModelReviewer 中核对完整证据后返回协议结果。未知分析直接人工，不能由只返回 allow 的 stub 补全。                    |
+
+在 Linux、Node `24.19.0`、pnpm `11.25.0` 下，最终源码的 `pnpm format:check`、
+`pnpm typecheck`、`pnpm test`、`pnpm build` 和 `git diff --check` 全部通过。
+Vitest 为 **71 个文件、1268 项通过、2 项跳过**；两项跳过分别是原生 Windows cwd 大小写
+恢复和真实 PowerShell 的安全输出/元数据读取。格式、类型、测试与构建日志在本次环境
+`/tmp/agent-permission-validation/`，基线反例为同目录 `baseline.json`。
+
+`tests/powershell-permission-chain.test.ts` 有 91 项，其中原生 Windows 项跳过，90 项通过。
+覆盖真实 analyzer → policy → ModelReviewer → ToolExecutor、敏感/外部目标、别名、命名/位置/
+缩写/冒号/布尔参数、组合语句与重定向、普通读取、unknown/deny/ask、协议故障、超时、
+审批摘要和目标替换重验。Shell 执行均使用无副作用替身，破坏性命令只分析决策，绝未执行。
+read_file/glob/grep 对隔离普通文件实际执行，保留 #30 的零 reviewer/零人工行为。
+
+四项 Linux 真 PTY 随最终全量测试通过，启动入口均为仓库原样 `pnpm dev`：
+原有 CLI、子任务、Plan，以及新增 PowerShell 审批回归。新增回归在真实 TUI 中注入 Windows
+policy，验证敏感/未知直接人工、完整操作经真实 ModelReviewer 实现返回 ask、PowerShell
+摘要与详情、拒绝后无执行，以及普通读取零审批。所有 Shell 均拒绝，未以 Linux Bash
+执行冒充原生 PowerShell。HOME、项目和 provider 均隔离；**真实模型请求为 0**。
+受控 provider 验证协议和数据传递，不能作为真实模型判决准确率证据。
+
+单独反例复查覆盖别名/参数消歧、字面值类型与引号、全语句覆盖、模型不可降级约束、
+审批后环境重验、原始/规范化路径规则，以及 Plan/Bash 的边界。复查收紧了 FileInfo/PathInfo
+对象 getter/属性投影：这类实际访问范围未验证的管道仍需人工；同时保留原始标量的静态
+格式化。未发现其他已确认的阻塞缺陷。原生 Windows 和真实模型未实测，Git/npm 原生程序、
+动态表达式、未知 provider/参数、通配/数组与平台歧义等边界完整列于 [POLICY.md](POLICY.md)。
+
+仓库已读取 `AGENTS.md`；最新 master 没有 `.agents/skills`。本任务没有新增 Python、迁移、
+历史兼容层、凭据或二次确认，也未修改 #33 的其他 UI review 范围。
+
+### 下列为仓库已有验收记录
+
 2026-10-11，PR 提交前的最终基线更新到 master `b819045e27b509d3d9de6715297c34d9311d7225`
 （PR #30，保留 PR #28/#29 的写入与 Shell 保护，并采用项目内只读直接放行）。`pnpm format:check`、`pnpm typecheck`、
 `pnpm test`、`pnpm build` 和 `git diff --check` 全部通过。
