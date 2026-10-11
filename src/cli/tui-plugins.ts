@@ -12,7 +12,15 @@ export interface TuiPluginContext {
   invokeTool: Agent['invokeTool'];
   say(text: string): void;
   error(text: string): void;
-  showPicker(title: string, items: PanelItem[], onPick: (value: string) => void, initialValue?: string, filterable?: boolean, onCancel?: () => void, framed?: boolean): void;
+  showPicker(
+    title: string,
+    items: PanelItem[],
+    onPick: (value: string) => void,
+    initialValue?: string,
+    filterable?: boolean,
+    onCancel?: () => void,
+    framed?: boolean,
+  ): void;
   showPermissionPicker(request: PermissionSettingsPicker): void;
   showDetails(title: string, body: () => string, onBack?: () => void, framed?: boolean): void;
   showInput(request: SettingsInputRequest): void;
@@ -24,9 +32,15 @@ export interface TuiPluginContext {
   usage(): TokenUsage;
   queue: { size(): number; clear(): number };
 }
-export interface BuiltinTuiContext extends TuiPluginContext { agent: Agent }
+export interface BuiltinTuiContext extends TuiPluginContext {
+  agent: Agent;
+}
 export type TuiCommandHandler = (args: string, onBack?: () => void) => void | Promise<void>;
-export interface TuiToolRenderInput { readonly name: string; readonly input: unknown; readonly result?: Readonly<ToolResult> }
+export interface TuiToolRenderInput {
+  readonly name: string;
+  readonly input: unknown;
+  readonly result?: Readonly<ToolResult>;
+}
 export type TuiToolRenderer = (input: TuiToolRenderInput, width: number) => readonly string[];
 export interface TuiAdapter {
   toolRenderers?: Record<string, TuiToolRenderer>;
@@ -35,4 +49,6 @@ export interface TuiAdapter {
   settings?: Record<string, (onBack?: () => void) => void>;
   dispose?(): void | Promise<void>;
 }
-export interface TuiEntry { createTuiAdapter(context: TuiPluginContext): TuiAdapter | Promise<TuiAdapter> }
+export interface TuiEntry {
+  createTuiAdapter(context: TuiPluginContext): TuiAdapter | Promise<TuiAdapter>;
+}

@@ -14,33 +14,52 @@ const serverEntry = join(__dirname, '..', 'examples', 'mcp-server.ts');
 
 describe('MCP 桥接', () => {
   it('授权身份包含完整参数，记忆规则只匹配同一目标', async () => {
-    const client = { listTools: async () => ({ tools: [{ name: 'write', inputSchema: {} }] }) } as unknown as Client;
+    const client = {
+      listTools: async () => ({ tools: [{ name: 'write', inputSchema: {} }] }),
+    } as unknown as Client;
     const [tool] = await new McpClientManager().bridgeTools('test', client);
     const first = { padding: 'x'.repeat(250), path: 'src/[a]*.ts' };
     const second = { ...first, path: '/outside/secret' };
     const target = tool.analyzeInput!(first).patternTarget;
     expect(target).toContain(first.path);
     expect(target).not.toBe(tool.analyzeInput!(second).patternTarget);
-    expect(target).toBe(tool.analyzeInput!({ path: first.path, padding: first.padding }).patternTarget);
-    const policy = createDeterministicPolicy({ cwd: process.cwd(), mode: 'ask', rules: { allow: [], ask: [], deny: [] } });
+    expect(target).toBe(
+      tool.analyzeInput!({ path: first.path, padding: first.padding }).patternTarget,
+    );
+    const policy = createDeterministicPolicy({
+      cwd: process.cwd(),
+      mode: 'ask',
+      rules: { allow: [], ask: [], deny: [] },
+    });
     policy.controller!.addSessionRule('deny', `${tool.name}(=${JSON.stringify(target)})`);
-    const check = (input: Record<string, unknown>) => policy.decide({ tool, input, cwd: process.cwd() }, new AbortController().signal);
+    const check = (input: Record<string, unknown>) =>
+      policy.decide({ tool, input, cwd: process.cwd() }, new AbortController().signal);
     expect((await check(first)).kind).toBe('deny');
     expect((await check(second)).kind).toBe('ask');
     expect((await check({ ...first, path: 'src/a123.ts' })).kind).toBe('ask');
   });
   it('工具调用传递轮次取消信号，已取消的调用不发往服务端', async () => {
     const controller = new AbortController();
-    const callTool = vi.fn((_params, _schema, options) => new Promise((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
-    }));
-    const client = { listTools: async () => ({ tools: [{ name: 'slow', inputSchema: { type: 'object' } }] }), callTool } as unknown as Client;
+    const callTool = vi.fn(
+      (_params, _schema, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('cancelled')), {
+            once: true,
+          });
+        }),
+    );
+    const client = {
+      listTools: async () => ({ tools: [{ name: 'slow', inputSchema: { type: 'object' } }] }),
+      callTool,
+    } as unknown as Client;
     const [tool] = await new McpClientManager().bridgeTools('test', client);
     const pending = tool.execute({}, { cwd: process.cwd(), signal: controller.signal });
     expect(callTool.mock.calls[0][2].signal).toBe(controller.signal);
     controller.abort();
     await expect(pending).rejects.toThrow('cancelled');
-    await expect(tool.execute({}, { cwd: process.cwd(), signal: controller.signal })).rejects.toThrow();
+    await expect(
+      tool.execute({}, { cwd: process.cwd(), signal: controller.signal }),
+    ).rejects.toThrow();
     expect(callTool).toHaveBeenCalledTimes(1);
   });
   it('连接 stdio server 并调用工具', { timeout: 60_000 }, async () => {
@@ -58,7 +77,10 @@ describe('MCP 桥接', () => {
       expect(names).toEqual(['mcp__demo__add', 'mcp__demo__echo']);
 
       const add = tools.find((t) => t.name === 'mcp__demo__add')!;
-      const result = await add.execute({ a: 2, b: 40 }, { cwd: process.cwd(), signal: new AbortController().signal });
+      const result = await add.execute(
+        { a: 2, b: 40 },
+        { cwd: process.cwd(), signal: new AbortController().signal },
+      );
       expect(result.content).toBe('42');
     } finally {
       await manager.closeAll();
@@ -71,13 +93,23 @@ describe('MCP 桥接', () => {
 it('MCP stdio 相对脚本按显式配置目录启动，不依赖父进程 cwd', { timeout: 60_000 }, async () => {
   const manager = new McpClientManager();
   try {
-    const client = await manager.connect('relative', {
-      command: process.execPath,
-      args: ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href, './mcp-server.ts'],
-    }, { cwd: dirname(serverEntry) });
-    const names = (await manager.bridgeTools('relative', client)).map(tool => tool.name);
+    const client = await manager.connect(
+      'relative',
+      {
+        command: process.execPath,
+        args: [
+          '--import',
+          pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
+          './mcp-server.ts',
+        ],
+      },
+      { cwd: dirname(serverEntry) },
+    );
+    const names = (await manager.bridgeTools('relative', client)).map((tool) => tool.name);
     expect(names).toContain('mcp__relative__add');
-  } finally { await manager.closeAll(); }
+  } finally {
+    await manager.closeAll();
+  }
 });
 
 it('MCP 插件在工具注册冲突时回滚并释放已连接服务器', async () => {
@@ -90,11 +122,23 @@ it('MCP 插件在工具注册冲突时回滚并释放已连接服务器', async 
   await writeFile(path, JSON.stringify({ mcpServers: { demo: { command: 'unused' } } }));
   const close = vi.spyOn(McpClientManager.prototype, 'closeAll').mockResolvedValue();
   vi.spyOn(McpClientManager.prototype, 'connect').mockResolvedValue({} as Client);
-  const tool = { name: 'duplicate', description: 'duplicate', inputSchema: { type: 'object' }, risk: 'read' as const, async execute() { return { content: '' }; } };
+  const tool = {
+    name: 'duplicate',
+    description: 'duplicate',
+    inputSchema: { type: 'object' },
+    risk: 'read' as const,
+    async execute() {
+      return { content: '' };
+    },
+  };
   vi.spyOn(McpClientManager.prototype, 'bridgeTools').mockResolvedValue([tool, tool]);
   const host = new PluginHost();
   try {
     await expect(host.load([mcpPlugin(path)])).rejects.toThrow(/Duplicate/);
-    expect(host.capabilities).toEqual([]); expect(close).toHaveBeenCalledOnce();
-  } finally { vi.restoreAllMocks(); await rm(cwd, { recursive: true, force: true }); }
+    expect(host.capabilities).toEqual([]);
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    vi.restoreAllMocks();
+    await rm(cwd, { recursive: true, force: true });
+  }
 });

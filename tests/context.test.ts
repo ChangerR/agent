@@ -1,14 +1,25 @@
 import { SummaryCompactor } from '../src/builtin/compaction-summary/implementation.js';
 import { describe, expect, it } from 'vitest';
 import { ContextManager } from '../src/core/context/coordinator.js';
-import { collectUserQuotes, findCompactCut, renderTranscript, SUMMARY_MARKER } from '../src/builtin/compaction-summary/implementation.js';
+import {
+  collectUserQuotes,
+  findCompactCut,
+  renderTranscript,
+  SUMMARY_MARKER,
+} from '../src/builtin/compaction-summary/implementation.js';
 import { EventBus } from '../src/core/events.js';
 import type { Message } from '../src/core/protocol/types.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 
 const user = (content: string): Message => ({ role: 'user', content });
-const assistant = (text: string): Message => ({ role: 'assistant', content: [{ type: 'text', text }] });
-const call = (ids: string[]): Message => ({ role: 'assistant', content: ids.map((id) => ({ type: 'tool_use', id, name: 'read_file', input: { path: id } })) });
+const assistant = (text: string): Message => ({
+  role: 'assistant',
+  content: [{ type: 'text', text }],
+});
+const call = (ids: string[]): Message => ({
+  role: 'assistant',
+  content: ids.map((id) => ({ type: 'tool_use', id, name: 'read_file', input: { path: id } })),
+});
 const result = (id: string, content = id, isError = false): Message => ({
   role: 'user',
   content: [{ type: 'tool_result', toolUseId: id, content, ...(isError ? { isError: true } : {}) }],
@@ -42,19 +53,32 @@ describe('上下文压缩边界', () => {
     const events = new EventBus();
     const usage: unknown[] = [];
     events.on('model_usage', (e) => usage.push(e));
-    const compacted = await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, signal(), 'fake', events);
+    const compacted = await new ContextManager({
+      compactor: new SummaryCompactor(),
+      compactThreshold: 1,
+    }).compact(messages, provider, signal(), 'fake', events);
     expect(compacted).toHaveLength(3);
     expect(compacted[0]).toMatchObject({ role: 'user' });
     expect(String(compacted[0]?.content).startsWith(SUMMARY_MARKER)).toBe(true);
-    expect(compacted[1]).toEqual({ role: 'assistant', content: [{ type: 'text', text: '收到，我会基于上面的摘要继续当前任务。' }] });
+    expect(compacted[1]).toEqual({
+      role: 'assistant',
+      content: [{ type: 'text', text: '收到，我会基于上面的摘要继续当前任务。' }],
+    });
     expect(compacted[2]).toEqual(messages[7]);
-    expect(usage).toMatchObject([{ purpose: 'compact', usage: { inputTokens: 10, outputTokens: 10 } }]);
+    expect(usage).toMatchObject([
+      { purpose: 'compact', usage: { inputTokens: 10, outputTokens: 10 } },
+    ]);
   });
 
   it('送给摘要模型的是按角色渲染的转写，而不是整段 JSON', async () => {
     const messages = boundarySample();
     const provider = new FakeProvider([textResponse('summary')]);
-    await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, signal(), 'fake');
+    await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(
+      messages,
+      provider,
+      signal(),
+      'fake',
+    );
     const request = provider.requests[0];
     expect(request?.system).toContain('压缩器');
     expect(request?.system).not.toContain('你是 AgentLab');
@@ -72,9 +96,24 @@ describe('上下文压缩边界', () => {
   });
 
   it('转写里的 $& 按字面量送出', async () => {
-    const messages = [user('pay $& now'), assistant('ok'), user('b'), assistant('ok'), user('c'), assistant('ok'), user('d'), assistant('ok'), user('keep')];
+    const messages = [
+      user('pay $& now'),
+      assistant('ok'),
+      user('b'),
+      assistant('ok'),
+      user('c'),
+      assistant('ok'),
+      user('d'),
+      assistant('ok'),
+      user('keep'),
+    ];
     const provider = new FakeProvider([textResponse('summary')]);
-    await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, signal(), 'fake');
+    await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(
+      messages,
+      provider,
+      signal(),
+      'fake',
+    );
     expect(String(provider.requests[0]?.messages[0]?.content)).toContain('pay $& now');
   });
 
@@ -159,10 +198,15 @@ describe('上下文压缩边界', () => {
       assistant('done'),
     ];
     const provider = new FakeProvider([textResponse('summary')]);
-    const compacted = await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, signal(), 'fake');
+    const compacted = await new ContextManager({
+      compactor: new SummaryCompactor(),
+      compactThreshold: 1,
+    }).compact(messages, provider, signal(), 'fake');
     expect(compacted[0]?.role).toBe('user');
     expect(compacted[1]?.role).toBe('assistant');
-    expect(JSON.stringify(compacted[1]?.content)).not.toContain('收到，我会基于上面的摘要继续当前任务。');
+    expect(JSON.stringify(compacted[1]?.content)).not.toContain(
+      '收到，我会基于上面的摘要继续当前任务。',
+    );
     expect(JSON.stringify(compacted)).not.toContain('收到，我会基于上面的摘要继续当前任务。');
   });
 
@@ -178,8 +222,15 @@ describe('上下文压缩边界', () => {
       assistant('ok'),
       user('最后留下'),
     ];
-    const provider = new FakeProvider([() => { throw new Error('boom'); }]);
-    const compacted = await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, signal(), 'fake');
+    const provider = new FakeProvider([
+      () => {
+        throw new Error('boom');
+      },
+    ]);
+    const compacted = await new ContextManager({
+      compactor: new SummaryCompactor(),
+      compactThreshold: 1,
+    }).compact(messages, provider, signal(), 'fake');
     const cut = findCompactCut(messages);
     const head = String(compacted[0]?.content);
     expect(head).toContain('摘要生成失败');
@@ -190,25 +241,48 @@ describe('上下文压缩边界', () => {
   });
 
   it('再次压缩时把上一次摘要标成 SUMMARY，不当成用户发言', () => {
-    const previous: Message = { role: 'user', source: 'summary', content: `${SUMMARY_MARKER}\n旧摘要正文UNIQUE` };
+    const previous: Message = {
+      role: 'user',
+      source: 'summary',
+      content: `${SUMMARY_MARKER}\n旧摘要正文UNIQUE`,
+    };
     expect(renderTranscript([previous])).toContain('SUMMARY:');
     expect(renderTranscript([previous])).not.toContain('USER:');
     expect(collectUserQuotes([previous, user('real ask')])).toEqual(['real ask']);
   });
 
   it('没有可切分的工具交换时保留历史，不调用摘要模型', async () => {
-    const messages: Message[] = [call(['a']), ...Array.from({ length: 6 }, () => user('pending')), result('a')];
+    const messages: Message[] = [
+      call(['a']),
+      ...Array.from({ length: 6 }, () => user('pending')),
+      result('a'),
+    ];
     const provider = new FakeProvider([textResponse('unused')]);
-    const compacted = await new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, signal(), 'fake');
+    const compacted = await new ContextManager({
+      compactor: new SummaryCompactor(),
+      compactThreshold: 1,
+    }).compact(messages, provider, signal(), 'fake');
     expect(compacted).toBe(messages);
     expect(provider.requests).toHaveLength(0);
   });
 
   it('摘要模型失败可以降级，但取消不能被吞掉并改写历史', async () => {
-    const messages = Array.from({ length: 8 }, (_, i) => i % 2 ? assistant('a') : user('u'));
+    const messages = Array.from({ length: 8 }, (_, i) => (i % 2 ? assistant('a') : user('u')));
     const controller = new AbortController();
-    const provider = new FakeProvider([() => { controller.abort(); throw new Error('cancelled'); }]);
-    await expect(new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(messages, provider, controller.signal, 'fake')).rejects.toThrow('cancelled');
+    const provider = new FakeProvider([
+      () => {
+        controller.abort();
+        throw new Error('cancelled');
+      },
+    ]);
+    await expect(
+      new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 1 }).compact(
+        messages,
+        provider,
+        controller.signal,
+        'fake',
+      ),
+    ).rejects.toThrow('cancelled');
     expect(messages).toHaveLength(8);
   });
 });

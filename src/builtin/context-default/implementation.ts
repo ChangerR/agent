@@ -7,7 +7,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { detectPlatform, findRg, type PlatformProbe } from '../../core/platform.js';
-import type { ContextSegment, ContextSource, ContextToolSummary } from '../../sdk/runtime-capabilities.js';
+import type {
+  ContextSegment,
+  ContextSource,
+  ContextToolSummary,
+} from '../../sdk/runtime-capabilities.js';
 
 export interface SkillSummary {
   name: string;
@@ -65,10 +69,12 @@ ${host.toolBullets.map((bullet) => `- ${bullet}`).join('\n')}
 - 用 GitHub 风格 markdown。引用代码写成 \`file_path:line_number\`。引用 GitHub 议题或 PR 写成 \`owner/repo#123\`。
 - 不估计耗时，也不说“很快就能好”。说要做什么，让用户自己判断时间。`);
 
-  sections.push(`# 工具\n${tools
-    .list()
-    .map((t) => `- ${t.name} (risk: ${t.risk}): ${t.description.split('\n')[0]}`)
-    .join('\n')}`);
+  sections.push(
+    `# 工具\n${tools
+      .list()
+      .map((t) => `- ${t.name} (risk: ${t.risk}): ${t.description.split('\n')[0]}`)
+      .join('\n')}`,
+  );
 
   if (skills.length > 0) {
     sections.push(`# 技能
@@ -78,19 +84,32 @@ ${skills.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`);
 
   const agentsMd = join(cwd, 'AGENTS.md');
   if (existsSync(agentsMd)) {
-    sections.push(`# 项目说明 (AGENTS.md)\n下面是这个目录自己的说明。做和本项目相关的事时遵守；和上面的通用规则冲突时，以这里为准。与当前任务无关的内容不必展开。\n${readFileSync(agentsMd, 'utf-8')}`);
+    sections.push(
+      `# 项目说明 (AGENTS.md)\n下面是这个目录自己的说明。做和本项目相关的事时遵守；和上面的通用规则冲突时，以这里为准。与当前任务无关的内容不必展开。\n${readFileSync(agentsMd, 'utf-8')}`,
+    );
   }
 
-  return sections.map((text, index) => ({ id: `default-${index}`, source: text.startsWith('# 项目说明') ? agentsMd : 'agentlab.context-default', stability: index === 0 ? 'session' : 'stable', text }));
+  return sections.map((text, index) => ({
+    id: `default-${index}`,
+    source: text.startsWith('# 项目说明') ? agentsMd : 'agentlab.context-default',
+    stability: index === 0 ? 'session' : 'stable',
+    text,
+  }));
 }
 
 export function buildSystemPrompt(opts: Parameters<typeof buildDefaultContext>[0]): string {
-  return buildDefaultContext(opts).map((part) => part.text).join('\n\n');
+  return buildDefaultContext(opts)
+    .map((part) => part.text)
+    .join('\n\n');
 }
 
 export const defaultContextSource: ContextSource = {
   getContext(input, signal) {
     signal.throwIfAborted();
-    return buildDefaultContext({ cwd: input.cwd, tools: { list: () => input.tools }, skills: [...input.skills] });
+    return buildDefaultContext({
+      cwd: input.cwd,
+      tools: { list: () => input.tools },
+      skills: [...input.skills],
+    });
   },
 };

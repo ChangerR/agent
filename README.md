@@ -11,7 +11,6 @@
 
 `/settings` 可浏览插件设置与下一会话实现选择。Bash 先由 tree-sitter-bash 解析完整语法树，再逐命令验证参数、目标与副作用；受控的项目内只读组合可在 auto 直接放行，动态或未知语义继续审批。原生 Windows 不做确定性文件授予：auto/yolo 下内置 read_file/glob/grep 的项目内读取交给模型审批（模型返回 ask、超时或失败时回落人工），写入、Shell、ask 模式及敏感/项目外目标仍要求人工确认。插件是受信任进程内代码，不是 OS 沙箱。
 
-
 仿 Claude Code 的**插件式 coding agent 教学实现**（TypeScript + Node.js）。
 
 核心设计：一切皆为插件 —— provider、工具、MCP、skill 都通过统一的 `Plugin` 接口挂载到 core 的注册表上。详细原理讲解见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
@@ -182,7 +181,9 @@ export default definePlugin({
     ctx.provide.command('hello', {
       description: '显示问候',
       inputSchema: { type: 'object', properties: {} },
-      handler() { return { type: 'text', text: 'hello' }; },
+      handler() {
+        return { type: 'text', text: 'hello' };
+      },
     });
   },
 });

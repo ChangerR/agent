@@ -105,7 +105,8 @@ export class OpenAIStreamTranslator {
       reasoning_content?: string | null;
       tool_calls?: ChatCompletionChunk.Choice.Delta.ToolCall[];
     };
-    if (delta.reasoning_content) out.push({ type: 'thinking_delta', text: delta.reasoning_content });
+    if (delta.reasoning_content)
+      out.push({ type: 'thinking_delta', text: delta.reasoning_content });
     if (delta.content) out.push({ type: 'text_delta', text: delta.content });
 
     for (const tc of delta.tool_calls ?? []) {
@@ -117,9 +118,18 @@ export class OpenAIStreamTranslator {
           name: tc.function?.name ?? 'unknown',
         });
         this.openToolIndex.set(tc.index, tc.id ?? `call_${tc.index}`);
-        if (tc.function?.arguments) out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index)!, input: tc.function.arguments });
+        if (tc.function?.arguments)
+          out.push({
+            type: 'tool_use_delta',
+            id: this.openToolIndex.get(tc.index)!,
+            input: tc.function.arguments,
+          });
       } else if (tc.function?.arguments) {
-        out.push({ type: 'tool_use_delta', id: this.openToolIndex.get(tc.index)!, input: tc.function.arguments });
+        out.push({
+          type: 'tool_use_delta',
+          id: this.openToolIndex.get(tc.index)!,
+          input: tc.function.arguments,
+        });
       }
     }
 

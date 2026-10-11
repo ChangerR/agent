@@ -3,8 +3,20 @@ import { createHash } from 'node:crypto';
 import type { Tool } from '../../core/registry.js';
 import type { PermissionMode } from '../../core/config.js';
 
-import type { Decision, DecisionKind, ParsedRule, AuditEntry, SessionRules } from '../../core/permission/contracts.js';
-export type { Decision, DecisionKind, ParsedRule, AuditEntry, SessionRules } from '../../core/permission/contracts.js';
+import type {
+  Decision,
+  DecisionKind,
+  ParsedRule,
+  AuditEntry,
+  SessionRules,
+} from '../../core/permission/contracts.js';
+export type {
+  Decision,
+  DecisionKind,
+  ParsedRule,
+  AuditEntry,
+  SessionRules,
+} from '../../core/permission/contracts.js';
 
 export function parseRule(raw: string): ParsedRule {
   const m = /^([a-zA-Z0-9_:*-]+)(?:\((.*)\))?$/s.exec(raw.trim());
@@ -30,7 +42,8 @@ export class PermissionController {
   private auditLog: AuditEntry[] = [];
 
   validateSessionRules(rules: Partial<SessionRules>): void {
-    for (const rule of [...(rules.allow ?? []), ...(rules.ask ?? []), ...(rules.deny ?? [])]) parseRule(rule);
+    for (const rule of [...(rules.allow ?? []), ...(rules.ask ?? []), ...(rules.deny ?? [])])
+      parseRule(rule);
   }
 
   constructor(
@@ -42,7 +55,9 @@ export class PermissionController {
 
   /** 每次执行批准绑定有效规则与模式；外部配置对象的变动也会失效。 */
   get revision(): string {
-    return createHash('sha256').update(JSON.stringify({ ...this.options, sessionRules: this.sessionRules })).digest('hex');
+    return createHash('sha256')
+      .update(JSON.stringify({ ...this.options, sessionRules: this.sessionRules }))
+      .digest('hex');
   }
 
   get mode(): PermissionMode {
@@ -93,9 +108,12 @@ export class PermissionController {
   }
 
   /** 记录一次管线外部（如 LLM 审批员）做出的判定，保持审计完整 */
-  recordDecision(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, decision: Decision): void {
+  recordDecision(
+    tool: Omit<Tool, 'execute'>,
+    input: Record<string, unknown>,
+    decision: Decision,
+  ): void {
     const summary = tool.name;
     this.auditLog.push({ toolName: tool.name, summary, decision, at: Date.now() });
   }
-
 }

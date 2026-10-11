@@ -9,9 +9,15 @@ export class TurnQueue {
     private failed: (error: unknown) => void,
   ) {}
 
-  get running(): boolean { return this.active; }
-  get size(): number { return this.pending.length; }
-  get next(): string | undefined { return this.pending[0]; }
+  get running(): boolean {
+    return this.active;
+  }
+  get size(): number {
+    return this.pending.length;
+  }
+  get next(): string | undefined {
+    return this.pending[0];
+  }
 
   submit(text: string): void {
     this.pending.push(text);
@@ -32,8 +38,11 @@ export class TurnQueue {
       while (this.pending.length) {
         const text = this.pending.shift()!;
         this.changed();
-        try { await this.run(text); }
-        catch (error) { this.failed(error); }
+        try {
+          await this.run(text);
+        } catch (error) {
+          this.failed(error);
+        }
       }
     } finally {
       this.active = false;

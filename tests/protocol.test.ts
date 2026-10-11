@@ -24,7 +24,9 @@ describe('Anthropic 消息转换', () => {
       { type: 'text', text: '好的' },
       { type: 'tool_use', id: 't1', name: 'read_file', input: { path: 'a' } },
     ]);
-    expect(out[2].content).toEqual([{ type: 'tool_result', tool_use_id: 't1', content: 'data', is_error: undefined }]);
+    expect(out[2].content).toEqual([
+      { type: 'tool_result', tool_use_id: 't1', content: 'data', is_error: undefined },
+    ]);
   });
 
   it('带签名的 thinking 原样回填，打码块只回 data', () => {
@@ -57,13 +59,30 @@ describe('Anthropic 消息转换', () => {
   it('流式思考：thinking_delta 与 signature_delta 合成带签名的块', async () => {
     const wire = [
       { type: 'content_block_start', index: 0, content_block: { type: 'thinking' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '先看' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '路径' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig_' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'abc' } },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'thinking_delta', thinking: '先看' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'thinking_delta', thinking: '路径' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'signature_delta', signature: 'sig_' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'signature_delta', signature: 'abc' },
+      },
       { type: 'content_block_stop', index: 0 },
       {
-        type: 'content_block_start', index: 1,
+        type: 'content_block_start',
+        index: 1,
         content_block: { type: 'redacted_thinking', data: 'opaque' },
       },
       { type: 'content_block_stop', index: 1 },
@@ -83,17 +102,37 @@ describe('OpenAI 消息转换', () => {
   it('两个工具的参数交错到达，各自保留完整 JSON 与开始顺序', async () => {
     const translator = new OpenAIStreamTranslator();
     const chunks = [
-      { choices: [{ delta: { tool_calls: [
-        { index: 0, id: 'a', function: { name: 'read_file', arguments: '{"path":' } },
-        { index: 1, id: 'b', function: { name: 'read_file', arguments: '{"path":' } },
-      ] }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [
-        { index: 1, function: { arguments: '"b"}' } },
-        { index: 0, function: { arguments: '"a"}' } },
-      ] }, finish_reason: null }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'a', function: { name: 'read_file', arguments: '{"path":' } },
+                { index: 1, id: 'b', function: { name: 'read_file', arguments: '{"path":' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 1, function: { arguments: '"b"}' } },
+                { index: 0, function: { arguments: '"a"}' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
       { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
     ];
-    const { message } = await collectStreamAsync(toAsync(chunks.flatMap((chunk) => translator.translate(chunk as never))));
+    const { message } = await collectStreamAsync(
+      toAsync(chunks.flatMap((chunk) => translator.translate(chunk as never))),
+    );
     expect(message.content).toEqual([
       { type: 'tool_use', id: 'a', name: 'read_file', input: { path: 'a' } },
       { type: 'tool_use', id: 'b', name: 'read_file', input: { path: 'b' } },
@@ -101,11 +140,15 @@ describe('OpenAI 消息转换', () => {
   });
 
   it('畸形工具参数不能作为正常输入交给执行层', async () => {
-    await expect(collectStreamAsync(toAsync<StreamEvent>([
-      { type: 'tool_use_start', id: 'bad', name: 'write_file' },
-      { type: 'tool_use_delta', id: 'bad', input: '{"path":' },
-      { type: 'tool_use_stop', id: 'bad' },
-    ]))).rejects.toThrow('Invalid JSON');
+    await expect(
+      collectStreamAsync(
+        toAsync<StreamEvent>([
+          { type: 'tool_use_start', id: 'bad', name: 'write_file' },
+          { type: 'tool_use_delta', id: 'bad', input: '{"path":' },
+          { type: 'tool_use_stop', id: 'bad' },
+        ]),
+      ),
+    ).rejects.toThrow('Invalid JSON');
   });
 
   it('tool_result 拆成独立 tool 消息', () => {
@@ -129,8 +172,26 @@ describe('OpenAI 消息转换', () => {
     // 模拟 OpenAI 的典型分片：第一片带 id+name，后续只有 arguments 片段
     const chunks = [
       { choices: [{ delta: { content: '我先' }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'read_file', arguments: '{"pa' } }] }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'th":"a"}' } }] }, finish_reason: null }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'c1', function: { name: 'read_file', arguments: '{"pa' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, function: { arguments: 'th":"a"}' } }] },
+            finish_reason: null,
+          },
+        ],
+      },
       { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
     ];
     const events = chunks.flatMap((c) => t.translate(c as never));
@@ -162,21 +223,25 @@ async function* toAsync<T>(items: T[]): AsyncIterable<T> {
 }
 
 describe('规范化工具事件身份', () => {
-  it.each(['tool_use_delta', 'tool_use_stop'] as const)('%s 缺少或引用未知 ID 都拒绝，不能绑定最近开始的调用', async (type) => {
-    for (const id of [undefined, 'unknown']) {
-      const events = [
-        { type: 'tool_use_start', id: 'first', name: 'read_file' },
-        { type: 'tool_use_start', id: 'second', name: 'read_file' },
-        { type, ...(id ? { id } : {}), ...(type === 'tool_use_delta' ? { input: '{}' } : {}) },
-      ] as StreamEvent[];
-      await expect(collectStreamAsync(toAsync(events))).rejects.toThrow('Unknown streamed tool');
-    }
-  });
+  it.each(['tool_use_delta', 'tool_use_stop'] as const)(
+    '%s 缺少或引用未知 ID 都拒绝，不能绑定最近开始的调用',
+    async (type) => {
+      for (const id of [undefined, 'unknown']) {
+        const events = [
+          { type: 'tool_use_start', id: 'first', name: 'read_file' },
+          { type: 'tool_use_start', id: 'second', name: 'read_file' },
+          { type, ...(id ? { id } : {}), ...(type === 'tool_use_delta' ? { input: '{}' } : {}) },
+        ] as StreamEvent[];
+        await expect(collectStreamAsync(toAsync(events))).rejects.toThrow('Unknown streamed tool');
+      }
+    },
+  );
   it('SDK 类型要求 delta 与 stop 都携带调用 ID', () => {
     // @ts-expect-error 规范事件不能省略工具调用 ID
     const delta: StreamEvent = { type: 'tool_use_delta', input: '{}' };
     // @ts-expect-error 规范事件不能省略工具调用 ID
     const stop: StreamEvent = { type: 'tool_use_stop' };
-    void delta; void stop;
+    void delta;
+    void stop;
   });
 });

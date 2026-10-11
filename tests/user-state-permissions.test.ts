@@ -6,10 +6,13 @@ import { writeFileAtomic } from '../src/core/session/atomic.js';
 import { createJsonlTelemetry } from '../src/builtin/telemetry-jsonl/index.js';
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 describe('用户状态默认私有文件权限', () => {
   it.skipIf(process.platform === 'win32')('新会话与日志文件为 0600，新目录为 0700', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'agentlab-state-mode-')); roots.push(root);
+    const root = await mkdtemp(join(tmpdir(), 'agentlab-state-mode-'));
+    roots.push(root);
     const session = join(root, 'sessions', 'session.json');
     await writeFileAtomic(session, '{}');
     const log = join(root, 'logs', 'session.jsonl');

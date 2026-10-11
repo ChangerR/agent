@@ -3,7 +3,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt } from '../src/builtin/context-default/implementation.js';
-import { decodeShellOutput, detectPlatform, powershellScript, shellInvocation } from '../src/core/platform.js';
+import {
+  decodeShellOutput,
+  detectPlatform,
+  powershellScript,
+  shellInvocation,
+} from '../src/core/platform.js';
 import { ToolRegistry, type Tool } from '../src/core/registry.js';
 
 const stubTool: Tool = {
@@ -16,7 +21,10 @@ const stubTool: Tool = {
   },
 };
 
-function promptFor(platform: NodeJS.Platform, probe?: { env?: NodeJS.ProcessEnv; procVersion?: string | null }): string {
+function promptFor(
+  platform: NodeJS.Platform,
+  probe?: { env?: NodeJS.ProcessEnv; procVersion?: string | null },
+): string {
   const tools = new ToolRegistry();
   tools.register(stubTool);
   return buildSystemPrompt({ cwd: '/work', tools, skills: [], platform, probe });
@@ -38,7 +46,9 @@ describe('detectPlatform', () => {
       '-EncodedCommand',
     ]);
     expect(invocation.args).toHaveLength(6);
-    expect(Buffer.from(invocation.args[5]!, 'base64').toString('utf16le')).toBe(powershellScript('Write-Output hi'));
+    expect(Buffer.from(invocation.args[5]!, 'base64').toString('utf16le')).toBe(
+      powershellScript('Write-Output hi'),
+    );
   });
 
   it('Windows EncodedCommand 按 UTF-16LE 编码，中文不会被 stdin 代码页弄乱', () => {
@@ -53,7 +63,10 @@ describe('detectPlatform', () => {
 
   it('macOS 与 Linux 使用 bash', () => {
     expect(detectPlatform('darwin')).toMatchObject({ osLabel: 'macOS', shell: 'bash' });
-    expect(detectPlatform('linux', { env: {}, procVersion: null })).toMatchObject({ osLabel: 'Linux', shell: 'bash' });
+    expect(detectPlatform('linux', { env: {}, procVersion: null })).toMatchObject({
+      osLabel: 'Linux',
+      shell: 'bash',
+    });
     expect(shellInvocation('echo hi', 'linux')).toEqual({ file: 'bash', args: ['-c', 'echo hi'] });
   });
 

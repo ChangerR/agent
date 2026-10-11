@@ -53,12 +53,20 @@ export interface Provider {
 
 /** 记录独立请求快照与实际收到的用量；归一化统计同时覆盖主模型、压缩与审批。 */
 export async function* observedStream(
-  provider: Provider, req: ChatRequest, signal: AbortSignal,
+  provider: Provider,
+  req: ChatRequest,
+  signal: AbortSignal,
   trace: { events: EventBus; purpose: 'agent' | 'compact' | 'judge' },
 ): AsyncIterable<StreamEvent> {
   const requestId = randomUUID();
   const usage = emptyUsage();
-  trace.events.emit({ type: 'model_request', requestId, purpose: trace.purpose, provider: provider.name, request: structuredClone(req) });
+  trace.events.emit({
+    type: 'model_request',
+    requestId,
+    purpose: trace.purpose,
+    provider: provider.name,
+    request: structuredClone(req),
+  });
   try {
     for await (const event of provider.stream(req, signal)) {
       if (event.type === 'usage') mergeUsage(usage, event);
@@ -79,7 +87,9 @@ export async function complete(
   let text = '';
   let stopReason: StopReason | undefined;
   const usage = emptyUsage();
-  const stream = trace ? observedStream(provider, req, signal, trace) : provider.stream(req, signal);
+  const stream = trace
+    ? observedStream(provider, req, signal, trace)
+    : provider.stream(req, signal);
   for await (const ev of stream) {
     if (ev.type === 'text_delta') text += ev.text;
     if (ev.type === 'message_stop') stopReason = ev.stopReason;

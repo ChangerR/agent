@@ -6,35 +6,45 @@
  */
 import { z, type ZodError } from 'zod';
 
-const TextBlockSchema = z.object({
-  type: z.literal('text'),
-  text: z.string(),
-}).passthrough();
+const TextBlockSchema = z
+  .object({
+    type: z.literal('text'),
+    text: z.string(),
+  })
+  .passthrough();
 
-const ThinkingBlockSchema = z.object({
-  type: z.literal('thinking'),
-  thinking: z.string(),
-  signature: z.string().optional(),
-}).passthrough();
+const ThinkingBlockSchema = z
+  .object({
+    type: z.literal('thinking'),
+    thinking: z.string(),
+    signature: z.string().optional(),
+  })
+  .passthrough();
 
-const RedactedThinkingBlockSchema = z.object({
-  type: z.literal('redacted_thinking'),
-  data: z.string(),
-}).passthrough();
+const RedactedThinkingBlockSchema = z
+  .object({
+    type: z.literal('redacted_thinking'),
+    data: z.string(),
+  })
+  .passthrough();
 
-const ToolUseBlockSchema = z.object({
-  type: z.literal('tool_use'),
-  id: z.string().min(1),
-  name: z.string().min(1),
-  input: z.unknown(),
-}).passthrough();
+const ToolUseBlockSchema = z
+  .object({
+    type: z.literal('tool_use'),
+    id: z.string().min(1),
+    name: z.string().min(1),
+    input: z.unknown(),
+  })
+  .passthrough();
 
-const ToolResultBlockSchema = z.object({
-  type: z.literal('tool_result'),
-  toolUseId: z.string().min(1),
-  content: z.string(),
-  isError: z.boolean().optional(),
-}).passthrough();
+const ToolResultBlockSchema = z
+  .object({
+    type: z.literal('tool_result'),
+    toolUseId: z.string().min(1),
+    content: z.string(),
+    isError: z.boolean().optional(),
+  })
+  .passthrough();
 
 const AssistantBlockSchema = z.union([
   TextBlockSchema,
@@ -46,42 +56,52 @@ const AssistantBlockSchema = z.union([
 const UserBlockSchema = z.union([TextBlockSchema, ToolResultBlockSchema]);
 
 export const MessageSchema = z.union([
-  z.object({
-    role: z.literal('user'),
-    source: z.literal('summary').optional(),
-    content: z.union([z.string(), z.array(UserBlockSchema)]),
-  }).passthrough(),
-  z.object({
-    role: z.literal('assistant'),
-    content: z.array(AssistantBlockSchema),
-  }).passthrough(),
+  z
+    .object({
+      role: z.literal('user'),
+      source: z.literal('summary').optional(),
+      content: z.union([z.string(), z.array(UserBlockSchema)]),
+    })
+    .passthrough(),
+  z
+    .object({
+      role: z.literal('assistant'),
+      content: z.array(AssistantBlockSchema),
+    })
+    .passthrough(),
 ]);
 
-export const SessionRulesSchema = z.object({
-  allow: z.array(z.string()),
-  ask: z.array(z.string()),
-  deny: z.array(z.string()),
-}).passthrough();
+export const SessionRulesSchema = z
+  .object({
+    allow: z.array(z.string()),
+    ask: z.array(z.string()),
+    deny: z.array(z.string()),
+  })
+  .passthrough();
 
 const nonnegativeInt = z.number().int().nonnegative();
 
-export const UsageSchema = z.object({
-  inputTokens: nonnegativeInt,
-  outputTokens: nonnegativeInt,
-  cacheReadTokens: nonnegativeInt,
-  cacheWriteTokens: nonnegativeInt,
-}).passthrough();
+export const UsageSchema = z
+  .object({
+    inputTokens: nonnegativeInt,
+    outputTokens: nonnegativeInt,
+    cacheReadTokens: nonnegativeInt,
+    cacheWriteTokens: nonnegativeInt,
+  })
+  .passthrough();
 
 /** 列表只看元数据，不要求消息体合法。schemaVersion 只要是正整数。 */
-export const SessionMetaSchema = z.object({
-  schemaVersion: z.number().int().positive(),
-  id: z.string().min(1),
-  title: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  cwd: z.string(),
-  model: z.string(),
-}).passthrough();
+export const SessionMetaSchema = z
+  .object({
+    schemaVersion: z.number().int().positive(),
+    id: z.string().min(1),
+    title: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    cwd: z.string(),
+    model: z.string(),
+  })
+  .passthrough();
 
 const SessionBodySchema = SessionMetaSchema.extend({
   revision: nonnegativeInt.safe(),
@@ -91,19 +111,35 @@ const SessionBodySchema = SessionMetaSchema.extend({
   permissionMode: z.enum(['ask', 'auto', 'yolo']),
   sessionRules: SessionRulesSchema,
   usage: UsageSchema,
-  stats: z.object({
-    messages: nonnegativeInt,
-    estimatedTokens: nonnegativeInt,
-    runs: nonnegativeInt,
-  }).passthrough(),
+  stats: z
+    .object({
+      messages: nonnegativeInt,
+      estimatedTokens: nonnegativeInt,
+      runs: nonnegativeInt,
+    })
+    .passthrough(),
   messages: z.array(MessageSchema).min(1),
 }).passthrough();
 
 export const SessionFileSchema = SessionBodySchema.extend({
   schemaVersion: z.literal(2),
   runtime: z.object({ schemaVersion: z.literal(1) }).passthrough(),
-  policy: z.object({ id: z.string().min(1), version: z.string().min(1), stateSchemaVersion: z.number().int().positive() }).passthrough(),
-  pluginStates: z.record(z.object({ schemaVersion: z.number().int().positive(), requiredForSafety: z.boolean().optional(), data: z.unknown() }).passthrough()),
+  policy: z
+    .object({
+      id: z.string().min(1),
+      version: z.string().min(1),
+      stateSchemaVersion: z.number().int().positive(),
+    })
+    .passthrough(),
+  pluginStates: z.record(
+    z
+      .object({
+        schemaVersion: z.number().int().positive(),
+        requiredForSafety: z.boolean().optional(),
+        data: z.unknown(),
+      })
+      .passthrough(),
+  ),
 });
 
 /** 最多展示 3 条 issue，其余用「…还有 N 处」收束。 */

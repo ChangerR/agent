@@ -12,4 +12,6 @@ process.env.ANTHROPIC_API_KEY = 'test-only-never-sent';
 process.env.OPENAI_API_KEY = 'test-only-never-sent';
 delete process.env.ANTHROPIC_AUTH_TOKEN;
 delete process.env.OPENAI_BASE_URL;
-afterAll(() => { rmSync(home, { recursive: true, force: true }); });
+afterAll(() => {
+  rmSync(home, { recursive: true, force: true });
+});

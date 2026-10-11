@@ -9,7 +9,14 @@ import { grepTool } from './grep.js';
 import { readFileTool } from './read.js';
 import { writeFileTool } from './write.js';
 
-export const builtinToolDefinitions = [readFileTool, writeFileTool, editFileTool, bashTool, globTool, grepTool] as const;
+export const builtinToolDefinitions = [
+  readFileTool,
+  writeFileTool,
+  editFileTool,
+  bashTool,
+  globTool,
+  grepTool,
+] as const;
 
 export const builtinTools: Plugin = {
   manifest: { id: 'agentlab.builtin-tools', version: '1.0.0', apiVersion: 1 },

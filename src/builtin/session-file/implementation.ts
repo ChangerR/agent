@@ -11,8 +11,17 @@ import { enqueueWrite, writeFileAtomic } from '../../core/session/atomic.js';
 import { errnoCode, invalidIdMessage, SessionError } from '../../core/session/errors.js';
 import { withSessionLock } from '../../core/session/locking.js';
 import { assertSafeHistory } from '../../core/session/history.js';
-import { formatInvalidSchema, SessionFileSchema, SessionMetaSchema } from '../../core/session/schema.js';
-import { SESSION_SCHEMA_VERSION, type SessionFile, type SessionListing, type SessionSummary } from '../../core/session/types.js';
+import {
+  formatInvalidSchema,
+  SessionFileSchema,
+  SessionMetaSchema,
+} from '../../core/session/schema.js';
+import {
+  SESSION_SCHEMA_VERSION,
+  type SessionFile,
+  type SessionListing,
+  type SessionSummary,
+} from '../../core/session/types.js';
 
 export function sessionsDir(cwd: string): string {
   return resolveAgentPaths(cwd).sessionsDir;
@@ -29,12 +38,20 @@ export function sessionPath(cwd: string, id: string): string {
 export type { SaveSessionOptions } from '../../sdk/runtime-capabilities.js';
 import type { SaveSessionOptions } from '../../sdk/runtime-capabilities.js';
 
-export async function saveSession(file: SessionFile, options: SaveSessionOptions = {}, signal?: AbortSignal): Promise<string> {
+export async function saveSession(
+  file: SessionFile,
+  options: SaveSessionOptions = {},
+  signal?: AbortSignal,
+): Promise<string> {
   return (await saveSessionVersioned(file, options, signal)).path;
 }
 
 /** 返回提交版本供 SessionManager 跟踪；不修改调用方传入的快照。 */
-export async function saveSessionVersioned(file: SessionFile, options: SaveSessionOptions = {}, signal?: AbortSignal): Promise<{ path: string; revision: number }> {
+export async function saveSessionVersioned(
+  file: SessionFile,
+  options: SaveSessionOptions = {},
+  signal?: AbortSignal,
+): Promise<{ path: string; revision: number }> {
   signal?.throwIfAborted();
   if (!isValidSessionId(file.id)) throw new SessionError('invalid_id', invalidIdMessage(file.id));
   if (!isAbsolute(file.cwd)) {
@@ -49,29 +66,51 @@ export async function saveSessionVersioned(file: SessionFile, options: SaveSessi
   const snapshot = JSON.parse(JSON.stringify(file)) as SessionFile;
   const recreate = options.recreate === true;
   const recreateRevision = options.recreateRevision;
-  return enqueueWrite(path, () => withSessionLock(path, async () => {
-    signal?.throwIfAborted();
-    const state = await diskRevision(snapshot.cwd, snapshot.id, signal);
-    const expected = snapshot.revision;
-    // 重建只能针对已知的那次删除，不能越过其他写入者后续的重建 / 删除。
-    const canRecreate = recreate && !state.exists && state.deleted
-      && state.revision === (recreateRevision ?? expected + 1);
-    if (expected !== state.revision && !canRecreate) {
-      throw new SessionError('conflict', `会话 ${file.id} 已被其他进程更新或删除（当前版本 ${state.revision}，本地版本 ${expected}）。未覆盖磁盘历史；请先保留内存历史，再恢复最新会话。`, { path });
-    }
-    if (!state.exists && state.deleted && !canRecreate) {
-      throw new SessionError('conflict', `会话 ${file.id} 已删除，旧写入不能重建。请显式发起新的保存。`, { path });
-    }
-    const revision = state.revision + 1;
-    if (!Number.isSafeInteger(revision)) throw new SessionError('conflict', '会话版本超出安全整数范围，未覆盖历史。', { path });
-    signal?.throwIfAborted();
-    // 提交边界：从原子写开始不再用取消覆盖成功结果。
-    await writeFileAtomic(path, JSON.stringify({ ...snapshot, revision }, null, 2) + '\n');
-    return { path, revision };
-  }, signal));
+  return enqueueWrite(path, () =>
+    withSessionLock(
+      path,
+      async () => {
+        signal?.throwIfAborted();
+        const state = await diskRevision(snapshot.cwd, snapshot.id, signal);
+        const expected = snapshot.revision;
+        // 重建只能针对已知的那次删除，不能越过其他写入者后续的重建 / 删除。
+        const canRecreate =
+          recreate &&
+          !state.exists &&
+          state.deleted &&
+          state.revision === (recreateRevision ?? expected + 1);
+        if (expected !== state.revision && !canRecreate) {
+          throw new SessionError(
+            'conflict',
+            `会话 ${file.id} 已被其他进程更新或删除（当前版本 ${state.revision}，本地版本 ${expected}）。未覆盖磁盘历史；请先保留内存历史，再恢复最新会话。`,
+            { path },
+          );
+        }
+        if (!state.exists && state.deleted && !canRecreate) {
+          throw new SessionError(
+            'conflict',
+            `会话 ${file.id} 已删除，旧写入不能重建。请显式发起新的保存。`,
+            { path },
+          );
+        }
+        const revision = state.revision + 1;
+        if (!Number.isSafeInteger(revision))
+          throw new SessionError('conflict', '会话版本超出安全整数范围，未覆盖历史。', { path });
+        signal?.throwIfAborted();
+        // 提交边界：从原子写开始不再用取消覆盖成功结果。
+        await writeFileAtomic(path, JSON.stringify({ ...snapshot, revision }, null, 2) + '\n');
+        return { path, revision };
+      },
+      signal,
+    ),
+  );
 }
 
-export async function loadSession(cwd: string, id: string, signal?: AbortSignal): Promise<SessionFile> {
+export async function loadSession(
+  cwd: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<SessionFile> {
   signal?.throwIfAborted();
   const path = sessionPath(cwd, id);
   let text: string;
@@ -86,7 +125,10 @@ export async function loadSession(cwd: string, id: string, signal?: AbortSignal)
         { cause: err, path },
       );
     }
-    throw new SessionError('io', `读取会话失败: ${path}（${errnoCode(err)}）。`, { cause: err, path });
+    throw new SessionError('io', `读取会话失败: ${path}（${errnoCode(err)}）。`, {
+      cause: err,
+      path,
+    });
   }
   signal?.throwIfAborted();
   const raw = parseSessionJson(text, path);
@@ -108,7 +150,10 @@ export async function listSessions(cwd: string, signal?: AbortSignal): Promise<S
     names = await fs.readdir(dir);
   } catch (err) {
     if (errnoCode(err) === 'ENOENT') return { sessions: [], broken: [] };
-    throw new SessionError('io', `读取会话目录失败: ${dir}（${errnoCode(err)}）。`, { cause: err, path: dir });
+    throw new SessionError('io', `读取会话目录失败: ${dir}（${errnoCode(err)}）。`, {
+      cause: err,
+      path: dir,
+    });
   }
 
   const sessions: SessionSummary[] = [];
@@ -126,7 +171,13 @@ export async function listSessions(cwd: string, signal?: AbortSignal): Promise<S
       assertSupportedVersion(raw, path);
       const meta = SessionMetaSchema.safeParse(raw);
       if (!meta.success) {
-        broken.push({ id, path, error: new SessionError('invalid_schema', formatInvalidSchema(path, meta.error), { path }) });
+        broken.push({
+          id,
+          path,
+          error: new SessionError('invalid_schema', formatInvalidSchema(path, meta.error), {
+            path,
+          }),
+        });
         continue;
       }
       const obj = raw as {
@@ -148,9 +199,13 @@ export async function listSessions(cwd: string, signal?: AbortSignal): Promise<S
       });
     } catch (err) {
       signal?.throwIfAborted();
-      const error = err instanceof SessionError
-        ? err
-        : new SessionError('io', `读取会话失败: ${path}（${errnoCode(err)}）。`, { cause: err, path });
+      const error =
+        err instanceof SessionError
+          ? err
+          : new SessionError('io', `读取会话失败: ${path}（${errnoCode(err)}）。`, {
+              cause: err,
+              path,
+            });
       broken.push({ id, path, error });
     }
   }
@@ -163,33 +218,57 @@ export async function listSessions(cwd: string, signal?: AbortSignal): Promise<S
   return { sessions, broken };
 }
 
-export async function deleteSession(cwd: string, id: string, signal?: AbortSignal): Promise<boolean> {
+export async function deleteSession(
+  cwd: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
   return (await deleteSessionVersioned(cwd, id, signal)).deleted;
 }
 
 /** 在删除锁内返回实际删除版本，避免读取墓碑时已被其他写入者推进。 */
-export async function deleteSessionVersioned(cwd: string, id: string, signal?: AbortSignal): Promise<{ deleted: boolean; revision: number }> {
+export async function deleteSessionVersioned(
+  cwd: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ deleted: boolean; revision: number }> {
   signal?.throwIfAborted();
   const path = sessionPath(cwd, id);
   // 同进程删除排在已提交的写入后，跨进程用锁与删除版本防止旧写入复活。
-  return enqueueWrite(path, () => withSessionLock(path, async () => {
-    signal?.throwIfAborted();
-    const state = await diskRevision(cwd, id, signal);
-    if (!state.exists) return { deleted: false, revision: state.revision };
-    signal?.throwIfAborted();
-    // 墓碑 + 删除是同一次提交，开始后必须完成并返回真实结果。
-    try {
-      await writeFileAtomic(`${path}.deleted`, JSON.stringify({ revision: state.revision + 1 }) + '\n');
-      await fs.unlink(path);
-      return { deleted: true, revision: state.revision + 1 };
-    } catch (err) {
-      if (err instanceof SessionError) throw err;
-      throw new SessionError('io', `删除会话失败: ${path}（${errnoCode(err)}）。`, { cause: err, path });
-    }
-  }, signal));
+  return enqueueWrite(path, () =>
+    withSessionLock(
+      path,
+      async () => {
+        signal?.throwIfAborted();
+        const state = await diskRevision(cwd, id, signal);
+        if (!state.exists) return { deleted: false, revision: state.revision };
+        signal?.throwIfAborted();
+        // 墓碑 + 删除是同一次提交，开始后必须完成并返回真实结果。
+        try {
+          await writeFileAtomic(
+            `${path}.deleted`,
+            JSON.stringify({ revision: state.revision + 1 }) + '\n',
+          );
+          await fs.unlink(path);
+          return { deleted: true, revision: state.revision + 1 };
+        } catch (err) {
+          if (err instanceof SessionError) throw err;
+          throw new SessionError('io', `删除会话失败: ${path}（${errnoCode(err)}）。`, {
+            cause: err,
+            path,
+          });
+        }
+      },
+      signal,
+    ),
+  );
 }
 
-async function diskRevision(cwd: string, id: string, signal?: AbortSignal): Promise<{ exists: boolean; deleted: boolean; revision: number }> {
+async function diskRevision(
+  cwd: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ exists: boolean; deleted: boolean; revision: number }> {
   const path = sessionPath(cwd, id);
   try {
     const current = await loadSession(cwd, id, signal);
@@ -200,15 +279,22 @@ async function diskRevision(cwd: string, id: string, signal?: AbortSignal): Prom
   try {
     const marker: unknown = JSON.parse(await fs.readFile(`${path}.deleted`, 'utf8'));
     const revision = (marker as { revision?: unknown })?.revision;
-    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 1) throw new Error('invalid revision');
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 1)
+      throw new Error('invalid revision');
     return { exists: false, deleted: true, revision };
   } catch (error) {
     if (errnoCode(error) === 'ENOENT') return { exists: false, deleted: false, revision: 0 };
-    throw new SessionError('corrupt', `会话删除标记不合法，未覆盖: ${path}.deleted`, { cause: error, path });
+    throw new SessionError('corrupt', `会话删除标记不合法，未覆盖: ${path}.deleted`, {
+      cause: error,
+      path,
+    });
   }
 }
 
-export async function latestSessionId(cwd: string, signal?: AbortSignal): Promise<string | undefined> {
+export async function latestSessionId(
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   const listing = await listSessions(cwd, signal);
   return listing.sessions[0]?.id;
 }
@@ -229,7 +315,11 @@ function parseSessionJson(text: string, path: string): unknown {
 function assertSupportedVersion(raw: unknown, path: string): void {
   if (!raw || typeof raw !== 'object') return;
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
-  if (typeof version === 'number' && Number.isInteger(version) && version !== SESSION_SCHEMA_VERSION) {
+  if (
+    typeof version === 'number' &&
+    Number.isInteger(version) &&
+    version !== SESSION_SCHEMA_VERSION
+  ) {
     throw new SessionError(
       'unsupported_version',
       `会话文件的 schemaVersion 是 ${version}，当前仅支持 schemaVersion=${SESSION_SCHEMA_VERSION} 且带完整身份和 runtime envelope 的会话，无法加载此格式: ${path}`,

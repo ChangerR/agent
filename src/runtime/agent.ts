@@ -4,7 +4,14 @@ import type { EventBus } from '../core/events.js';
 import type { AgentLoop } from '../core/loop.js';
 import type { ProviderRegistry, ToolRegistry } from '../core/registry.js';
 import type { SessionManager } from '../core/session/coordinator.js';
-import type { CommandResult, InteractionRequest, PermissionController, SkillSource, ApprovalTool, ToolResult } from '../sdk/index.js';
+import type {
+  CommandResult,
+  InteractionRequest,
+  PermissionController,
+  SkillSource,
+  ApprovalTool,
+  ToolResult,
+} from '../sdk/index.js';
 import type { PluginInspection } from './plugin-inspection.js';
 import type { CommandRegistry, SettingsRecord } from './commands.js';
 export interface Agent {
@@ -16,8 +23,16 @@ export interface Agent {
   permission: PermissionController;
   session: SessionManager;
   config: AgentConfig;
-  tools: { get(name: string): ApprovalTool | undefined; list(): ApprovalTool[]; definitions(): ReturnType<ToolRegistry['definitions']> };
-  invokeTool(name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult>;
+  tools: {
+    get(name: string): ApprovalTool | undefined;
+    list(): ApprovalTool[];
+    definitions(): ReturnType<ToolRegistry['definitions']>;
+  };
+  invokeTool(
+    name: string,
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolResult>;
   providers: ProviderRegistry;
   skillLoader: SkillSource;
   modelInfo(model: string): ModelInfo | undefined;
@@ -26,6 +41,12 @@ export interface Agent {
   plugins: PluginInspection;
   commands: CommandRegistry;
   settings: SettingsRecord[];
-  dispatchCommand(line: string, options?: { signal?: AbortSignal; interact?: (request: InteractionRequest) => Promise<string | undefined> }): Promise<CommandResult>;
+  dispatchCommand(
+    line: string,
+    options?: {
+      signal?: AbortSignal;
+      interact?: (request: InteractionRequest) => Promise<string | undefined>;
+    },
+  ): Promise<CommandResult>;
   dispose(): Promise<void>;
 }

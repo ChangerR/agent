@@ -18,7 +18,10 @@ export const writeFileTool: Tool = {
   },
   analyzeInput(input) {
     const path = String(input.path ?? '');
-    return { patternTarget: matchPath(path), summary: `write_file: ${path} (${String(input.content ?? '').length} chars)` };
+    return {
+      patternTarget: matchPath(path),
+      summary: `write_file: ${path} (${String(input.content ?? '').length} chars)`,
+    };
   },
   async execute(input, ctx) {
     const path = resolve(ctx.cwd, String(input.path));

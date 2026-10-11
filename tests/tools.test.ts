@@ -48,24 +48,36 @@ describe('read_file', () => {
 
 describe('edit_file', () => {
   it('精确替换', async () => {
-    const r = await editFileTool.execute({ path: 'a.txt', old_string: 'world', new_string: 'WORLD' }, ctx());
+    const r = await editFileTool.execute(
+      { path: 'a.txt', old_string: 'world', new_string: 'WORLD' },
+      ctx(),
+    );
     expect(r.isError).toBeFalsy();
     expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toContain('WORLD');
   });
 
   it('多处匹配且无 replace_all 时报错', async () => {
-    const r = await editFileTool.execute({ path: 'a.txt', old_string: 'hello', new_string: 'hi' }, ctx());
+    const r = await editFileTool.execute(
+      { path: 'a.txt', old_string: 'hello', new_string: 'hi' },
+      ctx(),
+    );
     expect(r.isError).toBe(true);
     expect(r.content).toContain('2 times');
   });
 
   it('replace_all 替换全部', async () => {
-    await editFileTool.execute({ path: 'a.txt', old_string: 'hello', new_string: 'hi', replace_all: true }, ctx());
+    await editFileTool.execute(
+      { path: 'a.txt', old_string: 'hello', new_string: 'hi', replace_all: true },
+      ctx(),
+    );
     expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('hi\nworld\nhi again');
   });
 
   it('找不到 old_string 时报错', async () => {
-    const r = await editFileTool.execute({ path: 'a.txt', old_string: 'nope', new_string: 'x' }, ctx());
+    const r = await editFileTool.execute(
+      { path: 'a.txt', old_string: 'nope', new_string: 'x' },
+      ctx(),
+    );
     expect(r.isError).toBe(true);
   });
 
@@ -161,16 +173,22 @@ describe('grep', () => {
   });
 
   it('组装 rg 参数', () => {
-    expect(buildRgArgs({ pattern: 'hello', glob: '*.ts', caseInsensitive: true })).toContain('--regexp');
-    expect(buildRgArgs({ pattern: 'hello', glob: '*.ts', caseInsensitive: true })).toContain('hello');
-    expect(buildRgArgs({ pattern: 'hello', glob: '*.ts', caseInsensitive: true })).toContain('--ignore-case');
+    expect(buildRgArgs({ pattern: 'hello', glob: '*.ts', caseInsensitive: true })).toContain(
+      '--regexp',
+    );
+    expect(buildRgArgs({ pattern: 'hello', glob: '*.ts', caseInsensitive: true })).toContain(
+      'hello',
+    );
+    expect(buildRgArgs({ pattern: 'hello', glob: '*.ts', caseInsensitive: true })).toContain(
+      '--ignore-case',
+    );
     expect(buildRgArgs({ pattern: 'hello', glob: '*.ts' })).toContain('!**/node_modules/**');
     expect(buildRgArgs({ pattern: 'hello', glob: '*.ts' })).toContain('--crlf');
   });
 });
 
 describe('bash', () => {
-  const command = process.platform === 'win32' ? "Write-Output 'agentlab-ok'" : "echo agentlab-ok";
+  const command = process.platform === 'win32' ? "Write-Output 'agentlab-ok'" : 'echo agentlab-ok';
   const failing = process.platform === 'win32' ? "Get-Item 'agentlab-missing-path'" : 'false';
 
   it('用当前操作系统的 shell 执行并带回输出', async () => {

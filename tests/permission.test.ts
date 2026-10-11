@@ -10,11 +10,19 @@ const noRules = (): SessionRules => ({ allow: [], ask: [], deny: [] });
 
 describe('规则解析与匹配', () => {
   it('解析整工具规则', () => {
-    expect(parseRule('read_file')).toEqual({ raw: 'read_file', tool: 'read_file', pattern: undefined });
+    expect(parseRule('read_file')).toEqual({
+      raw: 'read_file',
+      tool: 'read_file',
+      pattern: undefined,
+    });
   });
 
   it('解析带参数模式的规则', () => {
-    expect(parseRule('bash(npm test *)')).toEqual({ raw: 'bash(npm test *)', tool: 'bash', pattern: 'npm test *' });
+    expect(parseRule('bash(npm test *)')).toEqual({
+      raw: 'bash(npm test *)',
+      tool: 'bash',
+      pattern: 'npm test *',
+    });
   });
 
   it('glob 模式匹配命令与路径', () => {
@@ -32,9 +40,12 @@ describe('规则解析与匹配', () => {
     expect(matchRule(parseRule(raw), 'read_file', 'a*.txt')).toBe(false);
   });
 
-  it.each(['', 'invalid rule', 'bash(="unterminated)', 'bash(="x" false)'])('拒绝无效规则 %j', rule => {
-    expect(() => parseRule(rule)).toThrow();
-  });
+  it.each(['', 'invalid rule', 'bash(="unterminated)', 'bash(="x" false)'])(
+    '拒绝无效规则 %j',
+    (rule) => {
+      expect(() => parseRule(rule)).toThrow();
+    },
+  );
 });
 
 describe('危险命令检测', () => {
@@ -86,7 +97,11 @@ describe('权限控制器', () => {
     const saved = controller.getSessionRules();
     saved.allow.push('write_file');
     saved.ask.length = 0;
-    expect(controller.getSessionRules()).toEqual({ allow: ['read_file'], ask: ['bash'], deny: ['write_file(.env)'] });
+    expect(controller.getSessionRules()).toEqual({
+      allow: ['read_file'],
+      ask: ['bash'],
+      deny: ['write_file(.env)'],
+    });
     controller.clearSessionRules();
     expect(controller.getSessionRules()).toEqual(noRules());
     expect(controller.revision).toBe(original);
@@ -95,9 +110,14 @@ describe('权限控制器', () => {
   it('批量恢复先完整校验，任何无效规则都不会部分改写状态', () => {
     const controller = new PermissionController({ mode: 'ask', rules: noRules() });
     controller.addSessionRule('deny', 'bash(npm publish)');
-    const before = controller.getSessionRules(); const revision = controller.revision;
-    expect(() => controller.setSessionRules({ allow: ['read_file'], ask: ['invalid rule'] })).toThrow();
-    expect(() => controller.validateSessionRules({ allow: ['write_file'], deny: ['!invalid'] })).toThrow();
+    const before = controller.getSessionRules();
+    const revision = controller.revision;
+    expect(() =>
+      controller.setSessionRules({ allow: ['read_file'], ask: ['invalid rule'] }),
+    ).toThrow();
+    expect(() =>
+      controller.validateSessionRules({ allow: ['write_file'], deny: ['!invalid'] }),
+    ).toThrow();
     expect(controller.getSessionRules()).toEqual(before);
     expect(controller.revision).toBe(revision);
     const next = { allow: ['read_file'], ask: ['bash'] };
@@ -108,15 +128,31 @@ describe('权限控制器', () => {
 
   it('审计只记录显式判定，不调用工具声明的分析回调', () => {
     const controller = new PermissionController({ mode: 'auto', rules: noRules() });
-    const analyzeInput = vi.fn(() => { throw new Error('untrusted callback'); });
+    const analyzeInput = vi.fn(() => {
+      throw new Error('untrusted callback');
+    });
     const tool = { ...bashTool, analyzeInput };
-    const decision: Decision = { kind: 'ask', source: 'danger', reason: '需要人工确认', reasonCode: 'danger_constraint' };
+    const decision: Decision = {
+      kind: 'ask',
+      source: 'danger',
+      reason: '需要人工确认',
+      reasonCode: 'danger_constraint',
+    };
     controller.recordDecision(tool, { command: 'unsafe' }, decision);
-    controller.recordDecision(tool, { command: 'unsafe' }, { kind: 'deny', source: 'user', reason: '用户拒绝' });
+    controller.recordDecision(
+      tool,
+      { command: 'unsafe' },
+      { kind: 'deny', source: 'user', reason: '用户拒绝' },
+    );
     expect(analyzeInput).not.toHaveBeenCalled();
     expect(controller.getAuditLog()).toEqual([
       { toolName: 'bash', summary: 'bash', decision, at: expect.any(Number) },
-      { toolName: 'bash', summary: 'bash', decision: { kind: 'deny', source: 'user', reason: '用户拒绝' }, at: expect.any(Number) },
+      {
+        toolName: 'bash',
+        summary: 'bash',
+        decision: { kind: 'deny', source: 'user', reason: '用户拒绝' },
+        at: expect.any(Number),
+      },
     ]);
   });
 });

@@ -60,7 +60,8 @@ export function toAnthropicMessages(
             return { type: 'text', text: b.text };
           case 'thinking':
             // 有签名才能作为 thinking 块回填；没有签名的（例如 OpenAI reasoning）过不了校验
-            if (b.signature) return { type: 'thinking' as const, thinking: b.thinking, signature: b.signature };
+            if (b.signature)
+              return { type: 'thinking' as const, thinking: b.thinking, signature: b.signature };
             return { type: 'text' as const, text: `<thinking>${b.thinking}</thinking>` };
           case 'redacted_thinking':
             return { type: 'redacted_thinking' as const, data: b.data };
@@ -79,7 +80,12 @@ export function toAnthropicMessages(
         ? [{ type: 'text', text: m.content }]
         : m.content.map((b) =>
             b.type === 'tool_result'
-              ? { type: 'tool_result', tool_use_id: b.toolUseId, content: b.content, is_error: b.isError }
+              ? {
+                  type: 'tool_result',
+                  tool_use_id: b.toolUseId,
+                  content: b.content,
+                  is_error: b.isError,
+                }
               : { type: 'text', text: b.text },
           );
     if (mark) markLastCacheable(blocks, ttl);
@@ -87,7 +93,11 @@ export function toAnthropicMessages(
   });
 }
 
-export function toAnthropicTools(tools: ToolDefinition[], cacheLast = false, ttl?: CacheTtl): AnthropicTool[] {
+export function toAnthropicTools(
+  tools: ToolDefinition[],
+  cacheLast = false,
+  ttl?: CacheTtl,
+): AnthropicTool[] {
   return tools.map((t, i) => ({
     name: t.name,
     description: t.description,
@@ -103,7 +113,9 @@ export function toAnthropicSystem(
   ttl?: CacheTtl,
 ): Anthropic.MessageStreamParams['system'] {
   if (!cache || system === '') return system;
-  return [{ type: 'text', text: system, cache_control: cacheControlOf(ttl) }] as Anthropic.MessageStreamParams['system'];
+  return [
+    { type: 'text', text: system, cache_control: cacheControlOf(ttl) },
+  ] as Anthropic.MessageStreamParams['system'];
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +123,12 @@ export function toAnthropicSystem(
 // ---------------------------------------------------------------------------
 
 /** 无状态消息级事件转换；内容块必须通过 AnthropicStreamTranslator 关联 wire index。 */
-export function fromAnthropicEvent(ev: Exclude<MessageStreamEvent, { type: 'content_block_start' | 'content_block_delta' | 'content_block_stop' }>): StreamEvent[] {
+export function fromAnthropicEvent(
+  ev: Exclude<
+    MessageStreamEvent,
+    { type: 'content_block_start' | 'content_block_delta' | 'content_block_stop' }
+  >,
+): StreamEvent[] {
   switch (ev.type) {
     case 'message_start': {
       const u = ev.message.usage as Anthropic.Usage & {
@@ -138,8 +155,12 @@ export function fromAnthropicEvent(ev: Exclude<MessageStreamEvent, { type: 'cont
       const usage: StreamEvent = {
         type: 'usage',
         outputTokens: u.output_tokens,
-        ...(typeof u.cache_read_input_tokens === 'number' ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
-        ...(typeof u.cache_creation_input_tokens === 'number' ? { cacheWriteTokens: u.cache_creation_input_tokens } : {}),
+        ...(typeof u.cache_read_input_tokens === 'number'
+          ? { cacheReadTokens: u.cache_read_input_tokens }
+          : {}),
+        ...(typeof u.cache_creation_input_tokens === 'number'
+          ? { cacheWriteTokens: u.cache_creation_input_tokens }
+          : {}),
       };
       return [
         {
@@ -187,7 +208,9 @@ export function buildAnthropicBody(
   if (breakpoints.length > budget) breakpoints = breakpoints.slice(breakpoints.length - budget);
 
   const thinkingOn = req.thinking !== undefined && req.thinking !== 'off';
-  const thinkingBudget = thinkingOn ? THINKING_BUDGETS[req.thinking as 'low' | 'medium' | 'high'] : 0;
+  const thinkingBudget = thinkingOn
+    ? THINKING_BUDGETS[req.thinking as 'low' | 'medium' | 'high']
+    : 0;
 
   const body = {
     model: req.model,
@@ -195,8 +218,12 @@ export function buildAnthropicBody(
     messages: toAnthropicMessages(req.messages, new Set(breakpoints), ttl),
     tools: req.tools.length > 0 ? toAnthropicTools(req.tools, toolsOn, ttl) : undefined,
     // thinking 开启时 max_tokens 必须大于 budget_tokens
-    max_tokens: thinkingOn ? Math.max(req.maxTokens ?? 8192, thinkingBudget + 4096) : (req.maxTokens ?? 8192),
-    ...(thinkingOn ? { thinking: { type: 'enabled' as const, budget_tokens: thinkingBudget } } : {}),
+    max_tokens: thinkingOn
+      ? Math.max(req.maxTokens ?? 8192, thinkingBudget + 4096)
+      : (req.maxTokens ?? 8192),
+    ...(thinkingOn
+      ? { thinking: { type: 'enabled' as const, budget_tokens: thinkingBudget } }
+      : {}),
   } as unknown as Anthropic.MessageStreamParams;
 
   const wroteCache = ttl === '1h' && JSON.stringify(body).includes('"cache_control"');
@@ -219,27 +246,34 @@ export class AnthropicStreamTranslator {
   push(event: MessageStreamEvent): StreamEvent[] {
     if (event.type === 'message_start') this.blocks.clear();
     if (event.type === 'content_block_start') {
-      if (this.blocks.has(event.index)) throw new Error(`Duplicate Anthropic content block: ${event.index}`);
+      if (this.blocks.has(event.index))
+        throw new Error(`Duplicate Anthropic content block: ${event.index}`);
       const block = event.content_block;
       if (block.type === 'tool_use') {
-        if (!block.id || !block.name) throw new Error('Anthropic tool block requires an ID and name');
+        if (!block.id || !block.name)
+          throw new Error('Anthropic tool block requires an ID and name');
         this.blocks.set(event.index, { type: block.type, id: block.id });
         return [{ type: 'tool_use_start', id: block.id, name: block.name }];
       }
       this.blocks.set(event.index, { type: block.type });
-      return block.type === 'redacted_thinking' ? [{ type: 'redacted_thinking', data: block.data }] : [];
+      return block.type === 'redacted_thinking'
+        ? [{ type: 'redacted_thinking', data: block.data }]
+        : [];
     }
     if (event.type === 'content_block_delta') {
       const block = this.blocks.get(event.index);
       if (!block) throw new Error(`Unknown Anthropic content block: ${event.index}`);
       const delta = event.delta;
       if (delta.type === 'input_json_delta') {
-        if (block.type !== 'tool_use' || !block.id) throw new Error(`Anthropic tool delta targets a non-tool block: ${event.index}`);
+        if (block.type !== 'tool_use' || !block.id)
+          throw new Error(`Anthropic tool delta targets a non-tool block: ${event.index}`);
         return [{ type: 'tool_use_delta', id: block.id, input: delta.partial_json }];
       }
       if (delta.type === 'text_delta') return [{ type: 'text_delta', text: delta.text }];
-      if (delta.type === 'thinking_delta') return [{ type: 'thinking_delta', text: delta.thinking }];
-      if (delta.type === 'signature_delta') return [{ type: 'signature_delta', signature: delta.signature }];
+      if (delta.type === 'thinking_delta')
+        return [{ type: 'thinking_delta', text: delta.thinking }];
+      if (delta.type === 'signature_delta')
+        return [{ type: 'signature_delta', signature: delta.signature }];
       return [];
     }
     if (event.type === 'content_block_stop') {

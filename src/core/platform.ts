@@ -60,7 +60,12 @@ export function detectPlatform(platform?: NodeJS.Platform, probe?: PlatformProbe
   const resolved = platform ?? process.platform;
   const useHost = platform === undefined && probe === undefined;
   const env = probe?.env ?? (useHost ? process.env : {});
-  const procVersion = probe && 'procVersion' in probe ? (probe.procVersion ?? null) : useHost && resolved === 'linux' ? readProcVersion() : null;
+  const procVersion =
+    probe && 'procVersion' in probe
+      ? (probe.procVersion ?? null)
+      : useHost && resolved === 'linux'
+        ? readProcVersion()
+        : null;
   const distro = typeof env.WSL_DISTRO_NAME === 'string' ? env.WSL_DISTRO_NAME : '';
 
   if (resolved === 'win32') {
@@ -100,12 +105,17 @@ export function detectPlatform(platform?: NodeJS.Platform, probe?: PlatformProbe
     shell: 'bash',
     shellLine: 'bash，命令用 bash 语法',
     pathLine: '/',
-    toolDescription: 'Run a bash command. Returns combined stdout/stderr. Use timeout for long commands.',
+    toolDescription:
+      'Run a bash command. Returns combined stdout/stderr. Use timeout for long commands.',
     toolBullets: POSIX_BULLETS,
   };
 }
 
-function isWsl(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, procVersion: string | null): boolean {
+function isWsl(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  procVersion: string | null,
+): boolean {
   if (platform !== 'linux') return false;
   if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) return true;
   return procVersion != null && /microsoft/i.test(procVersion);
@@ -150,14 +160,24 @@ export interface ShellInvocation {
 }
 
 /** 把一条用户命令变成当前平台的 spawn 参数。 */
-export function shellInvocation(command: string, platform: NodeJS.Platform = process.platform): ShellInvocation {
+export function shellInvocation(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): ShellInvocation {
   if (platform === 'win32') {
     // PowerShell 5.1 的 `-Command -` 按控制台代码页读 stdin，不认 UTF-8 BOM。
     // `-EncodedCommand` 用 UTF-16LE base64，绕开代码页，也不需要临时文件。
     const encoded = Buffer.from(powershellScript(command), 'utf16le').toString('base64');
     return {
       file: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-EncodedCommand',
+        encoded,
+      ],
     };
   }
   return { file: 'bash', args: ['-c', command] };
@@ -177,7 +197,10 @@ export function powershellScript(command: string): string {
 }
 
 /** PowerShell 有时仍把 stdout 写成 UTF-16 LE。识别后再解码，避免中文变成空字节。 */
-export function decodeShellOutput(buf: Buffer, platform: NodeJS.Platform = process.platform): string {
+export function decodeShellOutput(
+  buf: Buffer,
+  platform: NodeJS.Platform = process.platform,
+): string {
   if (platform === 'win32' && looksLikeUtf16Le(buf)) {
     return buf.toString('utf16le').replace(/^\uFEFF/, '');
   }
