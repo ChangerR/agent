@@ -212,10 +212,11 @@ describe('deterministic policy', () => {
           for (const rule of broad) value.controller!.addSessionRule('allow', rule);
         expect(
           await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
-        ).toMatchObject({
-          kind: mode === 'ask' ? 'ask' : 'review',
-          reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-        });
+        ).toMatchObject(
+          process.platform === 'win32'
+            ? { kind: 'review', reasonCode: 'platform_write_review' }
+            : { kind: 'review', reasonCode: 'review_uncertain' },
+        );
       },
     );
 
@@ -267,10 +268,7 @@ describe('deterministic policy', () => {
           operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' }),
           signal(),
         ),
-      ).toMatchObject({
-        kind: mode === 'ask' ? 'ask' : 'review',
-        reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-      });
+      ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
     });
   });
 
@@ -408,8 +406,8 @@ describe('deterministic policy', () => {
     async (command) => {
       if (process.platform === 'win32') {
         expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject({
-          kind: 'ask',
-          reasonCode: 'ask_mode',
+          kind: 'review',
+          reasonCode: 'review_uncertain',
         });
         return;
       }
@@ -474,7 +472,11 @@ describe('deterministic policy', () => {
     ).toMatchObject({ kind: 'ask', reasonCode: 'explicit_ask' });
     expect(
       await policy('ask').decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
-    ).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
+    ).toMatchObject(
+      process.platform === 'win32'
+        ? { kind: 'review', reasonCode: 'platform_write_review' }
+        : { kind: 'review', reasonCode: 'review_uncertain' },
+    );
   });
 
   it('危险命令、deny 与明确 ask 优先于完全相同的精确调用规则', async () => {
@@ -506,10 +508,7 @@ describe('deterministic policy', () => {
             operation(bash, { command: 'npm test' }),
             signal(),
           ),
-        ).toMatchObject({
-          kind: mode === 'ask' ? 'ask' : 'review',
-          reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-        });
+        ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
   });
 
   it('MCP 工具的规范化输入 JSON 精确规则可放行，输入不同则不放行', async () => {
@@ -613,7 +612,11 @@ describe('deterministic policy', () => {
     });
     expect(
       await ask.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal()),
-    ).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
+    ).toMatchObject(
+      process.platform === 'win32'
+        ? { kind: 'review', reasonCode: 'platform_write_review' }
+        : { kind: 'review', reasonCode: 'review_uncertain' },
+    );
   });
 
   it('其他配置的分析快照不能扩大 writeRoots，本策略不能跨项目借用', async () => {

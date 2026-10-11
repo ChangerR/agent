@@ -140,7 +140,6 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
     ],
     ['yolo', 'write_file', { path: 'src/new.ts:stream', content: 'x' }, 'platform_unverified'],
     ['yolo', 'bash', { command: 'git status' }, 'unknown_ask'],
-    ['ask', 'bash', { command: 'git status --short' }, 'ask_mode'],
     ['auto', 'bash', { command: 'git push origin HEAD --force' }, 'danger_constraint'],
     // 能静态判定的敏感 / 项目外目标
     ['auto', 'read_file', { path: '.env' }, 'sensitive_target'],
@@ -164,6 +163,13 @@ describe('原生 Windows：auto/yolo 项目内只读直接放行', () => {
   ];
   it.each(humanCases)('%s %s %j → 人工 ask（%s）', async (mode, name, input, reasonCode) => {
     expect(await decide(mode, name, fill(input))).toMatchObject({ kind: 'ask', reasonCode });
+  });
+
+  it('ask 下未记住的普通 Shell 交给 reviewer，不直接人工', async () => {
+    expect(await decide('ask', 'bash', { command: 'git status --short' })).toMatchObject({
+      kind: 'review',
+      reasonCode: 'review_uncertain',
+    });
   });
 
   const dedicatedCommands = [

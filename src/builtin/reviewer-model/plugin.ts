@@ -9,8 +9,8 @@ const schema = z.object({
   model: z.string().optional(),
   timeoutMs: z.number().int().min(1).max(300000).default(30000),
   maxRequestBytes: z.number().int().min(1).max(1048576).default(32768),
-  maxResponseBytes: z.number().int().min(1).max(65536).default(8192),
-  maxOutputTokens: z.number().int().min(1).max(8192).default(256),
+  maxResponseBytes: z.number().int().min(1).max(65536).default(65536),
+  maxOutputTokens: z.number().int().min(1).max(8192).default(8192),
   prefixCache: z
     .object({ enabled: z.boolean().default(false), ttl: z.enum(['5m', '1h']).default('5m') })
     .default({ enabled: false, ttl: '5m' }),

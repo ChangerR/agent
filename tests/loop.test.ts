@@ -317,7 +317,7 @@ describe('AgentLoop', () => {
     events.on('permission_request', (e) => {
       expect(e.request).toMatchObject({
         toolUseId: 't1',
-        decisionSource: 'mode',
+        decisionSource: 'judge',
         cwd: tmp,
         toolName: 'write_file',
       });

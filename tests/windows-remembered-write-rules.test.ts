@@ -193,10 +193,10 @@ describe('原生 Windows 写入：未命中精确规则', () => {
     ).toBe(true);
   });
 
-  it('ask 模式：无规则或只有通配符规则仍人工', async () => {
+  it('ask 模式：无规则或只有通配符规则交给 reviewer', async () => {
     expect(await decide('ask', 'write_file', write('src/new.ts'))).toMatchObject({
-      kind: 'ask',
-      reasonCode: 'ask_mode',
+      kind: 'review',
+      reasonCode: 'platform_write_review',
       source: 'mode',
     });
     expect(
@@ -206,7 +206,7 @@ describe('原生 Windows 写入：未命中精确规则', () => {
         write('src/new.ts'),
         rules({ allow: ['write_file(src/*)'] }),
       ),
-    ).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
+    ).toMatchObject({ kind: 'review', reasonCode: 'platform_write_review' });
   });
 
   it('writeRoots 目录授权不是精确规则：Windows 交给模型，Linux 保持确定性放行', async () => {
@@ -283,8 +283,8 @@ describe('原生 Windows 写入：仍人工的边界（精确规则也不能越�
       reasonCode: 'unknown_ask',
     });
     expect(await decide('ask', 'bash', { command: 'echo one' }, literal)).toMatchObject({
-      kind: 'ask',
-      reasonCode: 'ask_mode',
+      kind: 'review',
+      reasonCode: 'review_uncertain',
     });
   });
 
@@ -343,7 +343,7 @@ describe('非 Windows 平台写入行为不变', () => {
       { kind: 'review', reasonCode: 'review_uncertain' },
     ],
     ['yolo', noRules, { kind: 'allow', reasonCode: 'yolo_complete' }],
-    ['ask', noRules, { kind: 'ask', reasonCode: 'ask_mode' }],
+    ['ask', noRules, { kind: 'review', reasonCode: 'review_uncertain' }],
   ] as const)('linux %s %j → %j', async (mode, ruleSet, expected) => {
     const result = await decide(mode, 'write_file', write('src/new.ts'), ruleSet, {
       platform: 'linux',
@@ -379,7 +379,8 @@ describe('原生 Windows 写入：真实审查合约（非 stub）', () => {
   const body = (request: ChatRequest) => JSON.parse(request.messages[0]!.content as string);
 
   it('交给真实 reviewer 的写入分析为 complete，不触发提示词中的不完整规则，合约接受 allow', async () => {
-    expect(STRICT_REVIEWER_SYSTEM).toContain('分析不完整或证据不足时返回 ask 或 unknown');
+    expect(STRICT_REVIEWER_SYSTEM).toContain('分析不完整本身不是自动 ask');
+    expect(STRICT_REVIEWER_SYSTEM).toContain('才返回 ask 或 unknown');
     const policy = createDeterministicPolicy({
       cwd,
       mode: 'auto',
@@ -495,7 +496,11 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     await run('write_file', { path: 'src/remember.ts', content: '1' });
     await run('write_file', { path: 'src/remember.ts', content: '2' });
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ decisionSource: 'mode', reasonCode: 'ask_mode' });
+    expect(requests[0]).toMatchObject({
+      decisionSource: 'judge',
+      reasonCode: 'reviewer_unavailable',
+      policyReasonCode: 'platform_write_review',
+    });
     expect(policy.controller!.getSessionRules().allow).toEqual(['write_file(="src/remember.ts")']);
     expect(await readFile(join(cwd, 'src/remember.ts'), 'utf8')).toBe('2');
   });

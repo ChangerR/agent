@@ -24,13 +24,14 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 审批顺序是：
 
 1. 明确 `deny`
-2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell。尚未验收的原生 Windows Shell 不在此列，auto 把它交给 reviewer
+2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell。尚未验收的原生 Windows Shell 不在此列，ask 与 auto 把它交给 reviewer
 3. 明确 `ask`
 4. bash 与未知 MCP 的等于引号精确调用规则（`exact_call_allow`），以及已完整验证操作的精确目标规则
 5. 已验证的项目内完整只读（`safe_read`）；`ask` 模式同样直接放行
-6. `ask` 模式对写入、执行与未知操作默认询问；随后才是显式 `writeRoots` 目录授权
-7. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
-8. `auto` 的剩余不确定操作可委托一次 reviewer；缺少 reviewer、非法输出、unknown、失败或超时均不会自动放行
+6. `ask` 对尚未确定性授权的写入、执行与未知操作委托一次 reviewer，且不因 `writeRoots` 直接放行
+7. 显式 `writeRoots` 目录授权，仅 `auto` 使用
+8. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
+9. `auto` 的剩余不确定操作同样委托一次 reviewer。缺少 reviewer、非法输出、unknown、失败或超时均不会自动放行，回到人工
 
 会话规则只在同一 action 类别内优先于配置规则，不会让 session allow 越过配置 ask/deny。
 
@@ -54,7 +55,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 
 这表示在新的 auto 会话中，允许已知内置 `write_file` / `edit_file` 对 `src` 内普通文件进行完整、已验证的写入。默认目录列表为空，不存在隐式整项目写授权。项目外目录、敏感目录和非目录根会被拒绝；不存在的目录必须有可验证的目录父节点。
 
-目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式的写入仍要求本次确认或精确规则，不因目录授权跳过询问。
+目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式的写入不因目录授权直接放行；未命中精确规则时交给 reviewer，模型失败或要求确认时才人工。
 
 `/settings` 中的“明确写入目录授权”支持独立输入、验证和一次提交自动保存，无额外确认；保存走配置 fingerprint/CAS、原子写、未知字段保留和符号链接保护。保存只改变下一会话配置，不热更新活动策略。更改写入目录属于明确扩大授权范围，界面说明这一含义。
 
@@ -75,9 +76,9 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 - 重定向、命令/进程替换、变量/算术/通配展开、后台执行、函数、脚本、未知选项与任意子进程不自动放行。反斜杠续行目前明确不确定，避免语法树与 Bash 去续行后的 argv 差异。解析结果给出命令、effects 与 unresolved 原因；不声称能静态推断任意程序目的。
 - 递归 grep/rg 保留原工具与过滤语义，不悄悄删掉敏感候选；如果保守候选范围包含敏感/未知文件则询问。Git worktree/gitfile、submodule、partial clone、额外 filter/include 配置等不在确定性支持范围。普通 status 不遍历被忽略的 node_modules 或禁用的 hooks；diff 额外验证对象/引用存储，超过 20,000 项扫描预算明确回退审批。已安装系统工具是受信任依赖，不引入恶意宿主二进制的无限威胁模型。Windows/UNC/盘符路径在非 Windows 环境不会被误解成安全相对路径；未验证的 PowerShell 语义不进入确定性允许。
 
-原生 Windows 上，内置 `read_file` / `glob` / `grep` 与其他平台走同一套通用检查（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件、受控搜索枚举与候选绑定）。通过这些检查的项目内完整读取，在 ask、auto 与 yolo 中直接放行（`safe_read`），不交给 reviewer，也不询问人工。歧义路径仍不能走这条放行：含 UNC/`\\?\` 前缀、备用数据流冒号、尾随点/空格、`~数字` 短名或保留设备名的路径，以及敏感、项目外、用户 deny/ask 规则，继续人工确认。写入仍可凭精确目标 allow 放行；已验证只读不再因 ask 模式询问。NTFS ADS、设备名、8.3 短名和 junction 的完整语义仍未实机验收，所以未通过通用检查或带歧义形态的路径不会确定性放行。歧义路径与未知工具里属于不可降级约束的部分继续人工确认（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过；这类审批面板不提供“允许并记住此规则”（记住的规则不会生效），只提供“允许一次”与“拒绝”。不能确定只是在读文件、列目录或搜索内容的 PowerShell 不再在策略里直接改成人工：分析记为 `native_windows_shell_unverified`，等于引号的精确命令规则可直接放行（`exact_call_allow`），没有精确规则时 auto 交给 reviewer（`review_uncertain`），ask 模式询问，yolo 对不完整副作用仍人工确认。审批模型拒绝、失败或不可用时才回到人工；这类面板可以记住精确命令规则。整条命令只由 Get-Content、Get-ChildItem、Select-String、Get-Item 及其默认别名（可接 Select-Object 等格式化管道）组成时，直接拒绝且不执行（`use_dedicated_tool`），理由要求改用 read_file、glob、grep，不弹人工确认，也不交给 reviewer。含子表达式、调用运算符、重定向、脚本块或其他命令时走上面的 reviewer 兜底，危险命令仍人工确认。
+原生 Windows 上，内置 `read_file` / `glob` / `grep` 与其他平台走同一套通用检查（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件、受控搜索枚举与候选绑定）。通过这些检查的项目内完整读取，在 ask、auto 与 yolo 中直接放行（`safe_read`），不交给 reviewer，也不询问人工。歧义路径仍不能走这条放行：含 UNC/`\\?\` 前缀、备用数据流冒号、尾随点/空格、`~数字` 短名或保留设备名的路径，以及敏感、项目外、用户 deny/ask 规则，继续人工确认。写入仍可凭精确目标 allow 放行；已验证只读不再因 ask 模式询问。NTFS ADS、设备名、8.3 短名和 junction 的完整语义仍未实机验收，所以未通过通用检查或带歧义形态的路径不会确定性放行。歧义路径与未知工具里属于不可降级约束的部分继续人工确认（`platform_unverified`），writeRoots、精确规则和 yolo 都不能绕过；这类审批面板不提供“允许并记住此规则”（记住的规则不会生效），只提供“允许一次”与“拒绝”。不能确定只是在读文件、列目录或搜索内容的 PowerShell 不再在策略里直接改成人工：分析记为 `native_windows_shell_unverified`，等于引号的精确命令规则可直接放行（`exact_call_allow`），没有精确规则时 ask 与 auto 交给 reviewer（`review_uncertain`），yolo 对不完整副作用仍人工确认。审批模型拒绝、失败或不可用时才回到人工；这类面板可以记住精确命令规则。整条命令只由 Get-Content、Get-ChildItem、Select-String、Get-Item 及其默认别名（可接 Select-Object 等格式化管道）组成时，直接拒绝且不执行（`use_dedicated_tool`），理由要求改用 read_file、glob、grep，不弹人工确认，也不交给 reviewer。含子表达式、调用运算符、重定向、脚本块或其他命令时走上面的 reviewer 兜底，危险命令仍人工确认。
 
-写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用，因此“本次会话始终允许”在 Windows 上只询问一次；未命中时 ask 模式默认询问（`ask_mode`），auto/yolo 委托 reviewer（`platform_write_review`）。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先；Windows 文件路径限制按大小写不敏感匹配，以保护尚未创建的大小写变体目标，allow 不因此扩大，Shell 命令与 grep 正则仍保持字面语义。原始路径普通、但规范化目标或项目根含 Windows 歧义形式时，同样必须人工确认，不能退回通用自动放行。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
+写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用。未命中时 ask/auto/yolo 都委托 reviewer（`platform_write_review`）。模型要求确认或不可用时才人工，记住的精确规则之后直接放行。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先；Windows 文件路径限制按大小写不敏感匹配，以保护尚未创建的大小写变体目标，allow 不因此扩大，Shell 命令与 grep 正则仍保持字面语义。原始路径普通、但规范化目标或项目根含 Windows 歧义形式时，同样必须人工确认，不能退回通用自动放行。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
 
 平台判断可通过 `platform` 选项注入，Windows 分支测试因此在所有宿主上运行。Linux 上的 Windows 字符串样例仅验证保守分类，不宣称证明了 Windows 安全。工具执行仍保留平台适配；平台适配不等于已经完成安全分析验收。
 

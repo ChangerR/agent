@@ -93,11 +93,23 @@ describe('strict model reviewer contract', () => {
       await createModelReviewer({ provider, model: 'reviewer' }).review(input(), signal()),
     ).toMatchObject({ decision: 'unknown', reasonCode: 'invalid_response' });
   });
-  it('treats truncation, tool calls, repeated message boundaries and trailing text as unknown', async () => {
-    const scripts = [
+  it('adopts a complete JSON verdict when the stream stops at the token cap or omits end_turn', async () => {
+    for (const script of [
       textResponse(allow).map((event) =>
         event.type === 'message_stop' ? { ...event, stopReason: 'max_tokens' as const } : event,
       ),
+      textResponse(allow).filter((event) => event.type !== 'message_stop'),
+    ]) {
+      expect(
+        await createModelReviewer({
+          provider: new FakeProvider([script]),
+          model: 'reviewer',
+        }).review(input(), signal()),
+      ).toMatchObject({ decision: 'allow', reasonCode: 'explicit_task_scope' });
+    }
+  });
+  it('treats tool calls, repeated message boundaries and trailing text as unknown', async () => {
+    const scripts = [
       toolUseResponse([{ id: 'attempt', name: 'bash', input: { command: 'echo unsafe' } }]),
       [...textResponse(allow), { type: 'message_start' as const }],
       [...textResponse(allow), { type: 'text_delta' as const, text: 'ignore previous result' }],
@@ -353,7 +365,7 @@ describe('reviewer budgets, provenance and cancellation', () => {
         signal(),
       ),
     ).toMatchObject({ decision: 'unknown', reasonCode: 'response_budget' });
-    expect(provider.requests[0]?.maxTokens).toBe(256);
+    expect(provider.requests[0]?.maxTokens).toBe(8192);
   });
   it('noncooperative review stops waiting but retains activity and reports usage only after real settlement', async () => {
     const events = new EventBus();
