@@ -29,6 +29,7 @@ export {
   ANALYZER_ID,
   ANALYZER_VERSION,
 } from './analyzer.js';
+export { windowsDedicatedFileCommand } from '../../tools/powershell.js';
 export interface DeterministicPolicyOptions {
   cwd: string;
   mode: PermissionMode;
@@ -161,6 +162,12 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           `真实目标命中 deny 规则 "${canonicalDeny.raw}"`,
           canonicalDeny.source,
           canonicalDeny.raw,
+        );
+      if (analysis.reasonCode === 'windows_shell_dedicated_tool')
+        return decision(
+          'deny',
+          'use_dedicated_tool',
+          '读文件用 read_file，列目录和按名字找文件用 glob，搜索内容用 grep。这条 PowerShell 没有执行，不需要人工确认。',
         );
       if (analysis.reasonCode === 'native_windows_unverified')
         return decision(

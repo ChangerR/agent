@@ -262,16 +262,29 @@ describe('原生 Windows 写入：仍人工的边界（精确规则也不能越�
     ).toMatchObject({ kind: 'ask', reasonCode });
   });
 
-  it('bash 仍每次人工，精确规则与 yolo 都不放行', async () => {
+  it('真正的 bash 仍每次人工，精确规则与 yolo 都不放行', async () => {
     for (const mode of ['auto', 'yolo', 'ask'] as const) {
       expect(
         await decide(
           mode,
           'bash',
-          { command: 'ls' },
-          rules({ allow: ['bash(ls)', 'bash(="ls")'] }),
+          { command: 'echo one' },
+          rules({ allow: ['bash(echo one)', 'bash(="echo one")'] }),
         ),
       ).toMatchObject({ kind: 'ask', reasonCode: 'platform_unverified' });
+    }
+  });
+
+  it('读文件类 PowerShell 直接拒绝，精确 allow 也不能改成执行或人工确认', async () => {
+    for (const mode of ['auto', 'yolo', 'ask'] as const) {
+      expect(
+        await decide(
+          mode,
+          'bash',
+          { command: 'Get-Content package.json -Raw' },
+          rules({ allow: ['bash(Get-Content package.json -Raw)'] }),
+        ),
+      ).toMatchObject({ kind: 'deny', reasonCode: 'use_dedicated_tool' });
     }
   });
 

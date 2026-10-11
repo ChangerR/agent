@@ -417,9 +417,20 @@ describe('deterministic policy', () => {
     'pnpm build',
     'git -c alias.x=!rm x',
     'echo $HOME',
-    'cat *.txt',
   ])('未知或动态 Shell %s 从不确定性放行', async (command) => {
     expect((await policy('yolo').decide(operation(bash, { command }), signal())).kind).toBe('ask');
+  });
+
+  it('cat *.txt 在 Windows 上改走专用工具，其他平台仍询问', async () => {
+    const decision = await policy('yolo').decide(
+      operation(bash, { command: 'cat *.txt' }),
+      signal(),
+    );
+    if (process.platform === 'win32') {
+      expect(decision).toMatchObject({ kind: 'deny', reasonCode: 'use_dedicated_tool' });
+    } else {
+      expect(decision.kind).toBe('ask');
+    }
   });
 
   it('已知危险 Shell 必须询问，auto reviewer 也没有资格覆盖', async () => {

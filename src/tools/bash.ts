@@ -2,8 +2,9 @@
  * bash 工具 + 危险命令检测。
  *
  * 工具名在各平台都叫 bash，解释器由 platform.ts 按操作系统选择。
- * analyzeCommand 是权限引擎"危险检测"步骤的数据来源：
- * POSIX 与 Windows 的危险写法都查，模型在任一平台写出另一套语法时仍会拦住。
+ * analyzeCommand 是权限引擎"危险检测"步骤的数据来源。
+ * bash 与 PowerShell 的危险写法分开列出，两边都会查：模型在任一平台写出另一套语法时仍会拦住。
+ * PowerShell 的命令形状在 powershell.ts；bash 只读语法树在 shell-readonly.ts。
  */
 import { spawn } from 'node:child_process';
 import { decodeShellOutput, detectPlatform, shellInvocation } from '../core/platform.js';
@@ -15,7 +16,7 @@ import {
   trustedShellPath,
 } from './shell-readonly.js';
 
-const DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
+const BASH_DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   { re: /\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)?\/(\s|$)/, why: '递归删除根目录' },
   { re: /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+~/, why: '递归删除 home 目录' },
   { re: /\bsudo\b/, why: '提权操作' },
@@ -24,6 +25,8 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   { re: />\s*\/(etc|bin|sbin|usr|boot|System|Windows)\//, why: '写入系统目录' },
   { re: /\bgit\s+push\s+.*--force\b/, why: '强制推送' },
   { re: /\b(shutdown|reboot|halt)\b/, why: '关机/重启' },
+];
+const POWERSHELL_DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   {
     re: /\bRemove-Item\b[^\n]*-Recurse\b[^\n]*\s([A-Za-z]:\\|\/)(\s|$)/i,
     why: '递归删除磁盘根目录',
@@ -37,6 +40,8 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   },
   { re: /\b(Set-Content|Out-File)\b[^\n]*\\Windows\\/i, why: '写入系统目录' },
 ];
+/** 两套都查：模型在任一平台写出另一套语法时仍要拦住。 */
+const DANGEROUS_PATTERNS = [...BASH_DANGEROUS_PATTERNS, ...POWERSHELL_DANGEROUS_PATTERNS];
 
 export function analyzeCommand(command: string): { dangerous: boolean; reasons: string[] } {
   const reasons: string[] = [];

@@ -9,7 +9,7 @@
 - [严格模型审批与用途统计](docs/REVIEWER.md)
 - [外部替换示例](plugins/architecture-example/README.md)
 
-`/settings` 可浏览插件设置与下一会话实现选择。Bash 先由 tree-sitter-bash 解析完整语法树，再逐命令验证参数、目标与副作用；受控的项目内只读组合可在 auto 直接放行，动态或未知语义继续审批。原生 Windows 不做确定性文件授予：auto/yolo 下内置 read_file/glob/grep 的项目内读取交给模型审批（模型返回 ask、超时或失败时回落人工）；项目内普通文件的 write_file/edit_file 命中用户亲自配置或记住的精确目标规则（无通配符）时直接放行，未命中时在 auto/yolo 下交给模型审批；Shell、ask 模式下未命中精确规则的写入及敏感/写保护/项目外/歧义路径目标仍要求人工确认，Windows Shell 审批面板不再提供不会生效的“允许并记住此规则”。插件是受信任进程内代码，不是 OS 沙箱。
+`/settings` 可浏览插件设置与下一会话实现选择。Bash 先由 tree-sitter-bash 解析完整语法树，再逐命令验证参数、目标与副作用；受控的项目内只读组合可在 auto 直接放行，动态或未知语义继续审批。原生 Windows 不做确定性文件授予：auto/yolo 下内置 read_file/glob/grep 的项目内读取交给模型审批（模型返回 ask、超时或失败时回落人工）；项目内普通文件的 write_file/edit_file 命中用户亲自配置或记住的精确目标规则（无通配符）时直接放行，未命中时在 auto/yolo 下交给模型审批；读文件、列目录、搜索内容的 PowerShell 会直接拒绝，模型应改用 read_file、glob、grep。其余 Shell、ask 模式下未命中精确规则的写入及敏感/写保护/项目外/歧义路径目标仍要求人工确认，Windows Shell 审批面板不再提供不会生效的“允许并记住此规则”。插件是受信任进程内代码，不是 OS 沙箱。
 
 仿 Claude Code 的**插件式 coding agent 教学实现**（TypeScript + Node.js）。
 

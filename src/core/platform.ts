@@ -50,7 +50,7 @@ function wslBullets(distro: string): string[] {
 }
 
 const WINDOWS_BULLETS = [
-  '读文件用 read_file，搜索内容用 grep，按名字找文件用 glob，改已有文件用 edit_file。这些事不要用 PowerShell 的 Get-Content、Select-String、Get-ChildItem。',
+  '读文件用 read_file，搜索内容用 grep，按名字找文件用 glob，改已有文件用 edit_file。不要用 PowerShell 的 Get-Content、Select-String、Get-ChildItem、cat、ls、dir。这类命令会被直接拒绝，不会询问用户。',
   'read_file 的行尾已经收成普通换行。edit_file 和 write_file 按文件原来的换行符和 BOM 写回，CRLF 文件不会被整文件改成 LF。路径用 / 或 \\ 都可以。',
   'bash 是工具名，实际解释器是 powershell.exe（Windows PowerShell）。留给没有专用工具的事：构建、测试、git、启动进程。',
   '命令用 PowerShell 语法。环境变量写成 $env:NAME。串联用分号，不要用 && 和 ||。路径用反斜杠或正斜杠都可以。不要写 bash/sh 专有写法，例如 export、source、heredoc。',
@@ -76,7 +76,7 @@ export function detectPlatform(platform?: NodeJS.Platform, probe?: PlatformProbe
       shellLine: 'powershell.exe（Windows PowerShell）。工具名仍是 bash，命令按 PowerShell 写',
       pathLine: '\\（正斜杠通常也可以）',
       toolDescription:
-        'Run a command in Windows PowerShell (powershell.exe). The tool is named bash, but the command must be PowerShell, not bash/sh. Chain with a semicolon, not && or ||. Environment variables are $env:NAME. Returns combined stdout/stderr. Use timeout for long commands.',
+        'Run a command in Windows PowerShell (powershell.exe). The tool is named bash, but the command must be PowerShell, not bash/sh. Chain with a semicolon, not && or ||. Environment variables are $env:NAME. Returns combined stdout/stderr. Use timeout for long commands. Do not use it to read files, list directories, or search file contents: Get-Content, Get-ChildItem, Select-String, cat, ls, and dir are rejected. Use read_file, glob, and grep.',
       toolBullets: WINDOWS_BULLETS,
     };
   }
