@@ -136,17 +136,17 @@ describe('原生 Windows：auto/yolo 只读工具走模型审批', () => {
   });
 
   const humanCases: Array<[PermissionMode, keyof typeof tools, Record<string, unknown>, string]> = [
-    // 写入、Shell：仍然整体未验证，人工确认
-    ['auto', 'write_file', { path: 'src/new.ts', content: 'x' }, 'platform_unverified'],
+    // Shell 仍然整体未验证，人工确认；写入的 Windows 语义见 windows-remembered-write-rules.test.ts（敏感写入仍人工）
+    ['auto', 'write_file', { path: 'AGENTS.md', content: 'x' }, 'sensitive_target'],
     [
       'auto',
       'edit_file',
-      { path: 'src/a.ts', old_string: 'needle', new_string: 'pin' },
-      'platform_unverified',
+      { path: '.env', old_string: 'TOKEN', new_string: 'X' },
+      'sensitive_target',
     ],
     ['auto', 'bash', { command: 'ls' }, 'platform_unverified'],
     ['auto', 'bash', { command: 'cat src/a.ts' }, 'platform_unverified'],
-    ['yolo', 'write_file', { path: 'src/new.ts', content: 'x' }, 'platform_unverified'],
+    ['yolo', 'write_file', { path: 'src/new.ts:stream', content: 'x' }, 'platform_unverified'],
     ['yolo', 'bash', { command: 'ls' }, 'platform_unverified'],
     // ask 模式默认询问
     ['ask', 'read_file', { path: 'src/a.ts' }, 'ask_mode'],
@@ -328,7 +328,7 @@ describe('原生 Windows 端到端：ToolExecutor 把只读调用交给 reviewer
     }
     const { run, humanRequests, reviews } = executor('allow');
     expect((await run('read_file', { path: '.env' })).content).not.toContain('TOKEN');
-    await run('write_file', { path: 'src/new.ts', content: 'x' });
+    await run('write_file', { path: 'AGENTS.md', content: 'x' });
     expect(reviews).toHaveLength(0);
     expect(humanRequests).toHaveLength(2);
   });

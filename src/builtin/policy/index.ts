@@ -41,6 +41,7 @@ export interface DeterministicPolicyOptions {
 export function createDeterministicPolicy(options: DeterministicPolicyOptions): Policy {
   const writeRoots = Object.freeze([...(options.writeRoots ?? [])]);
   const pluginEntries = Object.freeze([...(options.pluginEntries ?? [])]);
+  const platform = options.platform ?? process.platform;
   const controller = new PermissionController({ mode: options.mode, rules: options.rules });
   const analyzer = createDeterministicAnalyzer({
     pluginEntries,
@@ -59,9 +60,16 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       signal.throwIfAborted();
       const session = controller.getSessionRules();
       const target = ruleTarget(input);
+      const windowsFile =
+        platform === 'win32' &&
+        input.tool.ownerPlugin === 'agentlab.local-tools' &&
+        input.tool.version === '1.0.0' &&
+        ['read_file', 'write_file', 'edit_file', 'glob', 'grep'].includes(input.tool.name);
+      // grep 的原始 target 是搜索文本，只有分析返回的真实文件目标才采用 Windows 路径大小写语义。
+      const rawTarget = { value: target, filePath: windowsFile && input.tool.name !== 'grep' };
       const matched = (
         kind: keyof SessionRules,
-        targets: readonly string[] = [target],
+        targets = [rawTarget],
         eligible: (rule: ParsedRule) => boolean = () => true,
       ) => {
         for (const [source, rules] of [
@@ -70,9 +78,17 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         ] as const) {
           for (const raw of rules) {
             const rule = parseRule(raw);
+            // 仅拓宽 Windows 文件 deny/ask 的限制匹配；保留原匹配，避免否定字符类等规则缩窄。
+            // allow、Shell 字面量与其他平台保持大小写敏感。
             if (
               eligible(rule) &&
-              targets.some((candidate) => matchRule(rule, input.tool.name, candidate))
+              targets.some(
+                (candidate) =>
+                  matchRule(rule, input.tool.name, candidate.value) ||
+                  (kind !== 'allow' &&
+                    candidate.filePath &&
+                    matchRule(rule, input.tool.name, candidate.value, { nocase: true })),
+              )
             )
               return { raw, rule, source };
           }
@@ -126,15 +142,17 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         input.tool.name,
       )
         ? [
-            ...new Set([
-              target,
-              ...(analysis.targets ?? []).flatMap((path) => [
-                path.replace(/\\/g, '/'),
-                relative(input.cwd, path).replace(/\\/g, '/'),
-              ]),
-            ]),
+            rawTarget,
+            ...[
+              ...new Set(
+                (analysis.targets ?? []).flatMap((path) => [
+                  path.replace(/\\/g, '/'),
+                  relative(input.cwd, path).replace(/\\/g, '/'),
+                ]),
+              ),
+            ].map((value) => ({ value, filePath: windowsFile })),
           ]
-        : [target];
+        : [rawTarget];
       const canonicalDeny = matched('deny', targets);
       if (canonicalDeny)
         return decision(
@@ -186,6 +204,31 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           asked.source,
           asked.raw,
         );
+      // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；
+      // 通配符/工具级规则和 writeRoots 目录授权都不放行，auto/yolo 交给 reviewer，ask 模式照旧询问。
+      // 敏感/写保护、项目外、特殊文件、硬链接与歧义路径在上方已人工，精确规则同样不能越过。
+      if (analysis.reasonCode === 'native_windows_write_unverified') {
+        const exact =
+          analysis.completeness === 'complete'
+            ? matched('allow', targets, (rule) => literalTarget(rule) !== undefined)
+            : undefined;
+        if (exact)
+          return decision(
+            'allow',
+            'exact_allow',
+            `命中精确目标 allow 规则 "${exact.raw}"（Windows 写入只接受精确目标规则）`,
+            exact.source,
+            exact.raw,
+          );
+        if (controller.mode === 'ask')
+          return decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
+        return decision(
+          'review',
+          'platform_write_review',
+          'Windows 平台未做文件系统校验：内置写入工具的项目内普通文件写入已完成通用分析并排除敏感/写保护/项目外目标，且未命中精确目标规则，委托 reviewer 判断当前完整操作',
+          'mode',
+        );
+      }
       // Windows 只读的分析是完整的，但平台语义未验收：必须在精确 allow / safe_read / yolo 之前截住，只能委托 reviewer。
       // ask 模式照旧询问；yolo 与 auto 一致（未完整验证平台不能确定性放行，但也不比 auto 更严格）。
       if (analysis.reasonCode === 'native_windows_read_unverified')
@@ -207,12 +250,12 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       const literalSearch = analysis.environment?.['$searchLiteral'];
       const allowTargets =
         input.tool.name === 'bash'
-          ? [target]
+          ? [rawTarget]
           : input.tool.name === 'glob' && literalSearch
             ? [
                 literalSearch.replace(/\\/g, '/'),
                 relative(input.cwd, literalSearch).replace(/\\/g, '/'),
-              ]
+              ].map((value) => ({ value, filePath: windowsFile }))
             : targets;
       const allowed =
         input.tool.name === 'grep' || (input.tool.name === 'glob' && !literalSearch)
@@ -310,6 +353,12 @@ function contained(root: string, path: string): boolean {
   return rest !== '' && rest !== '..' && !rest.startsWith(`..${sep}`) && !isAbsolute(rest);
 }
 
+export function describeWriteRootsSettings(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32'
+    ? 'writeRoots 仅限本项目，默认空。Windows 上目录授权不能直接放行写入；通过安全检查的精确目标规则可以放行，否则 auto/yolo 交给模型审查，无法确定、出错或不可用时回到人工确认。deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。'
+    : 'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。';
+}
+
 const schema = z.object({ writeRoots: z.array(z.string().min(1).max(4096)).max(32).default([]) });
 
 export function createDeterministicPolicyPlugin({
@@ -361,8 +410,7 @@ export function createDeterministicPolicyPlugin({
       const drafts = new WeakMap<object, ConfigSnapshot>();
       ctx.provide.settings('policy-deterministic-config', {
         title: '明确写入目录授权',
-        description:
-          'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。',
+        description: describeWriteRootsSettings(),
         schema: {
           type: 'object',
           properties: { writeRoots: { type: 'array', items: { type: 'string' } } },

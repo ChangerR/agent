@@ -30,11 +30,19 @@ export function parseRule(raw: string): ParsedRule {
 }
 
 /** 规则是否命中某次调用。patternTarget 由工具自己提供（bash→命令，文件工具→路径）。 */
-export function matchRule(rule: ParsedRule, toolName: string, patternTarget: string): boolean {
+export function matchRule(
+  rule: ParsedRule,
+  toolName: string,
+  patternTarget: string,
+  options: { nocase?: boolean } = {},
+): boolean {
   if (rule.tool !== toolName) return false;
-  if (rule.exact !== undefined) return patternTarget === rule.exact;
+  if (rule.exact !== undefined)
+    return options.nocase
+      ? patternTarget.toLowerCase() === rule.exact.toLowerCase()
+      : patternTarget === rule.exact;
   if (rule.pattern === undefined) return true;
-  return minimatch(patternTarget, rule.pattern, { dot: true, nocase: false });
+  return minimatch(patternTarget, rule.pattern, { dot: true, nocase: options.nocase ?? false });
 }
 
 export class PermissionController {

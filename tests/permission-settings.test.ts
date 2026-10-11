@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stripTerminalSequences, visibleWidth } from '@earendil-works/pi-tui';
 import { AgentConfigSchema } from '../src/core/config.js';
 import { PermissionController } from '../src/builtin/policy/controller.js';
+import { describeWriteRootsSettings } from '../src/builtin/policy/index.js';
 import {
   createPermissionSettings,
   describeJudgeStatus,
@@ -18,7 +19,7 @@ const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-function setup(options: { missingGlobal?: boolean } = {}) {
+function setup(options: { missingGlobal?: boolean; platform?: NodeJS.Platform } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'agent-permissions-ui-'));
   dirs.push(cwd);
   mkdirSync(join(cwd, '.git'));
@@ -56,6 +57,7 @@ function setup(options: { missingGlobal?: boolean } = {}) {
   const settings = createPermissionSettings({
     agent,
     globalConfigPath,
+    platform: options.platform,
     showPicker: (request) => {
       picker = request;
     },
@@ -100,6 +102,86 @@ function setup(options: { missingGlobal?: boolean } = {}) {
 }
 
 describe('TUI 权限自动保存', () => {
+  it('writeRoots 设置按平台说明实际能力，Linux 文案保持原样', () => {
+    const windows = describeWriteRootsSettings('win32');
+    expect(windows).toContain('Windows 上目录授权不能直接放行写入');
+    expect(windows).toContain('通过安全检查的精确目标规则可以放行');
+    expect(windows).toContain('auto/yolo 交给模型审查');
+    expect(windows).toContain('无法确定、出错或不可用时回到人工确认');
+    expect(windows).not.toContain('即明确授权下次 auto 会话自动写入');
+    expect(windows).toContain('仅新会话生效');
+    expect(describeWriteRootsSettings('linux')).toBe(
+      'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。',
+    );
+  });
+
+  it.each(['auto', 'yolo'] as const)(
+    'Windows %s 文案说明 reviewer / 精确写规则边界，选择即保存应用',
+    (mode) => {
+      const h = setup({ platform: 'win32' });
+      const before = readFileSync(h.path, 'utf8');
+      h.settings.open();
+      h.pick('mode');
+      const description = h.picker.items.find((item) => item.value === mode)!.description!;
+      expect(description).toContain('Windows');
+      expect(description).toContain('审批模型');
+      expect(description).toContain('精确目标 allow');
+      expect(description).toMatch(/writeRoots.*不自动授权/);
+      expect(description).toContain('模型不确定、失败或未加载时转人工');
+      expect(description).not.toContain('以及显式 writeRoots 范围写入');
+      expect(h.picker.requireSelection).not.toBe(true);
+      expect(readFileSync(h.path, 'utf8')).toBe(before);
+      h.pick(mode);
+      expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe(mode);
+      expect(h.permission.mode).toBe(mode);
+      expect(h.onModeChange).toHaveBeenCalledOnce();
+      expect(h.picker.title).toContain('本项目权限设置');
+      expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已有审批仍需处理'));
+    },
+  );
+
+  it('Windows 模式快捷入口和审批模型说明与设置一致，取消不保存', () => {
+    const h = setup({ platform: 'win32' });
+    const before = readFileSync(h.path, 'utf8');
+    h.settings.openModes();
+    const ask = h.picker.items.find((item) => item.value === 'ask')!.description!;
+    expect(ask).toContain('只读操作即使命中精确 allow 仍询问');
+    expect(h.picker.items.find((item) => item.value === 'auto')!.description).toContain(
+      'writeRoots 与宽规则不自动授权',
+    );
+    expect(h.picker.items.find((item) => item.value === 'yolo')!.description).toContain(
+      'Windows 与 auto 相同',
+    );
+    h.picker.onCancel();
+    expect(readFileSync(h.path, 'utf8')).toBe(before);
+    h.settings.open();
+    expect(h.picker.items.find((item) => item.value === 'judgeStatus')!.label).toContain(
+      '当前 auto/yolo 审批模型',
+    );
+    h.pick('judgeStatus');
+    expect(h.detail.title).toContain('当前 auto/yolo 审批模型');
+    h.detail.onBack();
+    h.pick('judge');
+    expect(h.picker.items.find((item) => item.value === 'name')!.description).toContain(
+      'Windows auto/yolo',
+    );
+  });
+
+  it('Linux 模式文案保留确定性只读、writeRoots 与 yolo 语义', () => {
+    const h = setup({ platform: 'linux' });
+    h.settings.openModes();
+    expect(h.picker.items.find((item) => item.value === 'ask')!.description).toContain(
+      '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
+    );
+    expect(h.picker.items.find((item) => item.value === 'auto')!.description).toContain(
+      '只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（[]）。经 AST 与执行环境验证的只读 Bash 组合直接放行；其余未知操作才交审批模型。',
+    );
+    expect(h.picker.items.find((item) => item.value === 'yolo')!.description).toContain(
+      '仅自动执行已完整验证的项目内普通文件读写；敏感目标、项目外路径、未知 Shell/MCP 仍必须询问。',
+    );
+    expect(h.picker.items.map((item) => item.description).join('\n')).not.toContain('Windows');
+  });
+
   it('直接打开本项目，选择一次模式就保存并应用，没有 Save 或二次确认', () => {
     const h = setup();
     const before = readFileSync(h.globalConfigPath, 'utf8');

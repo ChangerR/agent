@@ -41,6 +41,7 @@ function makeLoop(opts: {
   maxTurns?: number;
   compactThreshold?: number;
   cache?: { enabled: boolean; ttl: '5m' | '1h'; escalateAfterMs?: number };
+  platform?: NodeJS.Platform;
 }) {
   const events = opts.events ?? new EventBus();
   const tools = new ToolRegistry();
@@ -52,6 +53,7 @@ function makeLoop(opts: {
     cwd: tmp,
     mode: opts.mode ?? 'auto',
     rules: opts.rules ?? { allow: [], ask: [], deny: [] },
+    ...(opts.platform ? { platform: opts.platform } : {}),
   });
   const provider = new FakeProvider(opts.script);
   const context = new ContextManager({
@@ -325,26 +327,34 @@ describe('AgentLoop', () => {
     expect(await readFile(join(tmp, 'out.txt'), 'utf-8')).toBe('abc');
   });
 
-  it('"本次会话始终允许"：第二次同类调用不再询问', async () => {
-    const events = new EventBus();
-    const { loop } = makeLoop({
-      mode: 'ask',
-      events,
-      script: [
-        toolUseResponse([{ id: 't1', name: 'write_file', input: { path: 'a.txt', content: '1' } }]),
-        toolUseResponse([{ id: 't2', name: 'write_file', input: { path: 'a.txt', content: '2' } }]),
-        textResponse('done'),
-      ],
-    });
-    let askCount = 0;
-    events.on('permission_request', (e) => {
-      askCount++;
-      e.resolve({ allow: true, remember: 'session' });
-    });
-    await loop.run('write twice');
-    expect(askCount).toBe(1); // 第二次命中会话级规则，静默放行
-    expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('2');
-  });
+  it.each([undefined, 'linux', 'win32'] as const)(
+    '"本次会话始终允许"：第二次同类调用不再询问（平台 %s）',
+    async (platform) => {
+      const events = new EventBus();
+      const { loop } = makeLoop({
+        mode: 'ask',
+        events,
+        ...(platform ? { platform } : {}),
+        script: [
+          toolUseResponse([
+            { id: 't1', name: 'write_file', input: { path: 'a.txt', content: '1' } },
+          ]),
+          toolUseResponse([
+            { id: 't2', name: 'write_file', input: { path: 'a.txt', content: '2' } },
+          ]),
+          textResponse('done'),
+        ],
+      });
+      let askCount = 0;
+      events.on('permission_request', (e) => {
+        askCount++;
+        e.resolve({ allow: true, remember: 'session' });
+      });
+      await loop.run('write twice');
+      expect(askCount).toBe(1); // 第二次命中会话级规则，静默放行
+      expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('2');
+    },
+  );
 
   it('用户拒绝：反馈以 tool_result 回填', async () => {
     const events = new EventBus();

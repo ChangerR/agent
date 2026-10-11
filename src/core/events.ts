@@ -25,6 +25,11 @@ export interface PermissionRequest {
   /** 请求对应的模型工具调用及实际触发审批的决策来源。 */
   toolUseId?: string;
   decisionSource?: Decision['source'];
+  /** 最终触发人工询问的原因码；委托 reviewer 后可能是 model_ask、timeout 等。 */
+  reasonCode?: string;
+  /** reviewer 回退不覆盖原策略与分析来源，界面可据此隐藏不会生效的选项。 */
+  policyReasonCode?: string;
+  analysisReasonCode?: string;
   matchedRule?: string;
   cwd?: string;
   input: unknown;

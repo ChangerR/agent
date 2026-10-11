@@ -39,6 +39,8 @@ export interface PermissionSettingsOptions {
   onModeChange: (mode: PermissionMode) => void;
   /** 测试使用独立的临时全局配置；实际应用由统一路径解析器提供。 */
   globalConfigPath?: string;
+  /** 平台语义注入点，默认使用当前宿主平台。 */
+  platform?: NodeJS.Platform;
 }
 
 const kinds = ['allow', 'ask', 'deny'] as const;
@@ -97,11 +99,13 @@ export function describePermissionRule(raw: string): string {
 
 export function createPermissionSettings(options: PermissionSettingsOptions) {
   const { agent, notify } = options;
+  const windows = (options.platform ?? process.platform) === 'win32';
   const cwd = options.cwd ?? agent.cwd;
   const paths = options.cwd === undefined && agent.paths ? agent.paths : resolveAgentPaths(cwd);
   const globalPath = options.globalConfigPath ?? paths.globalConfigPath;
   const policyId = () => agent.plugins?.selected('policy')?.id ?? 'deterministic';
   const isDeterministic = () => policyId() === 'deterministic';
+  const judgeModes = () => (windows && isDeterministic() ? 'auto/yolo' : 'auto');
   const guard = () =>
     isDeterministic()
       ? 'deny 与明确 ask 优先；敏感、项目外、未知 Shell/MCP 不因 writeRoots 或 yolo 放行。'
@@ -109,6 +113,12 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   const modeDescription = (mode: PermissionMode): string => {
     if (!isDeterministic())
       return `${safeText(policyId())} 的 ${mode} 模式；请查看该策略设置与说明，宿主不假定其放行规则。`;
+    if (windows)
+      return {
+        ask: 'Windows 内置写入工具的项目内普通文件可由精确目标 allow 放行；其余默认询问。只读操作即使命中精确 allow 仍询问，writeRoots 不自动放行。',
+        auto: 'Windows 项目内普通文件读写通过通用检查后交审批模型；写入命中精确目标 allow 可直接放行，writeRoots 与宽规则不自动授权。模型不确定、失败或未加载时转人工；Bash、敏感目标与项目外路径仍需人工确认。',
+        yolo: 'Windows 与 auto 相同：通过通用检查的项目内普通文件读写交审批模型，写入的精确目标 allow 可放行；writeRoots 不自动授权。模型不确定、失败或未加载时转人工；不跳过 Bash、敏感目标或项目外路径。',
+      }[mode];
     return {
       ask: '除精确 allow 外默认询问；明确 ask 优先于 allow，writeRoots 不自动放行。',
       auto: `只放行已完整验证的项目内普通文件读取，以及显式 writeRoots 范围写入（${safeText(JSON.stringify(agent.config.pluginConfig['agentlab.policy']?.writeRoots ?? []))}）。经 AST 与执行环境验证的只读 Bash 组合直接放行；其余未知操作才交审批模型。`,
@@ -258,7 +268,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
 
   function openJudgeStatus(back = reopenRoot): void {
     showDetails(
-      '当前 auto 审批模型 · 只读',
+      `当前 ${judgeModes()} 审批模型 · 只读`,
       () =>
         `${describeJudgeStatus(agent.loop.getJudgeStatus())}\n\n${isDeterministic() ? '仅策略返回 review 的操作交给审批员；明确 ask/deny 不会交模型降级。' : '仅 auto 模式下，未命中规则的写入/执行操作交给审批员；不确定、调用失败或未加载时询问。'}\n跟随当前模型: /model 切换和恢复会话时随主模型更新。\n显式指定: 保持指定模型；审批模型可独立选择已注册 provider，实际来源以上方运行状态为准。\n\n${guard()}\n已保存的审批模型配置重启后生效；不代表当前已加载的审批员。`,
       back,
@@ -418,7 +428,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
             : []),
           {
             value: 'judgeStatus',
-            label: `当前 auto 审批模型 · ${describeJudgeStatus(agent.loop.getJudgeStatus())}`,
+            label: `当前 ${judgeModes()} 审批模型 · ${describeJudgeStatus(agent.loop.getJudgeStatus())}`,
             description: '只读运行状态，已保存的配置在重启前可能不同。',
           },
           {
@@ -496,8 +506,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
           {
             value: 'name',
             label: '输入模型名称',
-            description:
-              '仅 auto 使用；复用主 provider / endpoint。输入模型名称，不能输入 API key。',
+            description: `${windows && isDeterministic() ? 'Windows auto/yolo 的委托审核使用' : '仅 auto 使用'}；复用主 provider / endpoint。输入模型名称，不能输入 API key。`,
           },
           {
             value: 'inherit',

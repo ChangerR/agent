@@ -724,6 +724,61 @@ describe('真实 TUI 离线交互', () => {
     }
   });
 
+  it.each([
+    {
+      toolName: 'bash',
+      reasonCode: 'platform_unverified',
+      policyReasonCode: undefined,
+      analysisReasonCode: undefined,
+      input: { command: 'ls' },
+    },
+    {
+      toolName: 'read_file',
+      reasonCode: 'model_ask',
+      policyReasonCode: 'platform_read_review',
+      analysisReasonCode: 'native_windows_read_unverified',
+      input: { path: 'src/a.ts' },
+    },
+    {
+      toolName: 'read_file',
+      reasonCode: 'reviewer_unavailable',
+      policyReasonCode: 'platform_read_review',
+      analysisReasonCode: 'native_windows_read_unverified',
+      input: { path: 'src/a.ts' },
+    },
+  ])('原生 Windows $reasonCode 不提供不会生效的“允许并记住此规则”', async (request) => {
+    const ui = await mountTui();
+    const controller = new AbortController();
+    const resolve = vi.fn();
+    try {
+      ui.agent.events.emit({
+        type: 'permission_request',
+        signal: controller.signal,
+        resolve,
+        request: {
+          ...request,
+          summary: '需要确认的 Windows 操作',
+          reason: 'Windows 操作需要人工确认',
+          decisionSource: 'builtin',
+        },
+      });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('请求权限'));
+      const shown = ui.screen().join('\n');
+      expect(shown).toContain('允许一次');
+      expect(shown).toContain('拒绝');
+      expect(shown).not.toContain('允许并记住此规则');
+      // 与 3 选项面板相同的按键（两次向下 + Enter）原本选中“记住”，现在第二项是“拒绝”
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\x1b[B');
+      ui.terminal.input?.('\r');
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith({ allow: false });
+    } finally {
+      controller.abort();
+      await ui.dispose();
+    }
+  });
+
   it('长审批正文不能挤走选项，窄屏能滚动到完整参数末尾，浏览详情不会误批准', async () => {
     const ui = await mountTui();
     const controller = new AbortController();
