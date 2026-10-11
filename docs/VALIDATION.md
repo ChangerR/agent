@@ -26,6 +26,42 @@
 
 ## 本次 Linux 验证记录
 
+### 2026-10-11：PR #35 同步 #36 权限与 #37 规划续跑
+
+发布前核对 PR #35 的远端 head 仍为 `77f08525e2e6ac8b9ea21dbd311ddb86225a837c`。
+本次 master 基线为 `d35bd70c273f3ad948961b20479ea74f333a0875`，包含 #36 的
+`ec69577871a7b8fe56ffc0e4cffa2fe35c771408` 与 #37 的合并修改。原分支使用本地
+merge 提交 `b3cf7a0b4de881f14477f2b20046310fca9d0254` 保留两侧历史，再补格式与本记录；
+更新原 Draft PR #35，不改写已发布历史，不另开 PR，不合并远端 PR。
+
+逐处处理 `docs/ARCHITECTURE.md`、`docs/POLICY.md`、`src/cli/app.ts` 和
+`tests/cli.test.ts` 四个文本冲突。保留 #36 的 ask 模式已验证只读放行、等于引号精确调用
+规则和同次审批复用；保留 #35 的 PowerShell 敏感/外部/危险/歧义与未知语义约束先于精确
+规则及模型。审批面板允许完整静态输出或普通写入记住精确调用，包括
+`powershell_write_review`；未知 PowerShell 与受限目标继续隐藏无效记住选项。
+
+上游两条“未知 npm test 可凭 PowerShell 精确规则放行”的测试调整为完整静态调用的正例，
+新增 ask/auto/yolo 下未知 npm test 仍人工的反例。新增组合回归涵盖：完整调用记住后免重复
+审批且不扩大到其他命令、ModelReviewer ask 后记住写入、仅 policyRevision 改变复用本次
+批准且不跨调用复用、人工批准时目标变为外部链接仍重新询问，以及 Windows ask 普通读取
+和检索持续推进计划、拒绝敏感/外部/未知/危险别名命令后停止自动重试。
+
+单独复查确认 `src/core/tool-executor.ts`、loop/plan 与规划插件源码逐字等于本次 master；
+PowerShell 解析/路径分类与 Bash AST 源码逐字等于原已发布 head，未恢复原 Windows 缺口。
+五个上游测试文件仅修正 Prettier 格式，TypeScript AST 复核无语义变化。#36 的 MCP owner
+线索未扩张修复；#37 的只规划边界源码未修改，由另一任务处理。
+
+最终在 Linux、Node `24.19.0`、pnpm `11.25.0` 下完成格式、类型、全量测试、构建和 diff
+检查：**71 个文件、1319 项通过、2 项跳过（1321 总计）**。PowerShell 链路为 103 项，
+102 项通过、1 项原生 Windows 跳过；规划 43 项全通过（新增 5 项组合）。四个 PTY 文件
+共五项用例全部通过，均实际启动仓库原样 `pnpm dev`，包括 CLI、子任务、两种规划终端
+尺寸与 PowerShell 审批。日志在 `/tmp/agent-permission-validation/*-sync-final.log`。
+
+全部模型使用 FakeProvider 或受控 provider，新增真实模型请求为 0。原生 Windows 与真实
+模型仍未实测；跳过的两项仍是原生 Windows cwd 大小写恢复和安全 PowerShell 输出/元数据。
+危险与外部 Shell 命令只验证决策并拒绝执行，完整命令使用无副作用替身；Linux 上注入
+Windows policy 不能代替 Windows 实机证据。
+
 ### 2026-10-11：PR #32 PowerShell 权限修复
 
 只读复核基线为 `44aaf9dcb777ac7907cb5ff49995ad1c6bfff5cb`，初次最新 master 为

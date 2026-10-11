@@ -713,17 +713,23 @@ describe('ToolExecutor 唯一授权门', () => {
       userRequest: 'update sources',
       messages: [],
     };
-    const writing = executor.invokeTool('write_file', { path: 'src/new.ts', content: 'x' }, context);
+    const writing = executor.invokeTool(
+      'write_file',
+      { path: 'src/new.ts', content: 'x' },
+      context,
+    );
     const editing = executor.invokeTool(
       'edit_file',
       { path: 'src/a.ts', old_string: 'before', new_string: 'after' },
       context,
     );
     await vi.waitFor(() => expect(requests).toHaveLength(2));
-    requests.find((item) => item.request.toolName === 'write_file')!.resolve({
-      allow: true,
-      remember: 'session',
-    });
+    requests
+      .find((item) => item.request.toolName === 'write_file')!
+      .resolve({
+        allow: true,
+        remember: 'session',
+      });
     expect((await writing).isError).toBeFalsy();
     requests.find((item) => item.request.toolName === 'edit_file')!.resolve({ allow: true });
     expect((await editing).isError).toBeFalsy();

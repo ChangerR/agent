@@ -215,7 +215,9 @@ describe('AgentLoop', () => {
     const { loop } = makeLoop({
       events,
       mode: 'ask',
-      script: [toolUseResponse([{ id: 'a', name: 'write_file', input: { path: 'a', content: 'a' } }])],
+      script: [
+        toolUseResponse([{ id: 'a', name: 'write_file', input: { path: 'a', content: 'a' } }]),
+      ],
     });
     let entered!: () => void;
     const waiting = new Promise<void>((resolve) => {
