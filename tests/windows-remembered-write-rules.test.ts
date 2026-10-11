@@ -1,6 +1,7 @@
 /**
  * 原生 Windows 写入：用户亲自配置或记住的精确、无通配符规则直接放行 write_file/edit_file；
- * 未命中精确规则的项目内普通写入在 auto/yolo 交给模型审批；敏感/写保护、项目外、硬链接、歧义路径、bash 与 ask 模式仍人工。
+ * 未命中精确规则的项目内普通写入在 auto/yolo 交给模型审批；敏感/写保护、项目外、硬链接、歧义路径与 ask 模式仍人工。
+ * 未验收的 Windows Shell 在 auto 交给 reviewer，精确规则不能直接放行。
  * 通过 platform 注入覆盖 Windows 分支，在所有宿主上运行，不按宿主平台跳过。
  */
 import { realpathSync } from 'node:fs';
@@ -262,17 +263,20 @@ describe('原生 Windows 写入：仍人工的边界（精确规则也不能越�
     ).toMatchObject({ kind: 'ask', reasonCode });
   });
 
-  it('真正的 bash 仍每次人工，精确规则与 yolo 都不放行', async () => {
-    for (const mode of ['auto', 'yolo', 'ask'] as const) {
-      expect(
-        await decide(
-          mode,
-          'bash',
-          { command: 'echo one' },
-          rules({ allow: ['bash(echo one)', 'bash(="echo one")'] }),
-        ),
-      ).toMatchObject({ kind: 'ask', reasonCode: 'platform_unverified' });
-    }
+  it('未验收的 Windows Shell：auto 交给 reviewer，ask/yolo 仍人工，精确规则不直接放行', async () => {
+    const allowed = rules({ allow: ['bash(echo one)', 'bash(="echo one")'] });
+    expect(await decide('auto', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+      kind: 'review',
+      reasonCode: 'review_uncertain',
+    });
+    expect(await decide('yolo', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+      kind: 'ask',
+      reasonCode: 'unknown_ask',
+    });
+    expect(await decide('ask', 'bash', { command: 'echo one' }, allowed)).toMatchObject({
+      kind: 'ask',
+      reasonCode: 'ask_mode',
+    });
   });
 
   it('读文件类 PowerShell 直接拒绝，精确 allow 也不能改成执行或人工确认', async () => {
@@ -487,12 +491,28 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     expect(await readFile(join(cwd, 'src/remember.ts'), 'utf8')).toBe('2');
   });
 
-  it('bash 的人工询问带 platform_unverified，记住也不会生效（每次都问）', async () => {
+  it('auto 下未验收 Shell 先交给 reviewer；没有 reviewer 才回到人工', async () => {
     const { run, requests } = setup('auto', undefined, () => ({ allow: false }));
     await run('bash', { command: 'echo one' });
     await run('bash', { command: 'echo one' });
     expect(requests).toHaveLength(2);
-    expect(requests.every((request) => request.reasonCode === 'platform_unverified')).toBe(true);
+    expect(requests.every((request) => request.reasonCode === 'reviewer_unavailable')).toBe(true);
+    expect(
+      requests.every((request) => request.policyReasonCode === 'review_uncertain'),
+    ).toBe(true);
+    expect(
+      requests.every((request) => request.analysisReasonCode === 'native_windows_shell_unverified'),
+    ).toBe(true);
+  });
+
+  it('reviewer 允许未验收 Shell 后直接执行，不再改成人工', async () => {
+    const { run, requests } = setup('auto', {
+      review: async () => ({ decision: 'allow', reasonCode: 'task_scoped', reason: 'fixture' }),
+    });
+    const result = await run('bash', { command: 'echo one' });
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toContain('one');
+    expect(requests).toEqual([]);
   });
 
   it('执行前重验仍绑定：模型批准后目标被替换为指向项目外的硬链接，不会写穿到外部文件', async () => {

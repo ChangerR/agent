@@ -304,7 +304,7 @@ describe('Windows 文件限制规则：大小写别名不能越过 deny / ask', 
             { rules: rules({ [kind]: [exact('bash', 'echo safe')] }) },
           )
         ).decision,
-      ).toMatchObject({ kind: 'ask', reasonCode: 'platform_unverified' });
+      ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
       expect(
         (
           await decide(

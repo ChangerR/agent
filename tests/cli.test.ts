@@ -733,6 +733,13 @@ describe('真实 TUI 离线交互', () => {
       input: { command: 'ls' },
     },
     {
+      toolName: 'bash',
+      reasonCode: 'model_ask',
+      policyReasonCode: 'review_uncertain',
+      analysisReasonCode: 'native_windows_shell_unverified',
+      input: { command: 'git status --short' },
+    },
+    {
       toolName: 'read_file',
       reasonCode: 'model_ask',
       policyReasonCode: 'platform_read_review',
