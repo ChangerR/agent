@@ -455,7 +455,7 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     return { run, requests, policy };
   }
 
-  it('真实模型 reviewer allow：未命中规则的写入零人工执行', async () => {
+  it('内置 ModelReviewer + FakeProvider allow：未命中规则的写入零人工执行', async () => {
     const provider = new FakeProvider([
       textResponse(
         JSON.stringify({ decision: 'allow', reasonCode: 'task_scoped_write', reason: '符合要求' }),

@@ -85,7 +85,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 
 Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态格式化管道组成的纯文件 Shell 仍直接拒绝（use_dedicated_tool），引导 read_file/glob/grep，不交给模型或人工批准。Get-ChildItem 的 provider 枚举没有被冒充为专用搜索工具的受控枚举。Test-Path 和 Get-Location 的完整项目内元数据读取可直接放行。
 
-单引号字符串（含双写单引号）与无插值/转义的双引号可解码；分号、换行和普通静态管道必须整条分析。静态 Write-Output/Get-Content 管道可给固定目标的 Set-Content/Add-Content 提供内容；Out-File 必须有显式固定目标。其他对象/路径管道绑定未支持。文件重定向也分类真实写入目标；流合并不制造文件目标。批准的完整 cmdlet 以模块限定名、完整参数和单引号字面值执行，执行前核对同一解析契约；文件/环境变化由唯一 Executor 重验。
+单引号字符串（含双写单引号）与无插值/转义的双引号可解码；分号、换行和普通静态管道必须整条分析。静态 Write-Output/Get-Content 管道可给固定目标的 Set-Content/Add-Content 提供内容；Out-File 必须有显式固定目标。格式化仅完整验证 Write-Output/Get-Content/Test-Path 的原始标量数据；FileInfo/PathInfo 等对象 getter 与属性投影可能访问更广路径，保持未知。其他对象/路径管道绑定未支持。文件重定向也分类真实写入目标；流合并不制造文件目标。批准的完整 cmdlet 以模块限定名、完整参数和单引号字面值执行，执行前核对同一解析契约；文件/环境变化由唯一 Executor 重验。
 
 变量、插值、子表达式、splat、脚本块、函数/别名修改、调用运算符、混合引号/转义、数组、多目标通配、非文件 provider、tilde、drive-relative 路径、未知参数/命令，以及语法树错误/缺失节点均保留 partial/unknown（powershell_unresolved）。普通 Git/npm 等原生程序会读取配置或执行脚本，目前没有 PowerShell 的完整原生程序契约，git status/log 也不被伪称已验证安全；它们仍可在人工授权后执行。UNC、ADS、保留设备名、短名和尾随点/空格仍使用平台人工约束。这些未知情况在所有模式下先人工确认，精确 allow、yolo 或模型 allow 均不能补全缺失语义。
 
@@ -109,6 +109,9 @@ Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态�
 
 - `src/builtin/policy/`：版本化策略、文件分析、显式目录授权与设置
 - `src/tools/shell-readonly.ts`：Bash AST、逐命令参数语义、受控执行合约
+- `src/tools/powershell.ts` / `src/tools/powershell-cmdlets.ts`：PowerShell AST、字面参数绑定与模块限定执行命令
+- `tests/powershell-permission-chain.test.ts`：真实 analyzer → policy → ModelReviewer → ToolExecutor；仅 Shell 执行使用无副作用替身，受控 provider 核对完整证据；敏感/外部/别名/参数/未知/deny/ask/重验与 PR #30 读取回归
+- `tests/powershell-permission-pty.test.ts`：Linux 原样 pnpm dev 实际审批与详情；注入 Windows policy 验证摘要，拒绝所有 Shell，只实际执行普通 read_file
 - `tests/deterministic-policy.test.ts`：优先级、路径、链接、凭据、Windows、Shell、MCP、缓存与环境变化
 - `tests/auto-readonly-scope.test.ts`：auto 只读放行矩阵（缺失/目录读取、说明与插件目录读写区分、多硬链接含外部密钥硬链接进 node_modules、绝对 glob 及开头 `!`、无权限目录）与零审批端到端
 - `tests/windows-remembered-write-rules.test.ts`：注入 win32 平台，覆盖精确/会话记住规则直接放行写入、通配规则与 writeRoots 不直接放行、未命中→模型审批、ask 模式、敏感/写保护/项目外/硬链接/歧义路径与 bash→人工、deny 优先、Linux 行为不变、真实严格审查合约可返回 allow，以及 ToolExecutor 端到端（记住规则只询问一次、执行前重验绑定）

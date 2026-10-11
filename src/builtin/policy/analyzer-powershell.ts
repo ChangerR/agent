@@ -116,6 +116,19 @@ export async function analyzePowerShell(
   for (const pipeline of syntax.pipelines) {
     for (let index = 0; index < pipeline.length; index++) {
       const cmd = pipeline[index]!;
+      // FileInfo/PathInfo 等对象的 getter 与后续投影可能触及其他路径；只验证原始标量数据的格式化。
+      if (
+        cmd.format &&
+        (index === 0 ||
+          pipeline
+            .slice(0, index)
+            .some(
+              (source) =>
+                !source.format &&
+                !['Write-Output', 'Get-Content', 'Test-Path'].includes(source.name),
+            ))
+      )
+        mark(`${cmd.name}: 对象属性投影的实际访问范围未验证`);
       const name = cmd.name
         .toLowerCase()
         .split('\\')
