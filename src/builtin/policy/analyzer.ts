@@ -9,9 +9,14 @@
  */
 import type { AnalysisInput, ToolAnalysis, ToolAnalyzer } from '../../sdk/capabilities.js';
 import { jsonInput } from '../../core/permission/input-validation.js';
+import { isSubagentControl } from '../subagents/identity.js';
 import { analyzeCommand } from '../../tools/bash.js';
 import { createEnvironmentAnalyzer } from './environment.js';
-import { analyzeFilesystem, stampWindowsFilesystem, windowsInputIsAmbiguous } from './analyzer-files.js';
+import {
+  analyzeFilesystem,
+  stampWindowsFilesystem,
+  windowsInputIsAmbiguous,
+} from './analyzer-files.js';
 import { prepare, windowsUnverified } from './analyzer-paths.js';
 import { analyzePowerShell } from './analyzer-powershell.js';
 import { analyzeShell } from './analyzer-shell.js';
@@ -156,6 +161,19 @@ export function createDeterministicAnalyzer(
   const analyze = async (input: AnalysisInput, signal: AbortSignal): Promise<ToolAnalysis> => {
     signal.throwIfAborted();
     jsonInput(input.input, input.tool.inputSchema);
+    if (isSubagentControl(input.tool))
+      return {
+        analyzerId: ANALYZER_ID,
+        analyzerVersion: ANALYZER_VERSION,
+        completeness: 'complete',
+        effects: [],
+        reasonCode: 'agent_control',
+        summary: input.tool.name,
+        environment: {
+          $operation: operationKey(input),
+          $policyOptions: hash({ writeRoots, pluginEntries }),
+        },
+      };
     return route(ctx, input, parse(input), signal);
   };
   return {

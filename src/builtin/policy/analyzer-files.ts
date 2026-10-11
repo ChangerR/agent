@@ -33,7 +33,9 @@ const WINDOWS_WRITE_NOTE =
 /** 歧义路径不走通用文件分析，直接视为 Windows 未验收。 */
 export function windowsInputIsAmbiguous(parsed: FilesystemOperation): boolean {
   if (parsed.kind === 'file') return windowsAmbiguousPath(parsed.path);
-  return [parsed.path, parsed.pattern].some((value) => value.length > 0 && windowsAmbiguousPath(value));
+  return [parsed.path, parsed.pattern].some(
+    (value) => value.length > 0 && windowsAmbiguousPath(value),
+  );
 }
 
 export function stampWindowsFilesystem(analysis: ToolAnalysis): ToolAnalysis {
@@ -191,7 +193,10 @@ async function analyzeSearch(
         scope: 'project' as const,
       })),
     ],
-    targets: [...new Set([resolved.actual, intended.actual]), ...reads.map((file) => file.absolute)],
+    targets: [
+      ...new Set([resolved.actual, intended.actual]),
+      ...reads.map((file) => file.absolute),
+    ],
     reasonCode: sensitive
       ? 'sensitive_path'
       : scope === 'external'
@@ -202,7 +207,8 @@ async function analyzeSearch(
     evidence: [
       {
         source: 'bounded-search-contract',
-        detail: '固定目录枚举，不跟随链接；排除敏感路径、配置插件入口、外部目标及非普通/多硬链接文件。',
+        detail:
+          '固定目录枚举，不跟随链接；排除敏感路径、配置插件入口、外部目标及非普通/多硬链接文件。',
       },
     ],
     summary: `${input.tool.name}: ${resolved.actual}`,
@@ -223,7 +229,11 @@ function analyzeOneFile(
   const { base, resolved, target, sensitive, scope } = located;
   const effect = parsed.effect;
   let completeness: ToolAnalysis['completeness'] = 'complete';
-  let reasonCode = sensitive ? 'sensitive_path' : scope === 'external' ? 'outside_project' : 'bounded_file';
+  let reasonCode = sensitive
+    ? 'sensitive_path'
+    : scope === 'external'
+      ? 'outside_project'
+      : 'bounded_file';
   if (effect === 'read' && !resolved.exists) {
     if (scope === 'project') reasonCode = 'read_target_missing';
   } else if (effect === 'read' && resolved.directory) {

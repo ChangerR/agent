@@ -1,5 +1,11 @@
 # 确定性权限策略
 
+子任务沿用同一执行门和父当前 policy，再与祖先/自身 readOnly、allowedTools 求交集。
+delegation/subagent 来源不能制造真实用户授权；子人工批准仅限当前 run 的本次操作。
+受信任 agent_* 控制工具不占工作区锁，但明确 deny/ask 仍优先；只读、Bash AST 和 Windows
+保护不因此放宽。工具锁只依据完整 effect 分析，取得后重验目标/审批；取消未结算不归还。
+详细语义和跨兄弟委派限制见 [SUBAGENTS.md](SUBAGENTS.md)。
+
 默认 preset 选择唯一内置策略 `deterministic`（插件 `agentlab.policy`）和严格审批员 `model`（插件 `agentlab.reviewer-model`），默认模式为 `ask`。插件是受信任的同进程代码，本文的审批门控、类型和路径检查都不是操作系统沙箱。
 
 ## 默认策略与审批顺序
@@ -93,7 +99,7 @@
 - `tests/windows-readonly-review.test.ts`：注入 win32 平台，覆盖项目内只读直接放行、写入/Shell/ask 模式/敏感/项目外/歧义路径→人工，以及只读不调用 reviewer 的端到端
 - `tests/windows-policy-path-guards.test.ts`：Windows 路径 deny/ask 大小写限制、真实路径歧义、目标替换重验，以及非 Windows 和命令/正则字面语义不变
 - `tests/windows-default-runtime.test.ts`：默认 runtime、真实 reviewer + FakeProvider 的写入执行、会话规则与显式持久化规则重启回归；仅注入平台，不代表 Windows 实机验收
-- `tests/windows-permission-ui.test.ts`：Windows 只读审核回退保留来源并隐藏无效记住选项，普通写入保留精确规则入口
+- `tests/windows-permission-ui.test.ts`：Windows 项目内只读零 reviewer/零人工；ask 只读保留记住选项，普通写入回退保留精确规则入口
 - `tests/policy-runtime.test.ts`：真实 runtime 中 reviewer 次数和拒绝边界
 - `tests/search-runtime.test.ts` / `tests/search-tools.test.ts`：真实 rg/fallback、全部常用只读工具、零 judge/零人工、ignore、敏感/外部/规则与重验竞态
 - `tests/shell-runtime.test.ts` / `tests/shell-contract-binding.test.ts`：真实 Bash 输出、审批次数、组合/参数/路径与执行绑定

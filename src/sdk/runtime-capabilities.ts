@@ -45,6 +45,7 @@ export interface ContextCoordinator {
     signal: AbortSignal,
     model?: string,
     events?: EventBus,
+    runId?: string,
   ): Promise<Message[]>;
 }
 export interface CacheStrategyInput {

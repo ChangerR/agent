@@ -132,7 +132,7 @@ describe('可替换的上下文能力', () => {
     expect(segments[1]).toMatchObject({ source: '/project/AGENTS.md', stability: 'session' });
     expect(Object.isFrozen(segments[1])).toBe(true);
   });
-  it('不合作压缩器取消后 run/dispose 仍结算，迟到拒绝不污染历史', async () => {
+  it('不合作压缩器取消后停止等待，dispose 保留未结算资源，迟到拒绝不污染历史', async () => {
     let started!: () => void;
     const entered = new Promise<void>((resolve) => {
       started = resolve;
@@ -160,14 +160,17 @@ describe('可替换的上下文能力', () => {
       hooks: new HookRunner(),
       systemPrompt: '',
       maxTurns: 1,
+      shutdownTimeoutMs: 5,
     });
     const run = loop.run('keep this real user request');
     await entered;
-    await loop.dispose();
+    await expect(loop.dispose()).rejects.toThrow('unresolved execution');
     expect((await run).reason).toBe('aborted');
     expect(loop.getMessages()).toEqual([{ role: 'user', content: 'keep this real user request' }]);
+    expect(loop.hasPendingActivity).toBe(true);
     reject(new Error('late compactor error'));
-    await new Promise((resolve) => setImmediate(resolve));
+    await loop.whenSettled();
+    await loop.dispose();
     expect(loop.getMessages()).toHaveLength(1);
   });
   it('不合作压缩器超时有界，迟到候选不提交', async () => {

@@ -355,11 +355,15 @@ describe('reviewer budgets, provenance and cancellation', () => {
     ).toMatchObject({ decision: 'unknown', reasonCode: 'response_budget' });
     expect(provider.requests[0]?.maxTokens).toBe(256);
   });
-  it('a noncooperative provider times out, receives cancellation and still gets a joined usage event', async () => {
+  it('noncooperative review stops waiting but retains activity and reports usage only after real settlement', async () => {
     const events = new EventBus();
     const seen: AgentEvent[] = [];
     events.onAll((event) => seen.push(event));
     let child!: AbortSignal;
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
     const provider: Provider = {
       name: 'stuck',
       capabilities: { thinking: false, streaming: true },
@@ -367,7 +371,8 @@ describe('reviewer budgets, provenance and cancellation', () => {
         child = signal;
         yield { type: 'message_start' };
         yield { type: 'usage', inputTokens: 12, outputTokens: 0 };
-        await new Promise(() => {});
+        await pending;
+        yield { type: 'usage', inputTokens: 15, outputTokens: 2 };
       },
     };
     const reviewer = createModelReviewer({ provider, model: 'reviewer', timeoutMs: 15 });
@@ -376,6 +381,10 @@ describe('reviewer budgets, provenance and cancellation', () => {
       reasonCode: 'timeout',
     });
     expect(child.aborted).toBe(true);
+    expect(events.hasPendingActivity).toBe(true);
+    expect(seen.filter((event) => event.type === 'model_usage')).toHaveLength(0);
+    finish();
+    await events.whenSettled();
     const request = seen.find((event) => event.type === 'model_request');
     const usage = seen.find((event) => event.type === 'model_usage');
     expect(request).toMatchObject({ type: 'model_request', purpose: 'judge', provider: 'stuck' });
@@ -383,7 +392,7 @@ describe('reviewer budgets, provenance and cancellation', () => {
       type: 'model_usage',
       purpose: 'judge',
       requestId: request && 'requestId' in request ? request.requestId : '',
-      usage: { inputTokens: 12 },
+      usage: { inputTokens: 15, outputTokens: 2 },
     });
     expect(seen.filter((event) => event.type === 'model_usage')).toHaveLength(1);
   });

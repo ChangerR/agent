@@ -23,7 +23,7 @@ export interface PanelOptions {
   kind: 'picker' | 'permission' | 'details';
   /** 设置面板显式保留完整细框；权限审批始终使用警示框。 */
   framed?: boolean;
-  items?: PanelItem[];
+  items?: PanelItem[] | (() => PanelItem[]);
   initialValue?: string;
   filterable?: boolean;
   body?: () => string;
@@ -55,7 +55,9 @@ export class InteractionPanel implements Component {
   }
 
   private get items(): PanelItem[] {
-    return (this.options.items ?? []).filter((item) =>
+    const items =
+      typeof this.options.items === 'function' ? this.options.items() : (this.options.items ?? []);
+    return items.filter((item) =>
       `${item.label} ${item.value}`.toLowerCase().includes(this.filter.toLowerCase()),
     );
   }

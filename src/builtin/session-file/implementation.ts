@@ -180,6 +180,8 @@ export async function listSessions(cwd: string, signal?: AbortSignal): Promise<S
         });
         continue;
       }
+      // child 文件通过根会话的 /agents 关联；不能成为 /resume latest 的候选。
+      if ((raw as SessionFile).agents?.owner) continue;
       const obj = raw as {
         title: string;
         createdAt: string;

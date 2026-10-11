@@ -59,7 +59,7 @@ export const MessageSchema = z.union([
   z
     .object({
       role: z.literal('user'),
-      source: z.literal('summary').optional(),
+      source: z.enum(['summary', 'delegation', 'subagent', 'tool']).optional(),
       content: z.union([z.string(), z.array(UserBlockSchema)]),
     })
     .passthrough(),
@@ -118,7 +118,7 @@ const SessionBodySchema = SessionMetaSchema.extend({
       runs: nonnegativeInt,
     })
     .passthrough(),
-  messages: z.array(MessageSchema).min(1),
+  messages: z.array(MessageSchema),
 }).passthrough();
 
 export const SessionFileSchema = SessionBodySchema.extend({
@@ -140,6 +140,58 @@ export const SessionFileSchema = SessionBodySchema.extend({
       })
       .passthrough(),
   ),
+  agents: z
+    .object({
+      owner: z
+        .object({ rootSessionId: z.string(), parentAgentId: z.string(), agentId: z.string() })
+        .optional(),
+      children: z
+        .array(z.lazy(() => SubagentRecordSchema))
+        .max(64)
+        .optional(),
+      agent: z.lazy(() => SubagentRecordSchema).optional(),
+    })
+    .optional(),
+}).refine((file) => file.messages.length > 0 || Boolean(file.agents?.owner && file.agents.agent), {
+  path: ['messages'],
+  message: '只有带完整 ownership 的子会话可以保存空历史',
+});
+
+const SubagentRecordSchema = z.object({
+  agentId: z.string().min(1),
+  sessionId: z.string().min(1),
+  rootSessionId: z.string().min(1),
+  parentAgentId: z.string().min(1),
+  name: z.string().max(80),
+  depth: z.number().int().positive(),
+  context: z.enum(['fresh', 'snapshot']),
+  readOnly: z.boolean(),
+  allowedTools: z.array(z.string()).optional(),
+  runs: z
+    .array(
+      z.object({
+        runId: z.string().min(1),
+        task: z.string().max(16384),
+        status: z.enum([
+          'queued',
+          'running',
+          'cancelling',
+          'completed',
+          'failed',
+          'cancelled',
+          'interrupted',
+          'limited',
+        ]),
+        activity: z.string(),
+        output: z.string().max(1048576),
+        truncated: z.boolean(),
+        usage: UsageSchema,
+        turns: z.number().int().nonnegative(),
+        error: z.string().optional(),
+        reason: z.string().optional(),
+      }),
+    )
+    .max(64),
 });
 
 /** 最多展示 3 条 issue，其余用「…还有 N 处」收束。 */

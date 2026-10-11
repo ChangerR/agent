@@ -7,6 +7,7 @@
 - [插件 API、配置和生命周期](docs/PLUGINS.md)
 - [确定性策略与显式目录写入授权](docs/POLICY.md)
 - [严格模型审批与用途统计](docs/REVIEWER.md)
+- [子 agent 的工具、上下文、权限与生命周期](docs/SUBAGENTS.md)
 - [外部替换示例](plugins/architecture-example/README.md)
 
 `/settings` 可浏览插件设置与下一会话实现选择。Bash 先由 tree-sitter-bash 解析完整语法树，再逐命令验证参数、目标与副作用；受控的项目内只读组合可在 auto 直接放行，动态或未知语义继续审批。原生 Windows 上，auto/yolo 的内置 read_file/glob/grep 在通过通用检查后直接放行；项目内普通文件的 write_file/edit_file 命中用户亲自配置或记住的精确目标规则（无通配符）时直接放行，未命中时在 auto/yolo 下交给模型审批；读文件、列目录、搜索内容的 PowerShell 会直接拒绝，模型应改用 read_file、glob、grep。其余未验收的 Windows Shell 在 auto 交给审批模型，ask 仍询问，yolo 对不完整 Shell 仍人工确认；ask 模式下未命中精确规则的写入，以及敏感/写保护/项目外/歧义路径目标仍要求人工确认。Windows Shell 若回到人工，审批面板不提供不会生效的“允许并记住此规则”。插件是受信任进程内代码，不是 OS 沙箱。
@@ -25,6 +26,7 @@
 - **MCP**：stdio + streamable-http，工具以 `mcp__server__tool` 桥接
 - **Skill**：渐进式披露（清单进 system prompt，全文按需 `use_skill` 加载）
 - **上下文压缩**：超阈值自动摘要老消息
+- **子 agent**：默认四个并行 child，独立 fresh/snapshot 上下文、五个控制操作和共享安全执行门；`/agents` 实时列表/详情/补充/取消，`/agent-limit` 单选自动保存
 - **[pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui) TUI**：消息区独立滚动、固定输入框、Markdown 流式输出、工具结果合并与折叠、权限确认弹层、slash 命令补全、阶段与耗时提示
 
 ## 快速开始

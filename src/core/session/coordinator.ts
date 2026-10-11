@@ -13,6 +13,7 @@ import type { PermissionController } from '../../sdk/capabilities.js';
 import type { SessionRules } from '../permission/contracts.js';
 import { emptyUsage, type TokenUsage } from '../protocol/types.js';
 import { SessionError } from './errors.js';
+import type { AgentSessionState } from '../agents.js';
 import { assertSafeHistory, makeTitle } from './history.js';
 import { isValidSessionId, newSessionId } from './identity.js';
 import type { SessionStore } from '../../sdk/runtime-capabilities.js';
@@ -46,6 +47,14 @@ export interface SessionManagerOptions {
   endpointKey?: string;
   now?: () => Date;
   makeId?: () => string;
+  state?: () => AgentSessionState;
+  beforeResume?: (file: SessionFile, signal?: AbortSignal) => Promise<void>;
+  prepareResume?: (signal?: AbortSignal) => Promise<void>;
+  resumeFailed?: () => void;
+  restored?: (file: SessionFile) => void;
+  restorePermissions?: boolean;
+  /** 临时恢复中的管理器仍借用根存储；原始读取未结束前根宿主不能释放。 */
+  trackActivity?: (task: Promise<unknown>) => void;
 }
 
 /** save() 在摘要上多带本次裁掉的条数，供 /save 拼文案。 */
@@ -61,6 +70,7 @@ export class SessionManager {
   private titleValue = '';
   private createdAtValue: string;
   private usage: TokenUsage = emptyUsage();
+  private usageIds = new Set<string>();
   private runs = 0;
   private writePath?: string;
   private revisions = new Map<string, number>();
@@ -90,6 +100,9 @@ export class SessionManager {
   get id(): string {
     return this.idValue;
   }
+  get tokenUsage(): TokenUsage {
+    return { ...this.usage };
+  }
 
   get title(): string {
     return this.titleValue;
@@ -103,14 +116,23 @@ export class SessionManager {
   attach(): () => void {
     const detachEvent = this.opts.events.on('loop_end', (event) => {
       this.runs += 1;
-      if (event.usage) this.addUsage(event.usage);
+    });
+    const detachUsage = this.opts.events.on('model_usage', (event) => {
+      if (this.usageIds.has(event.requestId)) return;
+      this.usageIds.add(event.requestId);
+      this.addUsage(event.usage);
     });
     const detachCompletion = this.opts.loop.onRunSettled(async () => {
       if (this.autoSave) await this.save();
     });
+    const detachStart = this.opts.loop.onRunStarted(async () => {
+      if (this.autoSave && this.opts.state) await this.save();
+    });
     return () => {
       detachEvent();
+      detachUsage();
       detachCompletion();
+      detachStart();
     };
   }
 
@@ -190,6 +212,22 @@ export class SessionManager {
   }
 
   async resume(id: string, options: { signal?: AbortSignal } = {}): Promise<SessionSummary> {
+    const release = this.opts.loop.beginSessionTransition();
+    try {
+      return await this.restore(id, options);
+    } catch (error) {
+      this.opts.resumeFailed?.();
+      throw error;
+    } finally {
+      release();
+    }
+  }
+
+  private async restore(
+    id: string,
+    options: { signal?: AbortSignal },
+    prepared = false,
+  ): Promise<SessionSummary> {
     options.signal?.throwIfAborted();
     if (this.opts.loop.running) {
       throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
@@ -230,6 +268,8 @@ export class SessionManager {
       );
     }
     assertSafeHistory(file.messages);
+    if (file.agents?.owner && this.opts.restorePermissions !== false)
+      throw new SessionError('invariant', '这是子 agent 会话，请从所属根会话的 /agents 查看。');
     const rules = structuredClone(file.sessionRules);
     try {
       if (this.opts.validateSessionRules) this.opts.validateSessionRules(rules);
@@ -250,13 +290,24 @@ export class SessionManager {
     if (this.opts.loop.running)
       throw new SessionError('busy', '恢复会话期间启动了新轮次，未修改当前会话。');
     options.signal?.throwIfAborted();
+    if (!prepared && this.opts.prepareResume) {
+      // 无效目标不能取消后台任务。预检通过后结算旧执行，再读取最新 CAS 基线。
+      await this.opts.prepareResume(options.signal);
+      return this.restore(resolved, options, true);
+    }
+    await this.opts.beforeResume?.(file, options.signal);
+    options.signal?.throwIfAborted();
+    if (this.opts.loop.running)
+      throw new SessionError('busy', '恢复期间启动了新轮次，未切换会话。');
     const previous = this.opts.loop.exportSession();
     const previousRules = structuredClone(this.opts.permission.getSessionRules());
     let loopAttempted = false;
     try {
       // 控制器也是插件边界：先恢复控制器，再提交已验证历史；失败恢复原快照。
-      this.opts.permission.setSessionRules(rules);
-      if (restoreMode) this.opts.permission.setMode(savedMode);
+      if (this.opts.restorePermissions !== false) {
+        this.opts.permission.setSessionRules(rules);
+        if (restoreMode) this.opts.permission.setMode(savedMode);
+      }
       loopAttempted = true;
       this.opts.loop.importSession({
         messages: file.messages,
@@ -266,11 +317,12 @@ export class SessionManager {
     } catch (error) {
       const rollbackErrors: unknown[] = [];
       try {
-        this.opts.permission.setSessionRules(previousRules);
+        if (this.opts.restorePermissions !== false)
+          this.opts.permission.setSessionRules(previousRules);
       } catch (rollback) {
         rollbackErrors.push(rollback);
       }
-      if (this.opts.permission.mode !== currentMode) {
+      if (this.opts.restorePermissions !== false && this.opts.permission.mode !== currentMode) {
         try {
           this.opts.permission.setMode(currentMode);
         } catch (rollback) {
@@ -310,8 +362,10 @@ export class SessionManager {
     this.createdAtValue = file.createdAt;
     this.titleValue = file.title;
     this.usage = { ...file.usage };
+    this.usageIds.clear();
     this.runs = file.stats.runs;
     this.writePath = this.opts.store.path(resolve(this.opts.cwd), resolved);
+    this.opts.restored?.(file);
     const summary = this.toSummary(this.writePath, file.messages.length, file.updatedAt);
     this.opts.events.emit({
       type: 'session_restored',
@@ -367,12 +421,15 @@ export class SessionManager {
     snapshot: SessionSnapshot,
     signal: AbortSignal,
   ): Promise<SessionSaveResult | undefined> {
-    if (snapshot.messages.length === 0) return Promise.resolve(undefined);
-    if (!this.titleValue) this.titleValue = makeTitle(snapshot.messages);
+    const state = this.opts.state?.();
+    if (snapshot.messages.length === 0 && !state?.owner) return Promise.resolve(undefined);
+    if (!this.titleValue || this.titleValue === '(未命名会话)')
+      this.titleValue = makeTitle(snapshot.messages);
     const updatedAt = this.now().toISOString();
     const cwd = resolveProjectRoot(this.opts.cwd);
     const file: SessionFile = {
       schemaVersion: SESSION_SCHEMA_VERSION,
+      ...(state ? { agents: structuredClone(state) } : {}),
       runtime: { schemaVersion: 1 },
       policy: { ...this.opts.restoreRequirements.policy },
       pluginStates: copyPluginStates(this.pluginStates),
@@ -466,7 +523,14 @@ export class SessionManager {
     signal?: AbortSignal,
   ): Promise<T> {
     return bounded(
-      handler,
+      (child) => {
+        const task = Promise.resolve().then(() => handler(child));
+        this.pending.add(task);
+        this.opts.events.track(task);
+        this.opts.trackActivity?.(task);
+        void task.finally(() => this.pending.delete(task)).catch(() => undefined);
+        return task;
+      },
       signal ?? new AbortController().signal,
       this.opts.persistenceTimeoutMs ?? 30_000,
     );

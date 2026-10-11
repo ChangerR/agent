@@ -16,5 +16,18 @@
     "escalateAfterMs": 0
   },
   "mcpConfig": "./mcp.json",
-  "pluginEntries": []
+  "pluginEntries": [],
+  "pluginConfig": {
+    "agentlab.subagents": {
+      "maxRunning": 4,
+      "maxDepth": 1,
+      "maxTurns": 16,
+      "timeoutMs": 300000,
+      "maxInbox": 16,
+      "maxOutputChars": 131072,
+      "previewChars": 8192,
+      "maxAgents": 32,
+      "maxRuns": 32
+    }
+  }
 }

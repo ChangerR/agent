@@ -12,7 +12,11 @@ describe('loop notification boundaries', () => {
     '%s timeout cannot hang an otherwise successful run',
     async (point) => {
       const hooks = new HookRunner();
-      hooks.register(point, () => new Promise(() => {}));
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      hooks.register(point, () => pending);
       const loop = new AgentLoop({
         hooks,
         events: new EventBus(),
@@ -30,11 +34,19 @@ describe('loop notification boundaries', () => {
       });
       expect((await loop.run('hello')).reason).toBe('completed');
       expect(loop.running).toBe(false);
+      expect(loop.hasPendingActivity).toBe(true);
+      finish();
+      await loop.whenSettled();
+      expect(loop.hasPendingActivity).toBe(false);
     },
   );
 
   it('cancel in a stuck post-tool observer returns the successful result once and settles the run', async () => {
     const hooks = new HookRunner();
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
     const tools = new ToolRegistry();
     let executions = 0;
     tools.register({
@@ -63,12 +75,15 @@ describe('loop notification boundaries', () => {
     });
     hooks.register('PostToolUse', () => {
       loop.abort_current();
-      return new Promise(() => {});
+      return pending;
     });
     expect((await loop.run('hello')).reason).toBe('aborted');
     expect(loop.running).toBe(false);
     expect(executions).toBe(1);
     expect(JSON.stringify(loop.getMessages().at(-1))).toContain('side effect done');
+    expect(loop.hasPendingActivity).toBe(true);
+    finish();
+    await loop.whenSettled();
   });
 
   it('uncooperative execution reports bounded shutdown fault without faking completion or retrying', async () => {

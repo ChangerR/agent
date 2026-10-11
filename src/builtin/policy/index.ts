@@ -11,6 +11,7 @@ import {
   type ToolAnalysis,
 } from '../../sdk/index.js';
 import { PermissionController, parseRule, matchRule } from './controller.js';
+import { isSubagentControl } from '../subagents/identity.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { resolveAgentPaths } from '../../core/paths.js';
 import {
@@ -213,6 +214,8 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           asked.source,
           asked.raw,
         );
+      if (isSubagentControl(input.tool) && analysis.reasonCode === 'agent_control')
+        return decision('allow', 'agent_control', '仅管理当前会话的子任务；真实工具另行审批');
       // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；
       // 通配符/工具级规则和 writeRoots 目录授权都不放行，auto/yolo 交给 reviewer，ask 模式照旧询问。
       // 敏感/写保护、项目外、特殊文件、硬链接与歧义路径在上方已人工，精确规则同样不能越过。

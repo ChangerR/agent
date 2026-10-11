@@ -61,6 +61,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { SettingsInputPanel } from './settings-input.js';
 import { settingsErrorMessage } from '../runtime/config-store.js';
+import { createSubagentsTui } from '../builtin/subagents/tui.js';
 
 // ---------------------------------------------------------------------------
 // 主题
@@ -68,15 +69,21 @@ import { settingsErrorMessage } from '../runtime/config-store.js';
 
 const HELP_FOOTER = `其他输入直接作为对话发送。Ctrl+O 展开/收起详情，Esc 中断当前轮并清空排队，Ctrl+C 中断/退出。
 选择器：↑↓ 选择，Enter 确认，Esc 返回。审批需先明确选择；Tab 查看完整参数。
+child 等待审批时，Ctrl+G 在审批和父聊天输入间切换。
 AGENTLAB_SCREEN=main 使用终端原生滚动历史；AGENTLAB_FULL_REDRAW=1 关闭差分渲染。
-调试日志默认脱敏，完整正文日志需要显式开启。`;
+调试日志默认脱敏，完整正文日志需要显式开启。
+/save 保存 · /sessions 会话 · /agents 子任务列表、详情、补充与取消。`;
 
 /** 原因码分阶段保留：reviewer 的结果不能掩盖原策略禁止规则放行的条件。 */
 export function canRememberPermission(
-  request: Pick<PermissionRequest, 'reasonCode' | 'policyReasonCode' | 'analysisReasonCode'>,
+  request: Pick<
+    PermissionRequest,
+    'reasonCode' | 'policyReasonCode' | 'analysisReasonCode' | 'agentId'
+  >,
 ): boolean {
   const policyReason = request.policyReasonCode ?? request.reasonCode;
   return (
+    !request.agentId &&
     policyReason !== 'platform_unverified' &&
     policyReason !== 'platform_read_review' &&
     request.analysisReasonCode !== 'native_windows_read_unverified' &&
@@ -152,6 +159,7 @@ export function startTui(
   let mode: string = agent.config.permissionMode;
   let thinking: ThinkingLevel = agent.config.thinking;
   let usage: TokenUsage = emptyUsage();
+  const usageIds = new Set<string>();
   let phase = '就绪';
   let expanded = false;
   let startedAt = 0;
@@ -159,7 +167,14 @@ export function startTui(
   let suppressEnterUntil = 0;
   let picker: Component | undefined;
   let approvalPanel: InteractionPanel | undefined;
-  const activePanel = () => approvalPanel ?? picker;
+  let childApproval = false;
+  let composingDuringApproval = false;
+  let suspendedPicker: Component | undefined;
+  const activePanel = () => {
+    if (!approvalPanel) return picker;
+    if (!composingDuringApproval) return approvalPanel;
+    return picker === suspendedPicker ? undefined : picker;
+  };
   const details = new DetailRegistry();
   const toolMessages = new Map<string, ToolMessage>();
   const adapters: TuiAdapter[] = [];
@@ -204,7 +219,7 @@ export function startTui(
         try {
           const value = read();
           if (typeof value !== 'string') throw new Error('状态项必须返回文本');
-          values.push(safeTerminalText(value));
+          if (value) values.push(safeTerminalText(value));
         } catch (error) {
           failedStatuses.add(id);
           console.error(`可选状态项 ${id} 失败:`, error);
@@ -235,7 +250,11 @@ export function startTui(
   const updateStatus = () => {
     const elapsed = turns.running ? ` · ${Math.floor((Date.now() - startedAt) / 1000)}s` : '';
     const current = approvalPanel
-      ? '等待你确认权限'
+      ? childApproval
+        ? composingDuringApproval
+          ? '子任务待审批 · Ctrl+G 返回审批'
+          : '子任务待审批 · Ctrl+G 输入父对话'
+        : '等待你确认权限'
       : picker
         ? '选择 / 查看详情'
         : turns.running
@@ -329,7 +348,7 @@ export function startTui(
   // --- 底部选择器（审批优先；关闭后恢复尚未完成的选择） ---
   function showPicker(
     title: string,
-    items: PanelItem[],
+    items: PanelItem[] | (() => PanelItem[]),
     onPick: (value: string) => void,
     initialValue?: string,
     filterable = false,
@@ -344,7 +363,11 @@ export function startTui(
       title,
       kind: 'picker',
       framed,
-      items: items.map((item) => ({ ...item, current: item.value === initialValue })),
+      items: () =>
+        (typeof items === 'function' ? items() : items).map((item) => ({
+          ...item,
+          current: item.value === initialValue,
+        })),
       initialValue,
       filterable,
       context: initialValue ? () => `当前: ${initialValue} · Enter 应用 · Esc 不更改` : undefined,
@@ -369,6 +392,9 @@ export function startTui(
     signal: AbortSignal,
     next: () => void,
   ): void {
+    childApproval = Boolean(request.agentId);
+    if (!childApproval) composingDuringApproval = false;
+    if (!composingDuringApproval) suspendedPicker = picker;
     const input =
       request.input && typeof request.input === 'object' && !Array.isArray(request.input)
         ? (request.input as Record<string, unknown>)
@@ -395,9 +421,11 @@ export function startTui(
     const options: Array<{ label: string; description: string; decision: UserDecision }> = [
       {
         label: '允许一次',
-        description: rememberIneffective
-          ? '只允许这一次调用。该操作未经 Windows 平台校验；记住规则不能跳过后续审核。'
-          : '只允许这一次调用，不新增规则。',
+        description: request.agentId
+          ? '仅批准该 child 当前 run 的本次操作，不复制给兄弟或后续任务。'
+          : rememberIneffective
+            ? '只允许这一次调用。该操作未经 Windows 平台校验；记住规则不能跳过后续审核。'
+            : '只允许这一次调用，不新增规则。',
         decision: { allow: true },
       },
       ...(rememberIneffective
@@ -421,17 +449,22 @@ export function startTui(
       settled = true;
       signal.removeEventListener('abort', cancel);
       approvalPanel = undefined;
+      childApproval = false;
       // 防止确认键的重复输入落到恢复的草稿或设置面板上。
       if (confirmedByEnter) suppressEnterUntil = Date.now() + 500;
       resolve(decision);
       next();
+      if (!approvalPanel) {
+        composingDuringApproval = false;
+        suspendedPicker = undefined;
+      }
       focusInteraction();
     };
     const cancel = () => done({ allow: false });
     signal.addEventListener('abort', cancel, { once: true });
     approvalPanel = new InteractionPanel({
-      title: 'Agent 正在请求权限 · 需要你确认',
-      compactTitle: 'Agent 请求权限',
+      title: `${request.agentName ?? 'Agent'} 正在请求权限 · 需要你确认`,
+      compactTitle: `${request.agentName ?? 'Agent'} 请求权限`,
       kind: 'permission',
       items: options.map((o, i) => ({
         value: String(i),
@@ -440,7 +473,7 @@ export function startTui(
       })),
       requireSelection: true,
       body: () =>
-        `来源: Agent 执行工具调用${request.toolUseId ? ` #${request.toolUseId}` : ''}\n工具: ${request.toolName}\n触发: ${origin}${request.matchedRule ? ` · ${request.matchedRule}` : ''}\n${request.cwd ? `目录: ${request.cwd}\n` : ''}理由: ${request.reason}\n操作摘要: ${request.summary}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
+        `来源: ${request.agentName ?? 'Agent'}${request.agentId ? ` (${request.agentId})` : ''} 执行工具调用${request.toolUseId ? ` #${request.toolUseId}` : ''}\n${request.task ? `任务: ${request.task}\n` : ''}工具: ${request.toolName}\n触发: ${origin}${request.matchedRule ? ` · ${request.matchedRule}` : ''}\n${request.cwd ? `目录: ${request.cwd}\n` : ''}理由: ${request.reason}\n操作摘要: ${request.summary}\n\n完整参数:\n${JSON.stringify(request.input, null, 2)}`,
       context: () => `${request.toolName} · ${request.summary.replace(/\s+/g, ' ')}`,
       previewBody: () => `触发: ${origin} · ${request.reason}`,
       rows: () => terminal.rows,
@@ -453,6 +486,13 @@ export function startTui(
   }
 
   // --- 事件订阅 ---
+  unsubscribe.push(
+    agent.events.on('subagent_event', (event) => {
+      if (event.kind === 'complete')
+        say(`子任务 ${event.name} · ${event.status} · /agents 查看结果`);
+      render();
+    }),
+  );
   unsubscribe.push(
     agent.events.on('text_delta', (e) => {
       setPhase('正在回复');
@@ -516,6 +556,8 @@ export function startTui(
   unsubscribe.push(agent.events.on('error', (e) => err(e.error.message)));
   unsubscribe.push(
     agent.events.on('model_usage', (e) => {
+      if (usageIds.has(e.requestId)) return;
+      usageIds.add(e.requestId);
       usage = {
         inputTokens: usage.inputTokens + e.usage.inputTokens,
         outputTokens: usage.outputTokens + e.usage.outputTokens,
@@ -591,6 +633,7 @@ export function startTui(
   );
   unsubscribe.push(
     agent.events.on('session_restored', (e) => {
+      usageIds.clear();
       nextSettingsGeneration();
       streams.finish();
       toolMessages.clear();
@@ -598,6 +641,9 @@ export function startTui(
       approving = false;
       picker = undefined;
       approvalPanel = undefined;
+      childApproval = false;
+      composingDuringApproval = false;
+      suspendedPicker = undefined;
       transcript.clear();
       details.clear();
       transcript.addChild(header);
@@ -633,6 +679,13 @@ export function startTui(
         return { consume: true };
       }
       if (!matchesKey(data, Key.enter)) suppressEnterUntil = 0;
+      if (matchesKey(data, Key.ctrl('g')) && approvalPanel && childApproval) {
+        // 已打开的选择器保留到审批结束，但不能吞掉此次明确切换到父输入的按键。
+        if (!composingDuringApproval) suspendedPicker = picker;
+        composingDuringApproval = !composingDuringApproval;
+        focusInteraction();
+        return { consume: true };
+      }
       if (matchesKey(data, Key.escape) && turns.running && !activePanel() && !tui.hasOverlay()) {
         interrupt();
         return { consume: true };
@@ -776,6 +829,10 @@ export function startTui(
     // 内置入口随 CLI 同步加载，保留首个按键和连续输入的原有时序。
     if (descriptor.entry === 'agentlab:builtin-ui') {
       installAdapter(createTuiAdapter(adapterContext));
+      continue;
+    }
+    if (descriptor.entry === 'agentlab:subagents-ui') {
+      installAdapter(createSubagentsTui(adapterContext));
       continue;
     }
     const entry =

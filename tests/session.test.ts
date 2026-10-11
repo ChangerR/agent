@@ -734,6 +734,38 @@ describe('权限与标题', () => {
     );
   });
 
+  it('标题跳过所有结果来源和摘要，child 使用委派任务', () => {
+    const data: Message[] = [
+      { role: 'user', source: 'subagent', content: '{"event":"spawned"}' },
+      { role: 'user', source: 'tool', content: '工具来源数据' },
+      { role: 'user', source: 'summary', content: '摘要' },
+      { role: 'user', source: 'subagent', content: [{ type: 'text', text: '子结果' }] },
+    ];
+    expect(makeTitle(data)).toBe('(未命名会话)');
+    expect(makeTitle([...data, { role: 'user', content: '用户的任务' }])).toBe('用户的任务');
+    expect(
+      makeTitle([...data, { role: 'user', content: [{ type: 'text', text: '用户的文本块' }] }]),
+    ).toBe('用户的文本块');
+    expect(makeTitle([{ role: 'user', source: 'delegation', content: 'child 的任务' }])).toBe(
+      'child 的任务',
+    );
+  });
+
+  it('先保存子通知的未命名会话，恢复后第一条真实用户请求仍可生成标题', async () => {
+    const first = makeHarness({ autoSave: false });
+    first.loop.deliverData('{"source":"subagent","event":"spawned"}');
+    const saved = await first.manager.save();
+    expect(saved?.title).toBe('(未命名会话)');
+    expect(first.provider.requests).toHaveLength(0);
+
+    const restored = makeHarness({ autoSave: false, script: [textResponse('完成')] });
+    await restored.manager.resume(first.manager.id);
+    expect(restored.provider.requests).toHaveLength(0);
+    await restored.loop.run('父会话真实问题');
+    await restored.manager.save();
+    expect((await loadSession(tmp, first.manager.id)).title).toBe('父会话真实问题');
+  });
+
   it('已有标题不会被后续保存改写', async () => {
     const { manager } = makeHarness({ autoSave: false });
     await saveSession(
