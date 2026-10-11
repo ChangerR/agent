@@ -203,15 +203,20 @@ describe('createAgent 的当前模型审批兜底', () => {
     ]);
   });
 
-  it('从 ask 切换到 auto 后可立即审批，无需重启装配', async () => {
+  it('ask 与切到 auto 后都交给审批模型，无需重启装配', async () => {
     const fixture = await assembled({ permissionMode: 'ask' });
     await fixture.agent.loop.run('ask 模式检查');
-    expect(judgeRequests(fixture.fake)).toHaveLength(0);
-    fixture.agent.permission.setMode('auto');
-    await fixture.agent.loop.run('auto 模式检查');
     expect(judgeRequests(fixture.fake).map((request) => request.model)).toEqual(['current-a']);
     expect(fixture.execute).toHaveBeenCalledTimes(1);
-    expect(fixture.requests).toHaveLength(1);
+    expect(fixture.requests).toHaveLength(0);
+    fixture.agent.permission.setMode('auto');
+    await fixture.agent.loop.run('auto 模式检查');
+    expect(judgeRequests(fixture.fake).map((request) => request.model)).toEqual([
+      'current-a',
+      'current-a',
+    ]);
+    expect(fixture.execute).toHaveBeenCalledTimes(2);
+    expect(fixture.requests).toHaveLength(0);
   });
 });
 
@@ -327,8 +332,8 @@ describe('审批请求模型快照与安全回退', () => {
     expect(await readFile(fixture.agent.logPath, 'utf8')).not.toContain(secret);
   });
 
-  it.each(['max_tokens', 'tool_use', undefined] as const)(
-    '回复以 %s 结束时，即使文本是有效 allow JSON 也不会执行工具',
+  it.each(['max_tokens', undefined] as const)(
+    '完整 JSON 以 %s 结束时仍采用判决并执行',
     async (stopReason) => {
       const response: StreamEvent[] = reviewResponse('allow', '看起来安全').filter(
         (event) => event.type !== 'message_stop',
@@ -336,16 +341,27 @@ describe('审批请求模型快照与安全回退', () => {
       if (stopReason !== undefined) response.push({ type: 'message_stop', stopReason });
       const fixture = await assembled({ judgeModel: 'fixed-judge' }, response);
       expect((await fixture.agent.loop.run('检查')).reason).toBe('completed');
-      expect(fixture.execute).not.toHaveBeenCalled();
-      expect(fixture.requests).toHaveLength(1);
-      expect(fixture.requests[0].decisionSource).toBe('judge');
-      expect(fixture.decisions.find((event) => event.phase === 'judge')?.decision).toMatchObject({
-        kind: 'ask',
-        source: 'judge',
-        judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'incomplete_response' },
-      });
+      expect(fixture.execute).toHaveBeenCalledTimes(1);
+      expect(fixture.requests).toHaveLength(0);
     },
   );
+
+  it('工具调用结束时，即使文本是有效 allow JSON 也不会执行工具', async () => {
+    const response: StreamEvent[] = reviewResponse('allow', '看起来安全').filter(
+      (event) => event.type !== 'message_stop',
+    );
+    response.push({ type: 'message_stop', stopReason: 'tool_use' });
+    const fixture = await assembled({ judgeModel: 'fixed-judge' }, response);
+    expect((await fixture.agent.loop.run('检查')).reason).toBe('completed');
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.requests).toHaveLength(1);
+    expect(fixture.requests[0].decisionSource).toBe('judge');
+    expect(fixture.decisions.find((event) => event.phase === 'judge')?.decision).toMatchObject({
+      kind: 'ask',
+      source: 'judge',
+      judge: { model: 'fixed-judge', source: 'explicit', reasonCode: 'incomplete_response' },
+    });
+  });
 
   it('provider 异常回落人工确认，错误中的凭证和端点不进入日志', async () => {
     const fixture = await assembled({}, () => {
@@ -519,13 +535,6 @@ describe('默认加载审批员不改变确定性权限优先级', () => {
       asks: 1,
     },
     {
-      label: 'ask 模式',
-      config: { permissionMode: 'ask' as const },
-      kind: 'ask',
-      source: 'mode',
-      asks: 1,
-    },
-    {
       label: 'yolo 的未知工具',
       config: { permissionMode: 'yolo' as const },
       kind: 'ask',
@@ -539,6 +548,21 @@ describe('默认加载审批员不改变确定性权限优先级', () => {
     expect(fixture.decisions[0].decision).toMatchObject({ kind, source });
     expect(fixture.execute).not.toHaveBeenCalled();
     expect(fixture.requests).toHaveLength(asks);
+  });
+
+  it('ask 模式的未知操作交给审批模型，模型放行后不再人工确认', async () => {
+    const fixture = await assembled({ permissionMode: 'ask' });
+    await fixture.agent.loop.run('检查');
+    expect(judgeRequests(fixture.fake)).toHaveLength(1);
+    expect(fixture.decisions.find((event) => event.phase === 'pipeline')?.decision).toMatchObject({
+      reasonCode: 'review_uncertain',
+      source: 'mode',
+    });
+    expect(fixture.decisions.find((event) => event.phase === 'judge')?.decision.kind).toBe(
+      'allow',
+    );
+    expect(fixture.execute).toHaveBeenCalledTimes(1);
+    expect(fixture.requests).toHaveLength(0);
   });
 
   it.each([

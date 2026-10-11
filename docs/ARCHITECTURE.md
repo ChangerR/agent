@@ -110,9 +110,9 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 `src/core/tool-executor.ts` 是所有受支持工具调用的唯一入口；`src/builtin/policy/` 实现默认确定性策略，`src/builtin/reviewer-model/` 实现严格模型审批。默认能力 ID 为 `deterministic` / `model`，默认模式是 `ask`。
 
-审批按顺序处理 deny、不可降级约束、明确 ask、精确调用或完整验证的精确目标授权、已验证项目内只读，再应用模式默认。ask 对完整项目内只读直接放行，写入、执行与未知操作才询问；auto 还可对显式 writeRoots 范围写入确定性放行，其余符合委托条件的操作交给 reviewer；yolo 仅跳过完整验证的普通项目文件写入。敏感/写保护、项目外、歧义路径、特殊文件、硬链接和危险操作不会被模型降级。Bash 与未知 MCP 的等于引号精确调用可免审批员；PowerShell 还必须先完成语义与目标分类，未知 PowerShell 不能凭精确规则放行。
+审批按顺序处理 deny、不可降级约束、明确 ask、精确调用或完整验证的精确目标授权、已验证项目内只读，再应用模式默认。ask 对完整项目内只读直接放行，尚未确定性授权且不属于不可降级约束的写入、执行与未知操作交给 reviewer，模型失败或要求确认时才询问；auto 还可对显式 writeRoots 范围写入确定性放行，其余符合委托条件的操作交给 reviewer；yolo 仅跳过完整验证的普通项目文件写入。敏感/写保护、项目外、歧义路径、特殊文件、硬链接、危险操作和未完整解析的 PowerShell 不会被模型降级。Bash 与未知 MCP 的等于引号精确调用可免审批员；未知 PowerShell 不能凭精确规则放行。
 
-Windows 的 read_file/glob/grep 在通用检查通过后于 ask/auto/yolo 直接放行。write_file/edit_file 的项目内完整写入仍保留精确目标规则直接授权，否则 auto/yolo 委托模型、ask 询问；通配规则与 writeRoots 不直接放行这些写入。PowerShell 使用独立 AST 和字面参数绑定，先复用通用路径检查，再决定是否完整；完整普通 cmdlet 可交给 reviewer，用户记住的等于引号精确调用也可授权，未知 PowerShell 直接人工。纯文件读、列目录与搜索 Shell 仍拒绝并引导专用工具。批准执行的完整 cmdlet 按模块限定名、完整参数名和单引号字面值重新构造，避免默认别名或引号在审批后换义。能力边界见 [POLICY.md](POLICY.md)。
+Windows 的 read_file/glob/grep 在通用检查通过后于 ask/auto/yolo 直接放行。write_file/edit_file 与已完整分类的 PowerShell 项目内写入保留精确目标规则直接授权，未命中时 ask/auto/yolo 都委托模型；通配规则与 writeRoots 不直接放行这些写入。PowerShell 使用独立 AST 和字面参数绑定，先复用通用路径检查，再决定是否完整；未知 PowerShell 直接人工。纯文件读、列目录与搜索 Shell 仍拒绝并引导专用工具。批准执行的完整 cmdlet 按模块限定名、完整参数名和单引号字面值重新构造，避免默认别名或引号在审批后换义。能力边界见 [POLICY.md](POLICY.md)。
 
 reviewer 的明确 deny 终止本次调用；ask/unknown、非法输出、失败、超时或不可用才回到人工。审批摘要标明实际解释器 PowerShell；已完整分类的调用可记住精确规则，未知 PowerShell、敏感/外部目标、歧义路径、明确 ask 与未验证实现隐藏无效的“允许并记住此规则”。同一次调用中，仅 policyRevision 因其他记住规则改变且输入、工具、配置、会话与分析指纹未变时，可复用用户的本次批准；deny 或分析/环境变化仍重新拒绝或询问。
 

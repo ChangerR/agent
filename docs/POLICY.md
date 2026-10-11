@@ -26,11 +26,12 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 1. 明确 `deny`
 2. 不能由模型降级的约束：敏感/项目外目标、未验证的歧义路径形态、特殊文件、硬链接别名、危险 Shell，以及无法完整解析的 PowerShell 操作
 3. 明确 `ask`
-4. bash 与未知 MCP 的等于引号精确调用规则（`exact_call_allow`），以及已完整验证操作的精确目标规则
+4. bash 与未知 MCP 的等于引号精确调用规则（`exact_call_allow`），以及已完整验证操作的精确目标规则。未知 PowerShell 不能凭精确规则放行
 5. 已验证的项目内完整只读（`safe_read`）；`ask` 模式同样直接放行
-6. `ask` 模式对写入、执行与未知操作默认询问；随后才是显式 `writeRoots` 目录授权
-7. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
-8. `auto` 的剩余不确定操作可委托一次 reviewer；明确 reviewer deny 终止；ask/unknown、缺少 reviewer、非法输出、失败或超时回到人工
+6. `ask` 对尚未确定性授权、且不属于上述不可降级约束的写入、执行与未知操作委托一次 reviewer，且不因 `writeRoots` 直接放行
+7. 显式 `writeRoots` 目录授权，仅 `auto` 使用
+8. `yolo` 仅跳过完整验证的普通项目文件写入；未知操作仍询问
+9. `auto` 的剩余不确定操作同样委托一次 reviewer。明确 reviewer deny 终止；ask/unknown、缺少 reviewer、非法输出、失败或超时回到人工
 
 会话规则只在同一 action 类别内优先于配置规则，不会让 session allow 越过配置 ask/deny。
 
@@ -54,7 +55,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 
 这表示在新的 auto 会话中，允许已知内置 `write_file` / `edit_file` 对 `src` 内普通文件进行完整、已验证的写入。默认目录列表为空，不存在隐式整项目写授权。项目外目录、敏感目录和非目录根会被拒绝；不存在的目录必须有可验证的目录父节点。
 
-目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式的写入仍要求本次确认或精确规则，不因目录授权跳过询问。
+目标和授权根都会实时解析真实路径；新文件使用实际存在的父目录。规则 deny/ask、凭据、说明与权限配置、插件入口、`.git/hooks`、硬链接及外部符号链接约束仍优先。其他工具即使叫 `write_file` 也不能继承这份授权。`ask` 模式的写入不因目录授权直接放行；未命中精确规则时交给 reviewer，模型失败或要求确认时才人工。
 
 `/settings` 中的“明确写入目录授权”支持独立输入、验证和一次提交自动保存，无额外确认；保存走配置 fingerprint/CAS、原子写、未知字段保留和符号链接保护。保存只改变下一会话配置，不热更新活动策略。更改写入目录属于明确扩大授权范围，界面说明这一含义。
 
@@ -81,7 +82,7 @@ delegation/subagent 来源不能制造真实用户授权；子人工批准仅限
 
 工具名仍为 bash，Windows 实际解释器是 powershell.exe（Windows PowerShell 5.1）。独立 tree-sitter-powershell AST 解析整条语句列表、普通管道和文件/流重定向；命令名、参数缩写与默认别名先规范化，再绑定位置参数。缩写必须在完整参数集合中唯一，不在支持子集中猜测；未支持参数也参与消歧。Path/LiteralPath 参数集、大小写、参数次序、冒号值及静态布尔开关均保留明确语义。
 
-当前可以验证字面 Set-Content/sc、Add-Content/ac、Clear-Content/clc、Remove-Item/rm/ri/rd/del/erase/rmdir、Copy-Item/cp/cpi/copy、Move-Item/mv/mi/move、显式 ItemType File 的 New-Item/ni、Out-File/of、Test-Path、Get-Location/pwd/gl 和 Write-Output/echo/write。每个已知文件操作复用通用路径检查和环境绑定；复制/移动到已有目录会分类目录下实际目标文件，移动同时分类源写入。删除磁盘根的危险性来自规范化语义，不依赖拼写或参数排列。删除/复制/移动链接本身、目录树操作仍无法完整验证。完整普通文件操作的精确原命令规则可授权；未命中时，纯文件写入在 auto/yolo 委托 reviewer（powershell_write_review），ask 默认询问，与原生文件工具的平台写入约束一致。writeRoots 不授权 Shell。
+当前可以验证字面 Set-Content/sc、Add-Content/ac、Clear-Content/clc、Remove-Item/rm/ri/rd/del/erase/rmdir、Copy-Item/cp/cpi/copy、Move-Item/mv/mi/move、显式 ItemType File 的 New-Item/ni、Out-File/of、Test-Path、Get-Location/pwd/gl 和 Write-Output/echo/write。每个已知文件操作复用通用路径检查和环境绑定；复制/移动到已有目录会分类目录下实际目标文件，移动同时分类源写入。删除磁盘根的危险性来自规范化语义，不依赖拼写或参数排列。删除/复制/移动链接本身、目录树操作仍无法完整验证。完整普通文件操作的精确原命令规则可授权；未命中时，纯文件写入在 ask/auto/yolo 都委托 reviewer（powershell_write_review），与原生文件工具的平台写入约束一致。writeRoots 不授权 Shell。
 
 Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态格式化管道组成的纯文件 Shell 仍直接拒绝（use_dedicated_tool），引导 read_file/glob/grep，不交给模型或人工批准。Get-ChildItem 的 provider 枚举没有被冒充为专用搜索工具的受控枚举。Test-Path 和 Get-Location 的完整项目内元数据读取可直接放行。
 
@@ -89,11 +90,11 @@ Get-Content、Get-Item、Get-ChildItem、Select-String 及默认别名与静态�
 
 变量、插值、子表达式、splat、脚本块、函数/别名修改、调用运算符、混合引号/转义、数组、多目标通配、非文件 provider、tilde、drive-relative 路径、未知参数/命令，以及语法树错误/缺失节点均保留 partial/unknown（powershell_unresolved）。普通 Git/npm 等原生程序会读取配置或执行脚本，目前没有 PowerShell 的完整原生程序契约，git status/log 也不被伪称已验证安全；它们仍可在人工授权后执行。UNC、ADS、保留设备名、短名和尾随点/空格仍使用平台人工约束。这些未知情况在所有模式下先人工确认，精确 allow、yolo 或模型 allow 均不能补全缺失语义。
 
-只有已完整分类、排除敏感/项目外/危险与用户限制的普通操作，才能在 auto 进入 ModelReviewer。这里 complete 仅指已声明子集的解析和通用文件前提完整，不声称原生 Windows 安全已实机验收，也不证明任意程序没有副作用。reviewer 明确 deny 终止调用，绝不自动转成批准；ask/unknown、失败、超时、非法输出或不可用才回到人工。面板显示 PowerShell。策略原因为 ask_mode、review_uncertain、platform_write_review 或 powershell_write_review 时，完整普通 PowerShell 调用可提供有效的精确记住选项，包括仅 execute effect 的静态输出；未知 PowerShell、歧义路径、未验证实现、明确 ask、敏感/外部目标、grep/glob 和子代理请求仍隐藏不能生效的记住选项。
+只有已完整分类、排除敏感/项目外/危险与用户限制的普通操作，才能在 ask/auto 进入 ModelReviewer；yolo 对未完整分类的操作仍人工，完整普通写入也委托 reviewer。这里 complete 仅指已声明子集的解析和通用文件前提完整，不声称原生 Windows 安全已实机验收，也不证明任意程序没有副作用。reviewer 明确 deny 终止调用，绝不自动转成批准；ask/unknown、失败、超时、非法输出或不可用才回到人工。面板显示 PowerShell。策略原因为 ask_mode、review_uncertain、platform_write_review 或 powershell_write_review 时，完整普通 PowerShell 调用可提供有效的精确记住选项，包括仅 execute effect 的静态输出；未知 PowerShell、歧义路径、未验证实现、明确 ask、敏感/外部目标、grep/glob 和子代理请求仍隐藏不能生效的记住选项。
 
 参数与别名依据 [Microsoft 的解析说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_parsing?view=powershell-5.1)、[Remove-Item](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/remove-item?view=powershell-5.1)、[Set-Content](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/set-content?view=powershell-5.1)；语法树使用 [tree-sitter-powershell](https://github.com/airbus-cert/tree-sitter-powershell)。语法树是解析器，不是任意 PowerShell 程序的安全证明。
 
-写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用，因此“本次会话始终允许”在 Windows 上只询问一次；未命中时 ask 模式默认询问（`ask_mode`），auto/yolo 委托 reviewer（`platform_write_review`）。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先；Windows 文件路径限制按大小写不敏感匹配，以保护尚未创建的大小写变体目标，allow 不因此扩大，Shell 命令与 grep 正则仍保持字面语义。原始路径普通、但规范化目标或项目根含 Windows 歧义形式时，同样必须人工确认，不能退回通用自动放行。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
+写入例外：内置 `write_file` / `edit_file` 先执行与其他平台相同的通用写入分析（真实路径、项目边界、敏感与写保护目标、配置插件入口、链接逃逸、多硬链接、非普通文件、新文件实际父目录），只有判定为项目内完整写入且路径不含歧义形态时才标记为 `native_windows_write_unverified`（`completeness` 保持 `complete`，平台风险由 reason code 与证据表达）。随后：命中用户配置或会话记住的精确目标 allow 规则（`write_file(="src/a.ts")` 或不含通配符的模式）直接放行（`exact_allow`），ask 模式同样适用。未命中时 ask/auto/yolo 都委托 reviewer（`platform_write_review`）。模型要求确认或不可用时才人工，记住的精确规则之后直接放行。通配规则（如 `write_file`、`write_file(src/*)`）与 `writeRoots` 不能直接放行 Windows 写入，最多进入模型审批；yolo 在 Windows 上也不确定性放行写入。这比 Linux 更严格，是有意为之。敏感/写保护/配置插件入口/项目外/多硬链接/歧义路径目标在通用检查阶段即返回人工确认，精确规则也不能放行；用户 deny/ask 规则仍优先；Windows 文件路径限制按大小写不敏感匹配，以保护尚未创建的大小写变体目标，allow 不因此扩大，Shell 命令与 grep 正则仍保持字面语义。原始路径普通、但规范化目标或项目根含 Windows 歧义形式时，同样必须人工确认，不能退回通用自动放行。批准后执行前重验保持绑定：审批期间目标被替换为硬链接别名等变化会重新评估为人工确认。
 
 平台判断可通过 `platform` 选项注入，Windows 分支测试因此在所有宿主上运行。Linux 上的 Windows 字符串样例仅验证保守分类，不宣称证明了 Windows 安全。工具执行仍保留平台适配；平台适配不等于已经完成安全分析验收。
 

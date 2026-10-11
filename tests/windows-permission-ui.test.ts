@@ -45,7 +45,7 @@ const fallbacks: Array<[string, ScriptedResponse | undefined]> = [
   ['invalid_response', textResponse('{"decision":"allow"}')],
   [
     'incomplete_response',
-    jsonResponse('allow').map((event) =>
+    textResponse('{"decision":"allow","reasonCode":"model_allow","reason":"被截断').map((event) =>
       event.type === 'message_stop' ? { ...event, stopReason: 'max_tokens' as const } : event,
     ),
   ],

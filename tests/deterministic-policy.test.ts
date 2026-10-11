@@ -212,10 +212,11 @@ describe('deterministic policy', () => {
           for (const rule of broad) value.controller!.addSessionRule('allow', rule);
         expect(
           await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
-        ).toMatchObject({
-          kind: mode === 'ask' ? 'ask' : 'review',
-          reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-        });
+        ).toMatchObject(
+          process.platform === 'win32'
+            ? { kind: 'review', reasonCode: 'platform_write_review' }
+            : { kind: 'review', reasonCode: 'review_uncertain' },
+        );
       },
     );
 
@@ -257,20 +258,21 @@ describe('deterministic policy', () => {
       expect(
         await value.decide(operation(write, { path: '.env', content: 'x' }), signal()),
       ).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
-      expect(await value.decide(operation(bash, { command: 'npm test' }), signal())).toMatchObject({
-        kind: 'allow',
-        reasonCode: 'exact_call_allow',
-        matchedRule: 'bash(="npm test")',
-      });
+      expect(await value.decide(operation(bash, { command: 'npm test' }), signal())).toMatchObject(
+        process.platform === 'win32'
+          ? { kind: 'ask', reasonCode: 'powershell_unknown' }
+          : {
+              kind: 'allow',
+              reasonCode: 'exact_call_allow',
+              matchedRule: 'bash(="npm test")',
+            },
+      );
       expect(
         await value.decide(
           operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' }),
           signal(),
         ),
-      ).toMatchObject({
-        kind: mode === 'ask' ? 'ask' : 'review',
-        reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-      });
+      ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
     });
   });
 
@@ -407,10 +409,13 @@ describe('deterministic policy', () => {
     '受控字面量 Shell %s 在 auto 确定性放行，已验证只读在 ask 中同样放行',
     async (command) => {
       if (process.platform === 'win32') {
-        expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject({
-          kind: 'ask',
-          reasonCode: 'ask_mode',
-        });
+        expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject(
+          command === 'pwd'
+            ? { kind: 'allow', reasonCode: 'safe_read' }
+            : command.startsWith('echo')
+              ? { kind: 'review', reasonCode: 'review_uncertain' }
+              : { kind: 'ask', reasonCode: 'powershell_unknown' },
+        );
         return;
       }
       expect(await policy().decide(operation(bash, { command }), signal())).toMatchObject({
@@ -474,7 +479,11 @@ describe('deterministic policy', () => {
     ).toMatchObject({ kind: 'ask', reasonCode: 'explicit_ask' });
     expect(
       await policy('ask').decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
-    ).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
+    ).toMatchObject(
+      process.platform === 'win32'
+        ? { kind: 'review', reasonCode: 'platform_write_review' }
+        : { kind: 'review', reasonCode: 'review_uncertain' },
+    );
   });
 
   it('危险命令、deny 与明确 ask 优先于完全相同的精确调用规则', async () => {
@@ -506,10 +515,11 @@ describe('deterministic policy', () => {
             operation(bash, { command: 'npm test' }),
             signal(),
           ),
-        ).toMatchObject({
-          kind: mode === 'ask' ? 'ask' : 'review',
-          reasonCode: mode === 'ask' ? 'ask_mode' : 'review_uncertain',
-        });
+        ).toMatchObject(
+          process.platform === 'win32'
+            ? { kind: 'ask', reasonCode: 'powershell_unknown' }
+            : { kind: 'review', reasonCode: 'review_uncertain' },
+        );
   });
 
   it('MCP 工具的规范化输入 JSON 精确规则可放行，输入不同则不放行', async () => {
@@ -565,6 +575,17 @@ describe('deterministic policy', () => {
 
   it('yolo 仅跳过完整普通文件写入；auto 写入仍交给 reviewer', async () => {
     const input = operation(write, { path: 'new/sub/file.ts', content: 'x' });
+    if (process.platform === 'win32') {
+      expect(await policy('yolo').decide(input, signal())).toMatchObject({
+        kind: 'review',
+        reasonCode: 'platform_write_review',
+      });
+      expect(await policy('auto').decide(input, signal())).toMatchObject({
+        kind: 'review',
+        reasonCode: 'platform_write_review',
+      });
+      return;
+    }
     expect((await policy('yolo').decide(input, signal())).kind).toBe('allow');
     expect((await policy('auto').decide(input, signal())).kind).toBe('review');
   });
@@ -578,7 +599,11 @@ describe('deterministic policy', () => {
     });
     expect(
       await value.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal()),
-    ).toMatchObject({ kind: 'allow', reasonCode: 'scoped_write' });
+    ).toMatchObject(
+      process.platform === 'win32'
+        ? { kind: 'review', reasonCode: 'platform_write_review' }
+        : { kind: 'allow', reasonCode: 'scoped_write' },
+    );
     expect(
       (
         await policy().decide(
@@ -618,7 +643,11 @@ describe('deterministic policy', () => {
     });
     expect(
       await ask.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal()),
-    ).toMatchObject({ kind: 'ask', reasonCode: 'ask_mode' });
+    ).toMatchObject(
+      process.platform === 'win32'
+        ? { kind: 'review', reasonCode: 'platform_write_review' }
+        : { kind: 'review', reasonCode: 'review_uncertain' },
+    );
   });
 
   it('其他配置的分析快照不能扩大 writeRoots，本策略不能跨项目借用', async () => {
@@ -802,9 +831,10 @@ describe('deterministic policy', () => {
     expect((await executor.invokeTool('bash', { command: 'npm test' }, context)).content).toContain(
       'approval_required',
     );
-    expect(reviewer.review).toHaveBeenCalledTimes(1);
+    const reviews = process.platform === 'win32' ? 0 : 1;
+    expect(reviewer.review).toHaveBeenCalledTimes(reviews);
     await executor.invokeTool('read_file', { path: '.env' }, context);
-    expect(reviewer.review).toHaveBeenCalledTimes(1);
+    expect(reviewer.review).toHaveBeenCalledTimes(reviews);
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });

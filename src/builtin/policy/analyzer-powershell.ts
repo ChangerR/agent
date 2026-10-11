@@ -275,6 +275,12 @@ export async function analyzePowerShell(
     effects.length > 0 &&
     effects.every((effect) => effect.scope !== 'unknown');
   if (complete && syntax.command) environment['$powershellCommand'] = syntax.command;
+  // 未完整分类的命令仍可能执行原生程序。配置、锁文件与脚本变化必须使等待中的批准失效。
+  if (!complete) {
+    const snapshot = await ctx.checkpoint.analyze(input, signal);
+    for (const [key, value] of Object.entries(snapshot.environment ?? {}))
+      environment[`checkpoint:${key}`] = value;
+  }
   const analysis: ToolAnalysis = {
     ...described(environment),
     completeness: complete

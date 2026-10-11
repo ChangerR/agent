@@ -176,7 +176,8 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           'use_dedicated_tool',
           '读文件用 read_file，列目录和按名字找文件用 glob，搜索内容用 grep。这条 PowerShell 没有执行，不需要人工确认。',
         );
-      // 歧义路径与未解析的 PowerShell 是确定性人工约束，模型 allow 不能补全缺失语义。
+      // 歧义路径是确定性人工约束。未解析的 PowerShell 在下方单独返回，模型 allow 不能补全缺失语义。
+      // 其余未验收的 Windows Shell 不在这里改成人工，否则 reviewer 被跳过。
       if (analysis.reasonCode === 'native_windows_unverified')
         return decision(
           'ask',
@@ -251,7 +252,7 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           );
       }
       // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；
-      // 通配符/工具级规则和 writeRoots 目录授权都不放行，auto/yolo 交给 reviewer，ask 模式照旧询问。
+      // 通配符/工具级规则和 writeRoots 目录授权都不放行。未命中时 ask/auto/yolo 都交给 reviewer。
       // 敏感/写保护、项目外、特殊文件、硬链接与歧义路径在上方已人工，精确规则同样不能越过。
       const windowsShellWrite =
         windowsShell &&
@@ -278,8 +279,6 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
             exact.source,
             exact.raw,
           );
-        if (controller.mode === 'ask')
-          return decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
         return decision(
           'review',
           windowsShellWrite ? 'powershell_write_review' : 'platform_write_review',
@@ -319,8 +318,15 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       }
       if (complete && analysis.effects.every((effect) => effect.kind === 'read'))
         return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
+      // ask 的兜底与 auto 相同：交给审批模型。必须放在 writeRoots 之前，避免目录授权在 ask 模式直接放行。
+      // 明确 ask、危险命令、敏感和项目外目标已在前面返回人工；模型失败或要求确认时才回到人工。
       if (controller.mode === 'ask')
-        return decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode');
+        return decision(
+          'review',
+          'review_uncertain',
+          '确定性分析未给出授权，委托一次 reviewer 判断当前完整操作',
+          'mode',
+        );
       if (
         complete &&
         writeRoots.length &&
