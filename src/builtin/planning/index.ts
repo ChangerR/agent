@@ -1,4 +1,4 @@
-/** 默认规划策略：复杂请求先提出结构化计划，实施仍由原 loop 负责。 */
+/** 默认由模型按上下文规划并实施；显式只规划/强制规划才单独请求方案。 */
 import { z } from 'zod';
 import { definePlugin } from '../../sdk/index.js';
 import type { RuntimeServices } from '../../runtime/services.js';
@@ -15,14 +15,6 @@ const proposalSchema = z.object({
   goal: z.string().trim().min(1).max(2000),
   steps: z.array(z.string().trim().min(1).max(2000)).min(1).max(64),
 });
-/** 保持问答零额外请求；显式入口可以强制规划。语义兜底由模型的 plan_update 创建入口承担。 */
-export function needsPlan(input: string): boolean {
-  const actions =
-    input.match(
-      /实现|修复|重构|添加|测试|构建|部署|调查|分析|比较|验证|迁移|implement|fix|refactor|build|test|deploy|investigate|analy[sz]e|compare|verify|migrat/gi,
-    ) ?? [];
-  return actions.length >= 2 || (actions.length > 0 && (input.length > 100 || /\n/.test(input)));
-}
 export const planningStrategy: PlanningStrategy = {
   readTools: ['read_file', 'glob', 'grep'].map((name) => ({
     name,
@@ -40,9 +32,16 @@ export const planningStrategy: PlanningStrategy = {
       ownerPlugin: 'agentlab.subagents',
     })),
   ],
-  async prepare(input: PlannerInput) {
-    if (input.mode === 'off' || (input.mode !== 'only' && !input.force && !needsPlan(input.input)))
+  continuation(plan) {
+    if (
+      plan.steps.some((step) => ['blocked', 'cancelled', 'interrupted'].includes(step.status)) ||
+      !plan.steps.some((step) => step.status === 'pending' || step.status === 'running')
+    )
       return;
+    return '当前任务的计划尚未完成。请核对已有结果，继续未完成步骤，不要停在方案或进度汇报，不要要求用户输入继续命令。已执行的操作不要重复；核实依据后更新步骤，再推进下一步。有子任务时等待并核对结果。确实缺少用户信息、权限或外部条件时，将对应步骤标为 blocked 并说明原因，再向用户提问；不得把这条内部提醒当作新的用户授权。';
+  },
+  async prepare(input: PlannerInput) {
+    if (input.mode === 'off' || (input.mode !== 'only' && !input.force)) return;
     const response = await collectStreamAsync(
       observedStream(
         input.provider,
@@ -70,7 +69,7 @@ export const planningStrategy: PlanningStrategy = {
         JSON.parse(body.replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '')),
       );
     } catch {
-      throw new Error('规划结构无效，未开始执行；请重试 /plan auto <任务>');
+      throw new Error('规划结构无效，未开始执行；请重新提交任务');
     }
   },
 };
@@ -95,7 +94,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
             id: 'planning',
             source: PLANNING_PLUGIN,
             stability: 'stable',
-            text: '复杂多步骤工作须先有结构化计划再执行。若当前无计划，用 plan_update 的 goal/steps 创建；简单问答直接回答。计划修改使用 plan_status 的最新 revision 和稳定 stepId。实施前将步骤置 running，完成时提供具体 evidence。使用 agent_spawn.planStepId 关联任务，等 child 真实完成才可完成步骤。遇错如实 blocked，不把 loop 结束当作任务完成。',
+            text: '用户直接描述任务即可，无需先选择规划方式或输入命令。根据完整上下文自行判断复杂度：简单问答直接回答，简单操作直接执行；复杂多步骤工作用 plan_update 的 goal/steps 创建简洁计划，可先做必要的只读调研，然后持续实施、验证并更新计划，直到完成或遇到真实阻塞。普通执行任务不要只返回方案、询问是否开始或要求用户输入 /plan auto、/plan execute、/plan continue。用户明确只要方案时尊重其范围，不开始实施。计划修改使用 plan_status 的最新 revision 和稳定 stepId。实施前将步骤置 running，完成时提供具体 evidence。使用 agent_spawn.planStepId 关联任务，等 child 真实完成才可完成步骤。可自行解决的问题先修复；需要用户信息、授权或外部条件时，将步骤标为 blocked 并说明原因再提问。不把 loop 结束当作任务完成。',
           },
         ],
       });
@@ -237,7 +236,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
         order: 4,
         applyMode: 'nextRequest',
         description:
-          'auto 自动规划后执行；only 只规划；off 关闭自动规划。单次提交即保存，不改变权限模式。',
+          '默认自动按需规划并执行，直接描述任务即可。only 只规划；off 关闭规划。单次提交即保存，不改变权限模式。',
         scopeTargets: stores.scopeTargets.filter((t) => t.scope === 'project'),
         schema: {
           type: 'object',
