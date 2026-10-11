@@ -88,8 +88,10 @@ export function canRememberPermission(
     !request.agentId &&
     (policyReason === 'ask_mode' ||
       policyReason === 'review_uncertain' ||
-      policyReason === 'platform_write_review') &&
+      policyReason === 'platform_write_review' ||
+      policyReason === 'powershell_write_review') &&
     request.analysisReasonCode !== 'native_windows_unverified' &&
+    request.analysisReasonCode !== 'powershell_unresolved' &&
     request.analysisReasonCode !== 'unverified_tool_implementation' &&
     request.toolName !== 'grep' &&
     request.toolName !== 'glob'

@@ -968,16 +968,24 @@ describe('真实 TUI 离线交互', () => {
     expect(
       canRememberPermission({
         reasonCode: 'ask_mode',
-        analysisReasonCode: 'native_windows_shell_unverified',
+        analysisReasonCode: 'powershell_bounded',
+        toolName: 'bash',
+      }),
+    ).toBe(true);
+    expect(
+      canRememberPermission({
+        reasonCode: 'model_ask',
+        policyReasonCode: 'powershell_write_review',
+        analysisReasonCode: 'powershell_file_operation',
         toolName: 'bash',
       }),
     ).toBe(true);
     expect(canRememberPermission({ reasonCode: 'explicit_ask', toolName: 'write_file' })).toBe(
       false,
     );
-    expect(canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' })).toBe(
-      false,
-    );
+    expect(
+      canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' }),
+    ).toBe(false);
     expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'grep' })).toBe(false);
     expect(
       canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash', agentId: 'child-1' }),
@@ -991,6 +999,13 @@ describe('真实 TUI 离线交互', () => {
       policyReasonCode: undefined,
       analysisReasonCode: undefined,
       input: { command: 'ls' },
+    },
+    {
+      toolName: 'bash',
+      reasonCode: 'powershell_unknown',
+      policyReasonCode: 'powershell_unknown',
+      analysisReasonCode: 'powershell_unresolved',
+      input: { command: 'git status --short' },
     },
     {
       toolName: 'read_file',

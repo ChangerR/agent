@@ -1,7 +1,7 @@
 /**
  * 原生 Windows 写入：用户亲自配置或记住的精确、无通配符规则直接放行 write_file/edit_file；
  * 未命中精确规则的项目内普通写入在 auto/yolo 交给模型审批；敏感/写保护、项目外、硬链接、歧义路径与 ask 模式仍人工。
- * 未验收的 Windows Shell 在 auto 交给 reviewer，精确规则不能直接放行。
+ * 完整分类的 PowerShell 支持精确调用规则，未知 PowerShell 仍直接人工。
  * 通过 platform 注入覆盖 Windows 分支，在所有宿主上运行，不按宿主平台跳过。
  */
 import { realpathSync } from 'node:fs';
@@ -263,7 +263,7 @@ describe('原生 Windows 写入：仍人工的边界（精确规则也不能越�
     ).toMatchObject({ kind: 'ask', reasonCode });
   });
 
-  it('未验收的 Windows Shell：等于引号精确规则放行，字面量模式仍不放行', async () => {
+  it('完整静态 PowerShell：等于引号精确规则放行，字面量模式仍不放行', async () => {
     const exact = rules({ allow: ['bash(="echo one")'] });
     expect(await decide('auto', 'bash', { command: 'echo one' }, exact)).toMatchObject({
       kind: 'allow',
@@ -433,7 +433,13 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     responder?: (request: PermissionRequest) => { allow: boolean; remember?: 'session' },
   ) {
     const registry = new ToolRegistry();
-    for (const tool of Object.values(tools)) registry.register(tool);
+    // 注入 Windows 的 Linux 回归只验证 Shell 决策；不得以 Bash 执行来冒充原生 PowerShell 验收。
+    for (const tool of Object.values(tools))
+      registry.register(
+        tool.name === 'bash'
+          ? { ...tool, execute: async () => ({ content: 'one (safe execution double)' }) }
+          : tool,
+      );
     const policy = createDeterministicPolicy({ cwd, mode, rules: noRules, platform: 'win32' });
     const events = new EventBus();
     const requests: PermissionRequest[] = [];
@@ -459,7 +465,7 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     return { run, requests, policy };
   }
 
-  it('真实模型 reviewer allow：未命中规则的写入零人工执行', async () => {
+  it('内置 ModelReviewer + FakeProvider allow：未命中规则的写入零人工执行', async () => {
     const provider = new FakeProvider([
       textResponse(
         JSON.stringify({ decision: 'allow', reasonCode: 'task_scoped_write', reason: '符合要求' }),
@@ -505,26 +511,41 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     expect(await readFile(join(cwd, 'src/remember.ts'), 'utf8')).toBe('2');
   });
 
-  it('auto 下未验收 Shell 先交给 reviewer；没有 reviewer 才回到人工', async () => {
+  it('auto 下完整字面 Shell 先交给 reviewer；没有 reviewer 才回到人工', async () => {
     const { run, requests } = setup('auto', undefined, () => ({ allow: false }));
     await run('bash', { command: 'echo one' });
     await run('bash', { command: 'echo one' });
     expect(requests).toHaveLength(2);
     expect(requests.every((request) => request.reasonCode === 'reviewer_unavailable')).toBe(true);
     expect(requests.every((request) => request.policyReasonCode === 'review_uncertain')).toBe(true);
-    expect(
-      requests.every((request) => request.analysisReasonCode === 'native_windows_shell_unverified'),
-    ).toBe(true);
+    expect(requests.every((request) => request.analysisReasonCode === 'powershell_bounded')).toBe(
+      true,
+    );
   });
 
-  it('reviewer 允许未验收 Shell 后直接执行，不再改成人工', async () => {
-    const { run, requests } = setup('auto', {
-      review: async () => ({ decision: 'allow', reasonCode: 'task_scoped', reason: 'fixture' }),
-    });
+  it('真实 ModelReviewer 允许完整字面 Shell 后调用无副作用执行替身', async () => {
+    const provider = new FakeProvider([
+      (request) => {
+        const data = JSON.parse(request.messages[0]!.content as string);
+        expect(data.analysis.completeness).toBe('complete');
+        return textResponse(
+          JSON.stringify({ decision: 'allow', reasonCode: 'task_scoped', reason: 'fixture' }),
+        );
+      },
+    ]);
+    const { run, requests } = setup(
+      'auto',
+      createModelReviewer({
+        provider,
+        model: 'controlled-protocol',
+        modelInfo: () => ({ contextWindow: 128_000, maxOutputTokens: 8192 }),
+      }),
+    );
     const result = await run('bash', { command: 'echo one' });
     expect(result.isError).toBeFalsy();
     expect(result.content).toContain('one');
     expect(requests).toEqual([]);
+    expect(provider.requests).toHaveLength(1);
   });
 
   it('执行前重验仍绑定：模型批准后目标被替换为指向项目外的硬链接，不会写穿到外部文件', async () => {

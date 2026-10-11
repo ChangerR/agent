@@ -4,7 +4,7 @@ import type { AnalysisInput, ToolAnalysis } from '../../sdk/capabilities.js';
 import type { createEnvironmentAnalyzer } from './environment.js';
 
 export const ANALYZER_ID = 'deterministic-operations';
-export const ANALYZER_VERSION = '2.6.2';
+export const ANALYZER_VERSION = '2.7.0';
 
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(

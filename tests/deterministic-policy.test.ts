@@ -258,11 +258,15 @@ describe('deterministic policy', () => {
       expect(
         await value.decide(operation(write, { path: '.env', content: 'x' }), signal()),
       ).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
-      expect(await value.decide(operation(bash, { command: 'npm test' }), signal())).toMatchObject({
-        kind: 'allow',
-        reasonCode: 'exact_call_allow',
-        matchedRule: 'bash(="npm test")',
-      });
+      expect(await value.decide(operation(bash, { command: 'npm test' }), signal())).toMatchObject(
+        process.platform === 'win32'
+          ? { kind: 'ask', reasonCode: 'powershell_unknown' }
+          : {
+              kind: 'allow',
+              reasonCode: 'exact_call_allow',
+              matchedRule: 'bash(="npm test")',
+            },
+      );
       expect(
         await value.decide(
           operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' }),
@@ -405,10 +409,13 @@ describe('deterministic policy', () => {
     '受控字面量 Shell %s 在 auto 确定性放行，已验证只读在 ask 中同样放行',
     async (command) => {
       if (process.platform === 'win32') {
-        expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject({
-          kind: 'review',
-          reasonCode: 'review_uncertain',
-        });
+        expect(await policy('ask').decide(operation(bash, { command }), signal())).toMatchObject(
+          command === 'pwd'
+            ? { kind: 'allow', reasonCode: 'safe_read' }
+            : command.startsWith('echo')
+              ? { kind: 'review', reasonCode: 'review_uncertain' }
+              : { kind: 'ask', reasonCode: 'powershell_unknown' },
+        );
         return;
       }
       expect(await policy().decide(operation(bash, { command }), signal())).toMatchObject({
@@ -508,7 +515,11 @@ describe('deterministic policy', () => {
             operation(bash, { command: 'npm test' }),
             signal(),
           ),
-        ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
+        ).toMatchObject(
+          process.platform === 'win32'
+            ? { kind: 'ask', reasonCode: 'powershell_unknown' }
+            : { kind: 'review', reasonCode: 'review_uncertain' },
+        );
   });
 
   it('MCP 工具的规范化输入 JSON 精确规则可放行，输入不同则不放行', async () => {
@@ -544,9 +555,14 @@ describe('deterministic policy', () => {
       execute: async () => ({ content: 'no' }),
     };
     const rule = `${tool.name}(=${JSON.stringify(canonical)})`;
-    expect(await policy('ask', { allow: [rule] }).decide(operation(tool, input), signal())).toMatchObject(
-      { kind: 'allow', reasonCode: 'exact_call_allow', source: 'config', matchedRule: rule },
-    );
+    expect(
+      await policy('ask', { allow: [rule] }).decide(operation(tool, input), signal()),
+    ).toMatchObject({
+      kind: 'allow',
+      reasonCode: 'exact_call_allow',
+      source: 'config',
+      matchedRule: rule,
+    });
     expect(
       (
         await policy('ask', { allow: [rule] }).decide(
@@ -559,6 +575,17 @@ describe('deterministic policy', () => {
 
   it('yolo 仅跳过完整普通文件写入；auto 写入仍交给 reviewer', async () => {
     const input = operation(write, { path: 'new/sub/file.ts', content: 'x' });
+    if (process.platform === 'win32') {
+      expect(await policy('yolo').decide(input, signal())).toMatchObject({
+        kind: 'review',
+        reasonCode: 'platform_write_review',
+      });
+      expect(await policy('auto').decide(input, signal())).toMatchObject({
+        kind: 'review',
+        reasonCode: 'platform_write_review',
+      });
+      return;
+    }
     expect((await policy('yolo').decide(input, signal())).kind).toBe('allow');
     expect((await policy('auto').decide(input, signal())).kind).toBe('review');
   });
@@ -572,7 +599,11 @@ describe('deterministic policy', () => {
     });
     expect(
       await value.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal()),
-    ).toMatchObject({ kind: 'allow', reasonCode: 'scoped_write' });
+    ).toMatchObject(
+      process.platform === 'win32'
+        ? { kind: 'review', reasonCode: 'platform_write_review' }
+        : { kind: 'allow', reasonCode: 'scoped_write' },
+    );
     expect(
       (
         await policy().decide(
@@ -800,9 +831,10 @@ describe('deterministic policy', () => {
     expect((await executor.invokeTool('bash', { command: 'npm test' }, context)).content).toContain(
       'approval_required',
     );
-    expect(reviewer.review).toHaveBeenCalledTimes(1);
+    const reviews = process.platform === 'win32' ? 0 : 1;
+    expect(reviewer.review).toHaveBeenCalledTimes(reviews);
     await executor.invokeTool('read_file', { path: '.env' }, context);
-    expect(reviewer.review).toHaveBeenCalledTimes(1);
+    expect(reviewer.review).toHaveBeenCalledTimes(reviews);
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });

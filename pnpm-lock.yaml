@@ -35,6 +35,9 @@ importers:
       tree-sitter-bash:
         specifier: ^0.25.1
         version: 0.25.1(tree-sitter@0.25.1)
+      tree-sitter-powershell:
+        specifier: 0.26.4
+        version: 0.26.4(tree-sitter@0.25.1)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -1450,6 +1453,14 @@ packages:
       tree-sitter:
         optional: true
 
+  tree-sitter-powershell@0.26.4:
+    resolution: {integrity: sha512-5RwNW/qN/cKArZY0znvTOG+OWSau7Agel5K0A8KQ5Nubw/4SyZ5KC02RKCaYcA2ur5UQ8esyxe9+6yXup2MXkw==}
+    peerDependencies:
+      tree-sitter: ^0.25.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
   tree-sitter@0.25.1:
     resolution: {integrity: sha512-mrcEdkYtHfrK1A6fs3O6FxkBo0Qig5XUXqHhxUOQu0bmPo00QF4XaSx4edpazdHwxnSCjlGKGgIqWdaN4dvTLA==}
 
@@ -2775,6 +2786,13 @@ snapshots:
   tree-kill@1.2.2: {}
 
   tree-sitter-bash@0.25.1(tree-sitter@0.25.1):
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+    optionalDependencies:
+      tree-sitter: 0.25.1
+
+  tree-sitter-powershell@0.26.4(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4

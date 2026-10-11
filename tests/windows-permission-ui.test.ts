@@ -211,9 +211,9 @@ describe('人工模式和非 Windows 不被 reviewer 原因码误判', () => {
       }),
     ).toBe(true);
     expect(canRememberPermission({ reasonCode: 'explicit_ask', toolName: 'bash' })).toBe(false);
-    expect(canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' })).toBe(
-      false,
-    );
+    expect(
+      canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' }),
+    ).toBe(false);
     expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'grep' })).toBe(false);
     expect(
       canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash', agentId: 'child' }),
