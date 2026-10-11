@@ -10,8 +10,13 @@ import { AgentLoop } from '../src/core/loop.js';
 import { ToolRegistry } from '../src/core/registry.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 
-function makeLoop(modelInfo?: (model: string) => { contextWindow: number; maxOutputTokens: number } | undefined) {
-  const context = new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: 120_000 });
+function makeLoop(
+  modelInfo?: (model: string) => { contextWindow: number; maxOutputTokens: number } | undefined,
+) {
+  const context = new ContextManager({
+    compactor: new SummaryCompactor(),
+    compactThreshold: 120_000,
+  });
   const provider = new FakeProvider([textResponse('ok')]);
   const loop = new AgentLoop({
     provider,
@@ -31,9 +36,13 @@ function makeLoop(modelInfo?: (model: string) => { contextWindow: number; maxOut
 
 describe('模型规格联动', () => {
   it('小窗口切回大窗口恢复配置上限，切未知模型恢复默认输出预算', async () => {
-    const { loop, context, provider } = makeLoop((model) => model === 'small'
-      ? { contextWindow: 1000, maxOutputTokens: 128 }
-      : model === 'big' ? { contextWindow: 200_000, maxOutputTokens: 512 } : undefined);
+    const { loop, context, provider } = makeLoop((model) =>
+      model === 'small'
+        ? { contextWindow: 1000, maxOutputTokens: 128 }
+        : model === 'big'
+          ? { contextWindow: 200_000, maxOutputTokens: 512 }
+          : undefined,
+    );
     loop.setModel('small');
     expect(context.threshold).toBe(800);
     loop.setModel('big');

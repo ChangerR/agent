@@ -11,4 +11,3 @@ export function newSessionId(now: Date = new Date()): string {
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   return `s-${stamp}-${randomBytes(2).toString('hex')}`;
 }
-

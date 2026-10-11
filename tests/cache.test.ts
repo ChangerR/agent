@@ -32,7 +32,10 @@ function countCacheControl(value: unknown): number {
   if (Array.isArray(value)) return value.reduce((n, v) => n + countCacheControl(v), 0);
   if (value && typeof value === 'object') {
     return Object.entries(value as Record<string, unknown>).reduce(
-      (n, [k, v]) => n + (k === 'cache_control' ? 1 : 0) + countCacheControl(k === 'cache_control' ? undefined : v),
+      (n, [k, v]) =>
+        n +
+        (k === 'cache_control' ? 1 : 0) +
+        countCacheControl(k === 'cache_control' ? undefined : v),
       0,
     );
   }
@@ -119,7 +122,13 @@ describe('Anthropic 缓存断点', () => {
   it('后一轮去掉 cache_control 后，前缀与前一轮相同', () => {
     const head: Message[] = [
       { role: 'user', content: '读文件' },
-      { role: 'assistant', content: [{ type: 'text', text: '好' }, { type: 'tool_use', id: 't1', name: 'read_file', input: { path: 'a' } }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: '好' },
+          { type: 'tool_use', id: 't1', name: 'read_file', input: { path: 'a' } },
+        ],
+      },
       { role: 'user', content: [{ type: 'tool_result', toolUseId: 't1', content: 'data' }] },
     ];
     const longer: Message[] = [
@@ -127,7 +136,9 @@ describe('Anthropic 缓存断点', () => {
       { role: 'assistant', content: [{ type: 'text', text: '继续' }] },
       { role: 'user', content: '再看一眼' },
     ];
-    const first = buildAnthropicBody(req({ messages: head, cache: { system: true, tools: true, messageBreakpoints: [2] } }));
+    const first = buildAnthropicBody(
+      req({ messages: head, cache: { system: true, tools: true, messageBreakpoints: [2] } }),
+    );
     const second = buildAnthropicBody(
       req({ messages: longer, cache: { system: true, tools: true, messageBreakpoints: [2, 4] } }),
     );
@@ -140,11 +151,15 @@ describe('Anthropic 缓存断点', () => {
 
   it('1 小时 ttl 写入断点和 beta 头，5 分钟不写', () => {
     const messages: Message[] = [{ role: 'user', content: 'hi' }];
-    const hour = buildAnthropicBody(req({ messages, cache: { system: true, tools: false, messageBreakpoints: [0], ttl: '1h' } }));
+    const hour = buildAnthropicBody(
+      req({ messages, cache: { system: true, tools: false, messageBreakpoints: [0], ttl: '1h' } }),
+    );
     expect(JSON.stringify(hour.body)).toContain('"ttl":"1h"');
     expect(hour.headers['anthropic-beta']).toContain('extended-cache-ttl-2025-04-11');
 
-    const five = buildAnthropicBody(req({ messages, cache: { system: true, tools: false, messageBreakpoints: [0], ttl: '5m' } }));
+    const five = buildAnthropicBody(
+      req({ messages, cache: { system: true, tools: false, messageBreakpoints: [0], ttl: '5m' } }),
+    );
     expect(JSON.stringify(five.body)).not.toContain('"ttl"');
     expect(five.headers).toEqual({});
   });
@@ -213,7 +228,11 @@ describe('用量合并', () => {
     expect(
       openai.translate({
         choices: [],
-        usage: { prompt_tokens: 1000, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 800 } },
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 20,
+          prompt_tokens_details: { cached_tokens: 800 },
+        },
       } as never),
     ).toContainEqual({
       type: 'usage',
@@ -249,7 +268,9 @@ describe('用量合并', () => {
         ],
       },
     ]);
-    const call = (out[0] as unknown as { tool_calls: Array<Record<string, unknown>>; content: string }).tool_calls[0];
+    const call = (
+      out[0] as unknown as { tool_calls: Array<Record<string, unknown>>; content: string }
+    ).tool_calls[0];
     expect(call).not.toHaveProperty('index');
     expect(out[0]).toMatchObject({ content: 'hi' });
     expect(JSON.stringify(out[0])).not.toContain('secret');

@@ -10,13 +10,20 @@ const cwd = process.argv[2] ?? process.cwd();
 
 const agent = await createAgent(cwd);
 agent.events.on('text_delta', (e) => process.stdout.write(e.text));
-agent.events.on('tool_call', (e) => console.log(`\n[tool_call] ${e.toolUse.name} ${JSON.stringify(e.toolUse.input)}`));
-agent.events.on('tool_result', (e) => console.log(`[tool_result] ${e.result.content.slice(0, 80)}`));
+agent.events.on('tool_call', (e) =>
+  console.log(`\n[tool_call] ${e.toolUse.name} ${JSON.stringify(e.toolUse.input)}`),
+);
+agent.events.on('tool_result', (e) =>
+  console.log(`[tool_result] ${e.result.content.slice(0, 80)}`),
+);
 agent.events.on('permission_request', (e) => {
   console.log(`[permission] ${e.request.summary} → auto-allow`);
   e.resolve({ allow: true });
 });
 agent.events.on('loop_end', (e) => console.log(`\n[loop_end] ${e.reason}`));
 
-try { await agent.loop.run('帮我读一下 demo.txt'); }
-finally { await agent.dispose(); }
+try {
+  await agent.loop.run('帮我读一下 demo.txt');
+} finally {
+  await agent.dispose();
+}

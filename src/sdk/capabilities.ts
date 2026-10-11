@@ -1,22 +1,52 @@
 /** 公共能力契约：只依赖协议和结构，不把具体实现或终端类型带进 SDK。 */
 import type { AgentConfig, PermissionMode } from '../core/config.js';
 import type { AgentEvent, EventBus } from '../core/events.js';
-import type { Decision, AuditEntry, SessionRules, JudgeMetadata, ReviewContext, ReviewHistoryStore } from '../core/permission/contracts.js';
+import type {
+  Decision,
+  AuditEntry,
+  SessionRules,
+  JudgeMetadata,
+  ReviewContext,
+  ReviewHistoryStore,
+} from '../core/permission/contracts.js';
 import type { Provider } from '../core/provider.js';
 import type { Tool, ToolResult } from './protocol.js';
-import type { ContextSource, Compactor, CacheStrategy, ModelCatalog, SessionStore, Telemetry } from './runtime-capabilities.js';
+import type {
+  ContextSource,
+  Compactor,
+  CacheStrategy,
+  ModelCatalog,
+  SessionStore,
+  Telemetry,
+} from './runtime-capabilities.js';
 
 export type MaybePromise<T> = T | Promise<T>;
 export type Disposer = () => MaybePromise<void>;
-export type ReadonlyDeep<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer U)[] ? readonly ReadonlyDeep<U>[] : T extends object ? { readonly [K in keyof T]: ReadonlyDeep<T[K]> } : T;
+export type ReadonlyDeep<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer U)[]
+    ? readonly ReadonlyDeep<U>[]
+    : T extends object
+      ? { readonly [K in keyof T]: ReadonlyDeep<T[K]> }
+      : T;
 
 export type ApprovalTool = Omit<Tool, 'execute'>;
-export interface AnalysisInput { readonly configRevision?: string | number; readonly policyRevision?: string | number; readonly tool: ApprovalTool; readonly input: Readonly<Record<string, unknown>>; readonly cwd: string }
+export interface AnalysisInput {
+  readonly configRevision?: string | number;
+  readonly policyRevision?: string | number;
+  readonly tool: ApprovalTool;
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly cwd: string;
+}
 export interface ToolAnalysis {
   analyzerId: string;
   analyzerVersion: string;
   completeness: 'complete' | 'partial' | 'unknown';
-  effects: readonly { kind: 'read' | 'write' | 'execute' | 'network' | 'unknown'; target?: string; scope?: 'project' | 'external' | 'sensitive' | 'unknown' }[];
+  effects: readonly {
+    kind: 'read' | 'write' | 'execute' | 'network' | 'unknown';
+    target?: string;
+    scope?: 'project' | 'external' | 'sensitive' | 'unknown';
+  }[];
   targets?: readonly string[];
   evidence?: readonly { source: string; detail: string }[];
   environment?: Readonly<Record<string, string>>;
@@ -27,7 +57,11 @@ export interface ToolAnalyzer {
   readonly id?: string;
   readonly version?: string;
   analyze(input: AnalysisInput, signal: AbortSignal): MaybePromise<ToolAnalysis>;
-  revalidate?(analysis: ToolAnalysis, input: AnalysisInput, signal: AbortSignal): MaybePromise<boolean>;
+  revalidate?(
+    analysis: ToolAnalysis,
+    input: AnalysisInput,
+    signal: AbortSignal,
+  ): MaybePromise<boolean>;
 }
 export interface PolicyInput extends AnalysisInput {
   readonly sessionId?: string;
@@ -79,7 +113,14 @@ export interface ReviewResult {
   reason: string;
   judge?: JudgeMetadata;
 }
-export interface ReviewerStatus { provider?: string; providerSource?: 'current' | 'explicit'; loaded: boolean; model?: string; source?: 'current' | 'explicit'; reason?: string }
+export interface ReviewerStatus {
+  provider?: string;
+  providerSource?: 'current' | 'explicit';
+  loaded: boolean;
+  model?: string;
+  source?: 'current' | 'explicit';
+  reason?: string;
+}
 export interface Reviewer {
   review(input: ReviewInput, signal: AbortSignal): Promise<ReviewResult>;
   getStatus?(): ReviewerStatus;
@@ -90,15 +131,45 @@ export interface Reviewer {
 type Observable<E> = E extends { type: 'permission_request' } ? Omit<E, 'resolve' | 'signal'> : E;
 export type ObservedEvent = ReadonlyDeep<Observable<AgentEvent>>;
 export interface ReadonlyEventSubscription {
-  on<T extends AgentEvent['type']>(type: T, handler: (event: Extract<ObservedEvent, { type: T }>) => MaybePromise<void>): Disposer;
+  on<T extends AgentEvent['type']>(
+    type: T,
+    handler: (event: Extract<ObservedEvent, { type: T }>) => MaybePromise<void>,
+  ): Disposer;
 }
-export interface SkillDescriptor { name: string; description: string; body: string; path: string }
-export interface SkillSource { list(): SkillDescriptor[]; get(name: string): SkillDescriptor | undefined }
-export interface InteractionRequest { type: 'interaction'; id: string; prompt: string; kind?: 'select' | 'input' | 'confirm' | 'details'; initialValue?: string; body?: string; requireSelection?: boolean; choices?: readonly { id: string; label: string; description?: string }[] }
-export type CommandResult = { type: 'text'; text: string } | { type: 'data'; data: unknown; text?: string } | InteractionRequest | void;
+export interface SkillDescriptor {
+  name: string;
+  description: string;
+  body: string;
+  path: string;
+}
+export interface SkillSource {
+  list(): SkillDescriptor[];
+  get(name: string): SkillDescriptor | undefined;
+}
+export interface InteractionRequest {
+  type: 'interaction';
+  id: string;
+  prompt: string;
+  kind?: 'select' | 'input' | 'confirm' | 'details';
+  initialValue?: string;
+  body?: string;
+  requireSelection?: boolean;
+  choices?: readonly { id: string; label: string; description?: string }[];
+}
+export type CommandResult =
+  | { type: 'text'; text: string }
+  | { type: 'data'; data: unknown; text?: string }
+  | InteractionRequest
+  | void;
 export interface CommandInspection {
   commands: readonly { id: string; description: string }[];
-  settings: readonly { id: string; ownerPlugin: string; title: string; description?: string; applyMode: SettingsSection['applyMode'] }[];
+  settings: readonly {
+    id: string;
+    ownerPlugin: string;
+    title: string;
+    description?: string;
+    applyMode: SettingsSection['applyMode'];
+  }[];
   plugins: readonly { id: string; version: string }[];
   tools: readonly { name: string; risk: string }[];
 }
@@ -118,7 +189,8 @@ export interface Command {
 }
 export type SettingsScope = 'session' | 'project' | 'global';
 /** 持久化目标必须明确给出实际文件；未声明目标的插件自行管理保存位置。 */
-export type SettingsScopeTarget = { readonly scope: 'session' } | { readonly scope: 'project' | 'global'; readonly path: string };
+export type SettingsScopeTarget =
+  { readonly scope: 'session' } | { readonly scope: 'project' | 'global'; readonly path: string };
 export interface SettingsSection {
   order?: number;
   title: string;
@@ -132,7 +204,12 @@ export interface SettingsSection {
   commit?(draft: unknown, signal: AbortSignal, scope?: SettingsScope): MaybePromise<void>;
 }
 /** 纯数据可选 TUI 描述；实现包由终端适配器选择加载，headless 不会 import。 */
-export interface TuiDescriptor { entry: string; kind: 'tool-renderer' | 'status' | 'editor'; capabilityId?: string; title?: string }
+export interface TuiDescriptor {
+  entry: string;
+  kind: 'tool-renderer' | 'status' | 'editor';
+  capabilityId?: string;
+  title?: string;
+}
 export interface CapabilityMap {
   provider: Provider;
   tool: Tool;
@@ -151,11 +228,38 @@ export interface CapabilityMap {
   tui: TuiDescriptor;
 }
 export type CapabilityKind = keyof CapabilityMap;
-export const CAPABILITY_KINDS = ['provider', 'tool', 'analyzer', 'policy', 'reviewer', 'contextSource', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore', 'skillSource', 'command', 'settings', 'telemetry', 'tui'] as const satisfies readonly CapabilityKind[];
-export const SINGLETON_CAPABILITY_KINDS = ['policy', 'reviewer', 'compactor', 'cacheStrategy', 'modelCatalog', 'sessionStore'] as const;
-export type SingletonCapabilityKind = typeof SINGLETON_CAPABILITY_KINDS[number];
+export const CAPABILITY_KINDS = [
+  'provider',
+  'tool',
+  'analyzer',
+  'policy',
+  'reviewer',
+  'contextSource',
+  'compactor',
+  'cacheStrategy',
+  'modelCatalog',
+  'sessionStore',
+  'skillSource',
+  'command',
+  'settings',
+  'telemetry',
+  'tui',
+] as const satisfies readonly CapabilityKind[];
+export const SINGLETON_CAPABILITY_KINDS = [
+  'policy',
+  'reviewer',
+  'compactor',
+  'cacheStrategy',
+  'modelCatalog',
+  'sessionStore',
+] as const;
+export type SingletonCapabilityKind = (typeof SINGLETON_CAPABILITY_KINDS)[number];
 export type CapabilitySelections = Partial<Record<SingletonCapabilityKind, string | false>>;
-export interface CapabilityOptions { version?: string; aliases?: readonly string[]; source?: string }
+export interface CapabilityOptions {
+  version?: string;
+  aliases?: readonly string[];
+  source?: string;
+}
 export interface CapabilityRecord<K extends CapabilityKind = CapabilityKind> {
   readonly kind: K;
   readonly capabilityId: string;
@@ -165,7 +269,13 @@ export interface CapabilityRecord<K extends CapabilityKind = CapabilityKind> {
   readonly aliases: readonly string[];
   readonly implementation: CapabilityMap[K];
 }
-export type TypedCapabilityRegistrar = { [K in CapabilityKind]: (id: string, implementation: CapabilityMap[K], options?: CapabilityOptions) => void };
+export type TypedCapabilityRegistrar = {
+  [K in CapabilityKind]: (
+    id: string,
+    implementation: CapabilityMap[K],
+    options?: CapabilityOptions,
+  ) => void;
+};
 export interface PluginConfigSnapshot {
   readonly revision: string | number;
   readonly core: ReadonlyDeep<AgentConfig>;

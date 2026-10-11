@@ -20,17 +20,32 @@ export interface ContextInput {
   readonly skills: readonly { name: string; description: string }[];
 }
 export interface ContextSource {
-  getContext(input: ContextInput, signal: AbortSignal): readonly ContextSegment[] | Promise<readonly ContextSegment[]>;
+  getContext(
+    input: ContextInput,
+    signal: AbortSignal,
+  ): readonly ContextSegment[] | Promise<readonly ContextSegment[]>;
 }
 export interface Compactor {
   /** 只提交候选消息。内核负责不可变快照、取消检查和工具交换完整性校验。 */
-  compact(messages: readonly Message[], provider: Provider | null, signal: AbortSignal, model?: string, events?: EventBus): Promise<readonly Message[]>;
+  compact(
+    messages: readonly Message[],
+    provider: Provider | null,
+    signal: AbortSignal,
+    model?: string,
+    events?: EventBus,
+  ): Promise<readonly Message[]>;
 }
 export interface ContextCoordinator {
   readonly threshold: number;
   setThreshold(threshold: number): void;
   shouldCompact(messages: readonly Message[]): boolean;
-  compact(messages: Message[], provider: Provider | null, signal: AbortSignal, model?: string, events?: EventBus): Promise<Message[]>;
+  compact(
+    messages: Message[],
+    provider: Provider | null,
+    signal: AbortSignal,
+    model?: string,
+    events?: EventBus,
+  ): Promise<Message[]>;
 }
 export interface CacheStrategyInput {
   readonly messageCount: number;
@@ -40,7 +55,9 @@ export interface CacheStrategyInput {
   readonly hasTools: boolean;
   readonly settings: Readonly<{ enabled: boolean; ttl: CacheTtl; escalateAfterMs?: number }>;
 }
-export interface CacheStrategy { build(input: CacheStrategyInput): CachePolicy | undefined }
+export interface CacheStrategy {
+  build(input: CacheStrategyInput): CachePolicy | undefined;
+}
 export interface ModelCatalog {
   get(model: string): ModelInfo | undefined;
   list(): Readonly<Record<string, ModelInfo>>;
@@ -52,9 +69,17 @@ export interface SaveSessionOptions {
 export interface SessionStore {
   path(cwd: string, id: string): string;
   load(cwd: string, id: string, signal?: AbortSignal): Promise<SessionFile>;
-  save(file: SessionFile, options?: SaveSessionOptions, signal?: AbortSignal): Promise<{ path: string; revision: number }>;
+  save(
+    file: SessionFile,
+    options?: SaveSessionOptions,
+    signal?: AbortSignal,
+  ): Promise<{ path: string; revision: number }>;
   list(cwd: string, signal?: AbortSignal): Promise<SessionListing>;
-  delete(cwd: string, id: string, signal?: AbortSignal): Promise<{ deleted: boolean; revision: number }>;
+  delete(
+    cwd: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<{ deleted: boolean; revision: number }>;
   latest(cwd: string, signal?: AbortSignal): Promise<string | undefined>;
 }
 /** 不传可调用的审批 resolver，事件只用于观测。 */

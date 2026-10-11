@@ -5,7 +5,13 @@
  * 这是 core 与 cli 解耦的关键机制。
  */
 import { EventEmitter } from 'node:events';
-import type { AssistantMessage, Message, TokenUsage, ToolResult, ToolUseBlock } from './protocol/types.js';
+import type {
+  AssistantMessage,
+  Message,
+  TokenUsage,
+  ToolResult,
+  ToolUseBlock,
+} from './protocol/types.js';
 import type { ChatRequest, ThinkingLevel } from './provider.js';
 import type { Decision } from './permission/contracts.js';
 
@@ -33,14 +39,30 @@ export interface PermissionRequest {
 }
 
 export type UserDecision =
-  | { allow: true; remember?: 'session' | 'project' }
-  | { allow: false; feedback?: string };
+  { allow: true; remember?: 'session' | 'project' } | { allow: false; feedback?: string };
 
 export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
 
 export type AgentEvent =
-  | { type: 'model_request'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; provider: string; request: ChatRequest; runId?: string; toolCallId?: string; toolRequestId?: string }
-  | { type: 'model_usage'; requestId: string; purpose: 'agent' | 'compact' | 'judge'; usage: TokenUsage; runId?: string; toolCallId?: string; toolRequestId?: string }
+  | {
+      type: 'model_request';
+      requestId: string;
+      purpose: 'agent' | 'compact' | 'judge';
+      provider: string;
+      request: ChatRequest;
+      runId?: string;
+      toolCallId?: string;
+      toolRequestId?: string;
+    }
+  | {
+      type: 'model_usage';
+      requestId: string;
+      purpose: 'agent' | 'compact' | 'judge';
+      usage: TokenUsage;
+      runId?: string;
+      toolCallId?: string;
+      toolRequestId?: string;
+    }
   | { type: 'text_delta'; text: string }
   | { type: 'thinking_delta'; text: string }
   | { type: 'assistant_message'; message: AssistantMessage }
@@ -91,7 +113,15 @@ export type AgentEvent =
   | { type: 'compacted'; beforeMessages: number; afterMessages: number }
   | { type: 'error'; error: Error }
   | { type: 'session_saved'; id: string; path: string; trimmed: number }
-  | { type: 'session_restored'; id: string; title: string; model: string; thinking: ThinkingLevel; usage: TokenUsage; messages: readonly Message[] };
+  | {
+      type: 'session_restored';
+      id: string;
+      title: string;
+      model: string;
+      thinking: ThinkingLevel;
+      usage: TokenUsage;
+      messages: readonly Message[];
+    };
 
 type Handler<E> = (event: E) => void;
 
@@ -103,7 +133,10 @@ export class EventBus {
     this.emitter.setMaxListeners(100);
   }
 
-  on<T extends AgentEvent['type']>(type: T, handler: Handler<Extract<AgentEvent, { type: T }>>): () => void {
+  on<T extends AgentEvent['type']>(
+    type: T,
+    handler: Handler<Extract<AgentEvent, { type: T }>>,
+  ): () => void {
     this.emitter.on(type, handler as Handler<AgentEvent>);
     return () => this.emitter.off(type, handler as Handler<AgentEvent>);
   }
@@ -115,23 +148,31 @@ export class EventBus {
   /** 通用观测不算人工审批 responder；异常不能触发已执行工具重试。 */
   onAll(handler: (event: AgentEvent) => void): () => void {
     this.observers.add(handler);
-    return () => { this.observers.delete(handler); };
+    return () => {
+      this.observers.delete(handler);
+    };
   }
 
   emit(event: AgentEvent): void {
     for (const observer of this.observers) this.deliver(observer, event, false);
     // 单个 renderer/观测者失败不能把成功的工具伪装成失败或阻断其他订阅者。
-    for (const handler of this.emitter.listeners(event.type)) this.deliver(handler as Handler<AgentEvent>, event, true);
+    for (const handler of this.emitter.listeners(event.type))
+      this.deliver(handler as Handler<AgentEvent>, event, true);
   }
 
   private deliver(handler: Handler<AgentEvent>, event: AgentEvent, responder: boolean): void {
     const failed = () => {
-      if (responder && event.type === 'permission_request') event.resolve({ allow: false, feedback: 'Approval responder failed' });
-      if (event.type !== 'notice') this.emit({ type: 'notice', text: `事件订阅者失败（${event.type}）；原始执行结果已保留` });
+      if (responder && event.type === 'permission_request')
+        event.resolve({ allow: false, feedback: 'Approval responder failed' });
+      if (event.type !== 'notice')
+        this.emit({ type: 'notice', text: `事件订阅者失败（${event.type}）；原始执行结果已保留` });
     };
     try {
       const value: unknown = handler(event);
-      if (value && typeof value === 'object' && 'then' in value) Promise.resolve(value).catch(failed);
-    } catch { failed(); }
+      if (value && typeof value === 'object' && 'then' in value)
+        Promise.resolve(value).catch(failed);
+    } catch {
+      failed();
+    }
   }
 }

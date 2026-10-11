@@ -5,19 +5,49 @@
 import { spawn } from 'node:child_process';
 import { readFile, realpath } from 'node:fs/promises';
 import { delimiter, dirname, resolve } from 'node:path';
-import { authorizedSearchFiles, authorizedSearchTarget, collectSearchFiles, searchPluginEntries, type SearchFile } from './search-scope.js';
+import {
+  authorizedSearchFiles,
+  authorizedSearchTarget,
+  collectSearchFiles,
+  searchPluginEntries,
+  type SearchFile,
+} from './search-scope.js';
 import { findRg } from '../core/platform.js';
 import type { Tool } from '../core/registry.js';
 import { matchPath, normalizeGrepLine, textStyle } from './text.js';
 
 const MAX_RESULTS = 100;
 
-export function buildRgArgs(input: { pattern: string; glob?: string; caseInsensitive?: boolean }): string[] {
+export function buildRgArgs(input: {
+  pattern: string;
+  glob?: string;
+  caseInsensitive?: boolean;
+}): string[] {
   // --crlf 让 $ 和行号把 \r\n 当成一个换行，LF 文件不受影响。
-  const args = ['--no-config', '--no-follow', '--no-pre', '--with-filename', '--line-number', '--no-heading', '--color=never', '--crlf', '--max-columns=300', '--max-count=100'];
+  const args = [
+    '--no-config',
+    '--no-follow',
+    '--no-pre',
+    '--with-filename',
+    '--line-number',
+    '--no-heading',
+    '--color=never',
+    '--crlf',
+    '--max-columns=300',
+    '--max-count=100',
+  ];
   if (input.caseInsensitive) args.push('--ignore-case');
   if (input.glob) args.push('--glob', input.glob);
-  args.push('--glob', '!**/node_modules/**', '--glob', '!**/.git/**', '--glob', '!**/dist/**', '--regexp', input.pattern);
+  args.push(
+    '--glob',
+    '!**/node_modules/**',
+    '--glob',
+    '!**/.git/**',
+    '--glob',
+    '!**/dist/**',
+    '--regexp',
+    input.pattern,
+  );
   return args;
 }
 
@@ -38,60 +68,87 @@ export function envWithRg(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next;
 }
 
-export function createGrepTool(pluginEntries: readonly string[] = []): Tool { return {
-  name: 'grep',
-  description:
-    'Search ordinary project files with ripgrep; returns path:line:text. Excludes hidden/sensitive files, configured plugin entries, symlinks, node_modules and dist. Respects project and nested .gitignore, including explicit glob filters. Ignores ripgrep configuration. Without rg, uses the same bounded file list with a JavaScript regex scan.',
-  risk: 'read',
-  isConcurrencySafe: true,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      pattern: { type: 'string', description: 'Regex pattern, passed to rg --regexp' },
-      path: { type: 'string', description: 'Directory to search, default cwd' },
-      glob: { type: 'string', description: 'File filter, e.g. "*.ts"' },
-      case_insensitive: { type: 'boolean' },
+export function createGrepTool(pluginEntries: readonly string[] = []): Tool {
+  return {
+    name: 'grep',
+    description:
+      'Search ordinary project files with ripgrep; returns path:line:text. Excludes hidden/sensitive files, configured plugin entries, symlinks, node_modules and dist. Respects project and nested .gitignore, including explicit glob filters. Ignores ripgrep configuration. Without rg, uses the same bounded file list with a JavaScript regex scan.',
+    risk: 'read',
+    isConcurrencySafe: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', description: 'Regex pattern, passed to rg --regexp' },
+        path: { type: 'string', description: 'Directory to search, default cwd' },
+        glob: { type: 'string', description: 'File filter, e.g. "*.ts"' },
+        case_insensitive: { type: 'boolean' },
+      },
+      required: ['pattern'],
     },
-    required: ['pattern'],
-  },
-  analyzeInput(input) {
-    const pattern = String(input.pattern ?? '');
-    return { patternTarget: pattern, summary: `grep: /${pattern}/` };
-  },
-  async execute(input, ctx) {
-    const pattern = String(input.pattern ?? '');
-    const searchCwd = input.path ? resolve(ctx.cwd, String(input.path)) : ctx.cwd;
-    const glob = input.glob === undefined ? undefined : matchPath(String(input.glob));
-    const protectedEntries = await searchPluginEntries(ctx.cwd, pluginEntries);
-    const files = authorizedSearchFiles(await collectSearchFiles(ctx.cwd, searchCwd, glob ?? '**/*', protectedEntries, ctx.signal, true, (file) => authorizedSearchTarget(file.absolute, ctx.analysis)), ctx.analysis);
-    if (!files.length) return { content: '(no matches)' };
-    const bin = findRg();
-    if (bin) {
-      const outputs: string[] = [];
-      let missing = false;
-      // 显式文件列表，空列表绝不变回目录递归；分批避免操作系统 argv 长度上限。
-      for (let offset = 0; offset < files.length; offset += 128) {
-        ctx.signal.throwIfAborted();
-        const rg = await runRg(bin,
-          [...buildRgArgs({ pattern, caseInsensitive: Boolean(input.case_insensitive) }), '--', ...files.slice(offset, offset + 128).map((file) => file.absolute)],
-          searchCwd, ctx.signal);
-        if (rg.missing) { missing = true; break; }
-        if (rg.code !== 0 && rg.code !== 1) return formatRg(rg);
-        outputs.push(rg.stdout);
-        if (outputs.join('').split('\n').filter(Boolean).length > MAX_RESULTS) break;
+    analyzeInput(input) {
+      const pattern = String(input.pattern ?? '');
+      return { patternTarget: pattern, summary: `grep: /${pattern}/` };
+    },
+    async execute(input, ctx) {
+      const pattern = String(input.pattern ?? '');
+      const searchCwd = input.path ? resolve(ctx.cwd, String(input.path)) : ctx.cwd;
+      const glob = input.glob === undefined ? undefined : matchPath(String(input.glob));
+      const protectedEntries = await searchPluginEntries(ctx.cwd, pluginEntries);
+      const files = authorizedSearchFiles(
+        await collectSearchFiles(
+          ctx.cwd,
+          searchCwd,
+          glob ?? '**/*',
+          protectedEntries,
+          ctx.signal,
+          true,
+          (file) => authorizedSearchTarget(file.absolute, ctx.analysis),
+        ),
+        ctx.analysis,
+      );
+      if (!files.length) return { content: '(no matches)' };
+      const bin = findRg();
+      if (bin) {
+        const outputs: string[] = [];
+        let missing = false;
+        // 显式文件列表，空列表绝不变回目录递归；分批避免操作系统 argv 长度上限。
+        for (let offset = 0; offset < files.length; offset += 128) {
+          ctx.signal.throwIfAborted();
+          const rg = await runRg(
+            bin,
+            [
+              ...buildRgArgs({ pattern, caseInsensitive: Boolean(input.case_insensitive) }),
+              '--',
+              ...files.slice(offset, offset + 128).map((file) => file.absolute),
+            ],
+            searchCwd,
+            ctx.signal,
+          );
+          if (rg.missing) {
+            missing = true;
+            break;
+          }
+          if (rg.code !== 0 && rg.code !== 1) return formatRg(rg);
+          outputs.push(rg.stdout);
+          if (outputs.join('').split('\n').filter(Boolean).length > MAX_RESULTS) break;
+        }
+        if (!missing) {
+          const prefix = (await realpath(searchCwd)).replace(/\\/g, '/') + '/';
+          const stdout = outputs
+            .join('')
+            .split('\n')
+            .map((line) => {
+              const normalized = normalizeGrepLine(line);
+              return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+            })
+            .join('\n');
+          return formatRg({ missing: false, code: 0, stdout, stderr: '' });
+        }
       }
-      if (!missing) {
-        const prefix = (await realpath(searchCwd)).replace(/\\/g, '/') + '/';
-        const stdout = outputs.join('').split('\n').map((line) => {
-          const normalized = normalizeGrepLine(line);
-          return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
-        }).join('\n');
-        return formatRg({ missing: false, code: 0, stdout, stderr: '' });
-      }
-    }
-    return searchBuiltin(pattern, files, Boolean(input.case_insensitive), ctx.signal);
-  },
-}; }
+      return searchBuiltin(pattern, files, Boolean(input.case_insensitive), ctx.signal);
+    },
+  };
+}
 
 export const grepTool = createGrepTool();
 
@@ -105,8 +162,17 @@ interface RgRun {
 function runRg(bin: string, args: string[], cwd: string, signal: AbortSignal): Promise<RgRun> {
   return new Promise((resolvePromise) => {
     // rg 是宿主提供的工具依赖，不运行项目提供的配置/预处理器或动态加载环境。
-    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(?:RIPGREP_CONFIG_PATH|LD_.*|DYLD_.*)$/.test(key)));
-    const child = spawn(bin, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) => !/^(?:RIPGREP_CONFIG_PATH|LD_.*|DYLD_.*)$/.test(key),
+      ),
+    );
+    const child = spawn(bin, args, {
+      cwd,
+      env,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout?.on('data', (chunk: Buffer) => out.push(chunk));

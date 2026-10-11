@@ -10,10 +10,19 @@ export type { SessionRules };
 
 /** 当前会话格式记录 runtime、policy 和插件状态，恢复前验证身份与版本。 */
 export const SESSION_SCHEMA_VERSION = 2;
-export interface SessionPolicyIdentity { id: string; version: string; stateSchemaVersion: number }
-export interface SessionPluginState { schemaVersion: number; requiredForSafety?: boolean; data: unknown }
-export interface SessionRuntimeState { schemaVersion: 1 }
-
+export interface SessionPolicyIdentity {
+  id: string;
+  version: string;
+  stateSchemaVersion: number;
+}
+export interface SessionPluginState {
+  schemaVersion: number;
+  requiredForSafety?: boolean;
+  data: unknown;
+}
+export interface SessionRuntimeState {
+  schemaVersion: 1;
+}
 
 export interface SessionFile {
   schemaVersion: typeof SESSION_SCHEMA_VERSION;

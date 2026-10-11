@@ -148,9 +148,8 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
 
   // 当前正在累积的 block 状态
   let current:
-    | { kind: 'text'; text: string }
-    | { kind: 'thinking'; text: string; signature: string }
-    | null = null;
+    { kind: 'text'; text: string } | { kind: 'thinking'; text: string; signature: string } | null =
+    null;
 
   const flush = () => {
     if (!current) return;

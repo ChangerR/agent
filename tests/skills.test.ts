@@ -9,7 +9,9 @@ import { parseFrontmatter, SkillLoader } from '../src/skills/loader.js';
 
 describe('parseFrontmatter', () => {
   it('解析 name 与 description', () => {
-    const { meta, body } = parseFrontmatter('---\nname: foo\ndescription: bar baz\n---\n\n# Body\ncontent');
+    const { meta, body } = parseFrontmatter(
+      '---\nname: foo\ndescription: bar baz\n---\n\n# Body\ncontent',
+    );
     expect(meta).toEqual({ name: 'foo', description: 'bar baz' });
     expect(body).toContain('# Body');
   });
@@ -49,11 +51,19 @@ describe('SkillLoader', () => {
 it('Skill 插件通过宿主注册可执行工具，不需要旧注册表上下文', async () => {
   const { PluginHost } = await import('../src/runtime/plugin-host.js');
   const { skillPlugin } = await import('../src/skills/plugin.js');
-  const host = new PluginHost(); const loader = new SkillLoader(process.cwd());
+  const host = new PluginHost();
+  const loader = new SkillLoader(process.cwd());
   await host.load([skillPlugin(loader)]);
   try {
     const tool = host.get('tool', 'use_skill')!;
     expect(host.getRecord('tool', 'use_skill')?.ownerPlugin).toBe('agentlab.skills');
-    expect(await tool.execute({ name: 'missing' }, { cwd: process.cwd(), signal: new AbortController().signal })).toMatchObject({ isError: true });
-  } finally { await host.dispose(); }
+    expect(
+      await tool.execute(
+        { name: 'missing' },
+        { cwd: process.cwd(), signal: new AbortController().signal },
+      ),
+    ).toMatchObject({ isError: true });
+  } finally {
+    await host.dispose();
+  }
 });

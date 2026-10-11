@@ -14,18 +14,49 @@ import { createCachePrefixPlugin } from './cache-prefix/index.js';
 import { createModelCatalogPlugin } from './model-catalog/index.js';
 import { createSessionFilePlugin } from './session-file/index.js';
 import { createTelemetryJsonlPlugin } from './telemetry-jsonl/index.js';
-import { modelCommandsPlugin, permissionCommandsPlugin, sessionCommandsPlugin, type BuiltinCommandServices } from './commands.js';
+import {
+  modelCommandsPlugin,
+  permissionCommandsPlugin,
+  sessionCommandsPlugin,
+  type BuiltinCommandServices,
+} from './commands.js';
 import type { Preset, PresetContext } from '../runtime/preset.js';
 export function defaultPreset(input: PresetContext): Preset {
   const { cwd, config, services } = input;
   return {
-    selections: { policy: 'deterministic', reviewer: 'model', compactor: 'summary', cacheStrategy: 'prefix', modelCatalog: 'presets', sessionStore: 'file' },
+    selections: {
+      policy: 'deterministic',
+      reviewer: 'model',
+      compactor: 'summary',
+      cacheStrategy: 'prefix',
+      modelCatalog: 'presets',
+      sessionStore: 'file',
+    },
     plugins: [
-      ...providerPlugins(config), createLocalToolsPlugin(config.pluginEntries.filter((entry) => typeof entry === 'string' || entry.enabled).map((entry) => typeof entry === 'string' ? entry : entry.entry)), skillsLocalPlugin(cwd), builtinMcpPlugin(config.mcpConfig),
-      createDeterministicPolicyPlugin({ cwd, config }), modelReviewerPlugin(input), createContextDefaultPlugin(), createCompactionSummaryPlugin(), createCachePrefixPlugin(),
-      createModelCatalogPlugin(loadModelsFile(config.modelsFile)), createSessionFilePlugin(),
-      createTelemetryJsonlPlugin({ path: input.logPath, includeBodies: config.pluginConfig['agentlab.telemetry-jsonl']?.includeBodies === true }),
-      modelCommandsPlugin(services, cwd), permissionCommandsPlugin(services, cwd), sessionCommandsPlugin(services), uiPlugin(), runtimeSettingsPlugin(input),
+      ...providerPlugins(config),
+      createLocalToolsPlugin(
+        config.pluginEntries
+          .filter((entry) => typeof entry === 'string' || entry.enabled)
+          .map((entry) => (typeof entry === 'string' ? entry : entry.entry)),
+      ),
+      skillsLocalPlugin(cwd),
+      builtinMcpPlugin(config.mcpConfig),
+      createDeterministicPolicyPlugin({ cwd, config }),
+      modelReviewerPlugin(input),
+      createContextDefaultPlugin(),
+      createCompactionSummaryPlugin(),
+      createCachePrefixPlugin(),
+      createModelCatalogPlugin(loadModelsFile(config.modelsFile)),
+      createSessionFilePlugin(),
+      createTelemetryJsonlPlugin({
+        path: input.logPath,
+        includeBodies: config.pluginConfig['agentlab.telemetry-jsonl']?.includeBodies === true,
+      }),
+      modelCommandsPlugin(services, cwd),
+      permissionCommandsPlugin(services, cwd),
+      sessionCommandsPlugin(services),
+      uiPlugin(),
+      runtimeSettingsPlugin(input),
     ],
   };
 }

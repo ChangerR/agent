@@ -9,7 +9,11 @@ import { spawn } from 'node:child_process';
 import { decodeShellOutput, detectPlatform, shellInvocation } from '../core/platform.js';
 import type { Tool } from '../core/registry.js';
 import { envWithRg } from './grep.js';
-import { analyzeReadOnlyShell, readOnlyShellEnvironment, trustedShellPath } from './shell-readonly.js';
+import {
+  analyzeReadOnlyShell,
+  readOnlyShellEnvironment,
+  trustedShellPath,
+} from './shell-readonly.js';
 
 const DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   { re: /\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)?\/(\s|$)/, why: '递归删除根目录' },
@@ -20,11 +24,17 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; why: string }> = [
   { re: />\s*\/(etc|bin|sbin|usr|boot|System|Windows)\//, why: '写入系统目录' },
   { re: /\bgit\s+push\s+.*--force\b/, why: '强制推送' },
   { re: /\b(shutdown|reboot|halt)\b/, why: '关机/重启' },
-  { re: /\bRemove-Item\b[^\n]*-Recurse\b[^\n]*\s([A-Za-z]:\\|\/)(\s|$)/i, why: '递归删除磁盘根目录' },
+  {
+    re: /\bRemove-Item\b[^\n]*-Recurse\b[^\n]*\s([A-Za-z]:\\|\/)(\s|$)/i,
+    why: '递归删除磁盘根目录',
+  },
   { re: /\b(Format-Volume|Clear-Disk)\b/i, why: '磁盘级操作' },
   { re: /\b(Stop-Computer|Restart-Computer)\b/i, why: '关机/重启' },
   { re: /\biex\s*\(\s*(irm|iwr)\b/i, why: '下载并直接执行脚本' },
-  { re: /\bInvoke-Expression\b[^\n]*\b(Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b/i, why: '下载并直接执行脚本' },
+  {
+    re: /\bInvoke-Expression\b[^\n]*\b(Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b/i,
+    why: '下载并直接执行脚本',
+  },
   { re: /\b(Set-Content|Out-File)\b[^\n]*\\Windows\\/i, why: '写入系统目录' },
 ];
 
@@ -47,7 +57,10 @@ export const bashTool: Tool = {
   inputSchema: {
     type: 'object',
     properties: {
-      command: { type: 'string', description: host.shell === 'powershell' ? 'PowerShell command' : 'bash command' },
+      command: {
+        type: 'string',
+        description: host.shell === 'powershell' ? 'PowerShell command' : 'bash command',
+      },
       timeout: { type: 'number', description: 'Timeout in ms, default 120000' },
     },
     required: ['command'],
@@ -68,7 +81,9 @@ export const bashTool: Tool = {
     let env = envWithRg(process.env);
     const approved = ctx.analysis?.environment?.['$shellContract'];
     if (approved) {
-      const entries: string[] = JSON.parse(ctx.analysis?.environment?.['$shellPluginEntries'] ?? '[]');
+      const entries: string[] = JSON.parse(
+        ctx.analysis?.environment?.['$shellPluginEntries'] ?? '[]',
+      );
       const current = await analyzeReadOnlyShell(command, ctx.cwd, entries, ctx.signal);
       const shell = await trustedShellPath();
       if (!current.complete || !current.command || !shell || JSON.stringify(current) !== approved) {
@@ -94,23 +109,35 @@ export const bashTool: Tool = {
       child.stderr?.on('data', onData);
 
       const collected = () => {
-        const text = decodeShellOutput(Buffer.concat(chunks)).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const text = decodeShellOutput(Buffer.concat(chunks))
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n');
         if (text.length > MAX_OUTPUT) return `${text.slice(0, MAX_OUTPUT)}\n[truncated]`;
         return text;
       };
 
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
-        resolvePromise({ content: `${collected()}\n[timed out after ${timeout}ms]`, isError: true });
+        resolvePromise({
+          content: `${collected()}\n[timed out after ${timeout}ms]`,
+          isError: true,
+        });
       }, timeout);
 
-      ctx.signal.addEventListener('abort', () => {
-        child.kill('SIGKILL');
-      }, { once: true });
+      ctx.signal.addEventListener(
+        'abort',
+        () => {
+          child.kill('SIGKILL');
+        },
+        { once: true },
+      );
 
       child.on('error', (err) => {
         clearTimeout(timer);
-        resolvePromise({ content: `Failed to start ${invocation.file}: ${err.message}`, isError: true });
+        resolvePromise({
+          content: `Failed to start ${invocation.file}: ${err.message}`,
+          isError: true,
+        });
       });
 
       child.on('close', (code) => {

@@ -116,16 +116,16 @@ TUI entry 独立按需加载。外部 entry 获得 UI 操作、只读目录、di
 
 ## 设计到源码
 
-| 设计能力 | 实际入口 | 主要证据 |
-| --- | --- | --- |
-| SDK 与宿主 | src/sdk、runtime/plugin-host、capability-registry | plugin-host.test.ts |
-| 默认装配 | builtin/default-preset、runtime/create-agent | bootstrap、plugin-replacement |
-| 唯一工具门 | core/tool-executor、permission/contracts | tool-executor、loop、runtime-boundaries |
-| 策略/审批员 | builtin/policy、builtin/reviewer-model | deterministic-policy、reviewer-contract、policy-runtime |
-| 上下文/压缩/cache/catalog | core/context、对应 builtin | context、cache、plugin-context-capabilities |
-| 会话与文件 store | core/session/coordinator/envelope、builtin/session-file | session、endpoint-session、plugin-session-capabilities |
-| 命令/设置/呈现 | runtime/commands、builtin/commands、cli/tui-plugins | cli、permission-settings、plugin-cli-capabilities |
-| 日志 | builtin/telemetry-jsonl | plugin-telemetry |
+| 设计能力                  | 实际入口                                                | 主要证据                                                |
+| ------------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
+| SDK 与宿主                | src/sdk、runtime/plugin-host、capability-registry       | plugin-host.test.ts                                     |
+| 默认装配                  | builtin/default-preset、runtime/create-agent            | bootstrap、plugin-replacement                           |
+| 唯一工具门                | core/tool-executor、permission/contracts                | tool-executor、loop、runtime-boundaries                 |
+| 策略/审批员               | builtin/policy、builtin/reviewer-model                  | deterministic-policy、reviewer-contract、policy-runtime |
+| 上下文/压缩/cache/catalog | core/context、对应 builtin                              | context、cache、plugin-context-capabilities             |
+| 会话与文件 store          | core/session/coordinator/envelope、builtin/session-file | session、endpoint-session、plugin-session-capabilities  |
+| 命令/设置/呈现            | runtime/commands、builtin/commands、cli/tui-plugins     | cli、permission-settings、plugin-cli-capabilities       |
+| 日志                      | builtin/telemetry-jsonl                                 | plugin-telemetry                                        |
 
 ## 验证方式
 

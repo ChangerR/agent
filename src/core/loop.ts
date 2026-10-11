@@ -27,7 +27,11 @@ import { bounded } from './permission/async.js';
 import type { EventBus, LoopEndReason } from './events.js';
 import type { HookRunner } from './hooks.js';
 import type { JudgeStatus } from './permission/contracts.js';
-import { ToolExecutor, type ToolExecutorOptions, type ToolInvocationContext } from './tool-executor.js';
+import {
+  ToolExecutor,
+  type ToolExecutorOptions,
+  type ToolInvocationContext,
+} from './tool-executor.js';
 import type { ContextCoordinator, CacheStrategy } from '../sdk/runtime-capabilities.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../sdk/capabilities.js';
 import type { CachePolicy, CacheTtl, Provider, ThinkingLevel } from './provider.js';
@@ -103,7 +107,12 @@ export interface AgentRunResult {
 
 export class UnresolvedExecutionError extends Error {
   readonly code = 'shutdown_timeout';
-  constructor() { super('Shutdown timed out with unresolved execution; resources must remain available until whenSettled() completes'); this.name = 'UnresolvedExecutionError'; }
+  constructor() {
+    super(
+      'Shutdown timed out with unresolved execution; resources must remain available until whenSettled() completes',
+    );
+    this.name = 'UnresolvedExecutionError';
+  }
 }
 
 export class AgentLoop {
@@ -128,8 +137,13 @@ export class AgentLoop {
   private detachedRunIds = new Set<string>();
 
   constructor(private opts: AgentLoopOptions) {
-    this.executor = opts.toolExecutor ?? new ToolExecutor({ ...opts, sessionId: opts.sessionId ?? (() => this.sessionId),
-      runActive: (runId) => this.activeRunId === runId || this.detachedRunIds.has(runId) });
+    this.executor =
+      opts.toolExecutor ??
+      new ToolExecutor({
+        ...opts,
+        sessionId: opts.sessionId ?? (() => this.sessionId),
+        runActive: (runId) => this.activeRunId === runId || this.detachedRunIds.has(runId),
+      });
     this.configuredThreshold = opts.context.threshold;
     this.configuredMaxTokens = opts.maxTokens;
     this.applyModelInfo(opts.model);
@@ -147,21 +161,38 @@ export class AgentLoop {
     return this.opts.model;
   }
 
-  getJudgeStatus(): JudgeStatus { return this.executor.getJudgeStatus(); }
+  getJudgeStatus(): JudgeStatus {
+    return this.executor.getJudgeStatus();
+  }
 
   /** 独立调用没有模型请求授权；只有 ToolContext.invokeTool 继承显式绑定的父上下文。 */
-  async invokeTool(name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
+  async invokeTool(
+    name: string,
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolResult> {
     if (this.disposed) throw new Error('AgentLoop is disposed');
     const detached = new AbortController();
     this.detachedRuns.add(detached);
     const invocationSignal = signal ? AbortSignal.any([detached.signal, signal]) : detached.signal;
     const runId = randomUUID();
     this.detachedRunIds.add(runId);
-    const task = this.executor.invokeTool(name, input, { signal: invocationSignal, runId,
-      userRequest: '', messages: [] });
+    const task = this.executor.invokeTool(name, input, {
+      signal: invocationSignal,
+      runId,
+      userRequest: '',
+      messages: [],
+    });
     this.detachedTasks.add(task);
-    try { return await task; }
-    finally { detached.abort(); this.executor.finishRun(runId); this.detachedRunIds.delete(runId); this.detachedRuns.delete(detached); this.detachedTasks.delete(task); }
+    try {
+      return await task;
+    } finally {
+      detached.abort();
+      this.executor.finishRun(runId);
+      this.detachedRunIds.delete(runId);
+      this.detachedRuns.delete(detached);
+      this.detachedTasks.delete(task);
+    }
   }
 
   setModel(model: string): void {
@@ -182,11 +213,14 @@ export class AgentLoop {
     return this.abort !== null;
   }
 
-  get hasPendingActivity(): boolean { return this.abort !== null || this.detachedTasks.size > 0 || this.executor.hasPendingActivity; }
+  get hasPendingActivity(): boolean {
+    return this.abort !== null || this.detachedTasks.size > 0 || this.executor.hasPendingActivity;
+  }
 
   /** 等待原始执行结算；不会执行重试、伪造结果或释放仍被使用的资源。 */
   async whenSettled(): Promise<void> {
-    while (this.hasPendingActivity) await Promise.allSettled([this.idle, ...this.detachedTasks, this.executor.whenSettled()]);
+    while (this.hasPendingActivity)
+      await Promise.allSettled([this.idle, ...this.detachedTasks, this.executor.whenSettled()]);
   }
 
   /** 裁掉不安全的尾部再克隆。不改 this.messages，也不发事件。 */
@@ -204,9 +238,14 @@ export class AgentLoop {
    * 用一份已校验的历史替换内存状态，准备下一轮重新快照工具。
    * 不发事件、不重放工具、不调用 provider。
    */
-  importSession(snapshot: { messages: readonly Message[]; model?: string; thinking?: ThinkingLevel }): void {
+  importSession(snapshot: {
+    messages: readonly Message[];
+    model?: string;
+    thinking?: ThinkingLevel;
+  }): void {
     if (this.disposed) throw new SessionError('busy', 'AgentLoop 已释放');
-    if (this.abort) throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
+    if (this.abort)
+      throw new SessionError('busy', '当前轮次仍在运行。先按 Esc 中断，再执行 /resume。');
     assertSafeHistory(snapshot.messages);
     this.messages = structuredClone(snapshot.messages) as Message[];
     this.executor.clear();
@@ -222,9 +261,11 @@ export class AgentLoop {
   private applyModelInfo(model: string): void {
     const info = this.opts.modelInfo?.(model);
     this.opts.maxTokens = info?.maxOutputTokens ?? this.configuredMaxTokens;
-    this.opts.context.setThreshold(info
-      ? Math.min(this.configuredThreshold, Math.floor(info.contextWindow * 0.8))
-      : this.configuredThreshold);
+    this.opts.context.setThreshold(
+      info
+        ? Math.min(this.configuredThreshold, Math.floor(info.contextWindow * 0.8))
+        : this.configuredThreshold,
+    );
   }
 
   abort_current(): void {
@@ -235,7 +276,9 @@ export class AgentLoop {
   /** 轮次完成前等待持久化等任务；失败传给 run 调用方，仍保证释放运行状态。 */
   onRunSettled(task: () => Promise<void>): () => void {
     this.completionTasks.add(task);
-    return () => { this.completionTasks.delete(task); };
+    return () => {
+      this.completionTasks.delete(task);
+    };
   }
 
   async dispose(): Promise<void> {
@@ -243,10 +286,18 @@ export class AgentLoop {
     this.abort_current();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await Promise.race([this.whenSettled(), new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new UnresolvedExecutionError()), this.opts.shutdownTimeoutMs ?? 30_000);
-      })]);
-    } finally { if (timer) clearTimeout(timer); }
+      await Promise.race([
+        this.whenSettled(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new UnresolvedExecutionError()),
+            this.opts.shutdownTimeoutMs ?? 30_000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     this.executor.clear();
     this.sessionId = randomUUID();
   }
@@ -256,17 +307,26 @@ export class AgentLoop {
     if (this.abort) throw new Error('AgentLoop is already running');
     const { events, hooks, provider, tools, context } = this.opts;
     this.abort = new AbortController();
-    const runId = this.activeRunId = randomUUID();
+    const runId = (this.activeRunId = randomUUID());
     const signal = this.abort.signal;
     let release!: () => void;
-    this.idle = new Promise<void>((resolve) => { release = resolve; });
+    this.idle = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let turns = 0;
     const totalUsage = emptyUsage();
     const stopUsage = events.on('model_usage', ({ usage }) => {
-      for (const key of Object.keys(totalUsage) as Array<keyof TokenUsage>) totalUsage[key] += usage[key];
+      for (const key of Object.keys(totalUsage) as Array<keyof TokenUsage>)
+        totalUsage[key] += usage[key];
     });
     const finish = (reason: LoopEndReason, error?: string): AgentRunResult => {
-      events.emit({ type: 'loop_end', reason, turns, usage: { ...totalUsage }, ...(error ? { error } : {}) });
+      events.emit({
+        type: 'loop_end',
+        reason,
+        turns,
+        usage: { ...totalUsage },
+        ...(error ? { error } : {}),
+      });
       return { reason, turns, usage: totalUsage, ...(error ? { error } : {}) };
     };
 
@@ -288,7 +348,8 @@ export class AgentLoop {
 
         // --- 调用模型，流式产出 ---
         this.toolsSnapshot ??= structuredClone(tools.definitions());
-        const stream = observedStream(provider,
+        const stream = observedStream(
+          provider,
           {
             model: this.opts.model,
             system: this.opts.systemPrompt,
@@ -309,16 +370,27 @@ export class AgentLoop {
         this.messages.push(message);
         events.emit({ type: 'assistant_message', message });
         events.emit({ type: 'turn_end', stopReason, usage });
-        await this.notify('TurnEnd', { turn: turns, message: structuredClone(message), stopReason, usage: { ...usage } }, signal);
+        await this.notify(
+          'TurnEnd',
+          { turn: turns, message: structuredClone(message), stopReason, usage: { ...usage } },
+          signal,
+        );
 
         const toolUses = message.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
         if (toolUses.length === 0 || stopReason !== 'tool_use') {
-          return finish(signal.aborted ? 'aborted' : stopReason === 'max_tokens' ? 'max_tokens' : 'completed');
+          return finish(
+            signal.aborted ? 'aborted' : stopReason === 'max_tokens' ? 'max_tokens' : 'completed',
+          );
         }
 
         // --- 执行工具，回填结果 ---
         const toolStarted = Date.now();
-        const results = await this.executeTools(toolUses, { signal, runId, userRequest: userInput, messages: structuredClone(this.messages) });
+        const results = await this.executeTools(toolUses, {
+          signal,
+          runId,
+          userRequest: userInput,
+          messages: structuredClone(this.messages),
+        });
         this.lastToolBatchMs = Date.now() - toolStarted;
         this.messages.push({ role: 'user', content: results });
         signal.throwIfAborted();
@@ -334,7 +406,9 @@ export class AgentLoop {
     } finally {
       try {
         const settled = await Promise.allSettled([...this.completionTasks].map((task) => task()));
-        const errors = settled.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => item.reason);
+        const errors = settled
+          .filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+          .map((item) => item.reason);
         if (errors.length) throw new AggregateError(errors, '轮次完成后的保存失败');
       } finally {
         this.abort?.abort();
@@ -347,11 +421,23 @@ export class AgentLoop {
     }
   }
 
-  private async notify(point: 'UserPromptSubmit' | 'TurnEnd', payload: unknown, signal: AbortSignal): Promise<void> {
-    try { await bounded((s) => this.opts.hooks.notify(point, payload, s), signal, this.opts.capabilityTimeoutMs ?? 30_000); }
-    catch {
+  private async notify(
+    point: 'UserPromptSubmit' | 'TurnEnd',
+    payload: unknown,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      await bounded(
+        (s) => this.opts.hooks.notify(point, payload, s),
+        signal,
+        this.opts.capabilityTimeoutMs ?? 30_000,
+      );
+    } catch {
       signal.throwIfAborted();
-      this.opts.events.emit({ type: 'notice', text: `${point} observer failed or timed out; continuing with the original state` });
+      this.opts.events.emit({
+        type: 'notice',
+        text: `${point} observer failed or timed out; continuing with the original state`,
+      });
     }
   }
 
@@ -385,9 +471,15 @@ export class AgentLoop {
   private buildCachePolicy(): CachePolicy | undefined {
     if (this.opts.cacheStrategy === null) return undefined;
     const { enabled, ttl, escalateAfterMs } = this.cacheSettings();
-    if (this.opts.cacheStrategy) return this.opts.cacheStrategy.build({ messageCount: this.messages.length, previousMessageCount: this.lastRequestMessageCount,
-      lastToolBatchMs: this.lastToolBatchMs, hasSystem: this.opts.systemPrompt.length > 0, hasTools: (this.toolsSnapshot?.length ?? 0) > 0,
-      settings: { enabled, ttl, escalateAfterMs } });
+    if (this.opts.cacheStrategy)
+      return this.opts.cacheStrategy.build({
+        messageCount: this.messages.length,
+        previousMessageCount: this.lastRequestMessageCount,
+        lastToolBatchMs: this.lastToolBatchMs,
+        hasSystem: this.opts.systemPrompt.length > 0,
+        hasTools: (this.toolsSnapshot?.length ?? 0) > 0,
+        settings: { enabled, ttl, escalateAfterMs },
+      });
     if (!enabled) return undefined;
     const last = this.messages.length - 1;
     const prev = this.lastRequestMessageCount - 1;
@@ -405,7 +497,10 @@ export class AgentLoop {
   }
 
   /** 执行一轮中的所有 tool_use：连续的只读工具并行，写/执行类串行 */
-  private async executeTools(toolUses: ToolUseBlock[], context: ToolInvocationContext): Promise<ToolResultBlock[]> {
+  private async executeTools(
+    toolUses: ToolUseBlock[],
+    context: ToolInvocationContext,
+  ): Promise<ToolResultBlock[]> {
     const results: ToolResultBlock[] = [];
     let i = 0;
     while (i < toolUses.length) {
@@ -417,7 +512,9 @@ export class AgentLoop {
           batch.push(toolUses[i]);
           i++;
         }
-        const batchResults = await Promise.all(batch.map((tu) => this.executor.execute(tu, context)));
+        const batchResults = await Promise.all(
+          batch.map((tu) => this.executor.execute(tu, context)),
+        );
         results.push(...batchResults);
       } else {
         results.push(await this.executor.execute(toolUses[i], context));

@@ -3,8 +3,20 @@ import { createHash } from 'node:crypto';
 import type { Tool } from '../../core/registry.js';
 import type { PermissionMode } from '../../core/config.js';
 
-import type { Decision, DecisionKind, ParsedRule, AuditEntry, SessionRules } from '../../core/permission/contracts.js';
-export type { Decision, DecisionKind, ParsedRule, AuditEntry, SessionRules } from '../../core/permission/contracts.js';
+import type {
+  Decision,
+  DecisionKind,
+  ParsedRule,
+  AuditEntry,
+  SessionRules,
+} from '../../core/permission/contracts.js';
+export type {
+  Decision,
+  DecisionKind,
+  ParsedRule,
+  AuditEntry,
+  SessionRules,
+} from '../../core/permission/contracts.js';
 
 export function parseRule(raw: string): ParsedRule {
   const m = /^([a-zA-Z0-9_:*-]+)(?:\((.*)\))?$/s.exec(raw.trim());
@@ -18,10 +30,17 @@ export function parseRule(raw: string): ParsedRule {
 }
 
 /** 规则是否命中某次调用。patternTarget 由工具自己提供（bash→命令，文件工具→路径）。 */
-export function matchRule(rule: ParsedRule, toolName: string, patternTarget: string, options: { nocase?: boolean } = {}): boolean {
+export function matchRule(
+  rule: ParsedRule,
+  toolName: string,
+  patternTarget: string,
+  options: { nocase?: boolean } = {},
+): boolean {
   if (rule.tool !== toolName) return false;
-  if (rule.exact !== undefined) return options.nocase
-    ? patternTarget.toLowerCase() === rule.exact.toLowerCase() : patternTarget === rule.exact;
+  if (rule.exact !== undefined)
+    return options.nocase
+      ? patternTarget.toLowerCase() === rule.exact.toLowerCase()
+      : patternTarget === rule.exact;
   if (rule.pattern === undefined) return true;
   return minimatch(patternTarget, rule.pattern, { dot: true, nocase: options.nocase ?? false });
 }
@@ -31,7 +50,8 @@ export class PermissionController {
   private auditLog: AuditEntry[] = [];
 
   validateSessionRules(rules: Partial<SessionRules>): void {
-    for (const rule of [...(rules.allow ?? []), ...(rules.ask ?? []), ...(rules.deny ?? [])]) parseRule(rule);
+    for (const rule of [...(rules.allow ?? []), ...(rules.ask ?? []), ...(rules.deny ?? [])])
+      parseRule(rule);
   }
 
   constructor(
@@ -43,7 +63,9 @@ export class PermissionController {
 
   /** 每次执行批准绑定有效规则与模式；外部配置对象的变动也会失效。 */
   get revision(): string {
-    return createHash('sha256').update(JSON.stringify({ ...this.options, sessionRules: this.sessionRules })).digest('hex');
+    return createHash('sha256')
+      .update(JSON.stringify({ ...this.options, sessionRules: this.sessionRules }))
+      .digest('hex');
   }
 
   get mode(): PermissionMode {
@@ -94,9 +116,12 @@ export class PermissionController {
   }
 
   /** 记录一次管线外部（如 LLM 审批员）做出的判定，保持审计完整 */
-  recordDecision(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, decision: Decision): void {
+  recordDecision(
+    tool: Omit<Tool, 'execute'>,
+    input: Record<string, unknown>,
+    decision: Decision,
+  ): void {
     const summary = tool.name;
     this.auditLog.push({ toolName: tool.name, summary, decision, at: Date.now() });
   }
-
 }

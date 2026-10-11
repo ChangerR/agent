@@ -14,7 +14,12 @@ import { AgentLoop } from '../src/core/loop.js';
 import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import type { StreamEvent } from '../src/core/protocol/types.js';
 import { ProviderRegistry, ToolRegistry } from '../src/core/registry.js';
-import { FakeProvider, textResponse, toolUseResponse, type ScriptedResponse } from '../src/providers/fake.js';
+import {
+  FakeProvider,
+  textResponse,
+  toolUseResponse,
+  type ScriptedResponse,
+} from '../src/providers/fake.js';
 import { builtinToolDefinitions } from '../src/tools/index.js';
 
 let tmp: string;
@@ -41,7 +46,8 @@ function makeLoop(opts: {
   const events = opts.events ?? new EventBus();
   const tools = new ToolRegistry();
   const hooks = opts.hooks ?? new HookRunner();
-  for (const tool of builtinToolDefinitions) tools.register({ ...tool, ownerPlugin: 'agentlab.local-tools', version: '1.0.0' });
+  for (const tool of builtinToolDefinitions)
+    tools.register({ ...tool, ownerPlugin: 'agentlab.local-tools', version: '1.0.0' });
 
   const policy = createDeterministicPolicy({
     cwd: tmp,
@@ -50,7 +56,10 @@ function makeLoop(opts: {
     ...(opts.platform ? { platform: opts.platform } : {}),
   });
   const provider = new FakeProvider(opts.script);
-  const context = new ContextManager({ compactor: new SummaryCompactor(), compactThreshold: opts.compactThreshold ?? 1_000_000 });
+  const context = new ContextManager({
+    compactor: new SummaryCompactor(),
+    compactThreshold: opts.compactThreshold ?? 1_000_000,
+  });
   const loop = new AgentLoop({
     provider,
     model: 'fake',
@@ -69,7 +78,15 @@ function makeLoop(opts: {
 
 function collect(events: EventBus): AgentEvent[] {
   const log: AgentEvent[] = [];
-  for (const type of ['text_delta', 'tool_call', 'tool_result', 'turn_end', 'loop_end', 'permission_request', 'error'] as const) {
+  for (const type of [
+    'text_delta',
+    'tool_call',
+    'tool_result',
+    'turn_end',
+    'loop_end',
+    'permission_request',
+    'error',
+  ] as const) {
     events.on(type, (e) => log.push(e as AgentEvent));
   }
   return log;
@@ -88,21 +105,39 @@ describe('AgentLoop', () => {
     const hooks = new HookRunner();
     const turns: Array<{ turn: number; stopReason: string }> = [];
     hooks.register('TurnEnd', (payload) => turns.push(payload));
-    const { loop, provider } = makeLoop({ hooks, script: [
-      toolUseResponse([{ id: 't', name: 'read_file', input: { path: 'x' } }]),
-      textResponse('done'), textResponse('next'),
-    ] });
+    const { loop, provider } = makeLoop({
+      hooks,
+      script: [
+        toolUseResponse([{ id: 't', name: 'read_file', input: { path: 'x' } }]),
+        textResponse('done'),
+        textResponse('next'),
+      ],
+    });
     const result = await loop.run('read');
     const firstRequest = structuredClone(provider.requests[0]);
     await loop.run('next');
-    expect(turns.map((t) => [t.turn, t.stopReason])).toEqual([[1, 'tool_use'], [2, 'end_turn'], [1, 'end_turn']]);
-    expect(result).toMatchObject({ reason: 'completed', turns: 2, usage: { inputTokens: 20, outputTokens: 20 } });
+    expect(turns.map((t) => [t.turn, t.stopReason])).toEqual([
+      [1, 'tool_use'],
+      [2, 'end_turn'],
+      [1, 'end_turn'],
+    ]);
+    expect(result).toMatchObject({
+      reason: 'completed',
+      turns: 2,
+      usage: { inputTokens: 20, outputTokens: 20 },
+    });
     expect(provider.requests[0]).toEqual(firstRequest);
     expect(provider.requests[0].messages).toHaveLength(1);
   });
 
   it('没有 UI 和错误订阅者时，失败仍返回明确终态并且只结束一次', async () => {
-    const { loop, events } = makeLoop({ script: [() => { throw new Error('offline failure'); }] });
+    const { loop, events } = makeLoop({
+      script: [
+        () => {
+          throw new Error('offline failure');
+        },
+      ],
+    });
     const ends: unknown[] = [];
     events.on('loop_end', (event) => ends.push(event));
     const result = await loop.run('fail');
@@ -112,10 +147,15 @@ describe('AgentLoop', () => {
   });
 
   it('输出截断不会标为完成，dispose 后拒绝新的轮次', async () => {
-    const { loop } = makeLoop({ script: [[
-      { type: 'message_start' }, { type: 'text_delta', text: 'partial' },
-      { type: 'message_stop', stopReason: 'max_tokens' },
-    ]] });
+    const { loop } = makeLoop({
+      script: [
+        [
+          { type: 'message_start' },
+          { type: 'text_delta', text: 'partial' },
+          { type: 'message_stop', stopReason: 'max_tokens' },
+        ],
+      ],
+    });
     expect((await loop.run('long')).reason).toBe('max_tokens');
     await loop.dispose();
     await expect(loop.run('again')).rejects.toThrow('disposed');
@@ -126,7 +166,11 @@ describe('AgentLoop', () => {
     const { loop, permission, tools } = makeLoop({
       events,
       mode: 'ask',
-      script: [toolUseResponse([{ id: 'cancelled', name: 'write_file', input: { path: 'cancelled.txt', content: 'no' } }])],
+      script: [
+        toolUseResponse([
+          { id: 'cancelled', name: 'write_file', input: { path: 'cancelled.txt', content: 'no' } },
+        ]),
+      ],
     });
     let lateResolve: ((d: import('../src/core/events.js').UserDecision) => void) | undefined;
     events.on('permission_request', (e) => {
@@ -146,14 +190,19 @@ describe('AgentLoop', () => {
   it('并行审批全部可取消，loop 不会继续等待其他请求', async () => {
     const events = new EventBus();
     const { loop } = makeLoop({
-      events, mode: 'ask',
-      script: [toolUseResponse([
-        { id: 'a', name: 'read_file', input: { path: 'a' } },
-        { id: 'b', name: 'read_file', input: { path: 'b' } },
-      ])],
+      events,
+      mode: 'ask',
+      script: [
+        toolUseResponse([
+          { id: 'a', name: 'read_file', input: { path: 'a' } },
+          { id: 'b', name: 'read_file', input: { path: 'b' } },
+        ]),
+      ],
     });
     let requests = 0;
-    events.on('permission_request', () => { if (++requests === 2) loop.abort_current(); });
+    events.on('permission_request', () => {
+      if (++requests === 2) loop.abort_current();
+    });
     const log = collect(events);
     await loop.run('read');
     expect(requests).toBe(2);
@@ -164,11 +213,14 @@ describe('AgentLoop', () => {
   it('运行中拒绝重入，保留当前轮次的取消控制器', async () => {
     const events = new EventBus();
     const { loop } = makeLoop({
-      events, mode: 'ask',
+      events,
+      mode: 'ask',
       script: [toolUseResponse([{ id: 'a', name: 'read_file', input: { path: 'a' } }])],
     });
     let entered!: () => void;
-    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     events.on('permission_request', entered);
     const first = loop.run('first');
     await waiting;
@@ -178,11 +230,18 @@ describe('AgentLoop', () => {
   });
 
   it('dispose 中断审批并等待结果回填，清理后不能再运行', async () => {
-    const { loop, events } = makeLoop({ mode: 'ask', script: [
-      toolUseResponse([{ id: 'pending', name: 'write_file', input: { path: 'x', content: 'no' } }]),
-    ] });
+    const { loop, events } = makeLoop({
+      mode: 'ask',
+      script: [
+        toolUseResponse([
+          { id: 'pending', name: 'write_file', input: { path: 'x', content: 'no' } },
+        ]),
+      ],
+    });
     let entered!: () => void;
-    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     events.on('permission_request', entered);
     const run = loop.run('write');
     await waiting;
@@ -210,10 +269,13 @@ describe('AgentLoop', () => {
       const last = req.messages.at(-1);
       expect(last?.role).toBe('user');
       expect(JSON.stringify(last?.content)).toContain('file-content-42');
-      return (textResponse('读取完成') as StreamEvent[]);
+      return textResponse('读取完成') as StreamEvent[];
     };
     const { loop, events } = makeLoop({
-      script: [toolUseResponse([{ id: 't1', name: 'read_file', input: { path: 'hello.txt' } }]), secondTurn],
+      script: [
+        toolUseResponse([{ id: 't1', name: 'read_file', input: { path: 'hello.txt' } }]),
+        secondTurn,
+      ],
     });
     const log = collect(events);
     await loop.run('读一下 hello.txt');
@@ -231,7 +293,10 @@ describe('AgentLoop', () => {
     });
     const log = collect(events);
     await loop.run('list files');
-    const result = log.find((e) => e.type === 'tool_result') as Extract<AgentEvent, { type: 'tool_result' }>;
+    const result = log.find((e) => e.type === 'tool_result') as Extract<
+      AgentEvent,
+      { type: 'tool_result' }
+    >;
     expect(result.result.isError).toBe(true);
     expect(result.result.content).toContain('Permission denied');
   });
@@ -242,40 +307,54 @@ describe('AgentLoop', () => {
       mode: 'ask',
       events,
       script: [
-        toolUseResponse([{ id: 't1', name: 'write_file', input: { path: 'out.txt', content: 'abc' } }]),
+        toolUseResponse([
+          { id: 't1', name: 'write_file', input: { path: 'out.txt', content: 'abc' } },
+        ]),
         textResponse('写好了'),
       ],
     });
     // 模拟 UI：自动点"允许一次"
     events.on('permission_request', (e) => {
-      expect(e.request).toMatchObject({ toolUseId: 't1', decisionSource: 'mode', cwd: tmp, toolName: 'write_file' });
+      expect(e.request).toMatchObject({
+        toolUseId: 't1',
+        decisionSource: 'mode',
+        cwd: tmp,
+        toolName: 'write_file',
+      });
       e.resolve({ allow: true });
     });
     await loop.run('write out.txt');
     expect(await readFile(join(tmp, 'out.txt'), 'utf-8')).toBe('abc');
   });
 
-  it.each([undefined, 'linux', 'win32'] as const)('"本次会话始终允许"：第二次同类调用不再询问（平台 %s）', async (platform) => {
-    const events = new EventBus();
-    const { loop } = makeLoop({
-      mode: 'ask',
-      events,
-      ...(platform ? { platform } : {}),
-      script: [
-        toolUseResponse([{ id: 't1', name: 'write_file', input: { path: 'a.txt', content: '1' } }]),
-        toolUseResponse([{ id: 't2', name: 'write_file', input: { path: 'a.txt', content: '2' } }]),
-        textResponse('done'),
-      ],
-    });
-    let askCount = 0;
-    events.on('permission_request', (e) => {
-      askCount++;
-      e.resolve({ allow: true, remember: 'session' });
-    });
-    await loop.run('write twice');
-    expect(askCount).toBe(1); // 第二次命中会话级规则，静默放行
-    expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('2');
-  });
+  it.each([undefined, 'linux', 'win32'] as const)(
+    '"本次会话始终允许"：第二次同类调用不再询问（平台 %s）',
+    async (platform) => {
+      const events = new EventBus();
+      const { loop } = makeLoop({
+        mode: 'ask',
+        events,
+        ...(platform ? { platform } : {}),
+        script: [
+          toolUseResponse([
+            { id: 't1', name: 'write_file', input: { path: 'a.txt', content: '1' } },
+          ]),
+          toolUseResponse([
+            { id: 't2', name: 'write_file', input: { path: 'a.txt', content: '2' } },
+          ]),
+          textResponse('done'),
+        ],
+      });
+      let askCount = 0;
+      events.on('permission_request', (e) => {
+        askCount++;
+        e.resolve({ allow: true, remember: 'session' });
+      });
+      await loop.run('write twice');
+      expect(askCount).toBe(1); // 第二次命中会话级规则，静默放行
+      expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('2');
+    },
+  );
 
   it('用户拒绝：反馈以 tool_result 回填', async () => {
     const events = new EventBus();
@@ -286,7 +365,10 @@ describe('AgentLoop', () => {
     const { loop } = makeLoop({
       mode: 'ask',
       events,
-      script: [toolUseResponse([{ id: 't1', name: 'bash', input: { command: 'rm x' } }]), secondTurn],
+      script: [
+        toolUseResponse([{ id: 't1', name: 'bash', input: { command: 'rm x' } }]),
+        secondTurn,
+      ],
     });
     events.on('permission_request', (e) => e.resolve({ allow: false, feedback: '太危险' }));
     const log = collect(events);
@@ -302,11 +384,17 @@ describe('AgentLoop', () => {
     const { loop, events } = makeLoop({
       hooks,
       mode: 'yolo',
-      script: [toolUseResponse([{ id: 't1', name: 'bash', input: { command: 'ls' } }]), textResponse('ok')],
+      script: [
+        toolUseResponse([{ id: 't1', name: 'bash', input: { command: 'ls' } }]),
+        textResponse('ok'),
+      ],
     });
     const log = collect(events);
     await loop.run('ls');
-    const result = log.find((e) => e.type === 'tool_result') as Extract<AgentEvent, { type: 'tool_result' }>;
+    const result = log.find((e) => e.type === 'tool_result') as Extract<
+      AgentEvent,
+      { type: 'tool_result' }
+    >;
     expect(result.result.content).toContain('Vetoed');
   });
 
@@ -315,7 +403,9 @@ describe('AgentLoop', () => {
     const { loop, events } = makeLoop({
       mode: 'auto',
       maxTurns: 3,
-      script: Array(15).fill(toolUseResponse([{ id: 't', name: 'read_file', input: { path: 'x' } }])),
+      script: Array(15).fill(
+        toolUseResponse([{ id: 't', name: 'read_file', input: { path: 'x' } }]),
+      ),
     });
     const log = collect(events);
     await loop.run('loop forever');
@@ -362,7 +452,9 @@ describe('AgentLoop', () => {
           if (req.system.includes('压缩器')) return textResponse('早期摘要');
           agentTurns++;
           if (agentTurns <= 4) {
-            return toolUseResponse([{ id: `t${agentTurns}`, name: 'read_file', input: { path: 'x' } }]);
+            return toolUseResponse([
+              { id: `t${agentTurns}`, name: 'read_file', input: { path: 'x' } },
+            ]);
           }
           return textResponse('done');
         },

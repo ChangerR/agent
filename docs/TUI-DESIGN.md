@@ -8,6 +8,7 @@
 AgentLab 保持现有 `@earendil-works/pi-tui` 1.0.2 依赖；没有引入 pi 的 agent engine、账户、凭据或配置。
 
 固定源码参考：
+
 - [用户消息](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/modes/interactive/components/user-message.ts)：Markdown 自己绘制整宽背景和一列留白，无额外套框。
 - [助手消息](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/modes/interactive/components/assistant-message.ts)：回复直接呈现 Markdown，思考用低对比文本，不为每个增量重复角色标题。
 - [工具执行](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/modes/interactive/components/tool-execution.ts)：通过 pending/success/error 语义背景区分状态，标题和输出分层。

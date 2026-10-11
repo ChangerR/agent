@@ -27,8 +27,9 @@ export function getGlobalConfigPath(): string {
 /** 尚未创建的路径按最近存在的父目录规范化，不吞掉权限等真实 I/O 错误。 */
 export function canonicalPath(path: string): string {
   const absolute = resolve(path);
-  try { return realpathSync.native(absolute); }
-  catch (error) {
+  try {
+    return realpathSync.native(absolute);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     const parent = dirname(absolute);
     return parent === absolute ? absolute : join(canonicalPath(parent), basename(absolute));
@@ -43,7 +44,10 @@ export function resolveProjectRoot(cwd: string): string {
     // 明确在这些目录启动仍可把它们当作项目，但子目录不能被其配置静默吸收。
     if (current !== start && (boundaries.has(current) || dirname(current) === current)) break;
     // Git worktree/submodule 的 .git 是文件，不限定为目录，也不执行 git 命令。
-    if ([PROJECT_CONFIG, '.git', 'package.json'].some(marker => existsSync(join(current, marker)))) return current;
+    if (
+      [PROJECT_CONFIG, '.git', 'package.json'].some((marker) => existsSync(join(current, marker)))
+    )
+      return current;
     if (dirname(current) === current) break;
   }
   return start;
@@ -58,8 +62,14 @@ export function resolveAgentPaths(cwd: string): AgentPaths {
   const projectId = createHash('sha256').update(identity).digest('hex');
   const projectStateDir = join(agentHome, 'state', 'projects', projectId);
   return Object.freeze({
-    cwd: canonicalCwd, projectRoot, agentHome, globalConfigPath,
-    projectConfigPath: join(projectRoot, PROJECT_CONFIG), projectId, projectStateDir,
-    sessionsDir: join(projectStateDir, 'sessions'), logsDir: join(projectStateDir, 'logs'),
+    cwd: canonicalCwd,
+    projectRoot,
+    agentHome,
+    globalConfigPath,
+    projectConfigPath: join(projectRoot, PROJECT_CONFIG),
+    projectId,
+    projectStateDir,
+    sessionsDir: join(projectStateDir, 'sessions'),
+    logsDir: join(projectStateDir, 'logs'),
   });
 }

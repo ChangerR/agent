@@ -1,5 +1,15 @@
 import type { TypedHookRegistrar } from './hooks.js';
-import type { ApprovalTool, CapabilityKind, CapabilityMap, CapabilityRecord, Disposer, MaybePromise, PluginConfigSnapshot, ReadonlyEventSubscription, TypedCapabilityRegistrar } from './capabilities.js';
+import type {
+  ApprovalTool,
+  CapabilityKind,
+  CapabilityMap,
+  CapabilityRecord,
+  Disposer,
+  MaybePromise,
+  PluginConfigSnapshot,
+  ReadonlyEventSubscription,
+  TypedCapabilityRegistrar,
+} from './capabilities.js';
 
 export interface PluginManifest {
   id: string;
@@ -21,8 +31,13 @@ export interface PluginConfigDefinition {
   merge?: Readonly<Record<string, 'replace' | 'append'>>;
   applyMode?: 'newSession';
 }
-export type DependencyValue<K extends CapabilityKind> = K extends 'tool' ? ApprovalTool : CapabilityMap[K];
-export type DependencyRecord<K extends CapabilityKind> = Omit<CapabilityRecord<K>, 'implementation'> & { readonly implementation: DependencyValue<K> };
+export type DependencyValue<K extends CapabilityKind> = K extends 'tool'
+  ? ApprovalTool
+  : CapabilityMap[K];
+export type DependencyRecord<K extends CapabilityKind> = Omit<
+  CapabilityRecord<K>,
+  'implementation'
+> & { readonly implementation: DependencyValue<K> };
 export interface DependencyHandle {
   readonly manifest: Readonly<PluginManifest>;
   get<K extends CapabilityKind>(kind: K, id: string): DependencyValue<K>;
@@ -42,11 +57,17 @@ export interface PluginSetupContext {
   onDispose(disposer: Disposer): void;
   onActivate(activate: (signal: AbortSignal) => MaybePromise<void>): void;
   /** 资源创建后先登记清理，再执行可能失败的初始化。 */
-  withResource<T>(resource: T, dispose: (resource: T) => MaybePromise<void>, initialize?: (resource: T, signal: AbortSignal) => MaybePromise<void>): Promise<T>;
+  withResource<T>(
+    resource: T,
+    dispose: (resource: T) => MaybePromise<void>,
+    initialize?: (resource: T, signal: AbortSignal) => MaybePromise<void>,
+  ): Promise<T>;
 }
 export interface Plugin {
   manifest: PluginManifest;
   config?: PluginConfigDefinition;
   setup(context: PluginSetupContext): MaybePromise<void>;
 }
-export function definePlugin<P extends Plugin>(plugin: P): P { return plugin; }
+export function definePlugin<P extends Plugin>(plugin: P): P {
+  return plugin;
+}

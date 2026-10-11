@@ -16,7 +16,12 @@ import { SessionError } from './errors.js';
 import { assertSafeHistory, makeTitle } from './history.js';
 import { isValidSessionId, newSessionId } from './identity.js';
 import type { SessionStore } from '../../sdk/runtime-capabilities.js';
-import { assertCompatibleEnvelope, copyPluginStates, validateSessionSnapshot, type SessionRestoreRequirements } from './envelope.js';
+import {
+  assertCompatibleEnvelope,
+  copyPluginStates,
+  validateSessionSnapshot,
+  type SessionRestoreRequirements,
+} from './envelope.js';
 import {
   SESSION_SCHEMA_VERSION,
   type SessionFile,
@@ -70,12 +75,17 @@ export class SessionManager {
     this.autoSave = opts.autoSave ?? true;
     this.idValue = opts.makeId?.() ?? newSessionId(now);
     if (!isValidSessionId(this.idValue)) {
-      throw new SessionError('invalid_id', `会话 id 不合法: "${this.idValue}"。只允许字母、数字、- 和 _，长度 1~64。`);
+      throw new SessionError(
+        'invalid_id',
+        `会话 id 不合法: "${this.idValue}"。只允许字母、数字、- 和 _，长度 1~64。`,
+      );
     }
     this.createdAtValue = now.toISOString();
   }
 
-  get hasPendingPersistence(): boolean { return this.pending.size > 0; }
+  get hasPendingPersistence(): boolean {
+    return this.pending.size > 0;
+  }
 
   get id(): string {
     return this.idValue;
@@ -98,7 +108,10 @@ export class SessionManager {
     const detachCompletion = this.opts.loop.onRunSettled(async () => {
       if (this.autoSave) await this.save();
     });
-    return () => { detachEvent(); detachCompletion(); };
+    return () => {
+      detachEvent();
+      detachCompletion();
+    };
   }
 
   save(signal?: AbortSignal): Promise<SessionSaveResult | undefined> {
@@ -138,19 +151,38 @@ export class SessionManager {
     const own = this.operationSignal(signal);
     const errors: unknown[] = [];
     try {
-      await bounded(async (child) => {
-        try { await this.flush(child); } catch (error) {
-          if (this.hasPendingPersistence) throw error;
-          errors.push(error);
-        }
-        if (this.autoSave) {
-          try { await this.save(child); } catch (error) { errors.push(error); }
-        }
-        try { await this.flush(child); } catch (error) { errors.push(error); }
-      }, own, this.opts.persistenceTimeoutMs ?? 30_000);
-    } catch (error) { errors.push(error); }
+      await bounded(
+        async (child) => {
+          try {
+            await this.flush(child);
+          } catch (error) {
+            if (this.hasPendingPersistence) throw error;
+            errors.push(error);
+          }
+          if (this.autoSave) {
+            try {
+              await this.save(child);
+            } catch (error) {
+              errors.push(error);
+            }
+          }
+          try {
+            await this.flush(child);
+          } catch (error) {
+            errors.push(error);
+          }
+        },
+        own,
+        this.opts.persistenceTimeoutMs ?? 30_000,
+      );
+    } catch (error) {
+      errors.push(error);
+    }
     if (this.hasPendingPersistence) {
-      const unresolved = new SessionError('io', '持久化结果尚未确认，后台操作可能仍会提交；未释放存储插件，也未重试保存。');
+      const unresolved = new SessionError(
+        'io',
+        '持久化结果尚未确认，后台操作可能仍会提交；未释放存储插件，也未重试保存。',
+      );
       this.failures.set(this.idValue, unresolved);
       errors.push(unresolved);
     }
@@ -170,9 +202,17 @@ export class SessionManager {
       resolved = latest;
     }
 
-    if (!isValidSessionId(resolved)) throw new SessionError('invalid_id', `会话 id 不合法: ${resolved}`);
-    await this.readBoundary(async () => { await this.tails.get(resolved)?.catch(() => undefined); }, options.signal);
-    const file = validateSessionSnapshot(await this.readBoundary((child) => this.opts.store.load(this.opts.cwd, resolved, child), options.signal));
+    if (!isValidSessionId(resolved))
+      throw new SessionError('invalid_id', `会话 id 不合法: ${resolved}`);
+    await this.readBoundary(async () => {
+      await this.tails.get(resolved)?.catch(() => undefined);
+    }, options.signal);
+    const file = validateSessionSnapshot(
+      await this.readBoundary(
+        (child) => this.opts.store.load(this.opts.cwd, resolved, child),
+        options.signal,
+      ),
+    );
     assertCompatibleEnvelope(file, this.opts.restoreRequirements);
     if (canonicalCwd(file.cwd) !== canonicalCwd(this.opts.cwd)) {
       throw new SessionError(
@@ -184,7 +224,10 @@ export class SessionManager {
     const provider = this.opts.loop.providerName;
     const endpointKey = this.opts.endpointKey ?? 'default';
     if (file.provider !== provider || file.endpointKey !== endpointKey) {
-      throw new SessionError('provider_mismatch', '保存的 provider / endpoint 与当前配置不同。请切换回原配置后恢复；未修改当前会话。');
+      throw new SessionError(
+        'provider_mismatch',
+        '保存的 provider / endpoint 与当前配置不同。请切换回原配置后恢复；未修改当前会话。',
+      );
     }
     assertSafeHistory(file.messages);
     const rules = structuredClone(file.sessionRules);
@@ -194,14 +237,18 @@ export class SessionManager {
     } catch (err) {
       const path = this.opts.store.path(this.opts.cwd, resolved);
       const detail = err instanceof Error ? err.message : String(err);
-      throw new SessionError('invalid_schema', `会话文件结构不合法: ${path} ${detail}`, { cause: err, path });
+      throw new SessionError('invalid_schema', `会话文件结构不合法: ${path} ${detail}`, {
+        cause: err,
+        path,
+      });
     }
 
     const savedMode = file.permissionMode;
     const currentMode = this.opts.permission.mode;
     const restoreMode = MODE_RANK[savedMode] < MODE_RANK[currentMode];
     if (restoreMode) this.opts.permission.validateMode?.(savedMode);
-    if (this.opts.loop.running) throw new SessionError('busy', '恢复会话期间启动了新轮次，未修改当前会话。');
+    if (this.opts.loop.running)
+      throw new SessionError('busy', '恢复会话期间启动了新轮次，未修改当前会话。');
     options.signal?.throwIfAborted();
     const previous = this.opts.loop.exportSession();
     const previousRules = structuredClone(this.opts.permission.getSessionRules());
@@ -211,17 +258,37 @@ export class SessionManager {
       this.opts.permission.setSessionRules(rules);
       if (restoreMode) this.opts.permission.setMode(savedMode);
       loopAttempted = true;
-      this.opts.loop.importSession({ messages: file.messages, model: file.model, thinking: file.thinking });
+      this.opts.loop.importSession({
+        messages: file.messages,
+        model: file.model,
+        thinking: file.thinking,
+      });
     } catch (error) {
       const rollbackErrors: unknown[] = [];
-      try { this.opts.permission.setSessionRules(previousRules); } catch (rollback) { rollbackErrors.push(rollback); }
+      try {
+        this.opts.permission.setSessionRules(previousRules);
+      } catch (rollback) {
+        rollbackErrors.push(rollback);
+      }
       if (this.opts.permission.mode !== currentMode) {
-        try { this.opts.permission.setMode(currentMode); } catch (rollback) { rollbackErrors.push(rollback); }
+        try {
+          this.opts.permission.setMode(currentMode);
+        } catch (rollback) {
+          rollbackErrors.push(rollback);
+        }
       }
       if (loopAttempted) {
-        try { this.opts.loop.importSession(previous); } catch (rollback) { rollbackErrors.push(rollback); }
+        try {
+          this.opts.loop.importSession(previous);
+        } catch (rollback) {
+          rollbackErrors.push(rollback);
+        }
       }
-      if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], '会话恢复失败，部分插件状态无法回滚；请关闭本会话后重新启动。');
+      if (rollbackErrors.length)
+        throw new AggregateError(
+          [error, ...rollbackErrors],
+          '会话恢复失败，部分插件状态无法回滚；请关闭本会话后重新启动。',
+        );
       throw error;
     }
     if (MODE_RANK[savedMode] > MODE_RANK[currentMode]) {
@@ -263,15 +330,31 @@ export class SessionManager {
   }
 
   delete(id: string, signal?: AbortSignal): Promise<boolean> {
-    if (!isValidSessionId(id)) return Promise.reject(new SessionError('invalid_id', `会话 id 不合法: ${id}`));
+    if (!isValidSessionId(id))
+      return Promise.reject(new SessionError('invalid_id', `会话 id 不合法: ${id}`));
     const operationSignal = this.operationSignal(signal);
     const previous = this.tails.get(id) ?? Promise.resolve();
-    const deleting = previous.catch(() => undefined).then(() => { operationSignal.throwIfAborted(); return this.opts.store.delete(this.opts.cwd, id, operationSignal); }).then(({ deleted, revision }) => {
-      if (typeof deleted !== 'boolean' || !Number.isSafeInteger(revision) || revision < (deleted ? 1 : 0)) throw new SessionError('invalid_schema', '会话存储返回了无效的删除结果');
-      if (deleted) this.recreate.set(id, revision);
-      this.failures.delete(id);
-      return deleted;
-    }).catch((error) => { this.failures.set(id, error); throw error; });
+    const deleting = previous
+      .catch(() => undefined)
+      .then(() => {
+        operationSignal.throwIfAborted();
+        return this.opts.store.delete(this.opts.cwd, id, operationSignal);
+      })
+      .then(({ deleted, revision }) => {
+        if (
+          typeof deleted !== 'boolean' ||
+          !Number.isSafeInteger(revision) ||
+          revision < (deleted ? 1 : 0)
+        )
+          throw new SessionError('invalid_schema', '会话存储返回了无效的删除结果');
+        if (deleted) this.recreate.set(id, revision);
+        this.failures.delete(id);
+        return deleted;
+      })
+      .catch((error) => {
+        this.failures.set(id, error);
+        throw error;
+      });
     this.track(id, deleting);
     return this.waitPersistence(id, deleting, operationSignal);
   }
@@ -280,7 +363,10 @@ export class SessionManager {
     return this.readBoundary((child) => this.opts.store.latest(this.opts.cwd, child), signal);
   }
 
-  private write(snapshot: SessionSnapshot, signal: AbortSignal): Promise<SessionSaveResult | undefined> {
+  private write(
+    snapshot: SessionSnapshot,
+    signal: AbortSignal,
+  ): Promise<SessionSaveResult | undefined> {
     if (snapshot.messages.length === 0) return Promise.resolve(undefined);
     if (!this.titleValue) this.titleValue = makeTitle(snapshot.messages);
     const updatedAt = this.now().toISOString();
@@ -314,14 +400,28 @@ export class SessionManager {
     // 捕获调用时是否已明确删除成功；删除前排队的旧保存不能获得重建权。
     const recreateRevision = this.recreate.get(file.id);
     const previous = this.tails.get(file.id) ?? Promise.resolve();
-    const saving = previous.catch(() => undefined).then(() => {
-      signal.throwIfAborted();
-      file.revision = this.revisions.get(file.id) ?? 0;
-      return this.opts.store.save(structuredClone(file), { recreate: recreateRevision !== undefined, recreateRevision }, signal);
-    }).then((commit) => {
-      if (!commit || typeof commit.path !== 'string' || !commit.path || !Number.isSafeInteger(commit.revision) || commit.revision <= file.revision) throw new SessionError('invalid_schema', '会话存储返回了无效的提交版本');
-      return commit;
-    });
+    const saving = previous
+      .catch(() => undefined)
+      .then(() => {
+        signal.throwIfAborted();
+        file.revision = this.revisions.get(file.id) ?? 0;
+        return this.opts.store.save(
+          structuredClone(file),
+          { recreate: recreateRevision !== undefined, recreateRevision },
+          signal,
+        );
+      })
+      .then((commit) => {
+        if (
+          !commit ||
+          typeof commit.path !== 'string' ||
+          !commit.path ||
+          !Number.isSafeInteger(commit.revision) ||
+          commit.revision <= file.revision
+        )
+          throw new SessionError('invalid_schema', '会话存储返回了无效的提交版本');
+        return commit;
+      });
     const pending = saving.then(
       ({ path, revision }) => {
         this.revisions.set(file.id, revision);
@@ -329,10 +429,21 @@ export class SessionManager {
         this.failures.delete(file.id);
         // 返回摘要只读取本次写入的快照；await 期间可能已经恢复了另一会话。
         const summary: SessionSaveResult = {
-          id: file.id, title: file.title, createdAt: file.createdAt, updatedAt,
-          model: file.model, messageCount: file.stats.messages, path, trimmed: snapshot.trimmed,
+          id: file.id,
+          title: file.title,
+          createdAt: file.createdAt,
+          updatedAt,
+          model: file.model,
+          messageCount: file.stats.messages,
+          path,
+          trimmed: snapshot.trimmed,
         };
-        this.opts.events.emit({ type: 'session_saved', id: file.id, path, trimmed: snapshot.trimmed });
+        this.opts.events.emit({
+          type: 'session_saved',
+          id: file.id,
+          path,
+          trimmed: snapshot.trimmed,
+        });
         return summary;
       },
       (err: unknown) => {
@@ -350,15 +461,31 @@ export class SessionManager {
     const timeout = AbortSignal.timeout(this.opts.persistenceTimeoutMs ?? 30_000);
     return parent ? AbortSignal.any([parent, timeout]) : timeout;
   }
-  private readBoundary<T>(handler: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
-    return bounded(handler, signal ?? new AbortController().signal, this.opts.persistenceTimeoutMs ?? 30_000);
+  private readBoundary<T>(
+    handler: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return bounded(
+      handler,
+      signal ?? new AbortController().signal,
+      this.opts.persistenceTimeoutMs ?? 30_000,
+    );
   }
-  private async waitPersistence<T>(id: string, operation: Promise<T>, signal: AbortSignal): Promise<T> {
-    try { return await bounded(() => operation, signal, this.opts.persistenceTimeoutMs ?? 30_000); }
-    catch (error) {
+  private async waitPersistence<T>(
+    id: string,
+    operation: Promise<T>,
+    signal: AbortSignal,
+  ): Promise<T> {
+    try {
+      return await bounded(() => operation, signal, this.opts.persistenceTimeoutMs ?? 30_000);
+    } catch (error) {
       if (!this.pending.has(operation)) return await operation;
       if (!signal.aborted && !(error instanceof CapabilityTimeout)) throw error;
-      const unknown = new SessionError('io', '已停止等待持久化；结果尚未确认，后台操作可能仍会提交。不能假定已撤销，也不会自动重试。', { cause: error });
+      const unknown = new SessionError(
+        'io',
+        '已停止等待持久化；结果尚未确认，后台操作可能仍会提交。不能假定已撤销，也不会自动重试。',
+        { cause: error },
+      );
       this.failures.set(id, unknown);
       throw unknown;
     }
@@ -367,10 +494,12 @@ export class SessionManager {
   private track(id: string, pending: Promise<unknown>): void {
     this.tails.set(id, pending);
     this.pending.add(pending);
-    void pending.finally(() => {
-      this.pending.delete(pending);
-      if (this.tails.get(id) === pending) this.tails.delete(id);
-    }).catch(() => undefined);
+    void pending
+      .finally(() => {
+        this.pending.delete(pending);
+        if (this.tails.get(id) === pending) this.tails.delete(id);
+      })
+      .catch(() => undefined);
   }
 
   private addUsage(usage: TokenUsage): void {

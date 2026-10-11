@@ -10,7 +10,9 @@ export type { ReviewRecord, ReviewContext } from '../../core/permission/contract
 function fingerprint(input: Record<string, unknown>): string {
   const json = JSON.stringify(input, (_key, value: unknown) => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+      return Object.fromEntries(
+        Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+      );
     }
     return value;
   });
@@ -30,11 +32,19 @@ export class ReviewHistory {
     this.entries = [];
   }
 
-  record(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, cwd: string, userRequest: string, decision: Decision): ReviewRecord {
+  record(
+    tool: Omit<Tool, 'execute'>,
+    input: Record<string, unknown>,
+    cwd: string,
+    userRequest: string,
+    decision: Decision,
+  ): ReviewRecord {
     const serialized = JSON.stringify(input);
     const record: ReviewRecord = {
       toolName: tool.name,
-      ...(serialized.length <= 2000 ? { input: JSON.parse(serialized) as Record<string, unknown> } : {}),
+      ...(serialized.length <= 2000
+        ? { input: JSON.parse(serialized) as Record<string, unknown> }
+        : {}),
       inputOmitted: serialized.length > 2000,
       cwd,
       userRequest: excerpt(userRequest, 1000),
@@ -53,7 +63,13 @@ export class ReviewHistory {
     record.result = excerpt(result.content, 1000);
   }
 
-  build(tool: Omit<Tool, 'execute'>, input: Record<string, unknown>, cwd: string, userRequest: string, messages: readonly Message[]): ReviewContext {
+  build(
+    tool: Omit<Tool, 'execute'>,
+    input: Record<string, unknown>,
+    cwd: string,
+    userRequest: string,
+    messages: readonly Message[],
+  ): ReviewContext {
     const conversation: ReviewContext['conversation'] = [];
     let omittedConversation = false;
     let remaining = 6000;
@@ -61,12 +77,35 @@ export class ReviewHistory {
     for (const message of [...messages].reverse()) {
       const parts: ReviewContext['conversation'] = [];
       if (typeof message.content === 'string') {
-        parts.push({ source: message.role === 'user' && message.source === 'summary' || message.content.startsWith(SUMMARY_MARKER) ? 'summary' : 'user', text: message.content });
+        parts.push({
+          source:
+            (message.role === 'user' && message.source === 'summary') ||
+            message.content.startsWith(SUMMARY_MARKER)
+              ? 'summary'
+              : 'user',
+          text: message.content,
+        });
       } else {
         for (const block of message.content) {
-          if (block.type === 'text') parts.push({ source: message.role === 'user' && (message.source === 'summary' || block.text.startsWith(SUMMARY_MARKER)) ? 'summary' : message.role, text: block.text });
-          if (block.type === 'tool_result') parts.push({ source: 'tool', text: `${block.toolUseId} (${block.isError ? '失败' : '成功'}): ${block.content}` });
-          if (block.type === 'tool_use') parts.push({ source: 'assistant', text: `${block.name}#${block.id}: ${JSON.stringify(block.input)}` });
+          if (block.type === 'text')
+            parts.push({
+              source:
+                message.role === 'user' &&
+                (message.source === 'summary' || block.text.startsWith(SUMMARY_MARKER))
+                  ? 'summary'
+                  : message.role,
+              text: block.text,
+            });
+          if (block.type === 'tool_result')
+            parts.push({
+              source: 'tool',
+              text: `${block.toolUseId} (${block.isError ? '失败' : '成功'}): ${block.content}`,
+            });
+          if (block.type === 'tool_use')
+            parts.push({
+              source: 'assistant',
+              text: `${block.name}#${block.id}: ${JSON.stringify(block.input)}`,
+            });
           // thinking / signature 从不进入审批请求。
         }
       }
@@ -86,17 +125,20 @@ export class ReviewHistory {
 
     const key = fingerprint(input);
     const recent = [...this.entries].reverse();
-    const matches = (entry: typeof recent[number]) => entry.record.toolName === tool.name && entry.record.cwd === cwd && entry.fingerprint === key;
+    const matches = (entry: (typeof recent)[number]) =>
+      entry.record.toolName === tool.name && entry.record.cwd === cwd && entry.fingerprint === key;
     const matching = recent.filter(matches);
     // 最新相同操作及人工确认/拒绝优先，避免多次模型放行把人工记录挤出预算。
     // 接着保留近期工具结果，余下预算再补其他相同操作与历史。
-    const candidates = [...new Set([
-      ...matching.slice(0, 1),
-      ...matching.filter((entry) => entry.record.decision.source === 'user'),
-      ...recent.slice(0, 4),
-      ...matching,
-      ...recent,
-    ])];
+    const candidates = [
+      ...new Set([
+        ...matching.slice(0, 1),
+        ...matching.filter((entry) => entry.record.decision.source === 'user'),
+        ...recent.slice(0, 4),
+        ...matching,
+        ...recent,
+      ]),
+    ];
     const previousReviews: ReviewContext['previousReviews'] = [];
     remaining = 6000;
     for (const entry of candidates) {
@@ -106,6 +148,13 @@ export class ReviewHistory {
       remaining -= size;
       previousReviews.push(structuredClone(record));
     }
-    return { cwd, userRequest, conversation, previousReviews, omittedConversation, omittedReviews: this.entries.length - previousReviews.length };
+    return {
+      cwd,
+      userRequest,
+      conversation,
+      previousReviews,
+      omittedConversation,
+      omittedReviews: this.entries.length - previousReviews.length,
+    };
   }
 }

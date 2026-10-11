@@ -5,8 +5,15 @@ export interface RegistrationBatch {
   rollback(): void;
   seal(): void;
 }
-export function prepareRegistration<T>(before: T, after: T, read: () => T, write: (value: T) => void, assertMutable: () => void): RegistrationBatch {
-  let committed = false; let sealed = false;
+export function prepareRegistration<T>(
+  before: T,
+  after: T,
+  read: () => T,
+  write: (value: T) => void,
+  assertMutable: () => void,
+): RegistrationBatch {
+  let committed = false;
+  let sealed = false;
   const validate = () => {
     if (sealed || committed) throw new Error('Registration batch is closed');
     assertMutable();
@@ -14,16 +21,25 @@ export function prepareRegistration<T>(before: T, after: T, read: () => T, write
   };
   return Object.freeze({
     validate,
-    commit() { validate(); write(after); committed = true; },
+    commit() {
+      validate();
+      write(after);
+      committed = true;
+    },
     rollback() {
       if (sealed) throw new Error('Registration batch is closed');
       if (committed) {
         assertMutable();
-        if (read() !== after) throw new Error('Registration target changed; rollback would remove unrelated registrations');
+        if (read() !== after)
+          throw new Error(
+            'Registration target changed; rollback would remove unrelated registrations',
+          );
         write(before);
       }
       sealed = true;
     },
-    seal() { sealed = true; },
+    seal() {
+      sealed = true;
+    },
   });
 }

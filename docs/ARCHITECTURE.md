@@ -2,7 +2,6 @@
 
 > 当前架构使用 SDK 插件宿主、唯一 ToolExecutor、确定性策略和严格模型审批员。配置与能力入口见 [PLUGINS.md](PLUGINS.md)，权限语义见 [POLICY.md](POLICY.md)。
 
-
 本文档逐模块讲解 AgentLab 的实现原理。AgentLab 是一个仿 Claude Code 的教学版 coding agent，设计目标是把"一个 agent 到底是怎么运转的"讲清楚。
 
 ## 0. 一张图看懂全局
@@ -47,15 +46,16 @@ interface Provider {
 
 Provider 只做翻译，不做决策。三个实现对应三种角色：
 
-| Provider | 角色 |
-|----------|------|
-| `anthropic.ts` | 真实模型（Messages API） |
-| `openai.ts` | 真实模型（OpenAI 兼容协议，一套代码接 DeepSeek/Kimi/通义/vLLM…） |
-| `fake.ts` | **脚本化假 provider** —— 无网络、确定性地测试整条 loop |
+| Provider       | 角色                                                             |
+| -------------- | ---------------------------------------------------------------- |
+| `anthropic.ts` | 真实模型（Messages API）                                         |
+| `openai.ts`    | 真实模型（OpenAI 兼容协议，一套代码接 DeepSeek/Kimi/通义/vLLM…） |
+| `fake.ts`      | **脚本化假 provider** —— 无网络、确定性地测试整条 loop           |
 
 `FakeProvider` 是教学的核心工具：你给它一个"剧本"（每轮返回什么事件），就能断言 loop 是否正确执行了工具、是否正确回填了结果。见 `tests/loop.test.ts`。
 
 两家协议的翻译差异本身就值得对照阅读：
+
 - Anthropic：tool_result 是 user 消息的 content block；流式按 content_block 分段。
 - OpenAI：tool_result 是独立的 `role: 'tool'` 消息；流式 tool_calls 按 index 增量下发，id/name 只在第一片出现 —— 所以 `OpenAIStreamTranslator` 是有状态的。
 
@@ -63,11 +63,13 @@ Provider 只做翻译，不做决策。三个实现对应三种角色：
 
 ```ts
 interface Tool {
-  name; description; inputSchema;      // 发给模型的部分
-  risk: 'read' | 'write' | 'execute';  // 权限引擎用
-  isConcurrencySafe?;                  // 只读工具可并行
-  analyzeInput?(input);                // 权限引擎用：规则匹配靶子 + 危险标记 + 展示摘要
-  execute(input, ctx);                 // 真正干活的部分
+  name;
+  description;
+  inputSchema; // 发给模型的部分
+  risk: 'read' | 'write' | 'execute'; // 权限引擎用
+  isConcurrencySafe?; // 只读工具可并行
+  analyzeInput?(input); // 权限引擎用：规则匹配靶子 + 危险标记 + 展示摘要
+  execute(input, ctx); // 真正干活的部分
 }
 ```
 
@@ -108,7 +110,6 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 Bash 的语法与授权分开：`tree-sitter-bash` 解析命令、逻辑连接、管道、重定向和展开等完整 Bash 语法；`tools/shell-readonly.ts` 对可证明的字面量命令逐项验证选项和真实文件路径。`&&`、`||`、`;` 和只读管道必须整条表达式都满足只读合约，不能因首个命令叫 `ls` 就放行后面的写入。动态展开、替换、脚本执行及未支持参数保留明确的不确定原因，交给原审批链；语法树不是任意程序副作用的证明。
 
 确定性放行的 Bash 使用固定可信系统工具、禁用启动配置/继承函数的非交互解释器与受控环境；Git/rg 的可执行配置另外禁用。分析记录经过验证的执行计划，ToolExecutor 最终重验后，Bash 工具还要确认实际计划未扩大，才执行同一计划。未知命令经原有审批授权后仍走普通执行路径。已安装的系统工具是可信依赖，本实现不是 OS 沙箱，不声称能防住恶意宿主二进制或并发文件替换的全部竞态。
-
 
 规则支持 `tool(glob)` 与 `tool(="字面量目标")`；宽泛 allow 不能替代完整的精确授权。会话规则只在同一 action 类别内先于配置规则，不越过 deny/ask。文件目标同时匹配真实绝对路径与项目相对路径。完整分析、环境重验和版本绑定详见 [POLICY.md](POLICY.md)。
 
