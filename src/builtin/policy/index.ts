@@ -11,6 +11,7 @@ import {
   type ToolAnalysis,
 } from '../../sdk/index.js';
 import { PermissionController, parseRule, matchRule } from './controller.js';
+import { isPlanControl } from '../planning/identity.js';
 import { isSubagentControl } from '../subagents/identity.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { resolveAgentPaths } from '../../core/paths.js';
@@ -214,6 +215,8 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           asked.source,
           asked.raw,
         );
+      if (isPlanControl(input.tool) && analysis.reasonCode === 'agent_control')
+        return decision('allow', 'plan_control', '更新会话计划；真实工具另行审批');
       if (isSubagentControl(input.tool) && analysis.reasonCode === 'agent_control')
         return decision('allow', 'agent_control', '仅管理当前会话的子任务；真实工具另行审批');
       // Windows 写入：只有用户亲自配置或记住的精确、无通配符规则能直接放行（与 Linux 精确规则语义一致）；

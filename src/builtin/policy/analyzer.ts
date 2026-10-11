@@ -9,6 +9,7 @@
  */
 import type { AnalysisInput, ToolAnalysis, ToolAnalyzer } from '../../sdk/capabilities.js';
 import { jsonInput } from '../../core/permission/input-validation.js';
+import { isPlanControl } from '../planning/identity.js';
 import { isSubagentControl } from '../subagents/identity.js';
 import { analyzeCommand } from '../../tools/bash.js';
 import { createEnvironmentAnalyzer } from './environment.js';
@@ -161,7 +162,7 @@ export function createDeterministicAnalyzer(
   const analyze = async (input: AnalysisInput, signal: AbortSignal): Promise<ToolAnalysis> => {
     signal.throwIfAborted();
     jsonInput(input.input, input.tool.inputSchema);
-    if (isSubagentControl(input.tool))
+    if (isSubagentControl(input.tool) || isPlanControl(input.tool))
       return {
         analyzerId: ANALYZER_ID,
         analyzerVersion: ANALYZER_VERSION,

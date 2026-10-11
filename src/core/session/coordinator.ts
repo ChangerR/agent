@@ -117,6 +117,9 @@ export class SessionManager {
     const detachEvent = this.opts.events.on('loop_end', (event) => {
       this.runs += 1;
     });
+    const detachPlan = this.opts.events.on('plan_changed', () => {
+      if (this.autoSave) void this.save(undefined, { background: true }).catch(() => {});
+    });
     const detachUsage = this.opts.events.on('model_usage', (event) => {
       if (this.usageIds.has(event.requestId)) return;
       this.usageIds.add(event.requestId);
@@ -130,17 +133,21 @@ export class SessionManager {
     });
     return () => {
       detachEvent();
+      detachPlan();
       detachUsage();
       detachCompletion();
       detachStart();
     };
   }
 
-  save(signal?: AbortSignal): Promise<SessionSaveResult | undefined> {
+  save(
+    signal?: AbortSignal,
+    options: { background?: boolean } = {},
+  ): Promise<SessionSaveResult | undefined> {
     try {
       const operationSignal = this.operationSignal(signal);
       operationSignal.throwIfAborted();
-      return this.write(this.opts.loop.exportSession(), operationSignal);
+      return this.write(this.opts.loop.exportSession(), operationSignal, options.background);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.failures.set(this.idValue, error);
@@ -310,6 +317,7 @@ export class SessionManager {
       }
       loopAttempted = true;
       this.opts.loop.importSession({
+        plan: file.plan,
         messages: file.messages,
         model: file.model,
         thinking: file.thinking,
@@ -420,6 +428,7 @@ export class SessionManager {
   private write(
     snapshot: SessionSnapshot,
     signal: AbortSignal,
+    background = false,
   ): Promise<SessionSaveResult | undefined> {
     const state = this.opts.state?.();
     if (snapshot.messages.length === 0 && !state?.owner) return Promise.resolve(undefined);
@@ -451,6 +460,7 @@ export class SessionManager {
         estimatedTokens: estimateTokens(snapshot.messages),
         runs: this.runs,
       },
+      plan: snapshot.plan,
       messages: snapshot.messages,
     };
     this.writePath = this.opts.store.path(cwd, file.id);
@@ -497,6 +507,7 @@ export class SessionManager {
         };
         this.opts.events.emit({
           type: 'session_saved',
+          ...(background ? { background: true } : {}),
           id: file.id,
           path,
           trimmed: snapshot.trimmed,

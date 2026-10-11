@@ -38,6 +38,7 @@ export const DEFAULT_SUBAGENT_LIMITS: Readonly<SubagentLimits> = Object.freeze({
 });
 export interface SpawnAgentInput {
   task: string;
+  planStepId?: string;
   name?: string;
   context?: 'fresh' | 'snapshot';
   readOnly?: boolean;
@@ -159,9 +160,18 @@ export class AgentSupervisor {
   private runningCount(): number {
     return [...this.nodes.values()].filter((node) => node.job).length;
   }
+  plan(agentId: string) {
+    return this.get(agentId).runtime.loop.plan;
+  }
+  private parentPlan(origin?: InvocationOrigin) {
+    return origin && origin.agentId !== 'root'
+      ? this.get(origin.agentId, origin).runtime.loop.plan
+      : this.opts.rootLoop.plan;
+  }
   spawn(input: SpawnAgentInput, provided?: InvocationOrigin): AgentAddress {
     const origin = this.origin(provided);
     this.check(origin);
+    this.parentPlan(origin).assertDelegation();
     taskText(input.task);
     if (this.nodes.size >= this.limits.maxAgents) throw new Error('Agent history limit reached');
     if (this.runningCount() >= this.limits.maxRunning)
@@ -180,6 +190,7 @@ export class AgentSupervisor {
           (name) => !parent?.record.allowedTools || parent.record.allowedTools.includes(name),
         )
       : parent?.record.allowedTools?.slice();
+    this.parentPlan(origin).validateChildStep(input.planStepId);
     const record: SubagentRecord = {
       agentId: `a-${randomUUID()}`,
       sessionId: newSessionId(),
@@ -196,10 +207,18 @@ export class AgentSupervisor {
     const snapshot = (parent?.runtime.loop ?? this.opts.rootLoop).exportSession();
     node.runtime.loop.importSession({
       ...snapshot,
+      plan: undefined,
       messages: record.context === 'snapshot' ? snapshot.messages : [],
     });
+    const parentPlan = (parent?.runtime.loop ?? this.opts.rootLoop).plan;
+    node.runtime.loop.plan.configure(parentPlan.snapshot?.mode ?? parentPlan.mode);
     this.nodes.set(record.agentId, node);
     const run = this.newRun(node, input.task);
+    this.parentPlan(origin).bindChild(input.planStepId, {
+      agentId: record.agentId,
+      runId: run.runId,
+      name: record.name,
+    });
     node.queue.push({
       run,
       input: {
@@ -235,6 +254,7 @@ export class AgentSupervisor {
     text: string,
     provided?: InvocationOrigin,
   ): AgentAddress & { queued: boolean } {
+    this.parentPlan(provided).assertDelegation();
     const node = this.get(agentId, provided);
     if (provided && provided.agentId !== 'root') {
       const sender = this.get(provided.agentId, provided).record;
@@ -258,12 +278,22 @@ export class AgentSupervisor {
       (node.activeLimits ?? this.limits).maxInbox
     )
       throw new Error('Agent inbox limit reached');
-    if (node.active && node.runtime.loop.enqueueInput(input))
+    if (node.active && node.runtime.loop.enqueueInput(input)) {
+      node.active.activity = '已追加消息，等待处理';
+      this.emit(node, node.active, 'status');
       return { agentId, runId: node.active.runId, queued: true };
+    }
     if (!node.job && this.runningCount() >= this.limits.maxRunning)
       throw new Error('Running agent limit reached');
+    const localPlan = node.runtime.loop.plan.snapshot;
+    if (localPlan && ['paused', 'cancelled', 'interrupted'].includes(localPlan.phase))
+      node.runtime.loop.plan.resume();
     const run = this.newRun(node, text);
+    (
+      this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop
+    ).plan.childRestarted(agentId, run);
     node.queue.push({ run, input, limits: { ...this.limits } });
+    this.emit(node, run, 'status');
     this.launch(node);
     this.persistRoot();
     return { agentId, runId: run.runId, queued: Boolean(node.active) };
@@ -504,6 +534,13 @@ export class AgentSupervisor {
     this.nodes = new Map((this.restoring ?? []).map((node) => [node.record.agentId, node]));
     this.restoring = undefined;
     this.switching = false;
+    for (const node of this.nodes.values()) {
+      const run = node.record.runs.at(-1);
+      if (run)
+        (
+          this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop
+        ).plan.childChanged(node.record.agentId, node.record.name, run);
+    }
   }
   private create(record: SubagentRecord): Node {
     const runtime = this.opts.createChild(record, { ...this.limits });
@@ -589,6 +626,7 @@ export class AgentSupervisor {
                 ? 'output_limit'
                 : result.reason;
             run.error = result.error;
+            const localPlan = node.runtime.loop.plan.snapshot;
             run.status =
               timedOut || run.reason === 'output_limit'
                 ? 'limited'
@@ -597,7 +635,9 @@ export class AgentSupervisor {
                   : result.reason === 'error'
                     ? 'failed'
                     : result.reason === 'completed'
-                      ? 'completed'
+                      ? localPlan && localPlan.mode !== 'only' && localPlan.phase !== 'completed'
+                        ? 'failed'
+                        : 'completed'
                       : 'limited';
           } catch (error) {
             await node.runtime.loop.whenSettled();
@@ -700,7 +740,10 @@ export class AgentSupervisor {
         usage: { ...event.usage },
         purpose: event.purpose,
       });
-    } else if (event.type !== 'permission_request') {
+    } else if (event.type === 'permission_request') {
+      run.activity = '等待审批';
+      this.emit(node, run, 'status');
+    } else {
       if (event.type === 'tool_result' && run.status === 'cancelling') {
         const limit = (node.activeLimits ?? this.limits).maxOutputChars;
         const partial = `\n[工具 ${event.name} 的部分结果]\n${event.result.content}`;
@@ -733,6 +776,8 @@ export class AgentSupervisor {
     kind: 'status' | 'text' | 'usage' | 'complete',
     fields: Partial<Extract<AgentEvent, { type: 'subagent_event' }>> = {},
   ): void {
+    const parent = this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop;
+    parent.plan.childChanged(node.record.agentId, node.record.name, run);
     this.opts.events.emit({
       ...fields,
       type: 'subagent_event',
@@ -748,7 +793,7 @@ export class AgentSupervisor {
   private persistRoot(): void {
     if (this.opts.autoSave === false || this.closed || this.switching) return;
     void this.opts.rootSession
-      .save()
+      .save(undefined, { background: true })
       .catch((error) =>
         this.opts.events.emit({ type: 'notice', text: `子任务关联保存失败: ${failure(error)}` }),
       );

@@ -26,6 +26,7 @@ export interface SessionRuntimeState {
 }
 
 export interface SessionFile {
+  plan?: import('../plan.js').Plan;
   agents?: AgentSessionState;
   schemaVersion: typeof SESSION_SCHEMA_VERSION;
   runtime: SessionRuntimeState;

@@ -144,3 +144,10 @@ export type {
   SubagentRun,
   SubagentStatus,
 } from './core/agents.js';
+
+export {
+  PlanController,
+  type Plan,
+  type PlanningMode,
+  type PlanningStrategy,
+} from './core/plan.js';

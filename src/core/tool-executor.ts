@@ -345,6 +345,8 @@ export class ToolExecutor {
 
         // 明确 ask/deny 不可被 reviewer 改写，只有 policy 的 review 才能委托一次。
         if (policyDecision.kind === 'review') {
+          const finalRestriction = this.opts.restrict?.(operation);
+          if (finalRestriction) return fail(`Permission denied: ${finalRestriction}`);
           const started = Date.now();
           decision = await this.review(operation, policyDecision, context, signal, requestId);
           if (signal.aborted) return cancelled();

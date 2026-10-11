@@ -1,4 +1,5 @@
 /** 默认产品装配集中在 preset；runtime/core 不知道具体实现。 */
+import { planningPlugin, PLANNING_PLUGIN, PLAN_TOOLS } from './planning/index.js';
 import { loadModelsFile } from '../core/config.js';
 import { createDeterministicPolicyPlugin } from './policy/index.js';
 import { modelReviewerPlugin } from './reviewer-model/plugin.js';
@@ -26,7 +27,10 @@ import { SUBAGENT_PLUGIN, SUBAGENT_TOOLS } from './subagents/identity.js';
 export function defaultPreset(input: PresetContext): Preset {
   const { cwd, config, services } = input;
   return {
-    controlTools: SUBAGENT_TOOLS.map((name) => ({ ownerPlugin: SUBAGENT_PLUGIN, name })),
+    controlTools: [
+      ...SUBAGENT_TOOLS.map((name) => ({ ownerPlugin: SUBAGENT_PLUGIN, name })),
+      ...PLAN_TOOLS.map((name) => ({ ownerPlugin: PLANNING_PLUGIN, name })),
+    ],
     selections: {
       policy: 'deterministic',
       reviewer: 'model',
@@ -61,6 +65,7 @@ export function defaultPreset(input: PresetContext): Preset {
       uiPlugin(),
       runtimeSettingsPlugin(input),
       subagentsPlugin(services, cwd),
+      planningPlugin(services, cwd),
     ],
   };
 }

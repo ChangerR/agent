@@ -3,12 +3,7 @@ import { resolve } from 'node:path';
 import type { AnalysisInput, ToolAnalysis } from '../../sdk/capabilities.js';
 import { analyzeReadOnlyShell } from '../../tools/shell-readonly.js';
 import { pathFingerprint, prepare } from './analyzer-paths.js';
-import {
-  described,
-  hash,
-  type AnalyzerContext,
-  type ShellOperation,
-} from './analyzer-types.js';
+import { described, hash, type AnalyzerContext, type ShellOperation } from './analyzer-types.js';
 
 export async function analyzeShell(
   ctx: AnalyzerContext,

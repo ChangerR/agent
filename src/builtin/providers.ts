@@ -12,7 +12,61 @@ import { definePlugin } from '../sdk/index.js';
 
 function demoScript(): ScriptedResponse {
   let called = false;
+  let planCall = 0;
   return (req) => {
+    if (req.system.startsWith('[agentlab planning]'))
+      return textResponse(
+        JSON.stringify({ goal: '离线规划演示：读取并核对文件', steps: ['读取文件', '核对结果'] }),
+      );
+    const marker = '当前所属计划（版本变化后须重新读取）: ';
+    if (req.system.includes(marker)) {
+      const plan = JSON.parse(
+        req.system.split(marker)[1].split('\n')[0],
+      ) as import('../core/plan.js').Plan;
+      if (plan.mode === 'only')
+        return textResponse('[fake provider] 只规划：请查看计划区；未执行文件操作。');
+      const step =
+        plan.steps.find((s) => s.status === 'running') ??
+        plan.steps.find((s) => s.status === 'pending');
+      if (!step) return textResponse('[fake provider] 计划演示已完成。');
+      const id = 'demo-plan-' + ++planCall;
+      const last = req.messages.at(-1);
+      if (
+        Array.isArray(last?.content) &&
+        last.content.some((b) => b.type === 'tool_result' && b.isError)
+      )
+        return textResponse('[fake provider] 操作未成功，保留阻塞状态。');
+      if (step.status !== 'running')
+        return toolUseResponse([
+          {
+            id,
+            name: 'plan_update',
+            input: { revision: plan.revision, stepId: step.id, status: 'running' },
+          },
+        ]);
+      const previous = req.messages.at(-2);
+      const read =
+        previous?.role === 'assistant' &&
+        previous.content.some((b) => b.type === 'tool_use' && b.name === 'read_file');
+      if (read)
+        return toolUseResponse([
+          {
+            id,
+            name: 'plan_update',
+            input: {
+              revision: plan.revision,
+              stepId: step.id,
+              status: 'completed',
+              evidence: 'read_file 已返回文件内容；离线演示仅核对读取链路',
+            },
+          },
+        ]);
+      const source = req.messages.find(
+        (m) => m.role === 'user' && typeof m.content === 'string',
+      )?.content;
+      const path = /[\w.-]+\.(txt|md|ts|js|json)/i.exec(String(source))?.[0] ?? 'README.md';
+      return toolUseResponse([{ id, name: 'read_file', input: { path } }]);
+    }
     const last = req.messages.at(-1);
     const text =
       typeof last?.content === 'string' ? last.content : JSON.stringify(last?.content ?? '');

@@ -497,9 +497,7 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
     await run('bash', { command: 'echo one' });
     expect(requests).toHaveLength(2);
     expect(requests.every((request) => request.reasonCode === 'reviewer_unavailable')).toBe(true);
-    expect(
-      requests.every((request) => request.policyReasonCode === 'review_uncertain'),
-    ).toBe(true);
+    expect(requests.every((request) => request.policyReasonCode === 'review_uncertain')).toBe(true);
     expect(
       requests.every((request) => request.analysisReasonCode === 'native_windows_shell_unverified'),
     ).toBe(true);

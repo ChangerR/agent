@@ -79,6 +79,7 @@ export function subagentsPlugin(services: RuntimeServices, cwd: string) {
             '启动独立上下文子任务，立即返回 agentId/runId。默认 fresh 并继承当前模型；同步结果用 agent_wait。委派不会扩大真实用户授权。',
           properties: {
             task: textSchema,
+            planStepId: { type: 'string', minLength: 1 },
             name: { type: 'string', maxLength: 80 },
             context: { type: 'string', enum: ['fresh', 'snapshot'] },
             readOnly: { type: 'boolean' },

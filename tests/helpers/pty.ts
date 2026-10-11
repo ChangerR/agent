@@ -55,11 +55,13 @@ export function createPtyProject() {
     home,
     project,
     repo,
-    launch() {
+    launch(size = { rows: 40, cols: 140 }) {
+      if (![size.rows, size.cols].every((n) => Number.isSafeInteger(n) && n >= 8 && n <= 500))
+        throw new Error('Invalid PTY size');
       // stty 只设窗口大小；被测命令确实是当前项目原样的 pnpm dev。
       const child = spawn(
         'script',
-        ['-qefc', 'stty rows 40 cols 140; exec pnpm dev', '/dev/null'],
+        ['-qefc', `stty rows ${size.rows} cols ${size.cols}; exec pnpm dev`, '/dev/null'],
         {
           cwd: project,
           env,

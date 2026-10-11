@@ -49,6 +49,7 @@ export type UserDecision =
 export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
 
 export type AgentEvent =
+  | { type: 'plan_changed'; owner: string; plan?: import('./plan.js').Plan }
   | SubagentProgress
   | {
       type: 'model_request';
@@ -118,7 +119,7 @@ export type AgentEvent =
   | { type: 'loop_end'; reason: LoopEndReason; turns?: number; usage?: TokenUsage; error?: string }
   | { type: 'compacted'; beforeMessages: number; afterMessages: number }
   | { type: 'error'; error: Error }
-  | { type: 'session_saved'; id: string; path: string; trimmed: number }
+  | { type: 'session_saved'; id: string; path: string; trimmed: number; background?: boolean }
   | {
       type: 'session_restored';
       id: string;

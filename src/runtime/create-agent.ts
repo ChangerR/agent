@@ -98,8 +98,30 @@ export async function createRuntime(
   let agent: Agent | undefined;
   let supervisor: AgentSupervisor | undefined;
   let subagentLimits: Partial<SubagentLimits> = {};
+  let planning: import('../core/plan.js').PlanningStrategy | undefined;
+  let planningMode: import('../core/plan.js').PlanningMode = 'off';
   let host: PluginHost;
   const services: PresetContext['services'] = {
+    loop: () => agent!.loop,
+    plan: (id) => (id && id !== 'root' ? supervisor!.plan(id) : agent!.loop.plan),
+    run: (text) => agent!.loop.run(text),
+    stopPlan: (kind, reason) => {
+      agent!.loop.plan.stop(kind, reason);
+      agent!.loop.abort_current();
+    },
+    configurePlanning: (strategy, mode) => {
+      planning = strategy;
+      planningMode = mode;
+      if (
+        agent &&
+        mode === 'only' &&
+        (agent.loop.hasPendingActivity || supervisor?.hasPendingActivity)
+      ) {
+        agent.loop.plan.stop('paused', '切换只规划：已中断执行');
+        agent.loop.abort_current();
+      }
+      agent?.loop.plan.configure(mode);
+    },
     model: () => agent?.loop.model ?? config.model,
     setModel: (model) => agent!.loop.setModel(model),
     thinking: () => agent?.loop.thinking ?? config.thinking,
@@ -227,6 +249,8 @@ export async function createRuntime(
         (control) => control.ownerPlugin === tool.ownerPlugin && control.name === tool.name,
       ) === true;
     const loopOptions: AgentLoopOptions = {
+      planning: () => planning,
+      planningMode: () => planningMode,
       provider: providers.get(config.provider),
       model: config.model,
       tools,
@@ -535,6 +559,7 @@ export async function createRuntime(
           cwd,
           signal,
           interact: options.interact,
+          run: options.run ?? ((text) => loop.run(text)),
           inspect: () =>
             observationSnapshot({
               commands: commands.list(),

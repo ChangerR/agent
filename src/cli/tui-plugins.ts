@@ -9,6 +9,7 @@ export interface TuiPluginContext {
   readonly cwd: string;
   inspect(): CommandInspection;
   dispatchCommand: Agent['dispatchCommand'];
+  run(text: string): Promise<void>;
   invokeTool: Agent['invokeTool'];
   say(text: string): void;
   error(text: string): void;
@@ -44,6 +45,7 @@ export interface TuiToolRenderInput {
 export type TuiToolRenderer = (input: TuiToolRenderInput, width: number) => readonly string[];
 export interface TuiAdapter {
   toolRenderers?: Record<string, TuiToolRenderer>;
+  statusPanels?: Record<string, (width: number, height: number) => readonly string[]>;
   statusItems?: Record<string, () => string>;
   commands?: Record<string, TuiCommandHandler>;
   settings?: Record<string, (onBack?: () => void) => void>;

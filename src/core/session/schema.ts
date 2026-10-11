@@ -4,6 +4,7 @@
  * safeParse 只用来判断结构是否可接受。调用方必须返回 JSON.parse 的原对象，
  * 不能返回 zod 的 data：默认值、剥离未知字段都会丢掉 signature、打码 data 和 tool input。
  */
+import { PlanSchema } from '../plan.js';
 import { z, type ZodError } from 'zod';
 
 const TextBlockSchema = z
@@ -122,6 +123,7 @@ const SessionBodySchema = SessionMetaSchema.extend({
 }).passthrough();
 
 export const SessionFileSchema = SessionBodySchema.extend({
+  plan: PlanSchema.optional(),
   schemaVersion: z.literal(2),
   runtime: z.object({ schemaVersion: z.literal(1) }).passthrough(),
   policy: z
