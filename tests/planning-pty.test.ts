@@ -12,7 +12,7 @@ const tool=(name,input)=>[{type:'message_start'},{type:'tool_use_start',id:'call
 export default {manifest:{id:'test.plan-pty',version:'1.0.0',apiVersion:1},setup(ctx){
 ctx.provide.provider('offline-plan',{name:'offline-plan',capabilities:{thinking:false,streaming:true},async *stream(req,signal){
   const input=req.messages.at(-1)?.content;log({kind:'request',input});
-  if(!req.tools.length){stage=0;yield* text(JSON.stringify({goal:'PTY 目标',steps:['写入结果','验证结果']}));return;}
+  if(!req.tools.length){if(input==='PARENT_AFTER'){yield* text('null');return;}stage=0;yield* text(JSON.stringify({goal:'PTY 目标',steps:['写入结果','验证结果']}));return;}
   if(input==='PARENT_AFTER'){yield* text('PARENT_AFTER_OK');return;}
   const p=JSON.parse(req.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\\n')[0]);
   const step=stage++;
@@ -63,7 +63,7 @@ it.skipIf(process.platform !== 'linux').each([
     const terminal = f.launch(size);
     try {
       await terminal.wait(() => terminal.output.includes('就绪'), 'CLI 未就绪');
-      terminal.send('/plan auto 实现并验证');
+      terminal.send('实现文件写入并验证结果');
       await terminal.wait(() => terminal.output.includes('当前: 写入结果'), '未显示当前步骤');
       expect(terminal.output).toContain('下一步: 验证结果');
       terminal.send('/plan expand');

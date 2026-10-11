@@ -472,12 +472,15 @@ export class AgentLoop {
       });
       await Promise.all([...this.startTasks].map((task) => task()));
       if (this.plan.snapshot?.phase === 'completed') this.plan.clear();
+      await this.maybeCompact(signal);
       const strategy = this.opts.planning?.();
       if (strategy && !this.plan.snapshot && this.plan.mode !== 'off') {
         const generation = this.plan.generation;
         this.plan.preparing = true;
         const proposal = await strategy.prepare({
           input: userInput,
+          messages: structuredClone(this.messages),
+          systemPrompt: this.opts.systemPrompt,
           mode: this.plan.mode,
           force: this.plan.force,
           provider,
@@ -492,17 +495,21 @@ export class AgentLoop {
           throw new Error('Planning changed while preparing; resubmit your direction');
         this.plan.preparing = false;
         this.plan.force = false;
-        if (proposal)
+        if (proposal) {
           this.plan.create(
             proposal.goal,
             proposal.steps,
             this.plan.mode === 'only' ? 'only' : 'auto',
           );
+          // 计划发布后立即明确当前步骤，执行模型无需先补一次状态调用才能开始工作。
+          const plan = this.plan.snapshot!;
+          if (plan.mode === 'auto')
+            this.plan.update(plan.revision, { stepId: plan.steps[0].id, status: 'running' });
+        }
       }
       // 把已发布计划交给事件订阅者，再开始实施请求；不依赖某个 UI 实现。
       if (this.plan.snapshot) await new Promise<void>((resolve) => setImmediate(resolve));
       signal.throwIfAborted();
-      await this.maybeCompact(signal);
 
       while (turns < Math.min(options.maxTurns ?? this.opts.maxTurns, this.opts.maxTurns)) {
         for (const input of this.inbox.splice(0)) {

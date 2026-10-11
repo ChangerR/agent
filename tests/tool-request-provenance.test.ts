@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
 import {
   definePlugin,

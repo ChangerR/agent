@@ -47,7 +47,8 @@ vi.mock('@anthropic-ai/sdk', () => ({
     };
   },
 }));
-import { complete, createAgent, loadConfigWithSources, type Agent } from '../src/index.js';
+import { complete, loadConfigWithSources, type Agent } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import { loadProjectEnv } from '../src/runtime/environment.js';
 
 let cwd: string;

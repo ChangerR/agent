@@ -4,7 +4,8 @@ import { readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempProject } from './helpers/project.js';
-import { createAgent, type Agent, type AgentConfig } from '../src/index.js';
+import { type Agent, type AgentConfig } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import {
   FakeProvider,
   textResponse,

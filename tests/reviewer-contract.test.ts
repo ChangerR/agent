@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgent } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import { definePlugin } from '../src/sdk/index.js';
 import { EventBus, type AgentEvent } from '../src/core/events.js';
 import type { Provider, ChatRequest } from '../src/core/provider.js';

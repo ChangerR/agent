@@ -5,6 +5,7 @@ import type { EventBus, LoopEndReason } from './events.js';
 import type { Provider, ThinkingLevel } from './provider.js';
 import type { PolicyInput } from '../sdk/capabilities.js';
 import type { SubagentRun } from './agents.js';
+import type { Message } from './protocol/types.js';
 
 export type PlanningMode = 'auto' | 'only' | 'off';
 const text = z.string().trim().min(1).max(2000);
@@ -74,6 +75,9 @@ export const PlanSchema = z
 export type Plan = z.infer<typeof PlanSchema>;
 export interface PlannerInput {
   input: string;
+  /** 与执行阶段相同的有效上下文，包含本轮输入和此前对话。 */
+  messages: readonly Message[];
+  systemPrompt: string;
   mode: PlanningMode;
   force: boolean;
   provider: Provider;

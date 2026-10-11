@@ -4,14 +4,9 @@ import { symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAgent,
-  definePlugin,
-  type Agent,
-  type PermissionMode,
-  type SessionRules,
-} from '../src/index.js';
+import { definePlugin, type Agent, type PermissionMode, type SessionRules } from '../src/index.js';
 import type { AgentEvent } from '../src/core/events.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import type { ToolResult } from '../src/core/protocol/types.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
 import * as platform from '../src/core/platform.js';

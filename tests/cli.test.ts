@@ -25,7 +25,7 @@ import { SUMMARY_MARKER } from '../src/builtin/compaction-summary/implementation
 import type { Message } from '../src/core/protocol/types.js';
 import { saveSession } from '../src/builtin/session-file/implementation.js';
 import { fileSessionStore } from '../src/builtin/session-file/index.js';
-import { createAgent } from '../src/index.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import { definePlugin, type Plugin } from '../src/sdk/index.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
 
