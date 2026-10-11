@@ -37,8 +37,12 @@ for (const backend of ['rg', 'builtin'] as const) describe(`${backend} 搜索契
     expect(glob.content).toBe('top.ts');
   });
   it.skipIf(backend === 'rg' && !rg)('混合项目默认搜索排除敏感、插件、symlink和hardlink但返回正常结果', async () => {
-    for (const name of ['.env', 'credentials/token.ts', 'secrets/password.ts', '.hidden/data.ts', 'plugins/main.ts', 'agent.config.json', 'AGENTS.md', 'id_rsa', 'private.key', 'node_modules/pkg/file.ts', 'dist/output.ts', 'custom-entry.ts']) {
+    for (const name of ['.env', 'credentials/token.ts', 'secrets/password.ts', '.hidden/data.ts', 'mcp.json', 'id_rsa', 'private.key', 'node_modules/pkg/file.ts', 'dist/output.ts', 'custom-entry.ts']) {
       await mkdir(join(cwd, name, '..'), { recursive: true }); await writeFile(join(cwd, name), 'needle PRIVATE_SECRET');
+    }
+    // 只写保护的说明/配置/plugins 目录可被搜索读取。
+    for (const name of ['plugins/main.ts', 'agent.config.json', 'AGENTS.md']) {
+      await mkdir(join(cwd, name, '..'), { recursive: true }); await writeFile(join(cwd, name), 'needle READABLE');
     }
     await symlink(join(root, 'outside'), join(cwd, 'linked-dir'));
     await symlink(join(root, 'outside/private.ts'), join(cwd, 'linked-file.ts'));
@@ -47,7 +51,8 @@ for (const backend of ['rg', 'builtin'] as const) describe(`${backend} 搜索契
     for (const tool of [createGrepTool(['custom-entry.ts']), createGlobTool(['custom-entry.ts'])]) {
       const result = await tool.execute({ pattern: tool.name === 'grep' ? 'needle' : '**/*' }, ctx());
       expect(result.isError).toBeUndefined(); expect(result.content).toContain('src/a.ts');
-      expect(result.content).not.toMatch(/PRIVATE|credentials|secrets|custom-entry|plugin-alias|linked-|hardlink|private\.key|AGENTS|agent\.config/);
+      expect(result.content).not.toMatch(/PRIVATE|credentials|secrets|custom-entry|plugin-alias|linked-|hardlink|private\.key|mcp\.json/);
+      for (const name of ['plugins/main.ts', 'agent.config.json', 'AGENTS.md']) expect(result.content).toContain(name);
     }
   });
   it.skipIf(backend === 'rg' && !rg)('空候选不退回目录扫描，括号/父目录pattern不使枚举越界', async () => {

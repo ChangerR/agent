@@ -8,13 +8,17 @@ import { PermissionController, parseRule, matchRule } from './controller.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { resolveAgentPaths } from '../../core/paths.js';
 import { ANALYZER_ID, ANALYZER_VERSION, createDeterministicAnalyzer, hash, operationKey, validateWriteRoots } from './analyzer.js';
-export { createDeterministicAnalyzer, validateWriteRoots, nativeFilesystemAnalysisSupported, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
-export interface DeterministicPolicyOptions { cwd: string; mode: PermissionMode; rules: SessionRules; pluginEntries?: readonly string[]; writeRoots?: readonly string[] }
+export { createDeterministicAnalyzer, validateWriteRoots, nativeFilesystemAnalysisSupported, windowsAmbiguousPath, ANALYZER_ID, ANALYZER_VERSION } from './analyzer.js';
+export interface DeterministicPolicyOptions {
+  cwd: string; mode: PermissionMode; rules: SessionRules; pluginEntries?: readonly string[]; writeRoots?: readonly string[];
+  /** 平台判断注入点，默认 process.platform。 */
+  platform?: NodeJS.Platform;
+}
 export function createDeterministicPolicy(options: DeterministicPolicyOptions): Policy {
   const writeRoots = Object.freeze([...(options.writeRoots ?? [])]);
   const pluginEntries = Object.freeze([...(options.pluginEntries ?? [])]);
   const controller = new PermissionController({ mode: options.mode, rules: options.rules });
-  const analyzer = createDeterministicAnalyzer({ pluginEntries, writeRoots });
+  const analyzer = createDeterministicAnalyzer({ pluginEntries, writeRoots, ...(options.platform ? { platform: options.platform } : {}) });
   return { id: 'deterministic', version: '2.0.0', controller, analyzer,
     get revision() { return `policy:${hash({ rules: controller.revision, writeRoots, pluginEntries })}`; },
     async decide(input, signal) {
@@ -56,6 +60,11 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       if (analysis.reasonCode === 'shell_dangerous') return decision('ask', 'danger_constraint', '危险操作属于 不可降级约束，必须人工确认', 'danger');
       const asked = matched('ask', targets);
       if (asked) return decision('ask', 'explicit_ask', `命中 ask 规则 "${asked.raw}"（中优先于 allow）`, asked.source, asked.raw);
+      // Windows 只读的分析是完整的，但平台语义未验收：必须在精确 allow / safe_read / yolo 之前截住，只能委托 reviewer。
+      // ask 模式照旧询问；yolo 与 auto 一致（未完整验证平台不能确定性放行，但也不比 auto 更严格）。
+      if (analysis.reasonCode === 'native_windows_read_unverified') return controller.mode === 'ask'
+        ? decision('ask', 'ask_mode', 'ask 模式默认询问；宽规则不能代替具体授权', 'mode')
+        : decision('review', 'platform_read_review', 'Windows 平台未做文件系统校验：内置只读工具的项目内读取已完成通用分析并排除敏感/项目外目标，委托 reviewer 判断当前完整操作', 'mode');
       const complete = analysis.completeness === 'complete' && analysis.effects.length > 0
         && analysis.effects.every((effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind));
       // 宽规则没有放行资格，也不能遮挡同来源或后续来源的精确目标授权。

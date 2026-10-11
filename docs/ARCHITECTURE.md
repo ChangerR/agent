@@ -103,7 +103,7 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 `src/core/tool-executor.ts` 是所有受支持工具调用的唯一入口；`src/builtin/policy/` 实现默认确定性策略，`src/builtin/reviewer-model/` 实现严格模型审批。默认能力 ID 为 `deterministic` / `model`，默认模式是 `ask`。
 
-审批按顺序处理 deny、不可降级约束、明确 ask、完整验证的精确目标授权，再应用模式默认。`ask` 默认询问；`auto` 对完整验证的项目普通文件读取及显式 `writeRoots` 范围写入可确定性放行，其余不确定操作交给 reviewer；`yolo` 仅跳过完整验证的普通项目文件写入，未知工具和动态 Shell 仍询问。敏感目标、项目外路径、未验收平台、特殊文件、硬链接和危险 Shell 不会交给模型降级。
+审批按顺序处理 deny、不可降级约束、明确 ask、完整验证的精确目标授权，再应用模式默认。`ask` 默认询问；`auto` 对完整验证的项目内只读操作（普通文件、不存在路径与目录的 read_file，受控 glob/grep 搜索；多硬链接文件包括 node_modules 内的仍询问）及显式 `writeRoots` 范围写入可确定性放行；AGENTS/CLAUDE 说明、agent.config.json 与 `plugins/` 只在写入方向视为敏感，其余不确定操作交给 reviewer；`yolo` 仅跳过完整验证的普通项目文件写入，未知工具和动态 Shell 仍询问。敏感目标、项目外路径、未验收平台、特殊文件、硬链接和危险 Shell 不会交给模型降级。唯一的平台例外：原生 Windows 上 auto/yolo 的内置 read_file/glob/grep 在通过通用项目边界与敏感检查后交给 reviewer（`platform_read_review`；分析保持 complete，平台风险以 reason code 与证据表达，策略保证它不会被确定性放行），审批上下文注明“Windows 平台未做文件系统校验”，reviewer 不确定时回落人工；Windows 写入与 Shell 仍为人工确认。
 
 Bash 的语法与授权分开：`tree-sitter-bash` 解析命令、逻辑连接、管道、重定向和展开等完整 Bash 语法；`tools/shell-readonly.ts` 对可证明的字面量命令逐项验证选项和真实文件路径。`&&`、`||`、`;` 和只读管道必须整条表达式都满足只读合约，不能因首个命令叫 `ls` 就放行后面的写入。动态展开、替换、脚本执行及未支持参数保留明确的不确定原因，交给原审批链；语法树不是任意程序副作用的证明。
 

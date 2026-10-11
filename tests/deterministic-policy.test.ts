@@ -133,11 +133,18 @@ describe('deterministic policy', () => {
     });
   });
 
-  it.each(['.env', '.env.local', '.ssh/id_ed25519', '.git/hooks/pre-commit', '.git/config', '.agent/settings.json', 'agent.config.json', 'mcp.json', 'plugins/plugin.js', 'AGENTS.md'])('敏感目标 %s 必须询问，精确规则与 yolo 均不能覆盖', async (path) => {
+  it.each(['.env', '.env.local', '.ssh/id_ed25519', '.git/hooks/pre-commit', '.git/config', '.agent/settings.json', 'mcp.json'])('敏感目标 %s 必须询问，精确规则与 yolo 均不能覆盖', async (path) => {
     await mkdir(dirname(join(cwd, path)), { recursive: true }); await writeFile(join(cwd, path), 'fixture');
     const value = policy('yolo', { allow: [`write_file(=${JSON.stringify(path)})`, `read_file(=${JSON.stringify(path)})`] });
     expect(await value.decide(operation(write, { path, content: 'changed' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
     expect((await value.decide(operation(read, { path }), signal())).kind).toBe('ask');
+  });
+
+  it.each(['agent.config.json', 'plugins/plugin.js', 'AGENTS.md', 'CLAUDE.md'])('写保护目标 %s 可读，写入仍询问且精确规则与 yolo 不能覆盖', async (path) => {
+    await mkdir(dirname(join(cwd, path)), { recursive: true }); await writeFile(join(cwd, path), 'fixture');
+    const value = policy('yolo', { allow: [`write_file(=${JSON.stringify(path)})`] });
+    expect(await value.decide(operation(write, { path, content: 'changed' }), signal())).toMatchObject({ kind: 'ask', reasonCode: 'sensitive_target' });
+    expect(await policy('auto').decide(operation(read, { path }), signal())).toMatchObject({ kind: 'allow', reasonCode: 'safe_read' });
   });
 
   it('自定义插件入口及其符号链接别名也受保护', async () => {
