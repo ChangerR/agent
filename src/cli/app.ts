@@ -59,6 +59,14 @@ const HELP_FOOTER = `其他输入直接作为对话发送。Ctrl+O 展开/收起
 AGENTLAB_SCREEN=main 使用终端原生滚动历史；AGENTLAB_FULL_REDRAW=1 关闭差分渲染。
 调试日志默认脱敏，完整正文日志需要显式开启。`;
 
+/** 原因码分阶段保留：reviewer 的结果不能掩盖原策略禁止规则放行的条件。 */
+export function canRememberPermission(request: Pick<PermissionRequest, 'reasonCode' | 'policyReasonCode' | 'analysisReasonCode'>): boolean {
+  const policyReason = request.policyReasonCode ?? request.reasonCode;
+  return policyReason !== 'platform_unverified' && policyReason !== 'platform_read_review'
+    && request.analysisReasonCode !== 'native_windows_read_unverified'
+    && request.analysisReasonCode !== 'native_windows_unverified';
+}
+
 function summarizeToolCall(tools: Agent['tools'], name: string, input: unknown): string {
   const record = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
   return tools.get(name)?.analyzeInput?.(record).summary ?? name;
@@ -267,9 +275,11 @@ export function startTui(
     const origin = request.decisionSource ? ({ mode: '权限模式', danger: '危险检测', config: '配置规则', session: '会话规则', judge: '自动审批员', builtin: '内置检查', user: '用户' }[request.decisionSource]) : '权限检查';
     const dangerNotice = '拒绝规则与危险检测仍优先';
     const rememberedScope = target === undefined ? `${request.toolName} 的所有调用` : `${request.toolName} 的相同匹配目标: ${JSON.stringify(target)}`;
+    // Windows 只读即使 reviewer 回退，精确规则仍不能跳过平台检查；普通写入的精确规则则保留。
+    const rememberIneffective = !canRememberPermission(request);
     const options: Array<{ label: string; description: string; decision: UserDecision }> = [
-      { label: '允许一次', description: '只允许这一次调用，不新增规则。', decision: { allow: true } },
-      { label: '允许并记住此规则', description: `记录 ${rememberedScope} 的允许规则；实际放行仍由策略安全约束决定。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } },
+      { label: '允许一次', description: rememberIneffective ? '只允许这一次调用。该操作未经 Windows 平台校验；记住规则不能跳过后续审核。' : '只允许这一次调用，不新增规则。', decision: { allow: true } },
+      ...(rememberIneffective ? [] : [{ label: '允许并记住此规则', description: `记录 ${rememberedScope} 的允许规则；实际放行仍由策略安全约束决定。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`, decision: { allow: true, remember: 'session' } as UserDecision }]),
       { label: '拒绝', description: '拒绝这一次调用，Agent 会收到拒绝结果。', decision: { allow: false } },
     ];
     let settled = false;

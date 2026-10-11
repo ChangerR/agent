@@ -195,7 +195,10 @@ export class ToolExecutor {
         if (decision.kind === 'ask') {
           const summary = analysis?.summary ?? descriptor.analyzeInput?.(input).summary ?? tool.name;
           const request = freeze({ runId: context.runId, requestId: randomUUID(), toolRequestId: requestId, toolName: tool.name, toolUseId: toolUse.id,
-            decisionSource: decision.source, matchedRule: decision.matchedRule, cwd, input: structuredClone(input), summary, reason: decision.reason });
+            decisionSource: decision.source, ...(decision.reasonCode ? { reasonCode: decision.reasonCode } : {}),
+            ...(policyDecision.reasonCode ? { policyReasonCode: policyDecision.reasonCode } : {}),
+            ...(analysis?.reasonCode ? { analysisReasonCode: analysis.reasonCode } : {}),
+            matchedRule: decision.matchedRule, cwd, input: structuredClone(input), summary, reason: decision.reason });
           const userDecision = await this.ask(request, signal);
           if (signal.aborted) return cancelled();
           if (!userDecision) {

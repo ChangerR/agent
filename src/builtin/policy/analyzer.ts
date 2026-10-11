@@ -10,7 +10,7 @@ import { collectSearchFiles, sensitivePath, within, foreignPath, searchPatternSc
 import { jsonInput } from '../../core/permission/input-validation.js';
 
 export const ANALYZER_ID = 'deterministic-operations';
-export const ANALYZER_VERSION = '2.5.0';
+export const ANALYZER_VERSION = '2.6.1';
 /** 平台声明，不是跨平台实测：尚未验证 NTFS ADS/设备名/尾随点等语义。 */
 export function nativeFilesystemAnalysisSupported(platform: NodeJS.Platform = process.platform): boolean { return platform !== 'win32'; }
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\..*)?$/i;
@@ -28,6 +28,9 @@ export function windowsAmbiguousPath(path: string): boolean {
 const WINDOWS_READ_NOTE = 'Windows 平台未做文件系统校验：通用分析已完整执行（真实路径、项目边界、敏感名称、链接逃逸、多硬链接、非普通文件与受控搜索枚举均已检查并绑定），'
   + '但 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等平台特有语义未经实机验收，且已拦截这些歧义路径形态；'
   + '因此策略不确定性放行，而是委托模型按当前用户要求审查这次项目内只读操作。';
+const WINDOWS_WRITE_NOTE = 'Windows 平台未做文件系统校验：通用分析已完整执行（真实路径、项目边界、敏感与写保护目标、链接逃逸、多硬链接、非普通文件、新文件实际父目录均已检查并绑定），'
+  + '但 NTFS 备用数据流、8.3 短名、设备名、尾随点/空格、junction/reparse point 等平台特有语义未经实机验收，且已拦截这些歧义路径形态；'
+  + '因此除用户亲自配置或记住的精确目标规则外，策略不确定性放行，而是委托模型按当前用户要求审查这次项目内普通文件写入。';
 export interface AnalyzerOptions {
   pluginEntries?: readonly string[]; writeRoots?: readonly string[]; parseCacheSize?: number;
   /** 平台判断注入点，默认 process.platform；测试用它在任意宿主上覆盖原生 Windows 分支。 */
@@ -79,14 +82,25 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     jsonInput(input.input, input.tool.inputSchema);
     const parsed = parse(input);
     const windows = !nativeFilesystemAnalysisSupported(platform);
-    // 原生 Windows：只有内置只读工具（read_file/glob/grep）沿用通用分析并降级为“待模型审批”；写入、Shell 仍整体未验证。
+    // 原生 Windows：内置只读工具（read_file/glob/grep）沿用通用分析并降级为“待模型审批”；write_file/edit_file 见下方；Shell 仍整体未验证。
     const windowsRead = windows && (parsed.kind === 'glob' || parsed.kind === 'search' || parsed.kind === 'file' && parsed.effect === 'read')
       && ![parsed.path, parsed.kind === 'file' ? '' : parsed.pattern].some((value) => value && windowsAmbiguousPath(value));
+    // 原生 Windows 的内置 write_file/edit_file：同样沿用通用分析；项目内完整普通写入降级为“精确规则或模型审批”。
+    const windowsWrite = windows && parsed.kind === 'file' && parsed.effect === 'write' && !windowsAmbiguousPath(parsed.path);
+    if (windowsWrite) {
+      const written = await analyzeOperation(input, parsed, false, signal);
+      if ((written.targets ?? []).some(windowsAmbiguousPath)) return windowsPathUnverified(written);
+      const projectWrite = written.completeness === 'complete' && written.effects.length > 0
+        && written.effects.every((effect) => effect.kind === 'write' && effect.scope === 'project');
+      // 敏感/写保护、项目外、特殊文件、硬链接等结论保持原样（仍人工）；completeness 保持 complete，平台风险只用 reason code + 证据表达。
+      return projectWrite ? { ...written, reasonCode: 'native_windows_write_unverified',
+        evidence: [{ source: 'platform-support', detail: WINDOWS_WRITE_NOTE }, ...(written.evidence ?? [])] } : written;
+    }
     if (!windowsRead) return analyzeOperation(input, parsed, windows, signal);
     const result = await analyzeOperation(input, parsed, false, signal);
+    if ((result.targets ?? []).some(windowsAmbiguousPath)) return windowsPathUnverified(result);
     const projectRead = result.completeness === 'complete' && result.effects.length > 0
-      && result.effects.every((effect) => effect.kind === 'read' && effect.scope === 'project')
-      && !(result.targets ?? []).some((target) => windowsAmbiguousPath(target));
+      && result.effects.every((effect) => effect.kind === 'read' && effect.scope === 'project');
     // 敏感、项目外、特殊文件、硬链接等结论保持原样（仍人工）；只有通用逻辑判定为项目内完整读取的才交给模型。
     // 通用分析本身是完整的，completeness 保持 'complete'（不违背审查合约“分析不完整则 ask/unknown”）；
     // 平台风险用 reasonCode + 证据表达，策略据此委托 reviewer，而不会确定性放行（见 policy/index.ts）。
@@ -97,6 +111,11 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
     const environment: Record<string, string> = { '$operation': operationKey(input), '$policyOptions': hash({ writeRoots, pluginEntries }) };
     const actualCwd = await realpath(resolve(input.cwd));
     environment[`path:${resolve(input.cwd)}`] = await pathFingerprint(resolve(input.cwd), signal);
+    // 输入 cwd 与 realpath 后的 cwd 都必须明确；安全拼写的链接也可能落入 ~1 等歧义目录。
+    if (platform === 'win32' && [resolve(input.cwd), actualCwd].some(windowsAmbiguousPath)) {
+      return windowsPathUnverified({ analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, environment, completeness: 'unknown',
+        effects: [{ kind: 'unknown', target: actualCwd, scope: 'unknown' }], targets: [actualCwd] });
+    }
     if (windows && parsed.kind !== 'unknown') {
       return { analyzerId: ANALYZER_ID, analyzerVersion: ANALYZER_VERSION, environment, completeness: 'unknown',
         effects: [{ kind: 'unknown', scope: 'unknown' }], reasonCode: 'native_windows_unverified',
@@ -195,6 +214,13 @@ export function createDeterministicAnalyzer(options: AnalyzerOptions = {}): Tool
   return { id: ANALYZER_ID, version: ANALYZER_VERSION, analyze,
     async revalidate(previous, input, signal) { return hash(previous) === hash(await analyze(input, signal)); },
     cacheStats: () => ({ entries: cache.size, hits, misses }) };
+}
+
+/** 真实路径的歧义也是人工约束，不能回退成通用 complete 结果供精确规则 / yolo / reviewer 放行。 */
+function windowsPathUnverified(analysis: ToolAnalysis): ToolAnalysis {
+  if (analysis.reasonCode === 'native_windows_unverified') return analysis;
+  return { ...analysis, completeness: 'unknown', reasonCode: 'native_windows_unverified',
+    evidence: [{ source: 'platform-support', detail: 'Windows 调用目录或真实目标包含未经验证的歧义路径形态，必须人工确认。' }, ...(analysis.evidence ?? [])] };
 }
 
 /** 只读验证显式作用域授权；项目外、敏感根或非目录根均不能启用。 */
