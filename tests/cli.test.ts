@@ -12,7 +12,13 @@ import {
   type Terminal,
 } from '@earendil-works/pi-tui';
 import { startTui } from '../src/cli/app.js';
-import { DetailRegistry, renderHistory, StreamMessages, ToolMessage } from '../src/cli/messages.js';
+import {
+  DetailRegistry,
+  renderHistory,
+  StreamMessages,
+  SubagentTrace,
+  ToolMessage,
+} from '../src/cli/messages.js';
 import { InteractionPanel } from '../src/cli/interaction-panel.js';
 import { TurnQueue } from '../src/cli/turn-queue.js';
 import { SUMMARY_MARKER } from '../src/builtin/compaction-summary/implementation.js';
@@ -245,6 +251,28 @@ describe('TUI 消息与调度', () => {
     await vi.waitFor(() => expect(interrupted.running).toBe(false));
   });
 
+  it('子任务进度就地显示活动、工具和输出，展开后保留任务与结果', () => {
+    let expanded = false;
+    const card = new SubagentTrace(() => expanded, 'a:r', '甲', '分析覆盖', 'running', '等待模型');
+    card.appendText('CHILD_STREAM_分析');
+    card.beginTool('t1', 'read_file: src/a.ts');
+    expect(text(card)).toContain('子任务 甲');
+    expect(text(card)).toContain('running');
+    expect(text(card)).toContain('等待模型');
+    expect(text(card)).toContain('read_file: src/a.ts');
+    expect(text(card)).toContain('CHILD_STREAM_分析');
+    card.finishTool('t1', 'read_file', false, '文件很长'.repeat(20));
+    card.noteError('读取中断');
+    card.complete('completed', 'completed', '读取中断');
+    expect(text(card)).toContain('completed');
+    expect(text(card)).toContain('/agents');
+    expect(text(card)).toContain('读取中断');
+    expanded = true;
+    expect(text(card)).toContain('任务: 分析覆盖');
+    expect(text(card)).toContain('文件很长');
+    for (const line of card.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+  });
+
   it('并行工具按各自组件更新，展开可查看被收起的完整输出', () => {
     let expanded = false;
     const first = new ToolMessage('读取甲', () => expanded);
@@ -388,7 +416,7 @@ describe('TUI 审批模型运行状态', () => {
       await ui.dispose();
     }
   });
-  it('子列表实时刷新，详情补充/取消复用 run，父输入和流互相隔离', async () => {
+  it('子列表实时刷新，父输入保持独立，进度卡片显示 child 活动', async () => {
     const ui = await mountTui({ capabilities: { reviewer: false } });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -415,9 +443,16 @@ describe('TUI 审批模型运行状态', () => {
       const a = ui.agent.agents.spawn({ task: 'A', name: '甲' });
       const b = ui.agent.agents.spawn({ task: 'B', name: '乙' });
       await vi.waitFor(() => expect(requests).toHaveLength(2));
+      await vi.waitFor(() => {
+        const screen = ui.screen().join('\n');
+        expect(screen).toContain('子任务 甲');
+        expect(screen).toContain('CHILD_STREAM_A');
+        expect(screen).toContain('子任务 乙');
+        expect(screen).toContain('CHILD_STREAM_B');
+      });
       ui.terminal.input?.('PARENT_DRAFT');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('PARENT_DRAFT'));
-      expect(ui.screen().join('\n')).not.toContain('CHILD_STREAM_');
+      expect(ui.screen().join('\n')).toContain('CHILD_STREAM_A');
       ui.terminal.input?.('\x15');
       ui.send('/agents');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('甲 · running'));

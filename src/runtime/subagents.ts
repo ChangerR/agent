@@ -683,6 +683,7 @@ export class AgentSupervisor {
         (node.activeLimits ?? this.limits).maxOutputChars - run.output.length,
       );
       run.output += event.text.slice(0, remaining);
+      if (run.activity === '等待模型' || run.activity === '正在思考') run.activity = '正在回复';
       if (event.text.length > remaining) {
         run.truncated = true;
         this.cancelNode(node, run.runId);
@@ -707,6 +708,7 @@ export class AgentSupervisor {
         run.output += partial.slice(0, remaining);
         if (partial.length > remaining) run.truncated = true;
       }
+      if (event.type === 'thinking_delta') run.activity = '正在思考';
       if (event.type === 'tool_call') run.activity = `执行 ${event.toolUse.name}`;
       if (event.type === 'model_request')
         run.activity =

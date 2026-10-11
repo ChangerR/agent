@@ -22,7 +22,7 @@
 - Headless/TUI：命令不加载 pi-tui；内存终端检查窄屏、焦点、详情、审批、队列和 renderer 异常；Linux 真 PTY 复用原 package.json/dev 与逐文件哈希一致的源码，验证单选自动保存、Esc 不保存、重启，以及真实工具失败和运行中取消后的再次请求。
 - 子 agent：`tests/subagents.test.ts` 使用真实 runtime 和 FakeProvider 验证两个并行 child、独立 fresh/snapshot、完成回传、FIFO 与完成边界、指定 run 的 wait race/timeout、全树额度、回合/时限/累计结构输出预算、父 deny/ask 与用户来源、一次性审批、只读兄弟权限交集、失败隔离和 headless approval_required。实际模型审批员与自定义压缩器验证各 agent 的 agent/compact/judge 用量以及迟到去重。
 - 共享调度与结算：`tests/tool-scheduler.test.ts` 验证已分析读取并行、写入串行、公平等待、取消和整个嵌套租约树。runtime 与 executor 回归验证同目标父子写入、控制工具等待无死锁、忽略取消的模型/工具/analyzer/policy/hook/compactor/store 保留容量或必要资源；Linux Shell 用真实本地子进程验证进程组取消与部分结果。
-- 子会话与界面：真实文件会话验证根/child 分开原子保存、空 child 取消恢复、CAS、切换取消、旧 running 标 interrupted、恢复不发请求、迟到存储读取不提前关闭宿主。`tests/cli.test.ts` 的真实 pi-tui 渲染和 `tests/subagents-pty.test.ts` 的原样 pnpm dev 真终端验证实时列表/详情、父输入不串线、补充与取消、FIFO 审批与迟到点击、设置单选成功落盘及失败/取消不应用。详细语义见 [SUBAGENTS.md](SUBAGENTS.md)。
+- 子会话与界面：真实文件会话验证根/child 分开原子保存、空 child 取消恢复、CAS、切换取消、旧 running 标 interrupted、恢复不发请求、迟到存储读取不提前关闭宿主。`tests/cli.test.ts` 的真实 pi-tui 渲染和 `tests/subagents-pty.test.ts` 的原样 pnpm dev 真终端验证进度卡片、实时列表/详情、父输入不串线、补充与取消、FIFO 审批与迟到点击、设置单选成功落盘及失败/取消不应用。详细语义见 [SUBAGENTS.md](SUBAGENTS.md)。
 
 ## 本次 Linux 验证记录
 

@@ -165,6 +165,129 @@ export class ToolMessage implements Component {
   }
 }
 
+interface SubagentStep {
+  id: string;
+  label: string;
+  state: 'running' | 'done' | 'error';
+  note: string;
+}
+
+const clip = (value: string, max: number) => {
+  const line = safeTerminalText(value).slice(0, 500).replace(/\s+/g, ' ').trim();
+  return line.length > max ? `${line.slice(0, max)}…` : line;
+};
+
+/** 父转录里的子任务进度。只反映 subagent_event，不进入父模型上下文。 */
+export class SubagentTrace implements Component {
+  status: string;
+  activity: string;
+  text = '';
+  error = '';
+  private done = false;
+  private steps: SubagentStep[] = [];
+
+  constructor(
+    private expanded: () => boolean,
+    readonly key: string,
+    private name: string,
+    private task: string,
+    status: string,
+    activity: string,
+  ) {
+    this.status = status;
+    this.activity = activity;
+  }
+
+  setProgress(status: string, activity: string): void {
+    this.status = status;
+    this.activity = activity;
+  }
+
+  appendText(delta: string): void {
+    if (!delta) return;
+    this.text += delta;
+    if (this.text.length > 4_000) this.text = this.text.slice(-4_000);
+  }
+
+  beginTool(id: string, label: string): void {
+    this.steps.push({ id, label, state: 'running', note: '' });
+    if (this.steps.length > 20) this.steps.splice(0, this.steps.length - 20);
+  }
+
+  finishTool(id: string, label: string, isError: boolean, note: string): void {
+    const step = [...this.steps].reverse().find((item) => item.id === id);
+    const summary = clip(note, 160);
+    if (step) {
+      step.state = isError ? 'error' : 'done';
+      step.note = summary;
+      return;
+    }
+    this.steps.push({ id, label, state: isError ? 'error' : 'done', note: summary });
+  }
+
+  noteError(message: string): void {
+    if (message) this.error = message;
+  }
+
+  complete(status: string, activity: string, error?: string): void {
+    this.done = true;
+    this.status = status;
+    this.activity = activity;
+    if (error) this.error = error;
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const failed = this.status === 'failed';
+    const marker = !this.done ? '◇' : failed ? '×' : this.status === 'completed' ? '✓' : '◌';
+    const color = failed
+      ? ui.error
+      : !this.done
+        ? ui.muted
+        : this.status === 'completed'
+          ? ui.success
+          : ui.warning;
+    const background = failed
+      ? ui.toolErrorBg
+      : !this.done
+        ? ui.toolPendingBg
+        : this.status === 'completed'
+          ? ui.toolSuccessBg
+          : ui.toolPendingBg;
+    const activity =
+      this.activity && this.activity !== this.status ? ` · ${safeTerminalText(this.activity)}` : '';
+    const lines = [
+      truncateToWidth(
+        color(
+          chalk.bold(
+            ` ${marker} 子任务 ${safeTerminalText(this.name)} · ${this.status}${activity}`,
+          ),
+        ) + (this.done ? ui.dim(' · /agents') : ''),
+        width,
+      ),
+    ];
+    if (this.expanded() && this.task)
+      lines.push(truncateToWidth(ui.dim(`   任务: ${safeTerminalText(this.task)}`), width));
+    else if (this.task) lines.push(truncateToWidth(ui.dim(`   ${clip(this.task, 72)}`), width));
+    const steps = this.expanded() ? this.steps.slice(-8) : this.steps.slice(-2);
+    for (const step of steps) {
+      const mark = step.state === 'done' ? '✓' : step.state === 'error' ? '×' : '◌';
+      lines.push(truncateToWidth(ui.text(`   ${mark} ${safeTerminalText(step.label)}`), width));
+      if (step.note && (this.expanded() || step.state === 'error' || step === steps.at(-1)))
+        lines.push(truncateToWidth(ui.muted(`     ${safeTerminalText(step.note)}`), width));
+    }
+    const raw = safeTerminalText(this.text).trim();
+    if (raw) {
+      const preview = this.expanded() ? raw.split('\n').slice(-6) : [clip(raw.slice(-240), 100)];
+      for (const line of preview) lines.push(truncateToWidth(ui.muted(`   ${line}`), width));
+    }
+    if (this.error)
+      lines.push(truncateToWidth(ui.error(`   ${safeTerminalText(this.error)}`), width));
+    return paddedBackground(lines, width, background);
+  }
+}
+
 export class PermissionMessage implements Component {
   private result = '等待你确认';
   detailId?: number;
