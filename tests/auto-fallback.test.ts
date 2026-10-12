@@ -404,6 +404,36 @@ describe('审批请求模型快照与安全回退', () => {
 });
 
 describe('模型规格与完整请求预算', () => {
+  it('历史中逐字相同的完整用户要求无损引用，保留拒绝、不同限制及原审计', async () => {
+    const fake = new FakeProvider([reviewResponse('ask', '仍需本次确认')]);
+    const judge = createModelReviewer({ provider: fake, model: 'known-model' });
+    const context = reviewContext('检查普通源码，不读取凭据。'.repeat(60));
+    context.previousReviews = Array.from({ length: 7 }, (_, i) => ({
+      toolName: 'bash',
+      input: { command: `node check-${i}.js` },
+      inputOmitted: false,
+      cwd: context.cwd,
+      userRequest: i === 6 ? '只读检查；禁止修改尾部限制' : context.userRequest,
+      decision: { kind: 'deny' as const, source: 'user' as const, reason: '上次明确拒绝' },
+      outcome: 'not_executed' as const,
+      at: i,
+      sameOperation: false,
+    }));
+    const audit = structuredClone(context);
+    const result = await judge.review(operation({}, context), new AbortController().signal);
+    expect(result.decision).toBe('ask');
+    const payload = JSON.parse(fake.requests[0].messages[0].content as string);
+    const decoded = payload.context.previousReviews.map((record: Record<string, unknown>) => {
+      if (!record.userRequestRef) return record;
+      expect(record.userRequestRef).toBe('currentUserRequest.text');
+      const { userRequestRef: _, ...rest } = record;
+      return { ...rest, userRequest: payload.currentUserRequest.text };
+    });
+    expect(decoded).toEqual(audit.previousReviews);
+    expect(context).toEqual(audit);
+    expect(payload.context.previousReviews[6].userRequest).toBe('只读检查；禁止修改尾部限制');
+    expect(Buffer.byteLength(JSON.stringify(fake.requests[0]))).toBeLessThan(10_000);
+  });
   it('已知模型在预算内完整审核较长参数与用户请求，不再固定卡在旧字符阈值', async () => {
     const fake = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);
     const judge = createModelReviewer({
