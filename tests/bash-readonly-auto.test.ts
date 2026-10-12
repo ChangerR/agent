@@ -191,9 +191,9 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
     "'c'd src; cat module-0000.ts",
     'cd src || cat module-0000.ts',
     'cd src | cat module-0000.ts',
-    'cd src && cat module-0000.ts',
-    'cd src && head module-0000.ts',
-    'cd src && wc -l module-0000.ts',
+    'cd src && head -v module-0000.ts',
+    'cd src && head module-0000.ts module-0000.ts',
+    'cd src && wc -l module-0000.ts ./module-0000.ts',
     'cd src && grep value module-0000.ts',
     'cd src && rg value',
     'cd src && git status',
@@ -269,6 +269,30 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
     const result = await state.run(command);
     expect(result.content).toBe(await reference(cwd, command));
     expect(state.human).not.toHaveBeenCalled();
+  });
+  it.each([
+    'cat module-0000.ts | head -1',
+    'cat module-0000.ts module-0001.ts',
+    'head -1 module-0000.ts',
+    'tail -1 module-0000.ts',
+    'head -1 -q module-0000.ts module-0001.ts',
+    'tail -n 1 -q module-0000.ts module-0001.ts',
+    'wc -l module-0000.ts module-0001.ts',
+    'wc module-0000.ts -l module-0001.ts',
+    'wc -l -- module-0000.ts',
+    "wc -l -- 'white space.ts' '-file.ts'",
+    "cat -- '-file.ts'",
+  ])('目录传播后的通用读取 %s 输出一致、零模型零人工', async (read) => {
+    const { cwd } = await project(2);
+    await writeFile(join(cwd, 'src', 'white space.ts'), 'one\ntwo\n');
+    await writeFile(join(cwd, 'src', '-file.ts'), 'one\n');
+    const command = `cd src && ${read}`;
+    const state = chain(cwd);
+    const result = await state.run(command);
+    expect(result.content).toBe(await reference(cwd, command));
+    expect(result.isError).toBeFalsy();
+    expect(state.human).not.toHaveBeenCalled();
+    expect(state.provider.requests).toHaveLength(0);
   });
   it('绑定后换掉目录和文件不会读取替换的项目外内容', async () => {
     const { root, cwd } = await project();

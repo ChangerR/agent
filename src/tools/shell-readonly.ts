@@ -269,11 +269,43 @@ interface Spec {
 }
 interface Options {
   operands: string[];
+  operandIndices: number[];
   flags: Set<string>;
   values: Map<string, string[]>;
 }
 const number = /^\d+$/;
 const amount = /^[+-]?\d+(?:[bBkKmMgGtTpPeEzZyY]|[KMGTPEZY]i?B?)?$/;
+const FILE_READ_SPECS: Record<string, Spec> = {
+  cat: {
+    short: 'AbEnstTuv',
+    long: [
+      '--show-all',
+      '--number-nonblank',
+      '--show-ends',
+      '--number',
+      '--squeeze-blank',
+      '--show-tabs',
+      '--show-nonprinting',
+    ],
+  },
+  head: {
+    short: 'qvz',
+    shortValues: { n: amount, c: amount },
+    long: ['--quiet', '--silent', '--verbose', '--zero-terminated'],
+    longValues: { '--lines': amount, '--bytes': amount },
+  },
+  tail: {
+    short: 'qvz',
+    shortValues: { n: amount, c: amount },
+    long: ['--quiet', '--silent', '--verbose', '--zero-terminated'],
+    longValues: { '--lines': amount, '--bytes': amount },
+  },
+  wc: {
+    short: 'clmwL',
+    long: ['--bytes', '--chars', '--lines', '--words', '--max-line-length'],
+  },
+};
+
 const textValue = (value: string) => value.length > 0 && !value.includes('\0');
 function permitted(value: string, rule: ValueRule): boolean {
   return rule instanceof RegExp
@@ -283,7 +315,7 @@ function permitted(value: string, rule: ValueRule): boolean {
       : rule.includes(value);
 }
 function options(args: readonly string[], spec: Spec): Options {
-  const result: Options = { operands: [], flags: new Set(), values: new Map() };
+  const result: Options = { operands: [], operandIndices: [], flags: new Set(), values: new Map() };
   let ended = false;
   const value = (flag: string, arg: string | undefined, rule: ValueRule) => {
     if (arg === undefined || !permitted(arg, rule)) fail('shell_option_value_unverified');
@@ -294,6 +326,7 @@ function options(args: readonly string[], spec: Spec): Options {
     const arg = args[i];
     if (ended || arg === '-' || !arg.startsWith('-')) {
       result.operands.push(arg);
+      result.operandIndices.push(i);
       continue;
     }
     if (arg === '--') {
@@ -414,44 +447,12 @@ async function simpleCommand(
     return args;
   }
   if (name === 'cat' || name === 'head' || name === 'tail' || name === 'wc') {
-    const specs: Record<string, Spec> = {
-      cat: {
-        short: 'AbEnstTuv',
-        long: [
-          '--show-all',
-          '--number-nonblank',
-          '--show-ends',
-          '--number',
-          '--squeeze-blank',
-          '--show-tabs',
-          '--show-nonprinting',
-        ],
-      },
-      head: {
-        short: 'qvz',
-        shortValues: { n: amount, c: amount },
-        long: ['--quiet', '--silent', '--verbose', '--zero-terminated'],
-        longValues: { '--lines': amount, '--bytes': amount },
-      },
-      tail: {
-        short: 'qvz',
-        shortValues: { n: amount, c: amount },
-        long: ['--quiet', '--silent', '--verbose', '--zero-terminated'],
-        longValues: { '--lines': amount, '--bytes': amount },
-      },
-      wc: {
-        short: 'clmwL',
-        long: ['--bytes', '--chars', '--lines', '--words', '--max-line-length'],
-      },
-    };
     // GNU/BSD 的常见旧式行数写法仍是静态选项，不把负数识别成文件路径。
     const checked =
       (name === 'head' || name === 'tail') && /^-\d+$/.test(args[0] ?? '')
         ? ['-n', args[0].slice(1), ...args.slice(1)]
         : args;
-    const parsed = options(checked, specs[name]);
-    if (boundary.requiresBoundContent && parsed.operands.some((path) => path !== '-'))
-      fail('shell_literal_read_binding_unverified');
+    const parsed = options(checked, FILE_READ_SPECS[name]);
     for (const path of parsed.operands) await boundary.file(path);
     return args;
   }
@@ -1201,6 +1202,53 @@ export async function analyzeReadOnlyShell(
   const bindRoot = async () => {
     if (!bindings.length) bind(await boundary.target(boundary.root, 'metadata'), 'directory');
   };
+  const wcOutput = (invocation: string, mapped: Array<{ operand: string; variable: string }>) => {
+    const labels = mapped.map(
+      ({ operand, variable }) =>
+        `*" $${variable}") builtin printf '%s %s\\n' "\${line%\" $${variable}\"}" ${quote(operand)};;`,
+    );
+    return `output=$(${invocation}); status=$?; while IFS= builtin read -r line; do case "$line" in ${labels.join(' ')} *) builtin printf '%s\\n' "$line";; esac; done <<< "$output"; return "$status";`;
+  };
+  // 目录传播后的普通文件读取共用描述符绑定，不局限于 find/wc 一种命令形状。
+  const literalRead = async (name: string, args: string[]) => {
+    const numeric = (name === 'head' || name === 'tail') && /^-\d+$/.test(args[0] ?? '');
+    const parsed = options(
+      numeric ? ['-n', args[0].slice(1), ...args.slice(1)] : args,
+      FILE_READ_SPECS[name],
+    );
+    if (
+      (name === 'head' || name === 'tail') &&
+      (anyFlag(parsed, '-v', '--verbose') ||
+        (parsed.operands.length > 1 && !anyFlag(parsed, '-q', '--quiet', '--silent')))
+    )
+      fail('shell_read_headers_unverified');
+    const argv = args.map(quote);
+    const mapped: Array<{ operand: string; variable: string }> = [];
+    for (const checkedIndex of parsed.operandIndices) {
+      const index = numeric ? checkedIndex - 1 : checkedIndex;
+      const operand = args[index];
+      if (operand === '-') continue;
+      const entry = await boundary.target(operand, 'content');
+      if (!entry.exists || !entry.regular) fail('shell_read_target_unverified');
+      await bindRoot();
+      const variable = bind(entry, 'file');
+      if (
+        name === 'wc' &&
+        (/[\r\n\t]/.test(operand) ||
+          mapped.some((item) => item.variable === variable && item.operand !== operand))
+      )
+        fail('shell_read_labels_unverified');
+      argv[index] = `"$${variable}"`;
+      mapped.push({ operand, variable });
+    }
+    const invocation = [quote(await boundary.binary(name)), ...argv].join(' ');
+    if (name !== 'wc' || !mapped.length) return invocation;
+    const helper = `__agentlab_wc_${helpers.length}`;
+    helpers.push(
+      `${helper}() { builtin local line output status; ${wcOutput(invocation, mapped)} };`,
+    );
+    return helper;
+  };
   const findSelection = async (args: string[]) => {
     const key = JSON.stringify([boundary.cwd, args]);
     const cached = selections.get(key);
@@ -1270,13 +1318,9 @@ export async function analyzeReadOnlyShell(
     const cases = mapped.map(
       ({ operand, variable }) => `${quote(operand)}) files+=("$${variable}");;`,
     );
-    const labels = mapped.map(
-      ({ operand, variable }) =>
-        `*" $${variable}") builtin printf '%s %s\\n' "\${line%\" $${variable}\"}" ${quote(operand)};;`,
-    );
     // 先验证完整 argv，再读任何 fd。wc 的数值、顺序、total 和退出状态保留，仅还原 fd 标签。
     helpers.push(
-      `${helper}() { builtin local arg line output status selection; builtin local -a files; files=(); selection=$(${find}) || return $?; for arg in $selection; do case "$arg" in ${cases.join(' ')} *) builtin printf '%s\\n' 'approval_stale: wc operand changed' >&2; return 125;; esac; done; output=$(${quote(binary)} ${normalizedFlags.map(quote).join(' ')} -- "\${files[@]}"); status=$?; while IFS= builtin read -r line; do case "$line" in ${labels.join(' ')} *) builtin printf '%s\\n' "$line";; esac; done <<< "$output"; return "$status"; };`,
+      `${helper}() { builtin local arg line output status selection; builtin local -a files; files=(); selection=$(${find}) || return $?; for arg in $selection; do case "$arg" in ${cases.join(' ')} *) builtin printf '%s\\n' 'approval_stale: wc operand changed' >&2; return 125;; esac; done; ${wcOutput(`${quote(binary)} ${normalizedFlags.map(quote).join(' ')} -- "\${files[@]}"`, mapped)} };`,
     );
     return helper;
   };
@@ -1355,6 +1399,10 @@ export async function analyzeReadOnlyShell(
           return;
         }
         const argv = await simpleCommand(name, args, boundary, piped);
+        if (boundary.requiresBoundContent && Object.hasOwn(FILE_READ_SPECS, name)) {
+          normalized.set(node.id, await literalRead(name, argv));
+          return;
+        }
         const prefix = ['echo', 'pwd', 'printf'].includes(name)
           ? ['builtin', name]
           : [await boundary.binary(name)];

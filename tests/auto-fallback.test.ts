@@ -421,7 +421,9 @@ describe('模型规格与完整请求预算', () => {
     expect(fake.requests[0].cache).toBeUndefined();
     const payload = JSON.parse(fake.requests[0].messages[0].content as string);
     expect(payload.operation.input).toEqual(input);
-    expect(payload.context.userRequest).toBe(context.userRequest);
+    expect(payload.currentUserRequest.text).toBe(context.userRequest);
+    expect(payload.context.userRequestRef).toBe('currentUserRequest.text');
+    expect(payload.context).not.toHaveProperty('userRequest');
   });
 
   it.each([
