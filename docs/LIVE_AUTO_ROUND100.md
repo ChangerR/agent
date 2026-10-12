@@ -1,10 +1,10 @@
 # 生产默认真实验收与 PR40 组合验证
 
-**结论：原组合命令已在真实 DeepSeek + 原样 `pnpm dev` PTY 完成，零 judge、零人工；整体自由工作流仍未全部通过。** 本文更新 [前轮 20 次报告](LIVE_AUTO_ACCEPTANCE.md)，不覆盖其中失败记录。匿名逐项数据见 [本轮证据](evidence/deepseek-auto-round100.json)。
+**结论：原组合命令在真实 DeepSeek + 原样 `pnpm dev` PTY 完成，零 judge、零人工；合并 PR40 后恢复已记住命令的真实执行也已通过。自然浏览仍未通过，新增预算已到 100/100。** 本文更新 [前轮 20 次报告](LIVE_AUTO_ACCEPTANCE.md)，不覆盖其中失败记录。匿名逐项数据见 [本轮证据](evidence/deepseek-auto-round100.json)。
 
 ## 预算与配置
 
-2026-10-12，用户另行明确授权新增最多 100 次真实 transport 请求；此前 20/20 独立保留。本轮最终停在 **84/100**，不是必须耗尽的配额。84 个逻辑 provider 调用、84 个去重 telemetry 请求、84 次 transport、84 个 HTTP 200；没有 SDK 重试。规划 15（包含 child 规划）、主模型 55、judge 8、child 执行模型 6、压缩 0。累计两轮 104 次，但新增账本上限始终为 100。
+2026-10-12，用户另行明确授权新增最多 100 次真实 transport 请求；此前 20/20 独立保留。本轮最终达到 **100/100**，账本未重置。100 次实际 transport、100 个 HTTP 200；101 个逻辑 provider 调用和101个去重 telemetry 请求，其中最后1个在 fetch 前被预算闸门拒绝，没有第101次实际网络请求。已发送请求为规划17（含child规划）、主模型69、judge8、child执行6、压缩0；没有已发送的 SDK 重试。累计两轮120次，但新增账本上限始终为100。
 
 所有进程、child 和潜在 SDK retry 在 OpenAI SDK 导入/构造前通过同一持久账本先计数再发送，文件锁串行更新；第 101 次在 fetch 前拒绝。独立假 fetch 检查从 98 起两次通过、下一次不发送；没有改动真实账本。setup 检测到已有轮次即拒绝重置。没有输出凭据、改变服务端点或访问用户真实 `/data`。
 
@@ -34,7 +34,26 @@ SDK 场景为匿名 220 个单行 TS 文件、README、本地合成 Git 仓库�
 
 两个 child 的运行区间分别为 10:03:20.952–10:03:25.355 UTC、10:03:20.953–10:03:25.559 UTC，确有重叠。没有出现 child 写入尝试，因此不能声称真实模型测过 readOnly child 的写拒绝；该边界由离线对抗回归验证。
 
-恢复失败的原始模型正文保留为证据中的 `invalidPlanningReply`：它以 `<｜｜DSML｜｜ calls>` 开始，尝试描述 bash 调用，未返回要求的 `null` 或计划 JSON。模型为 HTTP 200/正常结束，产品正确拒绝解析，没有执行里面的命令。没有把这次失败改写为规则恢复失败，也没有重试刷成功率。
+恢复失败的原始模型正文保留为证据中的 `invalidPlanningReply`：它以 `<｜｜DSML｜｜ calls>` 开始，尝试描述 bash 调用，未返回要求的 `null` 或计划 JSON。模型为 HTTP 200/正常结束，产品正确拒绝解析，没有执行里面的命令。这是格式协议失败，不是记住规则恢复失败；原失败记录保留，后续在独立修复提交上恢复同一会话复验，详见下文。
+
+## 最后16次：在合并后的提交上复验
+
+代码提交 **1757ba3b0a7348e5b26ca8cc19526503bcbbc603** 已包含 master PR40、本分支原修复及本轮规划恢复；没有再次新建夹具或记住规则。
+
+| 场景                                       | 实际请求 P/M/J/C | 人工 | 结果                                                                                           |
+| ------------------------------------------ | ---------------- | ---- | ---------------------------------------------------------------------------------------------- |
+| 恢复先前保存的同一会话，再次执行记住的命令 | 1/2/0/0 = 3      | 0    | 成功。新runtime恢复精确规则，实际bash输出12345并准确总结；规划首次返回null，没有使用纠正重试。 |
+| 同一自然语言源码/README浏览任务            | 1/12/0/0 = 13    | 0    | 未完成。下一逻辑主请求被100次闸门阻止；没有第101次传输。全部文件清单不变。                     |
+
+规划根因：此前无工具的规划请求仍带原生历史tool_calls/tool_result，OpenAI adapter按协议回放它们，真实模型返回DSML而非JSON；这不是围栏剥离或JSON parser误伤。修复只在规划请求中把历史助手文本、工具参数/结果和source变成带来源的JSON证据，保留用户原文及完整工具证据，不重放原生工具协议；执行请求及provider接口不变。历史thinking不作为规划证据重发。完整但无效的回复只允许一次格式纠正，每次独立telemetry和用量，用户可见提示；纠正后仍须同一schema，only的null无效。网络失败、取消、max_tokens、tool_use结束或缺少实际message_stop均停止，不猜测计划、不执行DSML、不无限重试。没有增加厂商专用response_format兼容层。
+
+独立审查发现collector把无stop默认为end_turn，现已由规划器检查实际message_stop；bad/null/合法JSON缺stop均有失败关闭回归。默认auto、真实工具和真实reviewer装配的离线恢复测试明确注入一次DSML，再收到有效null，实际执行记住的命令且0judge/0人工；另一命令仍重新审查。
+
+自然浏览的最新阻塞与此前预算过大不同：模型先执行已验证的根目录ls，再提出 `ls -R <project>/src 2>/dev/null | head -80`。递归ls不在FD绑定的单目录子集中，analysis不能证明完整读取，PR40的readOnly任务约束返回task_read_only。模型之后多次plan_status/plan_update running，并改用glob/read_file，随后 `cd <project> && find src -name '*.ts' -type f | wc -l && cat src/*.ts | wc -l` 又因未证明的通配符cat操作数被拒绝。约束仍阻止这些未证明命令，实际执行的专用读取仍单独通过权限链；没有读取运行配置或修改文件。但任务没有完整计数和最终总结，不能称通过。
+
+该拒绝来自ToolExecutor的restrict门，不是policy、judge或human的permission_decision deny，因而不会触发既有整请求拒绝锁；Plan步骤可重新置running。独立复核确认这不是观察到的越权：18个permission_decision均为正常allow，两次task_read_only及三次plan_step_required均未执行；实际13次读取（bash1/read_file3/glob4/grep5）和5次计划控制仍受只读约束。为保留Plan/child的安全替代工具恢复语义，本轮不把这种调用限制升级成整请求拒绝；不能把所有含deny字样的工具错误都称为同一种权限拒绝。保留失败证据；没有为复验开放递归ls、任意glob、关闭readOnly或扩大模型预算。末次SDK向用户显示Connection error，具体原因由闸门日志确认是预算耗尽，并非远端HTTP失败。组合child/deny未剩预算重新实测；此前实测与合并后的离线对抗结果各自保留。
+
+普通package.json、tsconfig.json没有被敏感规则误伤：新增默认auto完整链路以read_file和真实Bash cat读取，0judge/0人工；.env与mcp.json各自独立任务仍ask。现有PR40允许专用read_file/glob/grep读取agent.config.json，Bash仍把它列为敏感；本轮没有新增或扩大这项allow，也没有让模型换专用工具读取它来刷通过。core仅提供apiKeyEnv变量名，但pluginConfig可含任意数据，不能宣称所有配置天然无凭据。
 
 ## 本轮实际修复与限制
 
@@ -54,10 +73,12 @@ SDK 场景为匿名 220 个单行 TS 文件、README、本地合成 Git 仓库�
 
 组合全量还两次暴露了真实PTY的取消恢复问题：`pause → cancel → mode only` 在旧执行尚未结算时，`configurePlanning` 无条件将cancelled改成paused，恢复才显示中断。新增正常auto/default reviewer的受控时序runtime回归先稳定失败（cancelled实际变paused），再修为仅暂停planning/ready/executing；取消、拒绝及其他终态保留，但已有执行仍收到abort。不是通过增加等待或放宽PTY断言刷过测试。
 
-**没有在合并后重复已完成的真实API工作流。** 组合代码通过离线真实 runtime、默认 reviewer、受控 provider 与原样 pnpm dev PTY 验证；上表的真实成功不冒充 PR40 合并后的新实测。仍有自由浏览与规划协议阻塞，故不宣称整体真实业务通过。Linux环境未覆盖原生Windows/macOS；Windows平台注入回归不能替代原生验收。未推送、未新建PR、未合并到远端。
+**合并后新增了上述16次真实API复验。** 原命令的真实模型PTY成功发生在合并前；最终组合代码另经离线受控provider的原样pnpm dev PTY验证，不混淆两者。恢复会话已通过，自然浏览仍阻塞，故不宣称整体真实业务通过。Linux环境未覆盖原生Windows/macOS；Windows平台注入回归不能替代原生验收。未推送、未新建PR、未合并到远端。
 
 ## 最终组合检查
 
-`pnpm format:check`、`pnpm typecheck`、原样 `pnpm test`、`pnpm build` 全部通过。最新全量 **77个测试文件，1482项通过，2项原生Windows专用测试按平台跳过**；包含 Bash、PowerShell、Plan、subagent 的真实 PTY。取消时序修复的独立13项通过，完整Plan与两尺寸跨进程PTY合计56项通过。此前一次100ms持久化故障测试曾在并发负载下超时，未改变生产超时；最终专项与全量通过。PTY取消问题则有确定性红/绿回归及生产修复，没有按偶发失败略过。
+代码提交1757ba3上的 `pnpm format:check`、`pnpm typecheck`、`pnpm test`、`pnpm build` 通过。最终全量 **78个测试文件，1496项通过，2项原生Windows专用测试按平台跳过**，包含原样pnpm dev的Bash、PowerShell、Plan、subagent真实PTY。独立审查最新80项、类型、格式及diff检查通过，未调用API；其发现的缺stop边界有明确修复与回归。
 
-最后核对远端master仍为a44c8d9；新增账本84/100、provider84、去重telemetry84、HTTP200共84。无剩余本地格式/类型/测试/构建阻塞。自由浏览与真实恢复后的规划协议问题仍是产品验收限制，不被本地全量通过替代。
+中途全量启动时测试仍在修改且两个全量进程短暂重叠，得到旧实现配新断言的失败及100ms持久化故障夹具超时。没有修改生产/测试超时掩盖；冻结最终提交后，单个全量进程1496项通过。之前的PTY取消竞态有确定性红/绿回归及生产修复，仍包含在最终全量中。
+
+最终远端master复核仍为a44c8d908bf910c111b9fc9dbf3141bb7a3ebccc，已是本分支祖先。账本100/100已封顶，不再发送真实模型请求。没有格式/类型/测试/build阻塞；**自然浏览仍是产品验收阻塞**：递归ls、通配符cat尚未安全绑定，Plan调用约束后的反复恢复耗尽预算；不能以本地测试全绿替代这个结果。后续需要先离线决定并实现相应语义，再获得新的真实API预算复验。未推送、未新建PR、未远端合并。
