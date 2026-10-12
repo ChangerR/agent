@@ -361,6 +361,11 @@ export class ToolExecutor {
         const emitDecision = (phase: 'pipeline' | 'judge' | 'user') =>
           events.emit({
             type: 'permission_decision',
+            permissionScope: context.origin?.permissionScope,
+            rootPermissionScope: context.origin?.rootPermissionScope,
+            ...(policyDecision.kind === 'deny' && policyDecision.denialScope === 'invocation'
+              ? { denialScope: 'invocation' as const }
+              : {}),
             runId: context.runId,
             requestId,
             toolUseId: toolUse.id,

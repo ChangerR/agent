@@ -79,6 +79,8 @@ export interface AgentLoopOptions {
   agentName?: string;
   task?: () => string;
   onCancel?: () => void;
+  /** runtime 可将 child 的拒绝提升到所属根计划，阻止换 child 重试。 */
+  onPermissionDenied?: (reason: string, permissionScope?: string) => void;
   maxInbox?: number;
   maxOutputChars?: number;
   cacheStrategy?: CacheStrategy | null;
@@ -125,12 +127,14 @@ export interface RunInput {
   source: InputSource;
   userRequest: string;
   permissionScope?: string;
+  rootPermissionScope?: string;
 }
 export interface RunOptions {
   runId?: string;
   source?: InputSource;
   userRequest?: string;
   permissionScope?: string;
+  rootPermissionScope?: string;
   maxTurns?: number;
   maxInbox?: number;
   maxOutputChars?: number;
@@ -203,6 +207,19 @@ export class AgentLoop {
     });
     opts.events.onAll((e) => {
       if (e.type === 'permission_request') this.plan.waiting(`等待审批: ${e.request.reason}`);
+      if (
+        e.type === 'permission_decision' &&
+        e.decision.kind === 'deny' &&
+        e.denialScope !== 'invocation' &&
+        (!e.permissionScope || e.permissionScope === this.permissionScope)
+      ) {
+        const reason =
+          e.decision.source === 'user'
+            ? `User denied this action: ${e.decision.reason}`
+            : `Permission denied: ${e.decision.reason}`;
+        this.plan.deny(reason, e.toolName);
+        opts.onPermissionDenied?.(reason, e.rootPermissionScope ?? e.permissionScope);
+      }
     });
     opts.events.on('tool_result', (e) =>
       this.plan.toolFinished(e.toolUseId, e.result.isError === true, e.result.content),
@@ -214,6 +231,14 @@ export class AgentLoop {
 
   getMessages(): readonly Message[] {
     return this.messages;
+  }
+  get requestPermissionScope(): string {
+    return this.permissionScope;
+  }
+  /** 旧委派的迟到拒绝保留在旧范围，不能阻塞新的根用户方向。 */
+  denyDelegatedRequest(reason: string, toolName: string, permissionScope?: string): void {
+    if (permissionScope && permissionScope !== this.permissionScope) return;
+    this.plan.deny(reason, toolName);
   }
   /** 直接的宿主委派入口同样检查，状态查询与取消仍可使用。 */
   assertRequestPermission(origin: InvocationOrigin): void {
@@ -451,6 +476,7 @@ export class AgentLoop {
       runId,
       source: options.source ?? 'user',
       permissionScope: this.permissionScope,
+      rootPermissionScope: options.rootPermissionScope ?? this.permissionScope,
       userRequest:
         options.source && options.source !== 'user' ? (options.userRequest ?? '') : userInput,
     };
@@ -524,6 +550,7 @@ export class AgentLoop {
             proposal.goal,
             proposal.steps,
             this.plan.mode === 'only' ? 'only' : 'auto',
+            proposal.readOnly,
           );
           // 计划发布后立即明确当前步骤，执行模型无需先补一次状态调用才能开始工作。
           const plan = this.plan.snapshot!;
@@ -552,6 +579,9 @@ export class AgentLoop {
               source: input.source,
               userRequest: input.userRequest,
               permissionScope: this.permissionScope,
+              rootPermissionScope:
+                input.rootPermissionScope ??
+                (input.source === 'user' ? this.permissionScope : origin.rootPermissionScope),
             };
           }
         }

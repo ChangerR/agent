@@ -13,7 +13,7 @@ import type { SubagentRecord } from '../../core/agents.js';
 const integer = (max: number, value: number) => z.number().int().min(1).max(max).default(value);
 export const SubagentConfigSchema = z
   .object({
-    maxRunning: integer(16, 4),
+    maxRunning: integer(16, DEFAULT_SUBAGENT_LIMITS.maxRunning),
     maxDepth: integer(4, 1),
     maxTurns: integer(128, 16),
     timeoutMs: integer(3_600_000, 300_000),

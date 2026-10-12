@@ -1,4 +1,5 @@
 /** 可选终端 entry 契约；SDK 只存 entry 描述，headless 不加载此文件。 */
+import type { KeyId } from '@earendil-works/pi-tui';
 import type { Agent } from '../runtime/agent.js';
 import type { CommandInspection } from '../sdk/index.js';
 import type { PanelItem } from './interaction-panel.js';
@@ -44,6 +45,8 @@ export interface TuiToolRenderInput {
 }
 export type TuiToolRenderer = (input: TuiToolRenderInput, width: number) => readonly string[];
 export interface TuiAdapter {
+  /** 返回 true 消费按键；状态浏览不得改变父输入或审批焦点。 */
+  shortcuts?: Partial<Record<KeyId, () => boolean>>;
   toolRenderers?: Record<string, TuiToolRenderer>;
   statusPanels?: Record<string, (width: number, height: number) => readonly string[]>;
   statusItems?: Record<string, () => string>;

@@ -99,6 +99,10 @@ export type AgentEvent =
   | {
       /** 审核可观测性独立于 UI 提示；静默放行仍保留每阶段的判定。 */
       type: 'permission_decision';
+      /** 执行器提供的范围；不接受 reviewer 或工具参数降低拒绝强度。 */
+      permissionScope?: string;
+      rootPermissionScope?: string;
+      denialScope?: 'invocation';
       runId?: string;
       requestId?: string;
       toolUseId: string;

@@ -118,7 +118,10 @@ export async function createRuntime(
         mode === 'only' &&
         (agent.loop.hasPendingActivity || supervisor?.hasPendingActivity)
       ) {
-        agent.loop.plan.stop('paused', '切换只规划：已中断执行');
+        // 已取消/拒绝/暂停的旧执行仍可能在结算；切模式不能覆盖用户明确终态。
+        const phase = agent.loop.plan.snapshot?.phase;
+        if (phase && ['planning', 'ready', 'executing'].includes(phase))
+          agent.loop.plan.stop('paused', '切换只规划：已中断执行');
         agent.loop.abort_current();
       }
       agent?.loop.plan.configure(mode);
@@ -351,8 +354,25 @@ export async function createRuntime(
           agentName: record.name,
           task: () => record.runs.at(-1)?.task ?? '',
           maxTurns: config.maxTurns,
+          // 全树拒绝令兄弟已有审批绑定过期；普通根计划进度不打断 child。
+          configRevision: () => `${configRevision()}:root-denial=${loop.plan.denialGeneration}`,
           context: new ContextManager({ compactThreshold: config.compactThreshold, compactor }),
+          onPermissionDenied: (reason, permissionScope) => {
+            const step = loop.plan.snapshot?.steps.find((s) =>
+              s.children.some((c) => c.agentId === record.agentId),
+            );
+            const separator = reason.indexOf(':');
+            const category = separator < 0 ? reason : reason.slice(0, separator);
+            const detail = separator < 0 ? '' : reason.slice(separator + 1).trim();
+            loop.denyDelegatedRequest(
+              `${category}: child ${record.name}${step ? ` / ${step.title}` : ''}${detail ? `; ${detail}` : ''}`,
+              `child ${record.name}`,
+              permissionScope,
+            );
+          },
           restrict: (operation) => {
+            if (loop.plan.denialReason && !isControlTool(tools.get(operation.tool.name)!))
+              return `plan_denied: explicit user continuation required: ${loop.plan.denialReason}`;
             if (record.allowedTools && !record.allowedTools.includes(operation.tool.name))
               return 'Tool is outside child allowedTools';
             if (!record.readOnly || isControlTool(tools.get(operation.tool.name)!))

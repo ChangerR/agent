@@ -16,6 +16,9 @@ export const PlanSchema = z
     goal: text,
     activeStepId: z.string().optional(),
     mode: z.enum(['auto', 'only']),
+    /** 任务本身只授权研究；与 only（仅产出方案）分开。 */
+    readOnly: z.boolean().optional(),
+    denialReason: z.string().max(2000).optional(),
     phase: z.enum([
       'planning',
       'ready',
@@ -88,7 +91,9 @@ export interface PlannerInput {
   runId: string;
 }
 export interface PlanningStrategy {
-  prepare(input: PlannerInput): Promise<{ goal: string; steps: string[] } | undefined>;
+  prepare(
+    input: PlannerInput,
+  ): Promise<{ goal: string; steps: string[]; readOnly?: boolean } | undefined>;
   /** 模型准备结束时，由规划插件决定是否提醒它继续；loop 仍负责预算和中断。 */
   continuation?(plan: Plan): string | undefined;
   /** 只声明可用于调研的已注册工具身份；权限管线仍然必须通过。 */
@@ -100,6 +105,7 @@ export class PlanController {
   private successful = new Set<string>();
   private calls = new Map<string, string>();
   private epoch = 0;
+  private denialEpoch = 0;
   mode: PlanningMode = 'auto';
   force = false;
   preparing = false;
@@ -113,6 +119,31 @@ export class PlanController {
   get generation(): number {
     return this.epoch;
   }
+  get researchOnly(): boolean {
+    return this.value?.readOnly === true;
+  }
+  get denialReason(): string | undefined {
+    return this.value?.denialReason;
+  }
+  /** 拒绝与显式解锁均递增，避免旧审批跨 false→true→false 边界复用。 */
+  get denialGeneration(): number {
+    return this.denialEpoch;
+  }
+  deny(reason: string, stepTitle = '被拒绝的操作') {
+    this.denialEpoch++;
+    // 简单任务或直接委派也必须保留拒绝边界；复用现有计划持久化和显式继续入口。
+    if (!this.value || this.value.phase === 'completed') {
+      this.create(
+        '操作被拒绝，等待用户明确继续',
+        [stepTitle],
+        this.mode === 'only' ? 'only' : 'auto',
+        this.researchOnly,
+      );
+      this.value!.steps[0].status = 'running';
+    }
+    this.value!.denialReason = reason.slice(0, 2000);
+    this.stop('blocked', this.value!.denialReason);
+  }
   get readOnly(): boolean {
     return (
       (this.value?.phase === 'completed' ? this.mode : (this.value?.mode ?? this.mode)) === 'only'
@@ -123,8 +154,8 @@ export class PlanController {
       (s) => s.id === this.value?.activeStepId && s.status === 'running',
     );
   }
-  private changed() {
-    this.epoch++;
+  private changed(invalidateExecution = true) {
+    if (invalidateExecution) this.epoch++;
     if (this.value) this.value.revision++;
     this.events.emit({ type: 'plan_changed', owner: this.owner, plan: this.snapshot });
   }
@@ -135,25 +166,32 @@ export class PlanController {
       this.changed();
     }
   }
-  create(goal: string, titles: string[], mode: 'auto' | 'only') {
+  create(goal: string, titles: string[], mode: 'auto' | 'only', readOnly = false) {
     const plan = PlanSchema.parse({
       id: randomUUID(),
       revision: 0,
       goal,
       mode,
+      ...(readOnly ? { readOnly: true } : {}),
       phase: mode === 'only' ? 'planning' : 'executing',
       steps: titles.map((title) => ({ id: randomUUID(), title, status: 'pending', children: [] })),
     });
+    if (this.denialReason) this.denialEpoch++;
     this.value = plan;
     this.successful.clear();
     this.calls.clear();
     this.changed();
   }
   restore(raw?: Plan) {
+    this.denialEpoch++;
     this.value = raw ? PlanSchema.parse(raw) : undefined;
     this.successful.clear();
     this.calls.clear();
-    if (this.value && !['completed', 'cancelled', 'ready'].includes(this.value.phase)) {
+    if (
+      this.value &&
+      !this.value.denialReason &&
+      !['completed', 'cancelled', 'ready'].includes(this.value.phase)
+    ) {
       this.value.phase = 'interrupted';
       this.value.reason = '会话恢复：执行已中断，需显式继续，不会重放工具';
       for (const step of this.value.steps)
@@ -173,6 +211,7 @@ export class PlanController {
     this.epoch++;
   }
   clear() {
+    if (this.denialReason) this.denialEpoch++;
     this.value = undefined;
     this.successful.clear();
     this.calls.clear();
@@ -192,6 +231,8 @@ export class PlanController {
     const p = this.value;
     if (!p || p.revision !== revision)
       throw new Error('plan_stale: refresh plan_status before updating');
+    if (p.denialReason)
+      throw new Error(`plan_denied: explicit user continuation required: ${p.denialReason}`);
     if (['paused', 'cancelled', 'interrupted', 'completed'].includes(p.phase))
       throw new Error('Plan requires explicit user continuation');
     if (input.steps) {
@@ -275,12 +316,15 @@ export class PlanController {
   resume() {
     if (!this.value) throw new Error('No plan to continue');
     if (this.value.phase === 'completed') throw new Error('Plan is already complete');
+    if (this.denialReason) this.denialEpoch++;
+    this.value.denialReason = undefined;
     this.value.phase = this.readOnly ? 'planning' : 'executing';
     this.value.reason = undefined;
     this.changed();
   }
   finish(reason: LoopEndReason) {
     if (!this.value || ['paused', 'cancelled', 'completed'].includes(this.value.phase)) return;
+    if (this.value.denialReason) return;
     if (reason === 'completed' && this.readOnly) {
       this.value.phase = 'ready';
       for (const step of this.value.steps) if (step.status === 'running') step.status = 'pending';
@@ -304,6 +348,8 @@ export class PlanController {
       (t) => t.name === operation.tool.name && t.ownerPlugin === operation.tool.ownerPlugin,
     );
     if (control && (!this.readOnly || control.planningSafe !== false)) return;
+    if (p?.denialReason)
+      return `plan_denied: explicit user continuation required: ${p.denialReason}`;
     if (this.readOnly) {
       const a = operation.analysis;
       if (
@@ -313,7 +359,14 @@ export class PlanController {
         a.effects.some((e) => e.kind !== 'read')
       )
         return 'plan_read_only: only verified dedicated research tools are allowed; shell and delegation are disabled';
-    } else if (p && !this.current)
+    } else if (
+      this.researchOnly &&
+      (operation.analysis?.completeness !== 'complete' ||
+        !operation.analysis.effects.length ||
+        operation.analysis.effects.some((effect) => effect.kind !== 'read'))
+    )
+      return 'task_read_only: this task only authorizes verified read effects';
+    else if (p && !this.current)
       return 'plan_step_required: start a step with plan_update before execution';
   }
   waiting(reason: string) {
@@ -343,6 +396,8 @@ export class PlanController {
   }
   assertDelegation() {
     if (this.preparing) throw new Error('Plan is still preparing');
+    if (this.denialReason)
+      throw new Error(`plan_denied: explicit user continuation required: ${this.denialReason}`);
     if (this.readOnly)
       throw new Error('plan_read_only: delegation is disabled during planning-only');
     if (this.value && ['paused', 'cancelled', 'interrupted'].includes(this.value.phase))
@@ -387,13 +442,27 @@ export class PlanController {
     if (child.runId !== run.runId) return;
     if (child.runId === run.runId && child.status === run.status && child.activity === run.activity)
       return;
+    const activityOnly = child.status === run.status;
     Object.assign(child, { runId: run.runId, name, status: run.status, activity: run.activity });
-    if (
-      ['failed', 'cancelled', 'limited', 'interrupted'].includes(run.status) &&
-      !['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)
-    ) {
+    if (activityOnly) {
+      // 活动文字不改变授权或执行边界，不能令父在途响应和审批失效。
+      this.events.emit({ type: 'plan_changed', owner: this.owner, plan: this.snapshot });
+      return;
+    }
+    const failed = step.children.find((c) =>
+      ['failed', 'cancelled', 'limited', 'interrupted'].includes(c.status),
+    );
+    if (this.value!.denialReason) {
+      // 新的活动/终态仍展示，但不能冲掉真实拒绝已锁定的步骤和来源。
+      this.changed(false);
+      return;
+    }
+    if (failed && !['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)) {
       step.status = 'blocked';
-      step.reason = run.error ?? `child ${name}: ${run.status}`;
+      step.reason =
+        failed.agentId === agentId
+          ? (run.error ?? `child ${name}: ${run.status}`)
+          : (step.reason ?? `child ${failed.name}: ${failed.status}`);
     } else if (
       run.status !== 'completed' &&
       !['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)
@@ -403,6 +472,7 @@ export class PlanController {
       step.reason = run.activity.includes('审批') ? run.activity : undefined;
       if (this.value?.phase === 'completed') this.value.phase = 'executing';
     }
-    this.changed();
+    // 生命周期更新可令 CAS 修订过期，但不是新授权，不能丢弃父正在生成的 spawn/wait。
+    this.changed(false);
   }
 }

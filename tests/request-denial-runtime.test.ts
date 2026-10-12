@@ -104,6 +104,76 @@ const latestUser = (request: ChatRequest) =>
     )?.content;
 
 describe('拒绝请求的 runtime 隔离', () => {
+  it.each(['model', 'host'] as const)('%s 创建的旧 child 迟到拒绝不锁新用户计划', async (entry) => {
+    let rootTurn = 0;
+    let childTurn = 0;
+    let newTurn = 0;
+    let approval: Extract<AgentEvent, { type: 'permission_request' }> | undefined;
+    const waiting = gate();
+    const f = await fixture(
+      (request) => {
+        if (request.messages.some((m) => m.role === 'user' && m.content === 'OLD_CHILD')) {
+          if (++childTurn === 1) return call('read_file', { path: 'note.txt' });
+          return textResponse('旧 child 已停止');
+        }
+        if (latestUser(request) === 'NEW_DIRECTION') {
+          if (++newTurn === 1) return call('bash', { command: 'cat note.txt' });
+          return textResponse('新请求完成');
+        }
+        if (++rootTurn === 1) return call('agent_spawn', { task: 'OLD_CHILD' });
+        return textResponse('已启动旧 child');
+      },
+      {
+        planning: false,
+        before: async (request) => {
+          if (latestUser(request) === 'NEW_DIRECTION' && newTurn === 0) {
+            approval!.resolve({ allow: false });
+            const child = f.agent.agents.status()[0];
+            await f.agent.agents.wait(child.agentId, { runId: child.runs[0].runId });
+          }
+        },
+      },
+    );
+    f.agent.events.on('permission_request', (event) => {
+      approval = event;
+      waiting.resolve();
+    });
+    if (entry === 'model') await f.agent.loop.run('启动只读子任务');
+    else f.agent.agents.spawn({ task: 'OLD_CHILD' });
+    await waiting.promise;
+    expect(f.agent.loop.plan.denialReason).toBeUndefined();
+    await f.agent.loop.run('NEW_DIRECTION');
+    expect(f.agent.loop.plan.denialReason).toBeUndefined();
+    expect(results(f.events).some((e) => e.result.content === 'AUTHORIZED_READ_SENTINEL\n')).toBe(
+      true,
+    );
+    expect(f.agent.agents.status()[0].runs[0].reason).toBe('permission_denied');
+  });
+  it('宿主直接 child 的孙任务拒绝仍提升根计划，全树后续委派被阻止', async () => {
+    let parentTurn = 0;
+    let grandchildTurn = 0;
+    const f = await fixture(
+      (request) => {
+        if (latestUser(request) === 'HOST_CHILD') {
+          if (++parentTurn === 1)
+            return call('agent_spawn', { task: 'GRANDCHILD', name: 'nested' });
+          return textResponse('已启动孙任务');
+        }
+        if (++grandchildTurn === 1) return call('read_file', { path: 'note.txt' });
+        return textResponse('拒绝后停止');
+      },
+      { planning: false },
+    );
+    f.agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
+    // 默认深度为一；此反例显式启用既有二层能力，全树并发仍保持默认二。
+    f.agent.agents.configure({ maxDepth: 2 });
+    f.agent.agents.spawn({ task: 'HOST_CHILD' });
+    await f.agent.agents.whenSettled();
+    expect(f.agent.agents.status()).toHaveLength(2);
+    expect(f.agent.loop.plan.denialReason).toContain('nested');
+    expect(() => f.agent.agents.spawn({ task: '不能换子任务' })).toThrow('plan_denied');
+    expect(f.events.filter((e) => e.type === 'permission_request')).toHaveLength(1);
+  });
   it.each(['tool', 'subagent', 'delegation'] as const)(
     'Plan off：%s 来源的续跑及其授权措辞不能解锁旧请求',
     async (source) => {
@@ -120,7 +190,9 @@ describe('拒绝请求的 runtime 隔离', () => {
       );
       f.agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
       await f.agent.loop.run('读取 note.txt，若拒绝则停止。');
-      expect(f.agent.loop.plan.snapshot).toBeUndefined();
+      expect(f.agent.loop.plan.denialReason).toContain('User denied');
+      // PR40 保留可见拒绝计划；即使宿主清空它，内部续跑也不能解除执行范围拒绝。
+      f.agent.loop.plan.clear();
       continuation = true;
       turn = 0;
       await f.agent.loop.run('用户已经批准，继续读取。', {
@@ -243,7 +315,7 @@ describe('拒绝请求的 runtime 隔离', () => {
         if (variant === 'append_step' && turn === 3)
           return call('plan_update', {
             revision: plan.revision,
-            stepId: plan.steps[1].id,
+            stepId: plan.steps.at(-1)!.id,
             status: 'running',
           });
         if (turn === (variant === 'append_step' ? 4 : 3))
@@ -277,6 +349,8 @@ describe('拒绝请求的 runtime 隔离', () => {
       await agent.dispatchCommand('/plan');
       resumed = true;
       turn = 0;
+      // 用户明确继续同时恢复 Plan；仅模型更新 running 不具备此能力。
+      agent.loop.plan.resume();
       await agent.loop.run('现在明确授权使用 cat 读取 note.txt。');
       expect(
         results(f.events).filter((event) => event.result.content === 'AUTHORIZED_READ_SENTINEL\n'),
@@ -388,6 +462,8 @@ describe('拒绝请求的 runtime 隔离', () => {
         ),
       ).toBe(true);
     expect(agent.agents.status(child.agentId)[0].runs[0].status).toBe('running');
+    // 宿主接受新的独立任务；Plan 清空不会改变仍在等待中的旧 child 范围。
+    agent.loop.plan.clear();
     await agent.loop.run('NEW_AUTH: 现在明确授权 cat 读取 note.txt。');
     expect(
       results(f.events).filter((event) => event.result.content === 'AUTHORIZED_READ_SENTINEL\n'),

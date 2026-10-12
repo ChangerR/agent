@@ -117,6 +117,9 @@ async function fixture(options: Options = {}) {
   agent.events.onAll((event) => events.push(event));
   agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
   async function run(commands: string[]) {
+    // 每次 run 是用户独立发起的矩阵案例；保留同 runtime 的权限历史与路径重验。
+    // PR40 的可见拒绝计划应结束，同一次 run 内的拒绝边界仍完整保留。
+    agent.loop.plan.clear();
     pending = commands.map((command, index) => ({
       id: `shell-${sequence}-${index}`,
       name: 'bash',

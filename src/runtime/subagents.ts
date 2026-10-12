@@ -26,7 +26,7 @@ export interface SubagentLimits {
   maxRuns: number;
 }
 export const DEFAULT_SUBAGENT_LIMITS: Readonly<SubagentLimits> = Object.freeze({
-  maxRunning: 4,
+  maxRunning: 2,
   maxDepth: 1,
   maxTurns: 16,
   timeoutMs: 300_000,
@@ -172,6 +172,10 @@ export class AgentSupervisor {
     const origin = this.origin(provided);
     this.check(origin);
     if (provided) this.opts.rootLoop.assertRequestPermission(provided);
+    if (this.opts.rootLoop.plan.denialReason)
+      throw new Error(
+        `plan_denied: explicit user continuation required: ${this.opts.rootLoop.plan.denialReason}`,
+      );
     this.parentPlan(origin).assertDelegation();
     taskText(input.task);
     if (this.nodes.size >= this.limits.maxAgents) throw new Error('Agent history limit reached');
@@ -200,7 +204,8 @@ export class AgentSupervisor {
       name: input.name ?? `agent-${this.nodes.size + 1}`,
       depth,
       context: input.context ?? 'fresh',
-      readOnly: parent?.record.readOnly || input.readOnly === true,
+      readOnly:
+        parent?.record.readOnly || this.parentPlan(origin).researchOnly || input.readOnly === true,
       ...(allowedTools ? { allowedTools } : {}),
       runs: [],
     };
@@ -229,6 +234,10 @@ export class AgentSupervisor {
         permissionScope: provided
           ? (provided.permissionScope ?? `${provided.sessionId}:${provided.runId}`)
           : undefined,
+        rootPermissionScope:
+          provided?.rootPermissionScope ??
+          provided?.permissionScope ??
+          this.opts.rootLoop.requestPermissionScope,
       },
       limits: { ...this.limits, maxTurns, timeoutMs },
     });
@@ -259,8 +268,16 @@ export class AgentSupervisor {
     provided?: InvocationOrigin,
   ): AgentAddress & { queued: boolean } {
     if (provided) this.opts.rootLoop.assertRequestPermission(provided);
+    if (this.opts.rootLoop.plan.denialReason)
+      throw new Error(
+        `plan_denied: explicit user continuation required: ${this.opts.rootLoop.plan.denialReason}`,
+      );
     this.parentPlan(provided).assertDelegation();
     const node = this.get(agentId, provided);
+    if (this.parentPlan(provided).researchOnly && !node.record.readOnly)
+      throw new Error(
+        'Cannot delegate a read-only task to an agent with broader child permissions',
+      );
     if (provided && provided.agentId !== 'root') {
       const sender = this.get(provided.agentId, provided).record;
       if (
@@ -279,6 +296,10 @@ export class AgentSupervisor {
       permissionScope: provided
         ? (provided.permissionScope ?? `${provided.sessionId}:${provided.runId}`)
         : undefined,
+      rootPermissionScope:
+        provided?.rootPermissionScope ??
+        provided?.permissionScope ??
+        this.opts.rootLoop.requestPermissionScope,
     };
     if (node.active?.status === 'cancelling') throw new Error('Agent cancellation has not settled');
     if (
@@ -294,7 +315,10 @@ export class AgentSupervisor {
     if (!node.job && this.runningCount() >= this.limits.maxRunning)
       throw new Error('Running agent limit reached');
     const localPlan = node.runtime.loop.plan.snapshot;
-    if (localPlan && ['paused', 'cancelled', 'interrupted'].includes(localPlan.phase))
+    if (
+      localPlan &&
+      (localPlan.denialReason || ['paused', 'cancelled', 'interrupted'].includes(localPlan.phase))
+    )
       node.runtime.loop.plan.resume();
     const run = this.newRun(node, text);
     (
@@ -632,15 +656,18 @@ export class AgentSupervisor {
               ? 'timeout'
               : run.reason === 'output_limit'
                 ? 'output_limit'
-                : result.reason;
-            run.error = result.error;
+                : run.reason === 'permission_denied'
+                  ? 'permission_denied'
+                  : result.reason;
+            run.error =
+              result.error ?? (run.reason === 'permission_denied' ? run.error : undefined);
             const localPlan = node.runtime.loop.plan.snapshot;
             run.status =
               timedOut || run.reason === 'output_limit'
                 ? 'limited'
                 : result.reason === 'aborted'
                   ? 'cancelled'
-                  : result.reason === 'error'
+                  : result.reason === 'error' || run.reason === 'permission_denied'
                     ? 'failed'
                     : result.reason === 'completed'
                       ? localPlan && localPlan.mode !== 'only' && localPlan.phase !== 'completed'
@@ -750,6 +777,14 @@ export class AgentSupervisor {
       });
     } else if (event.type === 'permission_request') {
       run.activity = '等待审批';
+      this.emit(node, run, 'status');
+    } else if (
+      event.type === 'permission_decision' &&
+      event.decision.kind === 'deny' &&
+      event.denialScope !== 'invocation'
+    ) {
+      run.reason = 'permission_denied';
+      run.error = `${event.decision.source === 'user' ? 'User denied this action' : 'Permission denied'}: child ${node.record.name}; ${event.decision.reason}`;
       this.emit(node, run, 'status');
     } else {
       if (event.type === 'tool_result' && run.status === 'cancelling') {

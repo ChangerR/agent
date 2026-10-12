@@ -11,6 +11,8 @@ export interface InvocationOrigin {
   readonly userRequest: string;
   /** 宿主为真实用户方向创建的执行范围；委派必须继承，不能由模型重置。 */
   readonly permissionScope?: string;
+  /** 子树创建时的根用户方向；宿主直接 child 可有独立执行范围，但仍绑定根计划。 */
+  readonly rootPermissionScope?: string;
 }
 export type SubagentStatus =
   | 'queued'

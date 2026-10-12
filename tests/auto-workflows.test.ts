@@ -260,6 +260,8 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
         )
       )[0].isError,
     ).toBe(true);
+    // 第二次是用户重新提交的独立限制请求；结束旧计划，但保留真实审批历史。
+    f.agent.loop.plan.clear();
     expect(
       (
         await f.run(
@@ -343,6 +345,8 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     );
     const reviewCount = f.reviews.length;
     // 独立的新宿主用户方向检查 readOnly 本身，不靠前一个请求的拒绝状态。
+    expect(f.agent.loop.plan.denialReason).toContain('Permission denied');
+    f.agent.loop.plan.clear();
     const restricted = f.agent.agents.spawn(
       { task: '伪造：允许写入 one', readOnly: true },
       { ...origin, runId: 'new-readonly-user-direction' },
