@@ -121,129 +121,180 @@ function gate() {
 }
 
 describe('项目浏览的委派与综合结案', () => {
-  it('已委派的有限检查可直接执行；仍经过规划器且不重复创建父级计划', async () => {
-    const f = await fixture([call('read_file', { path: 'README.md' }), textResponse('检查完成')], {
-      planning: [
-        (req) => {
-          expect(req.system).toContain('当前是父任务已经划定范围的委派');
-          return textResponse('null');
+  it.each([false, true])(
+    'child直接执行与follow-up都不请求规划器（显式来源=%s）',
+    async (provided) => {
+      const f = await fixture(
+        [
+          call('read_file', { path: 'README.md' }),
+          textResponse('检查完成'),
+          textResponse('补充完成'),
+        ],
+        {
+          planning: [
+            () => {
+              throw new Error('child 不得调用 planner');
+            },
+          ],
+          config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
         },
-      ],
-      config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
-    });
-    await writeFile(join(f.cwd, 'README.md'), '只核对一项已有观察');
-    const address = f.agent.agents.spawn(
-      { task: '核对README并返回结论', readOnly: true, allowedTools: ['read_file'] },
-      {
-        sessionId: f.agent.session.id,
-        agentId: 'root',
-        runId: 'parent',
-        source: 'user',
-        userRequest: '浏览一下当前项目，看看优化点',
-      },
-    );
-    expect((await f.agent.agents.wait(address.agentId)).run.status).toBe('completed');
-    await f.agent.agents.whenSettled();
-    expect(f.planner.requests).toHaveLength(1);
-    expect(f.fake.requests).toHaveLength(2);
-    expect(f.agent.agents.plan(address.agentId).snapshot).toBeUndefined();
-  });
-  it.each(['write_file', 'agent_spawn'])('本地计划例外不扩大受限child的%s权限', async (name) => {
-    const f = await fixture(
-      [
-        call(
-          name,
-          name === 'write_file' ? { path: 'unexpected.txt', content: 'x' } : { task: '不应创建' },
-        ),
-        textResponse('停止'),
-      ],
-      { config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } } },
-    );
-    const errors: string[] = [];
-    f.agent.events.on('subagent_event', (e) => {
-      const detail = e.detail as
-        { type?: string; result?: { isError?: boolean; content: string } } | undefined;
-      if (detail?.type === 'tool_result' && detail.result?.isError)
-        errors.push(detail.result.content);
-    });
-    const address = f.agent.agents.spawn({ task: '只读', allowedTools: ['read_file'] });
-    await f.agent.agents.wait(address.agentId);
-    await f.agent.agents.whenSettled();
-    expect(errors.some((error) => error.includes('outside child allowedTools'))).toBe(true);
-    expect(f.agent.agents.status()).toHaveLength(1);
-    await expect(readFile(join(f.cwd, 'unexpected.txt'))).rejects.toThrow();
-  });
-  it('受限child的本地计划控制仍遵守显式deny', async () => {
-    const f = await fixture([call('plan_status', {}), textResponse('停止')], {
-      config: {
-        permissionMode: 'auto',
-        capabilities: { reviewer: 'model' },
-        permissions: { allow: [], ask: [], deny: ['plan_status'] },
-      },
-    });
-    const address = f.agent.agents.spawn({ task: '只读', allowedTools: ['read_file'] });
-    const result = await f.agent.agents.wait(address.agentId);
-    await f.agent.agents.whenSettled();
-    expect(result.run.reason).toBe('permission_denied');
-    expect(result.run.status).toBe('failed');
-  });
-  it('受限 child 可以更新自己的计划，综合已有依据后结算，不暴露额外执行能力', async () => {
+      );
+      await writeFile(join(f.cwd, 'README.md'), '只核对一项已有观察');
+      const address = f.agent.agents.spawn(
+        { task: '核对README并返回结论', readOnly: true, allowedTools: ['read_file'] },
+        provided
+          ? {
+              sessionId: f.agent.session.id,
+              agentId: 'root',
+              runId: 'parent',
+              source: 'user',
+              userRequest: '浏览一下当前项目，看看优化点',
+            }
+          : undefined,
+      );
+      expect((await f.agent.agents.wait(address.agentId)).run.status).toBe('completed');
+      await f.agent.agents.whenSettled();
+      const followup = f.agent.agents.send(address.agentId, '仅补充一项观察');
+      expect(
+        (await f.agent.agents.wait(address.agentId, { runId: followup.runId })).run.status,
+      ).toBe('completed');
+      await f.agent.agents.whenSettled();
+      expect(f.planner.requests).toHaveLength(0);
+      expect(f.fake.requests).toHaveLength(3);
+      expect(f.agent.agents.plan(address.agentId).snapshot).toBeUndefined();
+      for (const req of f.fake.requests)
+        expect(req.tools.map((t) => t.name)).toEqual(['read_file']);
+    },
+  );
+  it('恢复后child显式续跑仍无独立planner，强制标记不能重新启动规划器', async () => {
     const f = await fixture(
       [
         call('read_file', { path: 'README.md' }),
-        (req) => update(req, 0, 'completed', 'README 已读取'),
-        (req) => update(req, 1, 'running'),
-        (req) => {
-          const p = from(req);
-          return call('plan_update', {
-            revision: p.revision,
-            stepId: p.steps[1].id,
-            status: 'completed',
-            evidence: '基于项目说明，建议补充终态可观测性',
-            evidenceStepIds: [p.steps[0].id],
-          });
-        },
-        textResponse('建议补充终态可观测性'),
+        textResponse('first'),
+        call('read_file', { path: 'README.md' }),
+        textResponse('followup'),
       ],
       {
+        save: true,
         planning: [
-          textResponse(
-            JSON.stringify({
-              goal: '检查已委派的循环范围',
-              steps: ['读取', '综合建议'],
-              readOnly: true,
-            }),
-          ),
+          () => {
+            throw new Error('不得请求child规划器');
+          },
         ],
         config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
       },
     );
-    await writeFile(join(f.cwd, 'README.md'), '项目循环需要可观测性');
-    let human = 0;
-    f.agent.events.on('permission_request', (e) => {
-      human++;
-      e.resolve({ allow: false });
+    await writeFile(join(f.cwd, 'README.md'), 'resume evidence');
+    const child = f.agent.agents.spawn({ task: '读取一处', readOnly: true });
+    f.agent.agents.plan(child.agentId).configure('auto');
+    f.agent.agents.plan(child.agentId).force = true;
+    await f.agent.agents.wait(child.agentId);
+    await f.agent.agents.whenSettled();
+    await f.agent.session.save();
+    await f.agent.session.resume(f.agent.session.id);
+    const next = f.agent.agents.send(child.agentId, '同范围再核对');
+    expect((await f.agent.agents.wait(child.agentId, { runId: next.runId })).run.status).toBe(
+      'completed',
+    );
+    await f.agent.agents.whenSettled();
+    expect(f.planner.requests).toHaveLength(0);
+    expect(f.fake.requests).toHaveLength(4);
+    expect(f.agent.agents.plan(child.agentId).snapshot).toBeUndefined();
+    expect(
+      f.fake.requests.every((r) =>
+        r.tools.every((t) => !t.name.startsWith('agent_') && !t.name.startsWith('plan_')),
+      ),
+    ).toBe(true);
+  });
+  it.each(['plan_update', 'plan_status', 'agent_spawn', 'agent_send'])(
+    'child不能伪造调用父级控制工具 %s，即使白名单显式允许',
+    async (name) => {
+      const input =
+        name === 'plan_update'
+          ? { revision: 0, goal: '重复父任务', steps: [{ title: '重新规划' }] }
+          : name === 'agent_spawn'
+            ? { task: '孙任务' }
+            : name === 'agent_send'
+              ? { agentId: 'sibling', message: '转委派' }
+              : {};
+      const f = await fixture([call(name, input), textResponse('停止')], {
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+      });
+      const errors: string[] = [];
+      f.agent.events.on('subagent_event', (e) => {
+        const d = e.detail as
+          { type?: string; result?: { isError?: boolean; content: string } } | undefined;
+        if (d?.type === 'tool_result' && d.result?.isError) errors.push(d.result.content);
+      });
+      const address = f.agent.agents.spawn({
+        task: '只执行范围内工作',
+        allowedTools: [name, 'read_file'],
+      });
+      await f.agent.agents.wait(address.agentId);
+      await f.agent.agents.whenSettled();
+      expect(errors.some((e) => e.includes('outside child allowedTools'))).toBe(true);
+      expect(f.agent.agents.status()).toHaveLength(1);
+      expect(f.agent.agents.plan(address.agentId).snapshot).toBeUndefined();
+      expect(f.planner.requests).toHaveLength(0);
+      expect(f.fake.requests.every((r) => r.tools.every((t) => t.name === 'read_file'))).toBe(true);
+    },
+  );
+  it('child直接执行仍遵守显式deny，不能通过省略规划扩大授权', async () => {
+    const f = await fixture([call('read_file', { path: 'README.md' }), textResponse('停止')], {
+      config: {
+        permissionMode: 'auto',
+        capabilities: { reviewer: 'model' },
+        permissions: { allow: [], ask: [], deny: ['read_file'] },
+      },
     });
-    const address = f.agent.agents.spawn({
-      task: '只检查循环，返回优化建议',
-      readOnly: true,
-      allowedTools: ['read_file'],
-    });
+    await writeFile(join(f.cwd, 'README.md'), '不得读取');
+    const address = f.agent.agents.spawn({ task: '读取', allowedTools: ['read_file'] });
     const result = await f.agent.agents.wait(address.agentId);
     await f.agent.agents.whenSettled();
-    expect(result.run.status).toBe('completed');
-    expect(result.run.output).toBe('建议补充终态可观测性');
-    expect(f.agent.agents.hasPendingActivity).toBe(false);
-    expect(human).toBe(0);
-    expect(f.fake.requests).toHaveLength(5);
-    for (const request of f.fake.requests) {
-      expect(request.tools.map((t) => t.name).sort()).toEqual([
-        'plan_status',
-        'plan_update',
-        'read_file',
-      ]);
-      expect(request.system).toContain('只处理本次分配的范围，按授权完成任务');
-    }
+    expect(result.run.reason).toBe('permission_denied');
+    expect(result.run.status).toBe('failed');
+    expect(f.planner.requests).toHaveLength(0);
+  });
+  it('child无本地计划，完成与下一步准确反映在父计划', async () => {
+    const f = await fixture(
+      [
+        call('read_file', { path: 'README.md' }),
+        textResponse('已核对README，建议补充生命周期观测'),
+      ],
+      { config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } } },
+    );
+    await writeFile(join(f.cwd, 'README.md'), '项目说明');
+    const p = f.agent.loop.plan;
+    p.create('核对并汇总', ['有限检查', '父任务汇总'], 'auto', true);
+    const [work, summary] = p.snapshot!.steps;
+    const address = f.agent.agents.spawn({
+      task: '只读README',
+      readOnly: true,
+      allowedTools: ['read_file'],
+      planStepId: work.id,
+    });
+    expect(p.snapshot!.steps[0].status).toBe('running');
+    expect(p.snapshot!.steps[1].status).toBe('pending');
+    expect((await f.agent.agents.wait(address.agentId)).run.status).toBe('completed');
+    await f.agent.agents.whenSettled();
+    expect(p.snapshot!.steps[0].children[0].status).toBe('completed');
+    expect(p.snapshot!.steps[1].status).toBe('pending');
+    p.update(p.snapshot!.revision, {
+      stepId: work.id,
+      status: 'completed',
+      evidence: '已核对child实际读取结果',
+    });
+    p.update(p.snapshot!.revision, { stepId: summary.id, status: 'running' });
+    expect(p.snapshot!.activeStepId).toBe(summary.id);
+    p.update(p.snapshot!.revision, {
+      stepId: summary.id,
+      status: 'completed',
+      evidence: '依据已读项目说明完成汇总',
+      evidenceStepIds: [work.id],
+    });
+    expect(p.snapshot!.phase).toBe('completed');
+    expect(f.agent.agents.plan(address.agentId).snapshot).toBeUndefined();
+    expect(f.planner.requests).toHaveLength(0);
   });
   it('综合依据只接受当前只读计划中之前真正完成的步骤，不能绕过失败child', () => {
     const p = new PlanController(new EventBus());
@@ -1008,31 +1059,29 @@ describe('独立复审回归与设置竞态', () => {
     expect(plan.snapshot!.steps[0].status).toBe('cancelled');
     expect(plan.snapshot!.phase).toBe('cancelled');
   });
-  it('only→execute→spawn 继承父有效执行模式；中断的局部计划可通过显式 send 继续', async () => {
+  it('only禁止委派；明确execute后child直接实施，后续send仍无planner', async () => {
     const f = await fixture([
-      (req) => update(req, 0, 'running'),
       call('write_file', { path: 'child-real.txt', content: 'child' }),
-      (req) => update(req, 0, 'completed', '写入 child-real.txt 成功'),
       textResponse('done'),
+      textResponse('followup done'),
     ]);
     f.agent.permission.addSessionRule('allow', 'write_file(="child-real.txt")');
     await f.agent.dispatchCommand('/plan only');
     f.agent.loop.plan.create('目标', ['委派'], 'only');
+    expect(() => f.agent.agents.spawn({ task: 'A' })).toThrow('plan_read_only');
     f.agent.loop.plan.execute();
     const id = f.agent.loop.plan.snapshot!.steps[0].id;
     const a = f.agent.agents.spawn({ task: 'A', planStepId: id });
-    const child = f.agent.agents.plan(a.agentId);
-    expect(child.mode).toBe('auto');
-    child.create('局部目标', ['写文件'], 'auto');
-    const result = await f.agent.agents.wait(a.agentId);
-    expect(result.run.status).toBe('completed');
-    expect(await readFile(join(f.cwd, 'child-real.txt'), 'utf8')).toBe('child');
+    expect(f.agent.agents.plan(a.agentId).mode).toBe('off');
+    expect((await f.agent.agents.wait(a.agentId)).run.status).toBe('completed');
     await f.agent.agents.whenSettled();
-    child.create('后续', ['再次写文件'], 'auto');
-    child.stop('interrupted', '中断');
-    const follow = f.agent.agents.send(a.agentId, '继续');
-    expect(child.snapshot?.phase).toBe('executing');
-    await f.agent.agents.wait(a.agentId, { runId: follow.runId });
+    expect(await readFile(join(f.cwd, 'child-real.txt'), 'utf8')).toBe('child');
+    const follow = f.agent.agents.send(a.agentId, '补充说明');
+    expect((await f.agent.agents.wait(a.agentId, { runId: follow.runId })).run.status).toBe(
+      'completed',
+    );
+    expect(f.agent.agents.plan(a.agentId).snapshot).toBeUndefined();
+    expect(f.planner.requests).toHaveLength(0);
   });
   it('并行设置草稿通过 CAS 防覆盖，未知配置保留，失效草稿不改运行模式', async () => {
     const f = await fixture();
@@ -1492,16 +1541,15 @@ it('无根计划的child拒绝同时锁定本地与全树，恢复不松绑，�
   const f = await fixture(
     [
       call('write_file', { path: 'retry.txt', content: 'no' }),
-      (req) => update(req, 0, 'running'),
+      call('plan_update', { revision: 0, goal: '伪造新计划', steps: [{ title: '绕过拒绝' }] }),
       call('write_file', { path: 'retry.txt', content: 'no' }),
       call('agent_spawn', { task: '换个child写同文件' }),
       textResponse('保持拒绝，等待用户'),
       (req) => {
-        if (from(req).goal !== '子任务') return textResponse('可显式继续子任务');
+        if (!req.system.includes('你正在执行父任务已分配的一个子任务'))
+          return textResponse('可显式继续子任务');
         const stage = resumedStage++;
-        if (stage === 0) return update(req, 0, 'running');
-        if (stage === 1) return call('write_file', { path: 'retry.txt', content: 'approved' });
-        if (stage === 2) return update(req, 0, 'completed', '用户继续后明确批准，已写入approved');
+        if (stage === 0) return call('write_file', { path: 'retry.txt', content: 'approved' });
         return textResponse('已完成');
       },
     ],
@@ -1514,11 +1562,6 @@ it('无根计划的child拒绝同时锁定本地与全树，恢复不松绑，�
   f.agent.events.on('permission_request', approvals);
   const child = f.agent.agents.spawn({ task: '执行写入', name: '独立child' });
   const childPlan = f.agent.agents.plan(child.agentId);
-  childPlan.create('子任务', ['写入文件'], 'auto');
-  childPlan.update(childPlan.snapshot!.revision, {
-    stepId: childPlan.snapshot!.steps[0].id,
-    status: 'running',
-  });
   await f.agent.agents.wait(child.agentId);
   await f.agent.agents.whenSettled();
   expect(approvals).toHaveBeenCalledTimes(1);

@@ -16,9 +16,10 @@ export default {manifest:{id:'test.browse-pty',version:'1.0.0',apiVersion:1},set
 ctx.provide.provider('offline-browse',{name:'offline-browse',capabilities:{thinking:false,streaming:true},async *stream(req){
  const child=req.messages.find(m=>m.role==='user'&&typeof m.content==='string')?.content!=='浏览一下当前项目，看看优化点';
  const actor=child?'child':'root';
- if(req.system.startsWith('[agentlab planning:auto]')){log({kind:'planner',actor});yield* text(JSON.stringify({goal:'核对项目并给优化建议',steps:child?['读取子任务实现','综合建议']:['浏览核心入口','核对子任务实现','综合建议'],readOnly:true}));return;}
+ if(req.system.startsWith('[agentlab planning:auto]')){if(child)throw Error('child不得调用planner');log({kind:'planner',actor});yield* text(JSON.stringify({goal:'核对项目并给优化建议',steps:child?['读取子任务实现','综合建议']:['浏览核心入口','核对子任务实现','综合建议'],readOnly:true}));return;}
  if(!req.tools.length){log({kind:'judge'});throw Error('项目读取不应调用judge');}
  log({kind:'request',actor});
+ if(child){if(++turns.child===1){yield* call('read_file',{path:'src/runtime/subagents.ts'});return;}if(!JSON.stringify(req.messages).includes('class AgentSupervisor'))throw Error('缺少实际child源码');yield* text('子任务完成：建议暴露任务结算状态');return;}
  const plan=JSON.parse(req.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\\n')[0]);
  const n=++turns[actor];
  const update=(i,status,extra={})=>call('plan_update',{revision:plan.revision,stepId:plan.steps[i].id,status,...extra});
@@ -26,11 +27,6 @@ ctx.provide.provider('offline-browse',{name:'offline-browse',capabilities:{think
  if(n===2){
    const evidence=JSON.stringify(req.messages);if(!evidence.includes(child?'class AgentSupervisor':'class AgentLoop'))throw Error('缺少实际源码结果');
    yield* update(0,'completed',{evidence:child?'已读 AgentSupervisor 实现':'已读 AgentLoop 实现'});return;
- }
- if(child){
-   if(n===3){yield* update(1,'running');return;}
-   if(n===4){yield* update(1,'completed',{evidence:'根据生命周期实现，建议暴露任务结算状态',evidenceStepIds:[plan.steps[0].id]});return;}
-   yield* text('子任务完成：建议暴露任务结算状态');return;
  }
  if(n===3){yield* call('agent_spawn',{task:'只核对任务结算实现并返回建议',planStepId:plan.steps[1].id,readOnly:true,allowedTools:['read_file']});return;}
  if(n===4){yield* call('agent_wait',{agentId:plan.steps[1].children[0].agentId});return;}
@@ -100,6 +96,7 @@ it.skipIf(process.platform !== 'linux')(
           .filter((r) => r.event?.type === 'plan_changed')
           .at(-1)?.event?.plan?.phase,
       ).toBe('completed');
+      expect(rows().filter((r) => r.kind === 'planner')).toHaveLength(1);
       const requests = rows().filter((r) => r.kind === 'request').length;
       await delay(300);
       terminal.send('/help');

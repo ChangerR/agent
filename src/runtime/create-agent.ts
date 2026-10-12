@@ -347,20 +347,19 @@ export async function createRuntime(
       createChild(record: SubagentRecord, limits) {
         const childEvents = new ChildEventBus(events);
         const available = (tool: ReturnType<ToolRegistry['list']>[number]) =>
-          !record.allowedTools ||
-          record.allowedTools.includes(tool.name) ||
-          preset.controlTools?.some(
+          (!record.allowedTools || record.allowedTools.includes(tool.name)) &&
+          !preset.controlTools?.some(
             (control) =>
-              control.availableInRestrictedChild &&
+              control.rootOnly &&
               control.ownerPlugin === tool.ownerPlugin &&
               control.name === tool.name,
-          ) === true;
+          );
         const childLoop = new AgentLoop({
           ...loopOptions,
           isToolAvailable: available,
           systemPrompt:
             loopOptions.systemPrompt +
-            '\n你正在执行父任务已分配的一个子任务。只处理本次分配的范围，按授权完成任务并返回有证据的结果，不重新开展全仓库审查或重复父任务的委派流程。根据本地可用工具安排步骤；简单子任务无需额外计划，完成后返回父任务。',
+            '\n你正在执行父任务已分配的一个子任务。只处理本次分配的范围，按授权完成任务并返回有证据的结果，父任务负责结构化计划与汇总；直接执行，不调用规划器，不创建本地计划，不委派或转派其他 agent。保留真实读取、实施和验证，完成后返回父任务。',
           events: childEvents,
           sessionId: () => record.sessionId,
           agentId: record.agentId,

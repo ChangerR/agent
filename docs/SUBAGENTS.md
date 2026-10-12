@@ -1,6 +1,6 @@
 # 子 agent：一个 loop，多份独立上下文
 
-根 runtime 的 AgentSupervisor 管理整棵任务树。默认 preset 的 `agentlab.subagents`
+根 runtime 的 AgentSupervisor 管理单层子任务。默认 preset 的 `agentlab.subagents`
 插件提供五个控制工具、`/agents`、`/agent-limit` 和设置入口。同步任务也是 spawn 后 wait，
 底层继续使用同一个 AgentLoop 实现和唯一 ToolExecutor。
 
@@ -16,11 +16,11 @@ agent.agents.cancel(followup.agentId, followup.runId);
 
 | 操作   | 工具         | 语义                                                           |
 | ------ | ------------ | -------------------------------------------------------------- |
-| spawn  | agent_spawn  | 立即返回稳定 agentId/runId；默认 fresh                         |
+| spawn  | agent_spawn  | 立即返回稳定 agentId/runId；默认 fresh；仅根任务可调用         |
 | send   | agent_send   | 运行时有限 FIFO，在安全边界处理；终态保留上下文、创建新 run    |
 | wait   | agent_wait   | 可指定 run；完成早于订阅不丢失；超时仅停止等待                 |
 | status | agent_status | 状态、活动、结果/错误、tokens；指定 agentId/runId 读取完整结果 |
-| cancel | agent_cancel | 幂等；取消当前 run 及后代；旧终态 run 不影响后续任务           |
+| cancel | agent_cancel | 幂等；取消当前 run；旧终态 run 不影响后续任务                  |
 
 send 落在已封口的完成边界时创建新 runId，并在实际结算后启动，不重入 loop。
 无空位的新任务明确失败，没有隐式队列、DAG 或第二条同步执行链。
@@ -45,9 +45,9 @@ child 借用；不递归 createAgent，不重读项目，也不关闭兄弟 MCP�
 真实用户授权，审批的 currentUserRequest 保持真实用户入口绑定。压缩、审查和历史渲染
 保留这些标签；子结果以数据消息进入父历史，不是系统指令。
 
-child 使用父当前有效 policy 与 readOnly/allowedTools 的交集，祖先限制传递到后代。
+child 使用父当前有效 policy 与 readOnly/allowedTools 的交集。
 只读要求完整分析且所有 effect 为 read；工具自报 risk:read 不足以放行或获得读租约。
-child 不能向权限更宽的兄弟补充任务。地址操作核对当前根会话和 child 所有权。
+child 不能 spawn 后代或 send 转派给任何其他任务；只有根任务可以委派。地址操作核对当前根会话和 child 所有权。
 父 deny/ask、一次性批准绑定、Bash AST 和 Windows 路径保护继续有效。
 child 人工审批只批准当前 run 的本次调用，不记住或复制到兄弟/下一 run。
 
@@ -64,7 +64,7 @@ child 人工审批只批准当前 run 的本次调用，不记住或复制到兄
 | pluginConfig 字段   |  默认值 | 含义                                                         |
 | ------------------- | ------: | ------------------------------------------------------------ |
 | maxRunning          |       2 | 全树正在运行或结算的 child，根不计入                         |
-| maxDepth            |       1 | 根深度 0，默认 child 不能再 spawn                            |
+| maxDepth            |       1 | 固定为 1；child 不能再 spawn，配置不能放宽                   |
 | maxTurns            |      16 | 每个 run 回合上限，同时受根 maxTurns 限制                    |
 | timeoutMs           |  300000 | 每个 run 五分钟时限                                          |
 | maxInbox            |      16 | 每个 child 的有限显式输入                                    |
@@ -72,8 +72,11 @@ child 人工审批只批准当前 run 的本次调用，不记住或复制到兄
 | previewChars        |    8192 | 回传父上下文与工具列表的预览                                 |
 | maxAgents / maxRuns | 32 / 32 | 每会话 child 数 / 每 child 历史 run 数                       |
 
-普通只读仓库审查在共享约定读取完成后，使用两个互不依赖的 child 并行审查，
-先分别 spawn，再 wait 和汇总；有依赖的工作先等待前置结果。简单任务不强制创建 child。
+普通项目浏览由父任务抽查并总结，不强制创建 child。仅有独立且有收益的检查方向时按需委派，
+默认最多两个 child 同时运行；父任务负责计划步骤、等待与汇总。child 直接执行分配范围并回传结果，
+不请求独立规划器、不建立本地结构化计划，首次执行、follow-up 与恢复后的显式 send 均如此。
+规划和任务控制工具不向 child 暴露，执行门也拒绝伪造调用；宿主 Supervisor 另检查委派来源，
+即使工具白名单或深度配置试图放宽，也不能创建孙任务或转派。取消、进度、用量和终态继续记录。
 计划的只读范围自动与 child 的 `readOnly` 取交集，不能向更宽权限的已有 child 追加任务。
 拒绝会保留具体来源并阻止同计划自动重试或换 child 绕过。以上仍走原有 Supervisor 和执行门，
 不增加任务队列或另一套调度框架。

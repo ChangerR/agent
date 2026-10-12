@@ -187,7 +187,9 @@ export class AgentLoop {
       opts.requestPermission ??
       new RequestPermissionGuard();
     this.plan = new PlanController(opts.events, opts.agentId);
-    this.plan.configure(opts.planningMode?.() ?? 'off');
+    this.plan.configure(
+      opts.agentId && opts.agentId !== 'root' ? 'off' : (opts.planningMode?.() ?? 'off'),
+    );
     this.executor =
       opts.toolExecutor ??
       new ToolExecutor({
@@ -525,12 +527,12 @@ export class AgentLoop {
       await Promise.all([...this.startTasks].map((task) => task()));
       if (this.plan.snapshot?.phase === 'completed') this.plan.clear();
       await this.maybeCompact(signal);
-      const strategy = this.opts.planning?.();
+      // child 已由父任务划定范围，不再次请求独立规划器。
+      const strategy = origin.agentId === 'root' ? this.opts.planning?.() : undefined;
       if (strategy && !this.plan.snapshot && this.plan.mode !== 'off') {
         const generation = this.plan.generation;
         this.plan.preparing = true;
         const proposal = await strategy.prepare({
-          delegated: origin.agentId !== 'root' && origin.source === 'delegation',
           input: userInput,
           messages: structuredClone(this.messages),
           systemPrompt: this.opts.systemPrompt,

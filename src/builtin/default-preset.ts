@@ -31,13 +31,14 @@ export function defaultPreset(input: PresetContext): Preset {
       ...SUBAGENT_TOOLS.map((name) => ({
         ownerPlugin: SUBAGENT_PLUGIN,
         name,
+        rootOnly: true,
         allowedAfterDenial: !['agent_spawn', 'agent_send'].includes(name),
       })),
       ...PLAN_TOOLS.map((name) => ({
         ownerPlugin: PLANNING_PLUGIN,
         name,
         allowedAfterDenial: true,
-        availableInRestrictedChild: true,
+        rootOnly: true,
       })),
     ],
     selections: {

@@ -78,8 +78,6 @@ export const PlanSchema = z
   });
 export type Plan = z.infer<typeof PlanSchema>;
 export interface PlannerInput {
-  /** 已由父计划划定范围的子任务，不重复建立整份项目计划。 */
-  delegated?: boolean;
   input: string;
   /** 与执行阶段相同的有效上下文，包含本轮输入和此前对话。 */
   messages: readonly Message[];
