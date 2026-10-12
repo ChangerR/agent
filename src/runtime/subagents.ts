@@ -171,6 +171,7 @@ export class AgentSupervisor {
   spawn(input: SpawnAgentInput, provided?: InvocationOrigin): AgentAddress {
     const origin = this.origin(provided);
     this.check(origin);
+    if (provided) this.opts.rootLoop.assertRequestPermission(provided);
     if (this.opts.rootLoop.plan.denialReason)
       throw new Error(
         `plan_denied: explicit user continuation required: ${this.opts.rootLoop.plan.denialReason}`,
@@ -230,6 +231,13 @@ export class AgentSupervisor {
         text: input.task,
         source: provided ? 'delegation' : 'user',
         userRequest: provided ? origin.userRequest : input.task,
+        permissionScope: provided
+          ? (provided.permissionScope ?? `${provided.sessionId}:${provided.runId}`)
+          : undefined,
+        rootPermissionScope:
+          provided?.rootPermissionScope ??
+          provided?.permissionScope ??
+          this.opts.rootLoop.requestPermissionScope,
       },
       limits: { ...this.limits, maxTurns, timeoutMs },
     });
@@ -259,6 +267,7 @@ export class AgentSupervisor {
     text: string,
     provided?: InvocationOrigin,
   ): AgentAddress & { queued: boolean } {
+    if (provided) this.opts.rootLoop.assertRequestPermission(provided);
     if (this.opts.rootLoop.plan.denialReason)
       throw new Error(
         `plan_denied: explicit user continuation required: ${this.opts.rootLoop.plan.denialReason}`,
@@ -284,6 +293,13 @@ export class AgentSupervisor {
       text,
       source: provided ? 'delegation' : 'user',
       userRequest: provided ? provided.userRequest : text,
+      permissionScope: provided
+        ? (provided.permissionScope ?? `${provided.sessionId}:${provided.runId}`)
+        : undefined,
+      rootPermissionScope:
+        provided?.rootPermissionScope ??
+        provided?.permissionScope ??
+        this.opts.rootLoop.requestPermissionScope,
     };
     if (node.active?.status === 'cancelling') throw new Error('Agent cancellation has not settled');
     if (
@@ -762,7 +778,11 @@ export class AgentSupervisor {
     } else if (event.type === 'permission_request') {
       run.activity = '等待审批';
       this.emit(node, run, 'status');
-    } else if (event.type === 'permission_decision' && event.decision.kind === 'deny') {
+    } else if (
+      event.type === 'permission_decision' &&
+      event.decision.kind === 'deny' &&
+      event.denialScope !== 'invocation'
+    ) {
       run.reason = 'permission_denied';
       run.error = `${event.decision.source === 'user' ? 'User denied this action' : 'Permission denied'}: child ${node.record.name}; ${event.decision.reason}`;
       this.emit(node, run, 'status');

@@ -514,8 +514,10 @@ describe('原生 Windows 写入端到端（ToolExecutor）', () => {
   it('auto 下完整字面 Shell 先交给 reviewer；没有 reviewer 才回到人工', async () => {
     const { run, requests } = setup('auto', undefined, () => ({ allow: false }));
     await run('bash', { command: 'echo one' });
-    await run('bash', { command: 'echo one' });
-    expect(requests).toHaveLength(2);
+    expect((await run('bash', { command: 'echo one' })).content).toContain(
+      'request_permission_denied',
+    );
+    expect(requests).toHaveLength(1);
     expect(requests.every((request) => request.reasonCode === 'reviewer_unavailable')).toBe(true);
     expect(requests.every((request) => request.policyReasonCode === 'review_uncertain')).toBe(true);
     expect(requests.every((request) => request.analysisReasonCode === 'powershell_bounded')).toBe(

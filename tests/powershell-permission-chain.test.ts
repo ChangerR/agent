@@ -322,7 +322,11 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
   it.each(['echo PS_REMEMBERED', 'sc src/ordinary.txt remembered'])(
     '%s 完整调用可以记住，下一次相同命令不再询问，其他命令仍需审批',
     async (command) => {
-      const h = setup({ mode: 'ask', respond: () => ({ allow: true, remember: 'session' }) });
+      const h = setup({
+        mode: 'ask',
+        script: response('ask'),
+        respond: () => ({ allow: true, remember: 'session' }),
+      });
       expect((await h.run(command)).isError).toBeFalsy();
       expect(h.requests).toHaveLength(1);
       expect(canRememberPermission(h.requests[0]!)).toBe(true);
@@ -331,7 +335,7 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
       expect((await h.analyze(command)).decision.reasonCode).toBe('exact_call_allow');
       await h.run('echo DIFFERENT_CALL');
       expect(h.requests).toHaveLength(2);
-      expect(h.provider.requests).toHaveLength(0);
+      expect(h.provider.requests).toHaveLength(2);
       expect(h.execute).toHaveBeenCalledTimes(3);
     },
   );
@@ -370,6 +374,7 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
   it('其他记住规则只改变 policyRevision 时，本次批准复用且不跨调用复用', async () => {
     const h = setup({
       mode: 'ask',
+      script: response('ask'),
       respond: () => {
         h.policy.controller!.addSessionRule('allow', 'bash(="echo OTHER_CALL")');
         return { allow: true };
@@ -380,7 +385,7 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
     expect(h.execute).toHaveBeenCalledOnce();
     expect((await h.run('sc src/ordinary.txt ok')).isError).toBeFalsy();
     expect(h.requests).toHaveLength(2);
-    expect(h.provider.requests).toHaveLength(0);
+    expect(h.provider.requests).toHaveLength(2);
   });
   it('人工批准时目标换成外部链接，审批复用不能掩盖分析变化', async () => {
     const path = join(cwd, 'src/human-rebind.txt');
@@ -388,6 +393,7 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
     let answers = 0;
     const h = setup({
       mode: 'ask',
+      script: response('ask'),
       respond: async () => {
         if (answers++ > 0) return { allow: false };
         await unlink(path);
@@ -397,10 +403,10 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
     });
     expect((await h.run('sc src/human-rebind.txt x')).isError).toBe(true);
     expect(h.requests.map((request) => request.reasonCode)).toEqual([
-      'ask_mode',
+      'model_ask',
       'external_target',
     ]);
-    expect(h.provider.requests).toHaveLength(0);
+    expect(h.provider.requests).toHaveLength(1);
     expect(h.execute).not.toHaveBeenCalled();
     expect(await readFile(join(outside, 'sentinel.txt'), 'utf8')).toBe('outside-sentinel');
   });
@@ -454,7 +460,7 @@ describe('完整分析可以真正使用内置 ModelReviewer，协议结果仍�
     ['invalid_response', textResponse('{"decision":"allow"}')],
     [
       'incomplete_response',
-      (response('allow') as ReturnType<typeof textResponse>).map((event) =>
+      textResponse('{"decision":"allow",').map((event) =>
         event.type === 'message_stop' ? { ...event, stopReason: 'max_tokens' as const } : event,
       ),
     ],
@@ -474,12 +480,12 @@ describe('完整分析可以真正使用内置 ModelReviewer，协议结果仍�
       expect(canRememberPermission(h.requests[0]!)).toBe(true);
     },
   );
-  it('缺少 reviewer 同样回退，ask 模式直接询问', async () => {
+  it('缺少 reviewer 时 ask 与 auto 都回退人工', async () => {
     for (const mode of ['ask', 'auto'] as const) {
       const h = setup({ mode, unavailable: true });
       await h.run('echo ok');
       expect(h.requests[0]).toMatchObject({
-        reasonCode: mode === 'ask' ? 'ask_mode' : 'reviewer_unavailable',
+        reasonCode: 'reviewer_unavailable',
         summary: 'PowerShell: echo ok',
       });
       expect(h.execute).not.toHaveBeenCalled();

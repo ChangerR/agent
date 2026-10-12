@@ -646,7 +646,7 @@ describe('权限与标题', () => {
       ask: ['write_file'],
       deny: ['bash'],
     });
-    expect(await decide(readFileTool, { path: 'a.ts' })).toMatchObject({ kind: 'ask' });
+    expect(await decide(readFileTool, { path: 'a.ts' })).toMatchObject({ kind: 'review' });
     expect(await decide(bashTool, { command: 'ls' })).toMatchObject({
       kind: 'deny',
       source: 'session',

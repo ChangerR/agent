@@ -28,8 +28,16 @@ export function defaultPreset(input: PresetContext): Preset {
   const { cwd, config, services } = input;
   return {
     controlTools: [
-      ...SUBAGENT_TOOLS.map((name) => ({ ownerPlugin: SUBAGENT_PLUGIN, name })),
-      ...PLAN_TOOLS.map((name) => ({ ownerPlugin: PLANNING_PLUGIN, name })),
+      ...SUBAGENT_TOOLS.map((name) => ({
+        ownerPlugin: SUBAGENT_PLUGIN,
+        name,
+        allowedAfterDenial: !['agent_spawn', 'agent_send'].includes(name),
+      })),
+      ...PLAN_TOOLS.map((name) => ({
+        ownerPlugin: PLANNING_PLUGIN,
+        name,
+        allowedAfterDenial: true,
+      })),
     ],
     selections: {
       policy: 'deterministic',

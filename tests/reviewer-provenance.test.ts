@@ -37,7 +37,12 @@ describe('reviewer provenance', () => {
     const provider = new FakeProvider([
       (request) => {
         const data = JSON.parse(request.messages[0].content as string);
-        expect(data.context.userRequest).toBe('请只查看文件');
+        expect(data.currentUserRequest).toEqual({
+          source: 'runtime_user_request',
+          text: '请只查看文件',
+        });
+        expect(data.context.userRequestRef).toBe('currentUserRequest.text');
+        expect(data.context).not.toHaveProperty('userRequest');
         expect(
           data.context.conversation.filter((entry: { source: string }) => entry.source === 'user'),
         ).toEqual([{ source: 'user', text: '请只查看文件' }]);

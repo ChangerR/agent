@@ -78,7 +78,8 @@ function reviewResponse(
 function payload(request: ChatRequest) {
   return JSON.parse(request.messages[0].content as string) as {
     operation: { input: Record<string, unknown> };
-    context: ReturnType<ReviewHistory['build']>;
+    currentUserRequest: { source: string; text: string };
+    context: Omit<ReturnType<ReviewHistory['build']>, 'userRequest'> & { userRequestRef: string };
   };
 }
 
@@ -103,8 +104,11 @@ describe('LLM 审批员', () => {
     const judgeProvider = new FakeProvider([
       (req) => {
         // 假审批员只验证任务上下文的传递，不调用真实模型或 GitHub。
-        const context = payload(req).context;
-        return reviewResponse(context.userRequest === '可以帮我新建一条pr吗' ? 'allow' : 'ask');
+        const data = payload(req);
+        expect(data.context.userRequestRef).toBe('currentUserRequest.text');
+        return reviewResponse(
+          data.currentUserRequest.text === '可以帮我新建一条pr吗' ? 'allow' : 'ask',
+        );
       },
     ]);
     const { loop, tools, events } = makeLoop({
@@ -254,7 +258,8 @@ describe('LLM 审批员', () => {
     await loop.run('修复类型错误，禁止发布');
     const data = payload(judgeProvider.requests[0]);
     expect(data.context.cwd).toBe(tmp);
-    expect(data.context.userRequest).toBe('修复类型错误，禁止发布');
+    expect(data.currentUserRequest.text).toBe('修复类型错误，禁止发布');
+    expect(data.context.userRequestRef).toBe('currentUserRequest.text');
     expect(data.context.conversation).toContainEqual({
       source: 'assistant',
       text: '根据诊断修复项目文件',
@@ -448,8 +453,10 @@ describe('LLM 审批员', () => {
     context.setThreshold(1);
     await loop.run('重复测试，仍然禁止发布');
     expect(compacted).toBe(true);
-    const review = payload(judgeProvider.requests[2]).context;
-    expect(review.userRequest).toBe('重复测试，仍然禁止发布');
+    const data = payload(judgeProvider.requests[2]);
+    const review = data.context;
+    expect(data.currentUserRequest.text).toBe('重复测试，仍然禁止发布');
+    expect(review.userRequestRef).toBe('currentUserRequest.text');
     expect(review.previousReviews[0]).toMatchObject({
       sameOperation: true,
       userRequest: '只运行本地测试',

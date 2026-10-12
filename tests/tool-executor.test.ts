@@ -20,6 +20,7 @@ import { writeFileTool } from '../src/tools/write.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../src/sdk/capabilities.js';
 import { emptyUsage } from '../src/core/protocol/types.js';
 import { ToolScheduler } from '../src/core/tool-scheduler.js';
+import { RequestPermissionGuard } from '../src/core/permission/request-scope.js';
 
 const folders: string[] = [];
 afterEach(async () => {
@@ -84,6 +85,164 @@ function fixture(options: Partial<ToolExecutorOptions> = {}) {
 }
 
 describe('ToolExecutor 唯一授权门', () => {
+  it.each(['allow', 'ask', 'review'] as const)(
+    '%s 不能借 invocation 范围绕过最终拒绝',
+    async (kind) => {
+      const approval = vi.fn(async () => ({ allow: false }));
+      const f = fixture({
+        policy: {
+          ...allow,
+          decide: () => ({
+            kind,
+            denialScope: 'invocation',
+            source: 'config',
+            reason: 'invalid scope',
+          }),
+        },
+        approvalResponder: approval,
+      });
+      expect((await f.run()).isError).toBe(true);
+      expect(approval).toHaveBeenCalledTimes(1);
+      expect(f.audits.some((audit) => audit.reasonCode === 'policy_error')).toBe(true);
+      expect((await f.run({ path: 'retry' }, 'retry')).content).toContain(
+        'request_permission_denied',
+      );
+      expect(f.execute).not.toHaveBeenCalled();
+    },
+  );
+  it('最终 policy deny 终止当前请求，finishRun/换工具不能清除，新请求重新走策略', async () => {
+    const policy: Policy = {
+      ...allow,
+      decide: (input) =>
+        input.input.path === 'deny'
+          ? { kind: 'deny', source: 'config', reason: 'explicit deny' }
+          : allow.decide(input, new AbortController().signal),
+    };
+    const f = fixture({ policy });
+    expect((await f.run({ path: 'deny' })).isError).toBe(true);
+    f.executor.finishRun(f.context.runId);
+    expect((await f.run({ path: 'other' }, 'other')).content).toContain(
+      'request_permission_denied',
+    );
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(
+      (
+        await f.executor.invokeTool(
+          'write',
+          { path: 'other' },
+          { ...f.context, runId: 'new-user-request' },
+        )
+      ).isError,
+    ).toBeFalsy();
+    expect(f.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('普通工具错误不锁住请求，允许修复后重试', async () => {
+    const f = fixture();
+    f.execute.mockResolvedValueOnce({ content: 'ENOENT', isError: true });
+    expect((await f.run()).isError).toBe(true);
+    expect((await f.run({ path: 'correct' }, 'retry')).isError).toBeFalsy();
+    expect(f.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('并发拒绝使迟到 allow+remember 失效，新请求成功也不复活旧批准', async () => {
+    const rules = createDeterministicPolicy({
+      cwd: process.cwd(),
+      mode: 'ask',
+      rules: { allow: [], ask: [], deny: [] },
+    });
+    const remember = vi.spyOn(rules.controller!, 'addSessionRule');
+    const pending: ((decision: UserDecision) => void)[] = [];
+    const f = fixture({
+      policy: { ...ask, controller: rules.controller },
+      approvalResponder: (request) =>
+        (request.input as { path: string }).path === 'fresh'
+          ? { allow: true }
+          : new Promise<UserDecision>((resolve) => pending.push(resolve)),
+    });
+    const first = f.run({ path: 'deny' }, 'deny');
+    const late = f.run({ path: 'late' }, 'late');
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    pending[0]({ allow: false });
+    expect((await first).isError).toBe(true);
+    expect(
+      (
+        await f.executor.invokeTool(
+          'write',
+          { path: 'fresh' },
+          { ...f.context, runId: 'fresh-user-direction' },
+        )
+      ).isError,
+    ).toBeFalsy();
+    pending[1]({ allow: true, remember: 'project' });
+    expect((await late).content).toContain('request_permission_denied');
+    expect(f.execute).toHaveBeenCalledTimes(1);
+    expect(remember).not.toHaveBeenCalled();
+  });
+
+  it.each(['allow', 'deny'] as const)(
+    '旧 reviewer 的迟到 %s 不执行，也不影响新用户请求',
+    async (answer) => {
+      let resolve!: (value: Awaited<ReturnType<Reviewer['review']>>) => void;
+      const reviewer: Reviewer = {
+        review: vi.fn<Reviewer['review']>(async (input) =>
+          input.input.path === 'late'
+            ? new Promise<Awaited<ReturnType<Reviewer['review']>>>((done) => {
+                resolve = done;
+              })
+            : { decision: 'allow', reason: 'new authorized request', reasonCode: 'test' },
+        ),
+      };
+      const f = fixture({
+        reviewer,
+        policy: {
+          ...review,
+          decide: (input) =>
+            input.input.path === 'deny'
+              ? { kind: 'deny', source: 'config', reason: 'explicit deny' }
+              : { kind: 'review', source: 'mode', reason: 'review' },
+        },
+      });
+      const late = f.run({ path: 'late' }, 'late');
+      await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+      expect((await f.run({ path: 'deny' }, 'deny')).isError).toBe(true);
+      resolve({ decision: answer, reason: 'late', reasonCode: 'test' });
+      expect((await late).content).toContain('request_permission_denied');
+      expect(
+        (
+          await f.executor.invokeTool(
+            'write',
+            { path: 'fresh' },
+            { ...f.context, runId: 'fresh-user-direction' },
+          )
+        ).isError,
+      ).toBeFalsy();
+      expect(f.execute).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('调度等待后的重验仍检查请求拒绝，不执行已排队调用', async () => {
+    const requestPermission = new RequestPermissionGuard();
+    const scheduler = new ToolScheduler();
+    const held = await scheduler.acquire('write', new AbortController().signal);
+    const f = fixture({ requestPermission, scheduler });
+    const queued = f.run();
+    await vi.waitFor(() => expect(f.audits.some((audit) => audit.phase === 'policy')).toBe(true));
+    requestPermission.deny(`${f.audits[0].sessionId}:${f.context.runId}`);
+    held.release();
+    expect((await queued).content).toContain('request_permission_denied');
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it('tool_call 同步观察者触发拒绝后仍不得执行', async () => {
+    const requestPermission = new RequestPermissionGuard();
+    const f = fixture({ requestPermission });
+    f.events.on('tool_call', () =>
+      requestPermission.deny(`${f.audits[0].sessionId}:${f.context.runId}`),
+    );
+    expect((await f.run()).content).toContain('request_permission_denied');
+    expect(f.execute).not.toHaveBeenCalled();
+  });
   it.each(['analyzer', 'policy', 'pre', 'revalidate', 'post'] as const)(
     '取消 %s 仅结束等待，实际能力和重验锁保留到原始 Promise 结算',
     async (phase) => {
@@ -244,10 +403,11 @@ describe('ToolExecutor 唯一授权门', () => {
       'Permission denied',
     );
     expect((await f.executor.invokeTool('write', { path: 'direct' }, f.context)).content).toContain(
-      'Permission denied',
+      'request_permission_denied',
     );
     expect(f.execute).not.toHaveBeenCalled();
-    expect(f.audits.filter((e) => e.phase === 'policy')).toHaveLength(3);
+    expect(f.audits.filter((e) => e.phase === 'policy')).toHaveLength(2);
+    expect(f.audits.filter((e) => e.reasonCode === 'request_permission_denied')).toHaveLength(1);
   });
 
   it.each(['unknown', 'invalid', 'error', 'timeout'] as const)(

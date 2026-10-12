@@ -364,9 +364,20 @@ export class PlanController {
       (operation.analysis?.completeness !== 'complete' ||
         !operation.analysis.effects.length ||
         operation.analysis.effects.some((effect) => effect.kind !== 'read'))
-    )
+    ) {
+      // 未执行的未知命令不是步骤执行失败；保留可用只读工具继续调查的运行步骤。
+      // 只撤销可信调用登记，不能通过伪造工具错误文本绕过实际失败或明确拒绝。
+      if (
+        operation.toolCallId &&
+        operation.analysis?.completeness !== 'complete' &&
+        !operation.analysis?.effects.some((effect) => !['read', 'unknown'].includes(effect.kind)) &&
+        this.current?.status === 'running'
+      ) {
+        this.calls.delete(operation.toolCallId);
+        return 'task_read_only: command not executed; only verified read effects are allowed. For an unverified shell shape, use dedicated read_file/glob/grep tools instead; do not retry that shape or restart the plan step.';
+      }
       return 'task_read_only: this task only authorizes verified read effects';
-    else if (p && !this.current)
+    } else if (p && !this.current)
       return 'plan_step_required: start a step with plan_update before execution';
   }
   waiting(reason: string) {

@@ -1,0 +1,298 @@
+{
+  "date": "2026-10-12",
+  "baseSha": "a451f10752beb3f51e50eac0776abb3287b43f28",
+  "model": "deepseek-flash",
+  "endpoint": "https://api.deepseek.com/",
+  "limit": 20,
+  "credentialValuesIncluded": false,
+  "ledgerCount": 20,
+  "providerStarts": 20,
+  "transportStarts": 20,
+  "httpResponses": 20,
+  "retries": 0,
+  "telemetry": [
+    {
+      "file": "session-2026-10-12T08-45-13-507Z-a5180f72-3475-474e-b64a-6993e00591f9.jsonl",
+      "requests": 8
+    },
+    {
+      "file": "session-2026-10-12T08-48-31-573Z-8efe5129-b39f-4834-bb7b-d86d677fe851.jsonl",
+      "requests": 3
+    },
+    {
+      "file": "session-2026-10-12T08-49-29-262Z-5969e1f5-b168-437b-8c78-1ad075e363d7.jsonl",
+      "requests": 6
+    },
+    {
+      "file": "session-2026-10-12T08-50-19-412Z-fed97f67-8135-4f53-a257-a160daf8d76d.jsonl",
+      "requests": 1
+    }
+  ],
+  "additionalBoundaryTelemetry": 2,
+  "requestBudgetBytes": 32768,
+  "temporaryReviewerMaxOutputTokens": 512,
+  "requests": [
+    {
+      "index": 1,
+      "scenario": "read",
+      "purpose": "planning",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:13.528Z",
+      "status": 200
+    },
+    {
+      "index": 2,
+      "scenario": "read",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:17.434Z",
+      "status": 200
+    },
+    {
+      "index": 3,
+      "scenario": "read",
+      "purpose": "reviewer",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:19.761Z",
+      "status": 200
+    },
+    {
+      "index": 4,
+      "scenario": "read",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:22.010Z",
+      "status": 200
+    },
+    {
+      "index": 5,
+      "scenario": "read",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:25.228Z",
+      "status": 200
+    },
+    {
+      "index": 6,
+      "scenario": "read",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:27.532Z",
+      "status": 200
+    },
+    {
+      "index": 7,
+      "scenario": "read",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:32.676Z",
+      "status": 200
+    },
+    {
+      "index": 8,
+      "scenario": "read",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:45:35.311Z",
+      "status": 200
+    },
+    {
+      "index": 9,
+      "scenario": "read_retry",
+      "purpose": "planning",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:48:31.596Z",
+      "status": 200
+    },
+    {
+      "index": 10,
+      "scenario": "read_retry",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:48:33.922Z",
+      "status": 200
+    },
+    {
+      "index": 11,
+      "scenario": "read_retry",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:48:36.287Z",
+      "status": 200
+    },
+    {
+      "index": 12,
+      "scenario": "write",
+      "purpose": "planning",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:49:29.286Z",
+      "status": 200
+    },
+    {
+      "index": 13,
+      "scenario": "write",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:49:30.769Z",
+      "status": 200
+    },
+    {
+      "index": 14,
+      "scenario": "write",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:49:31.997Z",
+      "status": 200
+    },
+    {
+      "index": 15,
+      "scenario": "write",
+      "purpose": "reviewer",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:49:33.554Z",
+      "status": 200
+    },
+    {
+      "index": 16,
+      "scenario": "write",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:49:36.065Z",
+      "status": 200
+    },
+    {
+      "index": 17,
+      "scenario": "write",
+      "purpose": "main_or_child",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:49:37.235Z",
+      "status": 200
+    },
+    {
+      "index": 18,
+      "scenario": "deny",
+      "purpose": "planning",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:50:19.459Z",
+      "status": 200
+    },
+    {
+      "index": 19,
+      "scenario": "boundaries",
+      "purpose": "reviewer",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:52:49.583Z",
+      "status": 200
+    },
+    {
+      "index": 20,
+      "scenario": "boundaries",
+      "purpose": "reviewer",
+      "model": "deepseek-flash",
+      "transportModel": "deepseek-flash",
+      "time": "2026-10-12T08:52:53.535Z",
+      "status": 200
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "read",
+      "reason": "max_turns",
+      "requests": 8,
+      "human": 2,
+      "summary": ""
+    },
+    {
+      "scenario": "read_retry",
+      "reason": "completed",
+      "requests": 3,
+      "human": 0,
+      "summary": "命令已执行完毕。\n\n结果：`src` 下共 220 个 `.ts` 文件，`wc -l` 汇总为 **220 行**（每个文件 1 行）。`ls -la` 显示项目根目录含 `.git/`、`README.md`(65B)、`agent.config.json`(235B) 和 `src/`。"
+    },
+    {
+      "scenario": "write",
+      "reason": "completed",
+      "requests": 6,
+      "human": 0,
+      "summary": "已完成。`src/module-0000.ts:1` 现为 `export const value0 = 42;`，读回确认无误。未改动其他文件。"
+    },
+    {
+      "scenario": "deny",
+      "reason": "error",
+      "requests": 1,
+      "human": 0,
+      "summary": ""
+    }
+  ],
+  "boundaryRequests": [
+    {
+      "model": "deepseek-flash",
+      "bytes": 30185
+    },
+    {
+      "model": "deepseek-flash",
+      "bytes": 6471
+    }
+  ],
+  "boundaryDecisions": [
+    {
+      "runId": "live-budget-recheck",
+      "decision": "ask",
+      "reasonCode": "incomplete_response"
+    },
+    {
+      "runId": "live-semantic-deny",
+      "decision": "deny",
+      "reasonCode": "explicit_user_prohibition"
+    }
+  ],
+  "fileVerification": {
+    "tsFiles": 220,
+    "changedTsFiles": ["src/module-0000.ts"],
+    "value0": "export const value0 = 42;\n",
+    "readmeUnchanged": true
+  },
+  "notLiveVerified": [
+    "readOnly child",
+    "session approval restore",
+    "main model stops after actual tool denial",
+    "DeepSeek inside PTY",
+    "unpublished UI/Plan commits"
+  ],
+  "boundaryUsage": [
+    {
+      "runId": "live-budget-recheck",
+      "inputTokens": 10082,
+      "outputTokens": 512,
+      "cacheReadTokens": 512,
+      "cacheWriteTokens": 0
+    },
+    {
+      "runId": "live-semantic-deny",
+      "inputTokens": 1148,
+      "outputTokens": 82,
+      "cacheReadTokens": 512,
+      "cacheWriteTokens": 0
+    }
+  ],
+  "temporaryMaxTurns": 6
+}

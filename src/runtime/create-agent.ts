@@ -27,6 +27,7 @@ import { AgentSupervisor, type SubagentLimits } from './subagents.js';
 import { ChildEventBus } from './child-events.js';
 import { ToolScheduler } from '../core/tool-scheduler.js';
 import type { SubagentRecord } from '../core/agents.js';
+import { RequestPermissionGuard } from '../core/permission/request-scope.js';
 export interface CreateAgentOptions {
   lifecycleTimeoutMs?: number;
   autoSaveSessions?: boolean;
@@ -117,7 +118,10 @@ export async function createRuntime(
         mode === 'only' &&
         (agent.loop.hasPendingActivity || supervisor?.hasPendingActivity)
       ) {
-        agent.loop.plan.stop('paused', '切换只规划：已中断执行');
+        // 已取消/拒绝/暂停的旧执行仍可能在结算；切模式不能覆盖用户明确终态。
+        const phase = agent.loop.plan.snapshot?.phase;
+        if (phase && ['planning', 'ready', 'executing'].includes(phase))
+          agent.loop.plan.stop('paused', '切换只规划：已中断执行');
         agent.loop.abort_current();
       }
       agent?.loop.plan.configure(mode);
@@ -249,6 +253,14 @@ export async function createRuntime(
         (control) => control.ownerPlugin === tool.ownerPlugin && control.name === tool.name,
       ) === true;
     const loopOptions: AgentLoopOptions = {
+      requestPermission: new RequestPermissionGuard(),
+      isDenialExemptTool: (tool) =>
+        preset.controlTools?.some(
+          (control) =>
+            control.ownerPlugin === tool.ownerPlugin &&
+            control.name === tool.name &&
+            control.allowedAfterDenial === true,
+        ) === true,
       planning: () => planning,
       planningMode: () => planningMode,
       provider: providers.get(config.provider),
@@ -345,16 +357,17 @@ export async function createRuntime(
           // 全树拒绝令兄弟已有审批绑定过期；普通根计划进度不打断 child。
           configRevision: () => `${configRevision()}:root-denial=${loop.plan.denialGeneration}`,
           context: new ContextManager({ compactThreshold: config.compactThreshold, compactor }),
-          onPermissionDenied: (reason) => {
+          onPermissionDenied: (reason, permissionScope) => {
             const step = loop.plan.snapshot?.steps.find((s) =>
               s.children.some((c) => c.agentId === record.agentId),
             );
             const separator = reason.indexOf(':');
             const category = separator < 0 ? reason : reason.slice(0, separator);
             const detail = separator < 0 ? '' : reason.slice(separator + 1).trim();
-            loop.plan.deny(
+            loop.denyDelegatedRequest(
               `${category}: child ${record.name}${step ? ` / ${step.title}` : ''}${detail ? `; ${detail}` : ''}`,
               `child ${record.name}`,
+              permissionScope,
             );
           },
           restrict: (operation) => {

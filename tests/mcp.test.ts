@@ -35,8 +35,8 @@ describe('MCP 桥接', () => {
     const check = (input: Record<string, unknown>) =>
       policy.decide({ tool, input, cwd: process.cwd() }, new AbortController().signal);
     expect((await check(first)).kind).toBe('deny');
-    expect((await check(second)).kind).toBe('ask');
-    expect((await check({ ...first, path: 'src/a123.ts' })).kind).toBe('ask');
+    expect((await check(second)).kind).toBe('review');
+    expect((await check({ ...first, path: 'src/a123.ts' })).kind).toBe('review');
   });
   it('工具调用传递轮次取消信号，已取消的调用不发往服务端', async () => {
     const controller = new AbortController();

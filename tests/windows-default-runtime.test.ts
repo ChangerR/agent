@@ -147,6 +147,23 @@ function exactRule(path: string) {
 }
 
 describe('默认 runtime：注入 Windows 策略分支，使用真实宿主文件系统', () => {
+  it('Bash 专用工具路由拒绝不锁定 Plan，后续专用读取仍正常审查', async () => {
+    const h = await runtime();
+    await writeFile(join(cwd, 'note.txt'), 'ordinary content');
+    const result = await h.agent.invokeTool('bash', { command: 'cat note.txt' });
+    expect(result.isError).toBe(true);
+    expect(h.events).toContainEqual(
+      expect.objectContaining({
+        type: 'permission_decision',
+        denialScope: 'invocation',
+        decision: expect.objectContaining({ reasonCode: 'use_dedicated_tool' }),
+      }),
+    );
+    expect(h.agent.loop.plan.denialReason).toBeUndefined();
+    const read = await h.agent.invokeTool('read_file', { path: 'note.txt' });
+    expect(read.isError).toBeFalsy();
+    expect(read.content).toContain('ordinary content');
+  });
   it.each(['auto', 'yolo'] as const)(
     '%s 普通未授权写入经过真实 JSON reviewer，批准后实际写入',
     async (mode) => {

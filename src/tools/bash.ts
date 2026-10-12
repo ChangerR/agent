@@ -11,6 +11,7 @@ import { decodeShellOutput, detectPlatform, shellInvocation } from '../core/plat
 import type { Tool } from '../core/registry.js';
 import { envWithRg } from './grep.js';
 import { parsePowerShell } from './powershell.js';
+import { openShellBindings } from './shell-bound.js';
 import {
   analyzeReadOnlyShell,
   readOnlyShellEnvironment,
@@ -85,6 +86,7 @@ export const bashTool: Tool = {
     const timeout = Number(input.timeout ?? DEFAULT_TIMEOUT_MS);
     let invocation = shellInvocation(command);
     let env = envWithRg(process.env);
+    let bound: Awaited<ReturnType<typeof openShellBindings>> | undefined;
     const powerShellCommand = ctx.analysis?.environment?.['$powershellCommand'];
     if (powerShellCommand) {
       const current = parsePowerShell(command);
@@ -108,85 +110,95 @@ export const bashTool: Tool = {
       }
       invocation = { file: shell, args: ['--noprofile', '--norc', '-p', '-c', current.command] };
       env = readOnlyShellEnvironment();
+      if (current.bindings?.length) {
+        bound = await openShellBindings(current.bindings, ctx.cwd);
+        Object.assign(env, bound.env);
+      }
     }
 
-    return new Promise((resolvePromise) => {
-      const child = spawn(invocation.file, invocation.args, {
-        cwd: ctx.cwd,
-        env,
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: process.platform !== 'win32',
-      });
+    try {
+      return await new Promise((resolvePromise) => {
+        const child = spawn(invocation.file, invocation.args, {
+          cwd: bound?.cwd ?? ctx.cwd,
+          env,
+          windowsHide: true,
+          stdio: bound?.stdio ?? ['ignore', 'pipe', 'pipe'],
+          detached: process.platform !== 'win32',
+        });
 
-      const chunks: Buffer[] = [];
-      const onData = (chunk: Buffer) => {
-        chunks.push(chunk);
-      };
-      child.stdout?.on('data', onData);
-      child.stderr?.on('data', onData);
+        const chunks: Buffer[] = [];
+        const onData = (chunk: Buffer) => {
+          chunks.push(chunk);
+        };
+        child.stdout?.on('data', onData);
+        child.stderr?.on('data', onData);
 
-      const collected = () => {
-        const text = decodeShellOutput(Buffer.concat(chunks))
-          .replace(/\r\n/g, '\n')
-          .replace(/\r/g, '\n');
-        if (text.length > MAX_OUTPUT) return `${text.slice(0, MAX_OUTPUT)}\n[truncated]`;
-        return text;
-      };
+        const collected = () => {
+          const text = decodeShellOutput(Buffer.concat(chunks))
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
+          if (text.length > MAX_OUTPUT) return `${text.slice(0, MAX_OUTPUT)}\n[truncated]`;
+          return text;
+        };
 
-      let timedOut = false;
-      let termination: Promise<void> | undefined;
-      const terminate = () => {
-        if (!child.pid || termination) return;
-        if (process.platform === 'win32') {
-          // shell 的所有后代属于本次工具调用；不能只结束 PowerShell 留下工作进程。
-          termination = new Promise((done) => {
-            const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-              windowsHide: true,
-              stdio: 'ignore',
+        let timedOut = false;
+        let termination: Promise<void> | undefined;
+        const terminate = () => {
+          if (!child.pid || termination) return;
+          if (process.platform === 'win32') {
+            // shell 的所有后代属于本次工具调用；不能只结束 PowerShell 留下工作进程。
+            termination = new Promise((done) => {
+              const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+                windowsHide: true,
+                stdio: 'ignore',
+              });
+              killer.once('error', () => {
+                child.kill('SIGKILL');
+                done();
+              });
+              killer.once('close', () => {
+                child.kill('SIGKILL');
+                done();
+              });
             });
-            killer.once('error', () => {
-              child.kill('SIGKILL');
-              done();
-            });
-            killer.once('close', () => {
-              child.kill('SIGKILL');
-              done();
-            });
-          });
-        } else {
-          try {
-            process.kill(-child.pid, 'SIGKILL');
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill('SIGKILL');
+          } else {
+            try {
+              process.kill(-child.pid, 'SIGKILL');
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill('SIGKILL');
+            }
           }
-        }
-      };
-      const timer = setTimeout(() => {
-        timedOut = true;
-        terminate();
-      }, timeout);
-      ctx.signal.addEventListener('abort', terminate, { once: true });
-      if (ctx.signal.aborted) terminate();
+        };
+        const timer = setTimeout(() => {
+          timedOut = true;
+          terminate();
+        }, timeout);
+        ctx.signal.addEventListener('abort', terminate, { once: true });
+        if (ctx.signal.aborted) terminate();
 
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        resolvePromise({
-          content: `Failed to start ${invocation.file}: ${err.message}`,
-          isError: true,
+        child.on('error', (err) => {
+          clearTimeout(timer);
+          resolvePromise({
+            content: `Failed to start ${invocation.file}: ${err.message}`,
+            isError: true,
+          });
+        });
+
+        child.on('close', async (code) => {
+          clearTimeout(timer);
+          ctx.signal.removeEventListener('abort', terminate);
+          await termination;
+          const output = collected();
+          resolvePromise({
+            content: timedOut
+              ? `${output}\n[timed out after ${timeout}ms]`
+              : output || '(no output)',
+            isError: timedOut || code !== 0,
+          });
         });
       });
-
-      child.on('close', async (code) => {
-        clearTimeout(timer);
-        ctx.signal.removeEventListener('abort', terminate);
-        await termination;
-        const output = collected();
-        resolvePromise({
-          content: timedOut ? `${output}\n[timed out after ${timeout}ms]` : output || '(no output)',
-          isError: timedOut || code !== 0,
-        });
-      });
-    });
+    } finally {
+      await bound?.close();
+    }
   },
 };

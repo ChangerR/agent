@@ -77,6 +77,7 @@ it.skipIf(process.platform !== 'linux')(
           provider: 'offline-ps-pty',
           model: 'controlled-pty',
           permissionMode: 'auto',
+          pluginConfig: { 'agentlab.planning': { mode: 'off' } },
           pluginEntries: ['./offline.mjs'],
           capabilities: { policy: 'windows-pty', reviewer: 'model' },
         }),

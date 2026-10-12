@@ -58,6 +58,7 @@ it.skipIf(process.platform !== 'linux')(
         provider: 'offline-agents',
         model: 'offline-current',
         permissionMode: 'auto',
+        pluginConfig: { 'agentlab.planning': { mode: 'off' } },
         capabilities: { reviewer: false },
         pluginEntries: ['./offline-agents.mjs'],
         untouched: true,

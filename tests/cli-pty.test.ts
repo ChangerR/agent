@@ -19,6 +19,7 @@ export default {
     ctx.provide.provider('offline-pty', {
       name:'offline-pty',capabilities:{thinking:false,streaming:true},
       async *stream(request, signal) {
+        if (request.system.startsWith('[agentlab planning:auto]')) { yield* text('null'); return; }
         log({kind:'request',judge:request.tools.length === 0});
         const last = request.messages.at(-1)?.content;
         if (!request.tools.length) { yield* text(JSON.stringify({decision:'ask',reasonCode:'offline',reason:'Offline review'})); return; }

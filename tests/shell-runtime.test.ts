@@ -5,15 +5,10 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAgent,
-  definePlugin,
-  type Agent,
-  type PermissionMode,
-  type SessionRules,
-} from '../src/index.js';
+import { definePlugin, type Agent, type PermissionMode, type SessionRules } from '../src/index.js';
 import type { AgentEvent } from '../src/core/events.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 
 const roots: string[] = [];
 const agents: Agent[] = [];
@@ -122,6 +117,9 @@ async function fixture(options: Options = {}) {
   agent.events.onAll((event) => events.push(event));
   agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
   async function run(commands: string[]) {
+    // 每次 run 是用户独立发起的矩阵案例；保留同 runtime 的权限历史与路径重验。
+    // PR40 的可见拒绝计划应结束，同一次 run 内的拒绝边界仍完整保留。
+    agent.loop.plan.clear();
     pending = commands.map((command, index) => ({
       id: `shell-${sequence}-${index}`,
       name: 'bash',
@@ -208,6 +206,10 @@ describe.skipIf(process.platform === 'win32')('只读 shell 命令矩阵', () =>
       { command: 'rg -in NEEDLE README.md', has: '3:needle last' },
       { command: "find src -type f -name '*.ts'", has: 'src/a.ts' },
       { command: 'git status --short', has: ' M README.md' },
+      { command: 'git --no-pager status --short', has: ' M README.md' },
+      { command: 'git --no-pager diff --stat | head -10', has: 'README.md' },
+      { command: 'git ls-files', has: 'README.md' },
+      { command: 'git ls-files --stage -- README.md', has: 'README.md' },
       { command: 'git diff -- README.md', has: '+needle first' },
       { command: 'cat package.json && echo done', has: '\ndone\n' },
       { command: 'grep absent README.md || echo fallback', exact: 'fallback\n' },
@@ -256,6 +258,9 @@ describe.skipIf(process.platform === 'win32')('只读 shell 命令矩阵', () =>
     'git -c alias.scan="!touch mutated.txt" scan',
     'git diff --output=mutated.txt',
     'git -c diff.external=./preprocess.sh diff',
+    "git ls-files --format='%(objectname)'",
+    'git ls-files --recurse-submodules',
+    'git --no-pager -c alias.scan="!touch mutated.txt" scan',
     'git status --porcelain && git add README.md',
     'rm README.md',
     'sed -i s/needle/changed/ README.md',
@@ -397,7 +402,7 @@ describe.skipIf(process.platform === 'win32')('shell 目标与规则的真实身
 
   it('未知命令在 ask 模式仍需人工确认，yolo 仍尊重 deny 与危险检测', async () => {
     const ask = await fixture({ mode: 'ask' });
-    expect(await ask.run(['npm test'])).toMatchObject({ judge: 0, human: 1, executed: 0 });
+    expect(await ask.run(['npm test'])).toMatchObject({ judge: 1, human: 1, executed: 0 });
     const yolo = await fixture({ mode: 'yolo', rules: { deny: ['bash(cat *)'] } });
     expect(await yolo.run(['cat package.json'])).toMatchObject({ judge: 0, human: 0, executed: 0 });
     expect(await yolo.run(['sudo cat package.json'])).toMatchObject({
