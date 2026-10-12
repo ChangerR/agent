@@ -92,6 +92,29 @@ afterEach(async () => {
 
 describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替换', () => {
   it.each([
+    'ls -la src 2>/dev/null | head -50',
+    'cd . && ls -la src',
+    'ls -- src 2>/dev/null',
+    'ls -- 2>/dev/null',
+  ])('绑定单目录列举保留输出：%s', async (command) => {
+    const { cwd } = await project(220);
+    const state = chain(cwd);
+    const result = await state.run(command);
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toBe(await reference(cwd, command));
+    expect(state.provider.requests).toHaveLength(0);
+    expect(state.human).not.toHaveBeenCalled();
+  });
+  it.each([
+    'ls -d src 2>/dev/null',
+    'ls -R src 2>/dev/null',
+    'ls src . 2>/dev/null',
+    'cd . && ls -la src 2>/dev/null | head -50',
+  ])('不改写需要路径标签或递归的目录列举：%s', async (command) => {
+    const { cwd } = await project();
+    expect((await analyzeReadOnlyShell(command, cwd, [], signal())).complete).toBe(false);
+  });
+  it.each([
     "find src -type f -name '*.ts' -print0 | xargs -0 cat | wc -l",
     "find src -type f -name '*.ts' -print0 | xargs --null cat 2>/dev/null | wc -l",
     "echo count; find . -type f -name '*.ts' | wc -l; find . -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null | wc -l",
@@ -456,43 +479,52 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
     expect(state.human).not.toHaveBeenCalled();
     expect(state.provider.requests).toHaveLength(0);
   });
-  it('绑定后换掉目录和文件不会读取替换的项目外内容', async () => {
-    const { root, cwd } = await project();
-    const current = await analyzeReadOnlyShell(lines, cwd, [], signal());
-    expect(current.complete).toBe(true);
-    const bound = await openShellBindings(current.bindings!, cwd);
-    try {
-      await mkdir(join(root, 'outside'));
-      await writeFile(join(root, 'outside', 'module-0000.ts'), 'EXTERNAL\n'.repeat(99));
-      await rename(join(cwd, 'src'), join(cwd, 'original-src'));
-      await symlink(join(root, 'outside'), join(cwd, 'src'));
-      const output = await new Promise<string>((resolve, reject) => {
-        const child = spawn(
-          '/usr/bin/bash',
-          ['--noprofile', '--norc', '-p', '-c', current.command!],
-          {
-            cwd: bound.cwd,
-            env: { ...readOnlyShellEnvironment(), ...bound.env },
-            stdio: bound.stdio,
-          },
-        );
-        let stdout = '';
-        let stderr = '';
-        child.stdout!.on('data', (chunk) => {
-          stdout += String(chunk);
+  it.each([lines, 'ls -la src 2>/dev/null', 'cd . && ls -la src'])(
+    '绑定后换掉目录和文件不会读取替换的项目外内容：%s',
+    async (command) => {
+      const { root, cwd } = await project();
+      const expected = await reference(cwd, command);
+      const current = await analyzeReadOnlyShell(command, cwd, [], signal());
+      expect(current.complete).toBe(true);
+      const bound = await openShellBindings(current.bindings!, cwd);
+      try {
+        await mkdir(join(root, 'outside'));
+        await writeFile(join(root, 'outside', 'module-0000.ts'), 'EXTERNAL\n'.repeat(99));
+        await rename(join(cwd, 'src'), join(cwd, 'original-src'));
+        await symlink(join(root, 'outside'), join(cwd, 'src'));
+        const output = await new Promise<string>((resolve, reject) => {
+          const child = spawn(
+            '/usr/bin/bash',
+            ['--noprofile', '--norc', '-p', '-c', current.command!],
+            {
+              cwd: bound.cwd,
+              env: { ...readOnlyShellEnvironment(), ...bound.env },
+              stdio: bound.stdio,
+            },
+          );
+          let stdout = '';
+          let stderr = '';
+          child.stdout!.on('data', (chunk) => {
+            stdout += String(chunk);
+          });
+          child.stderr!.on('data', (chunk) => {
+            stderr += String(chunk);
+          });
+          child.once('error', reject);
+          child.once('close', (code) => (code === 0 ? resolve(stdout) : reject(new Error(stderr))));
         });
-        child.stderr!.on('data', (chunk) => {
-          stderr += String(chunk);
-        });
-        child.once('error', reject);
-        child.once('close', (code) => (code === 0 ? resolve(stdout) : reject(new Error(stderr))));
-      });
-      expect(output).toContain('1 src/module-0000.ts');
-      expect(output).not.toContain('99');
-    } finally {
-      await bound.close();
-    }
-  });
+        // 重命名会改变目录自身的时间戳，ls -l 比较稳定的子文件行。
+        if (command === lines) expect(output).toBe(expected);
+        else {
+          const fileLines = (text: string) =>
+            text.split('\n').filter((line) => line.includes('module-'));
+          expect(fileLines(output)).toEqual(fileLines(expected));
+        }
+      } finally {
+        await bound.close();
+      }
+    },
+  );
 });
 
 describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准绑定', () => {

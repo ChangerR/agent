@@ -1230,6 +1230,26 @@ export async function analyzeReadOnlyShell(
     const variable = bind(entry, 'discard');
     return Number(variable.slice('AGENTLAB_BOUND_'.length)) + 3;
   };
+  const literalListing = async (args: string[]) => {
+    // 单目录无标题列举可保持标签；-d、多目标、递归和带值选项暂不改写。
+    const parsed = options(args, { short: 'aAlhtrSUXisFpQq1mxCnogBNbcuv' });
+    if (parsed.operands.length > 1) fail('shell_literal_metadata_binding_unverified');
+    const path = parsed.operands[0] ?? '.';
+    const entry = await boundary.target(path, 'metadata');
+    if (!entry.exists || !entry.directory || entry.link)
+      fail('shell_literal_metadata_binding_unverified');
+    await boundary.tree(path, 'metadata', true, false);
+    await bindRoot();
+    const variable = bind(entry, 'directory');
+    const argv = args.map((arg, i) =>
+      parsed.operandIndices.includes(i) ? `"$${variable}/"` : quote(arg),
+    );
+    if (!parsed.operands.length) {
+      if (!args.includes('--')) argv.push('--');
+      argv.push(`"$${variable}/"`);
+    }
+    return [quote(await boundary.binary('ls')), ...argv].join(' ');
+  };
   const wcOutput = (invocation: string, mapped: Array<{ operand: string; variable: string }>) => {
     const labels = mapped.map(
       ({ operand, variable }) =>
@@ -1517,6 +1537,10 @@ export async function analyzeReadOnlyShell(
         }
         if (name === 'find' && process.platform === 'linux' && fileFindSpec(args)) {
           normalized.set(node.id, (await findSelection(args)).helper);
+          return;
+        }
+        if (name === 'ls' && boundary.requiresBoundContent) {
+          normalized.set(node.id, await literalListing(args));
           return;
         }
         const argv = await simpleCommand(name, args, boundary, piped);
