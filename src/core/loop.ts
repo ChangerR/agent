@@ -45,7 +45,7 @@ import type {
   ToolUseBlock,
   TokenUsage,
 } from './protocol/types.js';
-import type { ToolRegistry } from './registry.js';
+import type { Tool, ToolRegistry } from './registry.js';
 import { estimateTokens } from './context/tokens.js';
 import { SessionError } from './session/errors.js';
 import { assertSafeHistory, trimToSafeTail } from './session/history.js';
@@ -72,6 +72,8 @@ export interface AgentLoopOptions {
   toolExecutor?: ToolExecutor;
   scheduler?: ToolExecutorOptions['scheduler'];
   isControlTool?: ToolExecutorOptions['isControlTool'];
+  /** 宿主只隐藏当前任务无法调用的能力；执行仍经过唯一权限门。 */
+  isToolAvailable?: (tool: Tool) => boolean;
   isDenialExemptTool?: ToolExecutorOptions['isDenialExemptTool'];
   requestPermission?: RequestPermissionGuard;
   restrict?: ToolExecutorOptions['restrict'];
@@ -528,6 +530,7 @@ export class AgentLoop {
         const generation = this.plan.generation;
         this.plan.preparing = true;
         const proposal = await strategy.prepare({
+          delegated: origin.agentId !== 'root' && origin.source === 'delegation',
           input: userInput,
           messages: structuredClone(this.messages),
           systemPrompt: this.opts.systemPrompt,
@@ -617,10 +620,11 @@ export class AgentLoop {
             messages: structuredClone(this.messages),
             tools: structuredClone(
               this.toolsSnapshot.filter((definition) => {
-                if (!this.plan.readOnly) return true;
-                const strategy = this.opts.planning?.();
                 const tool = tools.get(definition.name);
                 if (!tool) return false;
+                if (this.opts.isToolAvailable?.(tool) === false) return false;
+                if (!this.plan.readOnly) return true;
+                const strategy = this.opts.planning?.();
                 return [
                   ...(strategy?.readTools ?? []),
                   ...(strategy?.controlTools.filter((t) => t.planningSafe !== false) ?? []),

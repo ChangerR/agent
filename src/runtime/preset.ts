@@ -15,7 +15,13 @@ export interface PresetContext {
   modelInfo(model: string): { contextWindow: number; maxOutputTokens: number } | undefined;
 }
 export interface Preset {
-  controlTools?: readonly { ownerPlugin: string; name: string; allowedAfterDenial?: boolean }[];
+  controlTools?: readonly {
+    ownerPlugin: string;
+    name: string;
+    allowedAfterDenial?: boolean;
+    /** 仅管理当前任务的本地计划，不扩大 child 的执行工具白名单。 */
+    availableInRestrictedChild?: boolean;
+  }[];
   plugins: Plugin[];
   selections: CapabilitySelections;
 }

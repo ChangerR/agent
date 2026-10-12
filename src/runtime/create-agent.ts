@@ -346,8 +346,21 @@ export async function createRuntime(
       autoSave: options.autoSaveSessions ?? true,
       createChild(record: SubagentRecord, limits) {
         const childEvents = new ChildEventBus(events);
+        const available = (tool: ReturnType<ToolRegistry['list']>[number]) =>
+          !record.allowedTools ||
+          record.allowedTools.includes(tool.name) ||
+          preset.controlTools?.some(
+            (control) =>
+              control.availableInRestrictedChild &&
+              control.ownerPlugin === tool.ownerPlugin &&
+              control.name === tool.name,
+          ) === true;
         const childLoop = new AgentLoop({
           ...loopOptions,
+          isToolAvailable: available,
+          systemPrompt:
+            loopOptions.systemPrompt +
+            '\n你正在执行父任务已分配的一个子任务。只处理本次分配的范围，按授权完成任务并返回有证据的结果，不重新开展全仓库审查或重复父任务的委派流程。根据本地可用工具安排步骤；简单子任务无需额外计划，完成后返回父任务。',
           events: childEvents,
           sessionId: () => record.sessionId,
           agentId: record.agentId,
@@ -373,7 +386,7 @@ export async function createRuntime(
           restrict: (operation) => {
             if (loop.plan.denialReason && !isControlTool(tools.get(operation.tool.name)!))
               return `plan_denied: explicit user continuation required: ${loop.plan.denialReason}`;
-            if (record.allowedTools && !record.allowedTools.includes(operation.tool.name))
+            if (!available(tools.get(operation.tool.name)!))
               return 'Tool is outside child allowedTools';
             if (!record.readOnly || isControlTool(tools.get(operation.tool.name)!))
               return undefined;

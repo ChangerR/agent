@@ -37,6 +37,7 @@ export function defaultPreset(input: PresetContext): Preset {
         ownerPlugin: PLANNING_PLUGIN,
         name,
         allowedAfterDenial: true,
+        availableInRestrictedChild: true,
       })),
     ],
     selections: {
