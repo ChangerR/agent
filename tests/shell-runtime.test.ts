@@ -5,15 +5,10 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAgent,
-  definePlugin,
-  type Agent,
-  type PermissionMode,
-  type SessionRules,
-} from '../src/index.js';
+import { definePlugin, type Agent, type PermissionMode, type SessionRules } from '../src/index.js';
 import type { AgentEvent } from '../src/core/events.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
+import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 
 const roots: string[] = [];
 const agents: Agent[] = [];
@@ -397,7 +392,7 @@ describe.skipIf(process.platform === 'win32')('shell 目标与规则的真实身
 
   it('未知命令在 ask 模式仍需人工确认，yolo 仍尊重 deny 与危险检测', async () => {
     const ask = await fixture({ mode: 'ask' });
-    expect(await ask.run(['npm test'])).toMatchObject({ judge: 0, human: 1, executed: 0 });
+    expect(await ask.run(['npm test'])).toMatchObject({ judge: 1, human: 1, executed: 0 });
     const yolo = await fixture({ mode: 'yolo', rules: { deny: ['bash(cat *)'] } });
     expect(await yolo.run(['cat package.json'])).toMatchObject({ judge: 0, human: 0, executed: 0 });
     expect(await yolo.run(['sudo cat package.json'])).toMatchObject({
