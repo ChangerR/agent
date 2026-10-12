@@ -14,6 +14,7 @@ import { EventBus, type AgentEvent } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry } from '../src/core/registry.js';
 import { ToolExecutor } from '../src/core/tool-executor.js';
+import type { Message } from '../src/core/protocol/types.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
 import { bashTool } from '../src/tools/bash.js';
 import { openShellBindings } from '../src/tools/shell-bound.js';
@@ -66,11 +67,12 @@ function chain(
   const run = (
     command: string,
     userRequest = '查看项目普通 TypeScript 文件和行数；不读取凭据，不修改文件。',
+    messages: Message[] = [],
   ) =>
     executor.invokeTool(
       'bash',
       { command },
-      { signal: signal(), runId: 'synthetic', userRequest, messages: [] },
+      { signal: signal(), runId: 'synthetic', userRequest, messages },
     );
   return { policy, provider, reviewer, human, observed, run };
 }
@@ -334,6 +336,38 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
 });
 
 describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准绑定', () => {
+  it('真实工作流发现的 find/xargs 未知形状，带规划历史仍保留证据并进入默认预算审批', async () => {
+    const { cwd } = await project(220);
+    const state = chain(cwd);
+    const command =
+      "echo '--- ts count ---'; find . -type f -name '*.ts' | wc -l; echo '--- total lines ---'; find . -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null | wc -l";
+    const messages: Message[] = Array.from({ length: 5 }, (_, index) => ({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          toolUseId: `plan-${index}`,
+          content: JSON.stringify({
+            step: index,
+            evidence: '只读取项目文件，不修改，不联网。'.repeat(35),
+          }),
+        },
+      ],
+    }));
+    const result = await state.run(command, '只浏览并统计项目，禁止修改或联网。', messages);
+    expect(result.isError).toBe(true);
+    expect(state.provider.requests).toHaveLength(1);
+    expect(state.human).toHaveBeenCalledTimes(1);
+    const request = state.provider.requests[0];
+    expect(byteSize(request)).toBeLessThan(32768);
+    const data = JSON.parse(request.messages[0].content as string);
+    expect(data.operation.input.command).toBe(command);
+    expect(data.context.conversation).toHaveLength(5);
+    expect(data.analysis.completeness).toBe('unknown');
+    expect(
+      data.analysis.paths.filter((path: unknown) => JSON.stringify(path).includes('module-')),
+    ).toHaveLength(220);
+  });
   it('200+ 文件的不完整请求仍经过真实模型 reviewer，全部路径/效果/限制保留且低于32KiB', async () => {
     const { cwd } = await project(220);
     await writeFile(join(cwd, 'src', 'unsafe space.ts'), 'fixture');
@@ -361,10 +395,12 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
     expect(evidence.encoding).toBe('shell_path_index');
     expect(evidence.completeness).toBe('unknown');
     expect(
-      evidence.effects.map(([kind, target, scope]: [string, number | null, string | null]) => ({
-        kind,
+      evidence.effects.map(([profile, target]: [number, number | null]) => ({
+        kind: evidence.effectProfiles[profile][0],
         ...(target === null ? {} : { target: paths[target] }),
-        ...(scope === null ? {} : { scope }),
+        ...(evidence.effectProfiles[profile][1] === null
+          ? {}
+          : { scope: evidence.effectProfiles[profile][1] }),
       })),
     ).toEqual(analysis.effects);
     expect(evidence.targets.map((index: number) => paths[index])).toEqual(analysis.targets);
@@ -372,23 +408,14 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
       analysis.evidence?.filter(({ source }) => source !== 'shell-path-boundaries'),
     );
     expect(
-      evidence.pathFacts.map(
-        ([raw, actual, exists, kind, symlink, nlink]: [
-          number,
-          number,
-          boolean,
-          string,
-          boolean,
-          number,
-        ]) => ({
-          raw: paths[raw],
-          actual: paths[actual],
-          exists,
-          kind,
-          symlink,
-          nlink,
-        }),
-      ),
+      evidence.pathFacts.map(([raw, actual, profile]: [number, number, number]) => ({
+        raw: paths[raw],
+        actual: paths[actual],
+        exists: evidence.pathFactProfiles[profile][0],
+        kind: evidence.pathFactProfiles[profile][1],
+        symlink: evidence.pathFactProfiles[profile][2],
+        nlink: evidence.pathFactProfiles[profile][3],
+      })),
     ).toEqual(
       JSON.parse(
         analysis.evidence!.find(({ source }) => source === 'shell-path-boundaries')!.detail,
@@ -438,15 +465,16 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
     );
     const evidence = shellReviewEvidence(analysis) as {
       paths: string[];
-      pathFacts: Array<[number, number, boolean, string, boolean, number]>;
+      pathFacts: Array<[number, number, number]>;
+      pathFactProfiles: Array<[boolean, string, boolean, number]>;
     };
     expect(evidence.paths).toContain(outside);
     expect(
       evidence.pathFacts.some(
-        ([raw, actual, , , symlink]) =>
+        ([raw, actual, profile]) =>
           evidence.paths[raw].endsWith('/external-link') &&
           evidence.paths[actual] === outside &&
-          symlink,
+          evidence.pathFactProfiles[profile][2],
       ),
     ).toBe(true);
   });

@@ -277,6 +277,32 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     expect(f.reviews).toHaveLength(2);
     expect(f.observed.filter((event) => event.type === 'permission_request')).toHaveLength(0);
   });
+  it('会话精确授权保存并恢复后可复用，其他命令不继承许可', async () => {
+    const command = 'node -e "console.log(12345)"';
+    const f = await fixture({ respond: () => ({ allow: true, remember: 'session' }) });
+    expect(
+      (await f.run([{ name: 'bash', input: { command } }], '执行此本地输出命令。'))[0].content,
+    ).toContain('12345');
+    const id = f.agent.session.id;
+    await f.agent.session.save();
+    await f.agent.dispose();
+    const restored = await fixture({ cwd: f.cwd });
+    await restored.agent.session.resume(id);
+    expect(
+      (await restored.run([{ name: 'bash', input: { command } }], '重复已授权的同一操作。'))[0]
+        .content,
+    ).toContain('12345');
+    expect(restored.reviews).toHaveLength(0);
+    expect(
+      (
+        await restored.run(
+          [{ name: 'bash', input: { command: 'node -e "console.log(67890)"' } }],
+          '执行另一操作。',
+        )
+      )[0].isError,
+    ).toBe(true);
+    expect(restored.reviews).toHaveLength(1);
+  });
   it('并行 child 的真实 reviewer 继承父用户限制；readOnly child 在模型前拒绝写入', async () => {
     const request = '只检查代码，禁止修改文件；子任务不能另行授权。';
     const f = await fixture({

@@ -824,10 +824,18 @@ const GIT_SAFE_OPTIONS = [
   'core.quotePath=true',
 ];
 async function gitCommand(args: string[], boundary: Boundary): Promise<string[]> {
+  // 只接受关闭 pager 的全局选项；-C/-c/--git-dir 等仍需独立证明。
+  if (args[0] === '--no-pager') args = args.slice(1);
   const subcommand = args[0];
-  if (subcommand !== 'status' && subcommand !== 'diff') fail('shell_git_command_not_supported');
+  if (!['status', 'diff', 'ls-files'].includes(subcommand)) fail('shell_git_command_not_supported');
   let paths: string[] = [];
-  if (subcommand === 'status') {
+  if (subcommand === 'ls-files') {
+    // 限定索引中的文件名/阶段元数据，不读取历史 blob 或遍历未跟踪目录。
+    paths = options(args.slice(1), {
+      short: 'csz',
+      long: ['--cached', '--stage', '--deduplicate', '--full-name', '--error-unmatch'],
+    }).operands;
+  } else if (subcommand === 'status') {
     const parsed = options(args.slice(1), {
       short: 'sbz',
       long: [
@@ -985,7 +993,7 @@ async function gitCommand(args: string[], boundary: Boundary): Promise<string[]>
     paths.length === 0 ||
     paths.some((base) => within(resolve(boundary.root, base), resolve(boundary.root, path)));
   for (const path of tracked.filter(selected)) {
-    const entry = await boundary.target(path, subcommand === 'status' ? 'metadata' : 'content');
+    const entry = await boundary.target(path, subcommand === 'diff' ? 'content' : 'metadata');
     if (entry.regular && entry.nlink !== 1) fail('hardlink_alias_unverified');
     // Git 的符号链接内容是链接文本，不应解引用到另一个文件；保守升级任何链接。
     if (entry.link) fail('shell_git_symlink_unverified');

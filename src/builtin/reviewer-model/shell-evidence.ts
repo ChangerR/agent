@@ -24,22 +24,38 @@ export function shellReviewEvidence(analysis: ToolAnalysis | undefined, cwd?: st
     }
     return index;
   };
+  // 同类事实只存一次：仍逐项保留路径及顺序，不摘要、不截断风险。
+  const profiles = <T>() => {
+    const values: T[] = [];
+    const indices = new Map<string, number>();
+    return {
+      values,
+      index(value: T) {
+        const key = JSON.stringify(value);
+        let index = indices.get(key);
+        if (index === undefined) {
+          index = values.length;
+          values.push(value);
+          indices.set(key, index);
+        }
+        return index;
+      },
+    };
+  };
+  const effectProfiles = profiles<[string, string | null]>();
   const effects = analysis.effects.map(({ kind, target, scope }) => [
-    kind,
+    effectProfiles.index([kind, scope ?? null]),
     target === undefined ? null : pathIndex(target),
-    scope ?? null,
   ]);
   const targets = analysis.targets?.map(pathIndex);
   const boundaries = analysis.evidence?.find(({ source }) => source === 'shell-path-boundaries');
   if (!boundaries) return analysis;
+  const pathFactProfiles = profiles<[boolean, string, boolean, number]>();
   const pathFacts = (JSON.parse(boundaries.detail) as ShellPathFact[]).map(
     ({ raw, actual, exists, kind, symlink, nlink }) => [
       pathIndex(raw),
       pathIndex(actual),
-      exists,
-      kind,
-      symlink,
-      nlink,
+      pathFactProfiles.index([exists, kind, symlink, nlink]),
     ],
   );
   const pathBindings: number[] = [];
@@ -70,7 +86,9 @@ export function shellReviewEvidence(analysis: ToolAnalysis | undefined, cwd?: st
       prefix && path.startsWith(prefix) ? [0, path.slice(prefix.length)] : path,
     ),
     pathFacts,
+    pathFactProfiles: pathFactProfiles.values,
     effects,
+    effectProfiles: effectProfiles.values,
     ...(targets ? { targets } : {}),
     evidence: analysis.evidence?.filter(({ source }) => source !== 'shell-path-boundaries'),
     environment: {
