@@ -275,7 +275,8 @@ describe('子 agent 运行与控制面', () => {
   it('全树并发/深度/inbox 限制明确返回，child 不重置限制', async () => {
     const gate = deferred();
     const f = await fixture({ before: async () => gate.promise });
-    f.agent.agents.configure({ maxRunning: 2, maxInbox: 1, maxDepth: 2 });
+    f.agent.agents.configure({ maxInbox: 1, maxDepth: 2 });
+    expect(f.agent.agents.settings.maxRunning).toBe(2);
     const a = f.agent.agents.spawn({ task: 'one' });
     const b = f.agent.agents.spawn({ task: 'nested' }, childOrigin(f.agent, a.agentId));
     expect(f.agent.agents.status(b.agentId)[0].depth).toBe(2);
@@ -1176,7 +1177,7 @@ describe('子权限、工具协调与会话', () => {
     );
     let result = await f.agent.dispatchCommand('/agent-limit', { interact: async () => undefined });
     expect(result).toMatchObject({ text: '已取消' });
-    expect(f.agent.agents.settings.maxRunning).toBe(4);
+    expect(f.agent.agents.settings.maxRunning).toBe(2);
     result = await f.agent.dispatchCommand('/agent-limit', { interact: async () => '2' });
     expect(result).toMatchObject({ type: 'text' });
     expect(f.agent.agents.settings.maxRunning).toBe(2);
@@ -1193,4 +1194,30 @@ describe('子权限、工具协调与会话', () => {
     ).rejects.toThrow('配置已变化');
     expect(f.agent.agents.settings.maxRunning).toBe(2);
   });
+});
+
+it('显式配置四个全树并发仍保留，默认调整不覆盖配置或CAS保存', async () => {
+  const gate = deferred();
+  const f = await fixture({
+    before: async () => gate.promise,
+    config: { pluginConfig: { 'agentlab.subagents': { maxRunning: 4 } } },
+  });
+  expect(f.agent.agents.settings.maxRunning).toBe(4);
+  const children = Array.from({ length: 4 }, (_, i) =>
+    f.agent.agents.spawn({ task: `review ${i}` }),
+  );
+  expect(children).toHaveLength(4);
+  expect(() => f.agent.agents.spawn({ task: '第五个' })).toThrow('Running agent limit');
+  await f.agent.dispatchCommand('/agent-limit', { interact: async () => '3' });
+  expect(f.agent.agents.settings.maxRunning).toBe(3);
+  expect(
+    f.agent.agents.status().every((c) => ['queued', 'running'].includes(c.runs[0].status)),
+  ).toBe(true);
+  expect(
+    JSON.parse(await readFile(join(f.cwd, 'agent.config.json'), 'utf8')).pluginConfig[
+      'agentlab.subagents'
+    ].maxRunning,
+  ).toBe(3);
+  gate.resolve();
+  await f.agent.agents.whenSettled();
 });

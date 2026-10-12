@@ -135,7 +135,23 @@ async function fixture(options: FixtureOptions = {}) {
       executed: current.filter((event) => event.type === 'tool_call').length,
     };
   }
-  return { agent, cwd, outside, root, run };
+  async function runIndependentCases(calls: Call[]) {
+    const cases: Awaited<ReturnType<typeof run>>[] = [];
+    for (const call of calls) {
+      // 每一行是用户独立发起的权限场景，显式结束前一行的拒绝任务。
+      // 仍复用同一 runtime、权限规则、审批历史和工具实例，不能重建以绕过路径重验。
+      agent.loop.plan.clear();
+      cases.push(await run([call]));
+    }
+    return {
+      results: cases.flatMap((item) => item.results),
+      events: cases.flatMap((item) => item.events),
+      judge: cases.reduce((sum, item) => sum + item.judge, 0),
+      human: cases.reduce((sum, item) => sum + item.human, 0),
+      executed: cases.reduce((sum, item) => sum + item.executed, 0),
+    };
+  }
+  return { agent, cwd, outside, root, run, runIndependentCases };
 }
 
 function expectSuccessful(results: ToolResult[]) {
@@ -268,7 +284,7 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
       { name: 'grep', input: { pattern: 'needle', glob: '../outside/**' } },
       { name: 'grep', input: { pattern: 'needle', glob: '{../outside,src}/**' } },
     ];
-    const result = await f.run(calls);
+    const result = await f.runIndependentCases(calls);
     expect(result).toMatchObject({ judge: 0, human: calls.length, executed: 0 });
     for (const item of result.results) {
       expect(item.isError).toBe(true);
@@ -315,7 +331,7 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
         ])
           expect(output).not.toContain(denied);
         expect(output).toContain('src/a.ts');
-        const protectedResult = await f.run([
+        const protectedResult = await f.runIndependentCases([
           { name: 'read_file', input: { path: 'adapter-alias.mjs' } },
           { name: 'glob', input: { pattern: 'extensions/adapter.mjs' } },
           { name: 'grep', input: { pattern: 'needle', glob: 'extensions/adapter.mjs' } },
@@ -489,7 +505,7 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
     expect(first).toMatchObject({ judge: 0, human: 0, executed: 3 });
     await unlink(join(f.cwd, 'selected'));
     await symlink(f.outside, join(f.cwd, 'selected'));
-    const second = await f.run(calls);
+    const second = await f.runIndependentCases(calls);
     expect(second).toMatchObject({ judge: 0, human: 3, executed: 0 });
     for (const item of second.results) expect(item.content).not.toContain('OUTSIDE_SENTINEL');
   });

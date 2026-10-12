@@ -24,6 +24,7 @@ import {
   VStack,
   isViewportTUI,
   type Component,
+  type KeyId,
   type TUI,
   type Terminal,
   truncateToWidth,
@@ -811,6 +812,11 @@ export function startTui(
         focusInteraction();
         return { consume: true };
       }
+      if (!tui.hasOverlay()) {
+        for (const adapter of adapters)
+          for (const [key, handler] of Object.entries(adapter.shortcuts ?? {}))
+            if (matchesKey(data, key as KeyId) && handler()) return { consume: true };
+      }
       if (
         matchesKey(data, Key.escape) &&
         (turns.running || agent.loop.running) &&
@@ -952,10 +958,11 @@ export function startTui(
       'toolRenderers',
       'statusItems',
       'statusPanels',
+      'shortcuts',
     ] as const) {
       for (const [id, handler] of Object.entries(adapter[key] ?? {})) {
         if (typeof handler !== 'function') throw new Error(`无效 TUI ${key}: ${id}`);
-        if (adapters.some((existing) => existing[key]?.[id]))
+        if (adapters.some((existing) => Object.hasOwn(existing[key] ?? {}, id)))
           throw new Error(`重复 TUI ${key}: ${id}`);
       }
     }

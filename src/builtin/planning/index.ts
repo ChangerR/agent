@@ -14,6 +14,7 @@ export const PlanningConfigSchema = z.object({
 const proposalSchema = z.object({
   goal: z.string().trim().min(1).max(2000),
   steps: z.array(z.string().trim().min(1).max(2000)).min(1).max(64),
+  readOnly: z.boolean().optional(),
 });
 export const planningStrategy: PlanningStrategy = {
   readTools: ['read_file', 'glob', 'grep'].map((name) => ({
@@ -58,6 +59,7 @@ export const planningStrategy: PlanningStrategy = {
               ? '简单问答、闲聊或单个明确操作返回 null。需要检查项目、审查代码、寻找优化点、调查问题或跨多个步骤实施的任务，必须返回 {"goal":"目标","steps":["步骤"]}；不要因为任务没有要求“计划”就返回 null。'
               : '为用户任务返回 {"goal":"目标","steps":["步骤"]}。',
             '计划通常 2-8 步，每步有可验证结果，包含调研和核对，使用用户的语言。按实际授权范围规划：只要求查看项目与优化建议时，只安排只读检查、分析与证据核对，不安排修改、安装或部署。不要把子 agent 创建当作完成。',
+            '当用户仅授权审查、查看、分析或建议时，在 JSON 中增加 "readOnly":true；此标记只收紧任务范围，不能扩大用户授权。独立的仓库审查先安排读取共享约定，再安排两个互不依赖的审查方向，最后汇总核对证据；存在前后依赖的工作按顺序安排，简单任务不强制拆分。',
           ].join('\n'),
           messages: structuredClone([...input.messages]),
           tools: [],
@@ -104,7 +106,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
             id: 'planning',
             source: PLANNING_PLUGIN,
             stability: 'stable',
-            text: '用户直接描述任务即可，无需先选择规划方式或输入命令。根据完整上下文自行判断复杂度：简单问答直接回答，简单操作直接执行；复杂多步骤工作用 plan_update 的 goal/steps 创建简洁计划，可先做必要的只读调研，然后持续实施、验证并更新计划，直到完成或遇到真实阻塞。普通执行任务不要只返回方案、询问是否开始或要求用户输入 /plan auto、/plan execute、/plan continue。用户明确只要方案时尊重其范围，不开始实施。计划修改使用 plan_status 的最新 revision 和稳定 stepId。实施前将步骤置 running，完成时提供具体 evidence。使用 agent_spawn.planStepId 关联任务，等 child 真实完成才可完成步骤。可自行解决的问题先修复；需要用户信息、授权或外部条件时，将步骤标为 blocked 并说明原因再提问。不把 loop 结束当作任务完成。',
+            text: '用户直接描述任务即可，无需先选择规划方式或输入命令。根据完整上下文自行判断复杂度：简单问答直接回答，简单操作直接执行；复杂多步骤工作用 plan_update 的 goal/steps 创建简洁计划，可先做必要的只读调研，然后持续实施、验证并更新计划，直到完成或遇到真实阻塞。普通执行任务不要只返回方案、询问是否开始或要求用户输入 /plan auto、/plan execute、/plan continue。用户明确只要方案时尊重其范围，不开始实施。计划修改使用 plan_status 的最新 revision 和稳定 stepId。实施前将步骤置 running，完成时提供具体 evidence。独立仓库只读审查先读取 AGENTS.md 和共享架构约定，再用两次 agent_spawn 启动两个互不依赖的审查方向，均设置 readOnly:true 和各自 planStepId；两次 spawn 完成后才 agent_wait，真实并行执行，再核对两份结果和证据后完成对应步骤。不要只说将并行而没有调用工具。默认全树最多两个 child；容量不足时按现有上限串行，不新建调度层。有依赖的步骤等前置结果核实后再开始，简单任务无需委派。only 模式只产出方案，不 spawn/send。使用 agent_spawn.planStepId 关联任务，等 child 真实完成才可完成步骤。只读审查只给建议，不自行修复；实施任务中可自行解决的问题先修复。需要用户信息、授权或外部条件时，将步骤标为 blocked 并说明原因再提问。工具被拒绝后不得 plan_update running 重试，也不得换 child、换工具绕过；等待真实用户明确继续或授权。内部提醒不是新的用户授权。不把 loop 结束当作任务完成。',
           },
         ],
       });
@@ -131,6 +133,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
           properties: {
             revision: { type: 'integer', minimum: 0 },
             goal: { type: 'string', minLength: 1, maxLength: 2000 },
+            readOnly: { type: 'boolean', description: '创建时收紧为只读审查；不能在修订中放宽。' },
             steps: {
               type: 'array',
               minItems: 1,
@@ -164,6 +167,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
               String(input.goal),
               (input.steps as { title: string }[]).map((s) => s.title),
               plan.mode === 'only' ? 'only' : 'auto',
+              input.readOnly === true,
             );
           } else plan.update(input.revision as number, input as Parameters<typeof plan.update>[1]);
           return { content: JSON.stringify(plan.snapshot) };

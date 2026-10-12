@@ -1,5 +1,5 @@
 /** 复用原样 pnpm dev 的 Linux 真终端；所有模型与工作区均隔离。 */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { createPtyProject } from './helpers/pty.js';
@@ -11,6 +11,9 @@ export default {
   manifest:{id:'test.agents-pty',version:'1.0.0',apiVersion:1},
   setup(ctx) {
     ctx.provide.provider('offline-agents', {name:'offline-agents',capabilities:{thinking:false,streaming:true},async *stream(request, signal) {
+      if (request.system.startsWith('[agentlab planning:auto]')) {
+        yield {type:'message_start'};yield {type:'text_delta',text:'null'};yield {type:'message_stop',stopReason:'end_turn'};return;
+      }
       const input = request.messages.at(-1)?.content;
       log({kind:'request',input,model:request.model});
       yield {type:'message_start'};
@@ -115,12 +118,21 @@ it.skipIf(process.platform !== 'linux')(
       terminal.key('\x1b[B');
       terminal.key('\r');
       await terminal.wait(
-        () => f.readConfig().pluginConfig?.['agentlab.subagents']?.maxRunning === 8,
+        () => f.readConfig().pluginConfig?.['agentlab.subagents']?.maxRunning === 4,
         '一次选择未自动保存',
       );
       expect(f.readConfig().untouched).toBe(true);
       expect(rows().filter((r) => r.event?.type === 'permission_request')).toHaveLength(0);
     } finally {
+      if (process.env.AGENTLAB_PTY_EVIDENCE_DIR) {
+        const evidence = process.env.AGENTLAB_PTY_EVIDENCE_DIR;
+        mkdirSync(evidence, { recursive: true });
+        writeFileSync(join(evidence, 'subagents-140x40.ansi'), terminal.output);
+        writeFileSync(
+          join(evidence, 'subagents-140x40.jsonl'),
+          existsSync(path) ? readFileSync(path) : '',
+        );
+      }
       await terminal.close();
       f.dispose();
     }

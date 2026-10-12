@@ -19,7 +19,7 @@
   "pluginEntries": [],
   "pluginConfig": {
     "agentlab.subagents": {
-      "maxRunning": 4,
+      "maxRunning": 2,
       "maxDepth": 1,
       "maxTurns": 16,
       "timeoutMs": 300000,
