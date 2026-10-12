@@ -96,6 +96,11 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
     'cd . && ls -la src',
     'ls -- src 2>/dev/null',
     'ls -- 2>/dev/null',
+    'ls -R src 2>/dev/null | head -80',
+    'cat src/*.ts | wc -l',
+    "cd . && find src -name '*.ts' -type f | wc -l && cat src/*.ts | wc -l",
+    'cd src && ls -Ra',
+    'cd src && ls --recursive',
   ])('绑定单目录列举保留输出：%s', async (command) => {
     const { cwd } = await project(220);
     const state = chain(cwd);
@@ -107,7 +112,7 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
   });
   it.each([
     'ls -d src 2>/dev/null',
-    'ls -R src 2>/dev/null',
+    'ls -Rl src 2>/dev/null',
     'ls src . 2>/dev/null',
     'cd . && ls -la src 2>/dev/null | head -50',
   ])('不改写需要路径标签或递归的目录列举：%s', async (command) => {
@@ -382,8 +387,6 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
     'cd src && grep value module-0000.ts',
     'cd src && rg value',
     'cd src && git status',
-    'cd src && ls -Ra',
-    'cd src && ls --recursive',
     'cd - && pwd',
     "wc -l $(find src/// -type f -name '*.ts')",
     "wc -l $(find src ./src -type f -name '*.ts')",
@@ -479,52 +482,58 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
     expect(state.human).not.toHaveBeenCalled();
     expect(state.provider.requests).toHaveLength(0);
   });
-  it.each([lines, 'ls -la src 2>/dev/null', 'cd . && ls -la src'])(
-    '绑定后换掉目录和文件不会读取替换的项目外内容：%s',
-    async (command) => {
-      const { root, cwd } = await project();
-      const expected = await reference(cwd, command);
-      const current = await analyzeReadOnlyShell(command, cwd, [], signal());
-      expect(current.complete).toBe(true);
-      const bound = await openShellBindings(current.bindings!, cwd);
-      try {
-        await mkdir(join(root, 'outside'));
-        await writeFile(join(root, 'outside', 'module-0000.ts'), 'EXTERNAL\n'.repeat(99));
-        await rename(join(cwd, 'src'), join(cwd, 'original-src'));
-        await symlink(join(root, 'outside'), join(cwd, 'src'));
-        const output = await new Promise<string>((resolve, reject) => {
-          const child = spawn(
-            '/usr/bin/bash',
-            ['--noprofile', '--norc', '-p', '-c', current.command!],
-            {
-              cwd: bound.cwd,
-              env: { ...readOnlyShellEnvironment(), ...bound.env },
-              stdio: bound.stdio,
-            },
-          );
-          let stdout = '';
-          let stderr = '';
-          child.stdout!.on('data', (chunk) => {
-            stdout += String(chunk);
-          });
-          child.stderr!.on('data', (chunk) => {
-            stderr += String(chunk);
-          });
-          child.once('error', reject);
-          child.once('close', (code) => (code === 0 ? resolve(stdout) : reject(new Error(stderr))));
+  it.each([
+    lines,
+    'ls -la src 2>/dev/null',
+    'cd . && ls -la src',
+    'ls -R src',
+    'cat src/*.ts',
+    "cat src/module-0000.ts && ls '-R' src",
+    "cat src/module-0000.ts && ls -'R' src",
+    'cat src/module-0000.ts && ls "--recursive" src',
+  ])('绑定后换掉目录和文件不会读取替换的项目外内容：%s', async (command) => {
+    const { root, cwd } = await project();
+    const expected = await reference(cwd, command);
+    const current = await analyzeReadOnlyShell(command, cwd, [], signal());
+    expect(current.complete).toBe(true);
+    const bound = await openShellBindings(current.bindings!, cwd);
+    try {
+      await mkdir(join(root, 'outside'));
+      await writeFile(join(root, 'outside', 'module-0000.ts'), 'EXTERNAL\n'.repeat(99));
+      await rename(join(cwd, 'src'), join(cwd, 'original-src'));
+      await symlink(join(root, 'outside'), join(cwd, 'src'));
+      const output = await new Promise<string>((resolve, reject) => {
+        const child = spawn(
+          '/usr/bin/bash',
+          ['--noprofile', '--norc', '-p', '-c', current.command!],
+          {
+            cwd: bound.cwd,
+            env: { ...readOnlyShellEnvironment(), ...bound.env },
+            stdio: bound.stdio,
+          },
+        );
+        let stdout = '';
+        let stderr = '';
+        child.stdout!.on('data', (chunk) => {
+          stdout += String(chunk);
         });
-        // 重命名会改变目录自身的时间戳，ls -l 比较稳定的子文件行。
-        if (command === lines) expect(output).toBe(expected);
-        else {
-          const fileLines = (text: string) =>
-            text.split('\n').filter((line) => line.includes('module-'));
-          expect(fileLines(output)).toEqual(fileLines(expected));
-        }
-      } finally {
-        await bound.close();
+        child.stderr!.on('data', (chunk) => {
+          stderr += String(chunk);
+        });
+        child.once('error', reject);
+        child.once('close', (code) => (code === 0 ? resolve(stdout) : reject(new Error(stderr))));
+      });
+      // 重命名会改变目录自身的时间戳，ls -l 比较稳定的子文件行。
+      if (command === lines) expect(output).toBe(expected);
+      else {
+        const fileLines = (text: string) =>
+          text.split('\n').filter((line) => line.includes('module-'));
+        expect(fileLines(output)).toEqual(fileLines(expected));
       }
-    },
-  );
+    } finally {
+      await bound.close();
+    }
+  });
 });
 
 describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准绑定', () => {
@@ -671,3 +680,185 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
     ).toBe(true);
   });
 });
+
+describe.skipIf(process.platform !== 'linux')('递归列举与末级 glob 绑定边界', () => {
+  it.each([
+    'ls -R src',
+    'ls -Ra src/',
+    'ls --recursive -A src',
+    'ls -R src 2>/dev/null | head -80',
+    'ls -RaA src',
+    'ls -RAa src',
+    'ls -R --all --almost-all src',
+    'ls -R --almost-all --all src',
+  ])('递归输出逐字等同 Bash：%s', async (command) => {
+    const { root, cwd } = await project(2);
+    for (const name of [
+      '-dash',
+      'white space',
+      'new\nline',
+      "quote'file",
+      '字节',
+      '.hidden',
+      'glob*name',
+    ]) {
+      await mkdir(join(cwd, 'src', name, 'nested'), { recursive: true });
+      await writeFile(join(cwd, 'src', name, 'nested', 'file.ts'), 'ok\n');
+    }
+    await mkdir(join(root, 'external'));
+    await writeFile(join(root, 'external', 'SECRET'), 'outside');
+    await symlink(join(root, 'external'), join(cwd, 'src', 'link-out'));
+    const state = chain(cwd);
+    const actual = await state.run(command);
+    expect(actual.isError).toBeFalsy();
+    expect(actual.content).toBe(await reference(cwd, command));
+    expect(actual.content).not.toContain('SECRET');
+    expect(state.provider.requests).toHaveLength(0);
+    expect(state.human).not.toHaveBeenCalled();
+  });
+  it.each([
+    'cat src/*.ts',
+    'cat -n src/*.ts',
+    'cat src/*.ts src/module-0000.ts | wc -l',
+    'cd src && cat -- *.ts',
+  ])('glob 保留排序、特殊文件名和多操作数：%s', async (command) => {
+    const { cwd } = await project(2);
+    for (const [i, name] of [
+      'white space.ts',
+      'new\nline.ts',
+      '-dash.ts',
+      'glob*.ts',
+      "quote'file.ts",
+      '大小.ts',
+      'UPPER.TS',
+      '.hidden.ts',
+    ].entries())
+      await writeFile(join(cwd, 'src', name), `${i}\n`);
+    const state = chain(cwd);
+    const actual = await state.run(command);
+    expect(actual.isError).toBeFalsy();
+    expect(actual.content).toBe(await reference(cwd, command));
+    expect(state.provider.requests).toHaveLength(0);
+    expect(state.human).not.toHaveBeenCalled();
+  });
+  it.each([
+    'cat src/*.missing',
+    'cat src/**/*.ts',
+    'cat src/?.ts',
+    'cat src/[a-z]*.ts',
+    'cat src/.*',
+    'ls -RL src',
+    'ls -R src .',
+    'ls -R -l src',
+    "ls -R ''",
+    "cd . && ls ''",
+  ])('不猜测空 glob、扩展匹配或其他递归选项：%s', async (command) => {
+    const { cwd } = await project();
+    expect((await analyzeReadOnlyShell(command, cwd, [], signal())).complete).toBe(false);
+  });
+  it('glob 没有 -- 的选项注入、目录匹配、symlink 和硬链接不确定性放行', async () => {
+    const { root, cwd } = await project(0);
+    await writeFile(join(cwd, 'src', '-n.ts'), 'ordinary');
+    expect((await analyzeReadOnlyShell('cd src && cat *.ts', cwd, [], signal())).complete).toBe(
+      false,
+    );
+    await unlink(join(cwd, 'src', '-n.ts'));
+    await writeFile(join(root, 'outside.ts'), 'SECRET');
+    await symlink(join(root, 'outside.ts'), join(cwd, 'src', 'file.ts'));
+    expect((await analyzeReadOnlyShell('cat src/*.ts', cwd, [], signal())).complete).toBe(false);
+    await unlink(join(cwd, 'src', 'file.ts'));
+    await link(join(root, 'outside.ts'), join(cwd, 'src', 'file.ts'));
+    expect((await analyzeReadOnlyShell('cat src/*.ts', cwd, [], signal())).complete).toBe(false);
+    await unlink(join(cwd, 'src', 'file.ts'));
+    await mkdir(join(cwd, 'src', 'dir.ts'));
+    expect((await analyzeReadOnlyShell('cat src/*.ts', cwd, [], signal())).complete).toBe(false);
+  });
+  it.each(['cat src/*.ts', 'ls -R src'])('敏感候选不从审查集合偷偷过滤：%s', async (command) => {
+    const { cwd } = await project();
+    if (command.startsWith('cat')) await writeFile(join(cwd, 'src', 'credentials.ts'), 'SENSITIVE');
+    else await mkdir(join(cwd, 'src', 'secrets'));
+    const state = chain(cwd);
+    expect((await state.run(command)).isError).toBe(true);
+    expect(state.provider.requests).toHaveLength(0);
+    expect(state.human).toHaveBeenCalledTimes(1);
+  });
+  it('glob 候选在分析后新增时执行重新分析拒绝旧授权', async () => {
+    const { cwd } = await project();
+    const state = chain(cwd);
+    const command = 'cat src/*.ts';
+    const analysis = await state.policy.analyzer!.analyze(
+      { tool: bash, input: { command }, cwd },
+      signal(),
+    );
+    await writeFile(join(cwd, 'src', 'new.ts'), 'NEW');
+    await expect(
+      bashTool.execute({ command }, { cwd, signal: signal(), analysis }),
+    ).rejects.toThrow('approval_stale');
+  });
+  it('递归目录和 glob 内容都受 FD 上限约束', async () => {
+    const { cwd } = await project(770);
+    expect((await analyzeReadOnlyShell('cat src/*.ts', cwd, [], signal())).reasonCode).toBe(
+      'shell_descriptor_limit',
+    );
+    for (let i = 0; i < 770; i++) await mkdir(join(cwd, 'src', `dir-${i}`));
+    expect((await analyzeReadOnlyShell('ls -R src', cwd, [], signal())).reasonCode).toBe(
+      'shell_descriptor_limit',
+    );
+  });
+});
+
+it.skipIf(process.platform !== 'linux')(
+  '-- 后的 -R/--recursive 是目录操作数，不触发递归改写',
+  async () => {
+    const { cwd } = await project();
+    for (const name of ['-R', '--recursive']) {
+      await mkdir(join(cwd, name, 'nested'), { recursive: true });
+      const command = `cd . && ls -- ${name}`;
+      const state = chain(cwd);
+      expect((await state.run(command)).content).toBe(await reference(cwd, command));
+      expect(state.provider.requests).toHaveLength(0);
+      expect(state.human).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it.skipIf(process.platform !== 'linux')(
+  '获授权后的 glob 新增匹配失败关闭，所有候选验证前不读取内容',
+  async () => {
+    const { cwd } = await project(1);
+    const current = await analyzeReadOnlyShell('cat src/*.ts', cwd, [], signal());
+    expect(current.complete).toBe(true);
+    const bound = await openShellBindings(current.bindings!, cwd);
+    try {
+      await writeFile(join(cwd, 'src', 'new.ts'), 'UNAPPROVED\n');
+      const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
+        (resolve, reject) => {
+          const child = spawn(
+            '/usr/bin/bash',
+            ['--noprofile', '--norc', '-p', '-c', current.command!],
+            {
+              cwd: bound.cwd,
+              env: { ...readOnlyShellEnvironment(), ...bound.env },
+              stdio: bound.stdio,
+            },
+          );
+          let stdout = '';
+          let stderr = '';
+          child.stdout!.on('data', (chunk) => {
+            stdout += String(chunk);
+          });
+          child.stderr!.on('data', (chunk) => {
+            stderr += String(chunk);
+          });
+          child.on('error', reject);
+          child.on('close', (code) => resolve({ code, stdout, stderr }));
+        },
+      );
+      expect(result.code).toBe(125);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('approval_stale: glob selection changed');
+    } finally {
+      await bound.close();
+    }
+  },
+);

@@ -1488,3 +1488,197 @@ it('根拒绝后明确继续仍改变审批版本，兄弟旧允许不能跨ABA�
   await f.agent.agents.whenSettled();
   expect(await readFile(join(f.cwd, latePath), 'utf8')).toBe('approved');
 });
+
+describe('只读任务中未执行命令的安全替代', () => {
+  const readonlyPlan = () =>
+    textResponse(JSON.stringify({ goal: '读取并核对', steps: ['完成读取'], readOnly: true }));
+  it('未知 Bash 一次失败后同批/后续专用读取直接完成，无需重启步骤', async () => {
+    const f = await fixture(
+      [
+        toolUseResponse([
+          { id: 'unsupported', name: 'bash', input: { command: 'ls -RL .' } },
+          { id: 'safe-read', name: 'read_file', input: { path: 'README.md' } },
+        ]),
+        call('read_file', { path: 'README.md' }),
+        (req) => update(req, 0, 'completed', '两次专用读取确认内容'),
+        textResponse('已读到 replacement evidence'),
+      ],
+      {
+        planning: [readonlyPlan],
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+      },
+    );
+    await writeFile(join(f.cwd, 'README.md'), 'replacement evidence');
+    const tools: string[] = [],
+      errors: string[] = [];
+    let human = 0;
+    f.agent.events.on('permission_request', (event) => {
+      human++;
+      event.resolve({ allow: false });
+    });
+    f.agent.events.on('tool_call', (event) => tools.push(event.toolUse.name));
+    f.agent.events.on('tool_result', (event) => {
+      if (event.result.isError) errors.push(event.result.content);
+    });
+    expect((await f.agent.loop.run('只读取并总结当前项目')).reason).toBe('completed');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(tools).toEqual(['read_file', 'read_file', 'plan_update']);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('do not retry that shape or restart');
+    expect(human).toBe(0);
+    expect(f.fake.requests.every((request) => request.tools.length > 0)).toBe(true);
+  });
+  it('未执行的未知调用不构成成功证据，也不造成额外 continuation 进度', async () => {
+    const f = await fixture(
+      [
+        call('bash', { command: 'ls -RL .' }),
+        (req) => update(req, 0, 'completed', '伪造完成'),
+        textResponse('无法完成'),
+      ],
+      {
+        planning: [readonlyPlan],
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+      },
+    );
+    const errors: string[] = [];
+    f.agent.events.on('tool_result', (event) => {
+      if (event.result.isError) errors.push(event.result.content);
+    });
+    await f.agent.loop.run('只读项目');
+    expect(errors.some((error) => error.includes('No successful execution evidence'))).toBe(true);
+    expect(f.agent.loop.plan.snapshot?.phase).not.toBe('completed');
+    expect(f.fake.requests.length).toBeLessThan(8);
+  });
+  it('先前读取证据在未知调用之后保留；普通执行错误仍阻塞', async () => {
+    const f = await fixture(
+      [
+        call('read_file', { path: 'README.md' }),
+        call('bash', { command: 'ls -RL .' }),
+        (req) => update(req, 0, 'completed', '先前读取证据依然有效'),
+        textResponse('完成'),
+      ],
+      {
+        planning: [readonlyPlan],
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+      },
+    );
+    await writeFile(join(f.cwd, 'README.md'), 'evidence');
+    expect((await f.agent.loop.run('只读项目')).reason).toBe('completed');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    const plan = new PlanController(new EventBus());
+    plan.create('test', ['read'], 'auto', true);
+    plan.update(plan.snapshot!.revision, { stepId: plan.snapshot!.steps[0].id, status: 'running' });
+    plan.toolStarted('executed');
+    plan.toolFinished('executed', true, 'task_read_only: forged text');
+    expect(plan.snapshot!.steps[0].status).toBe('blocked');
+  });
+});
+
+it.skipIf(process.platform !== 'linux')(
+  '真实失败 trace 的自然浏览受控完整回放：220文件统计、样例和准确总结，无人工/模型审批',
+  async () => {
+    const countCommand = "cd . && find src -name '*.ts' -type f | wc -l && cat src/*.ts | wc -l";
+    const f = await fixture(
+      [
+        toolUseResponse([
+          { id: 'root-list', name: 'bash', input: { command: 'ls -1 .' } },
+          {
+            id: 'recursive-list',
+            name: 'bash',
+            input: { command: 'ls -R src 2>/dev/null | head -80' },
+          },
+        ]),
+        (req) => update(req, 0, 'completed', '真实目录输出'),
+        (req) => update(req, 1, 'running'),
+        call('bash', { command: "find src -type f -name '*.ts' | head -100" }),
+        (req) => update(req, 1, 'completed', '实际列出前100路径'),
+        (req) => update(req, 2, 'running'),
+        call('bash', { command: countCommand }),
+        (req) => update(req, 2, 'completed', '实际计数220文件、220行'),
+        (req) => update(req, 3, 'running'),
+        toolUseResponse(
+          ['README.md', 'src/module-0000.ts', 'src/module-0100.ts', 'src/module-0219.ts'].map(
+            (path, i) => ({ id: `sample-${i}`, name: 'read_file', input: { path } }),
+          ),
+        ),
+        (req) => update(req, 3, 'completed', 'README与三个源码样例'),
+        (req) => update(req, 4, 'running'),
+        call('read_file', { path: 'src/module-0000.ts' }),
+        (req) => update(req, 4, 'completed', '复核0号导出为42'),
+        (req) => {
+          const results = req.messages
+            .filter((message) => message.role === 'user' && Array.isArray(message.content))
+            .flatMap(
+              (message) =>
+                (message as UserMessage)
+                  .content as import('../src/core/protocol/types.js').ToolResultBlock[],
+            );
+          const counts = results.find(
+            (result) => result.type === 'tool_result' && result.content === '220\n220\n',
+          );
+          expect(counts).toBeDefined();
+          const [files, lines] = counts!.content.trim().split('\n').map(Number);
+          const samples = [0, 100, 219].map((n) => {
+            const result = results.find(
+              (result) =>
+                result.type === 'tool_result' &&
+                result.content.includes(`export const value${n} =`),
+            );
+            return Number(result!.content.match(new RegExp(`value${n} = (\\d+)`))![1]);
+          });
+          return textResponse(
+            `源码有${files}个TypeScript文件，共${lines}行。前三个抽样导出值为${samples.join('、')}；文件用于合成常量样例。路径仅展示前100项，统计涵盖全部文件。`,
+          );
+        },
+      ],
+      {
+        planning: [
+          textResponse(
+            JSON.stringify({
+              goal: '只读源码浏览',
+              steps: ['目录结构', '前100路径', '完整统计', '阅读样例', '核对总结'],
+              readOnly: true,
+            }),
+          ),
+        ],
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+      },
+    );
+    await import('node:fs/promises').then(async ({ mkdir }) => mkdir(join(f.cwd, 'src')));
+    for (let i = 0; i < 220; i++)
+      await writeFile(
+        join(f.cwd, 'src', `module-${String(i).padStart(4, '0')}.ts`),
+        `export const value${i} = ${i === 0 ? 42 : i};\n`,
+      );
+    await writeFile(join(f.cwd, 'README.md'), '合成TypeScript常量样例项目。');
+    let human = 0,
+      text = '';
+    const errors: string[] = [];
+    f.agent.events.on('permission_request', (event) => {
+      human++;
+      event.resolve({ allow: false });
+    });
+    f.agent.events.on('tool_result', (event) => {
+      if (event.result.isError) errors.push(event.result.content);
+    });
+    f.agent.events.on('text_delta', (event) => {
+      text += event.text;
+    });
+    expect(
+      (
+        await f.agent.loop.run(
+          '请只浏览项目的 src 业务源码和 README.md：列出目录和前100个TypeScript文件路径，统计src下全部TypeScript文件数量和总行数，读取几个源码示例说明用途，最后用中文给出完整准确总结。根目录可查看名称，但不要读取任何运行时或权限配置内容。不修改、不联网、不委派。请实际完成。',
+        )
+      ).reason,
+    ).toBe('completed');
+    expect(errors).toEqual([]);
+    expect(human).toBe(0);
+    expect(f.fake.requests.every((request) => request.tools.length > 0)).toBe(true);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(text).toContain('220个TypeScript文件，共220行');
+    expect(text).toContain('42、100、219');
+    expect(await readFile(join(f.cwd, 'src/module-0000.ts'), 'utf8')).toBe(
+      'export const value0 = 42;\n',
+    );
+  },
+);

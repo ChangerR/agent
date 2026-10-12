@@ -55,6 +55,10 @@ const fail = (reason: string): never => {
 };
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const quote = (word: string) => `'${word.replace(/'/g, `'\\''`)}'`;
+const recursiveListing = (args: readonly string[]) =>
+  args
+    .slice(0, args.includes('--') ? args.indexOf('--') : args.length)
+    .some((arg) => arg === '--recursive' || /^-[^-]*R/.test(arg));
 
 /** 不继承启动脚本、导出的函数、动态加载器、搜索配置和 Git 注入变量。 */
 export function readOnlyShellEnvironment(): NodeJS.ProcessEnv {
@@ -1231,10 +1235,62 @@ export async function analyzeReadOnlyShell(
     return Number(variable.slice('AGENTLAB_BOUND_'.length)) + 3;
   };
   const literalListing = async (args: string[]) => {
+    if (recursiveListing(args)) {
+      // GNU/Linux、单根、默认字节排序的递归名称列举。每个目录单独绑定，绝不让 ls 递归追逐可变路径。
+      const parsed = options(args, {
+        short: 'aAR1',
+        long: ['--recursive', '--all', '--almost-all'],
+      });
+      if (parsed.operands.length > 1) fail('shell_recursive_listing_options');
+      const path = parsed.operands[0] ?? '.';
+      if (!path) fail('shell_recursive_listing_target');
+      const listings: Array<{ label: string; variable: string }> = [];
+      await bindRoot();
+      const walk = async (raw: string, label: string): Promise<void> => {
+        const entry = await boundary.target(raw, 'content');
+        if (
+          !entry.exists ||
+          !entry.directory ||
+          entry.link ||
+          entry.actual !== resolve(boundary.cwd, raw)
+        )
+          fail('shell_recursive_listing_target');
+        listings.push({ label, variable: bind(entry, 'directory') });
+        const children = await readdir(entry.actual, { withFileTypes: true, encoding: 'buffer' });
+        children.sort((a, b) => Buffer.compare(a.name, b.name));
+        for (const child of children) {
+          const name = child.name.toString('utf8');
+          if (!Buffer.from(name).equals(child.name)) fail('shell_listing_filename_unverified');
+          if (name.startsWith('.') && !anyFlag(parsed, '-a', '-A', '--all', '--almost-all'))
+            continue;
+          const childPath = join(entry.actual, name);
+          if (child.isSymbolicLink()) {
+            await boundary.identity(childPath);
+            continue;
+          }
+          const target = await boundary.target(childPath, 'metadata');
+          if (target.link) fail('shell_recursive_listing_target');
+          if (target.directory) await walk(childPath, `${label.replace(/\/+$/, '')}/${name}`);
+        }
+      };
+      await walk(path, path);
+      const binary = quote(await boundary.binary('ls'));
+      const flags = args
+        .filter((_arg, index) => !parsed.operandIndices.includes(index))
+        .filter((arg) => arg !== '--recursive' && arg !== '--')
+        .map((arg) => (/^-[^-]/.test(arg) ? arg.replace(/R/g, '') : arg))
+        .filter((arg) => arg !== '-');
+      const helper = `__agentlab_ls_${helpers.length}`;
+      helpers.push(
+        `${helper}() { ${listings.map(({ label, variable }, i) => `${i ? "builtin printf '\\n'; " : ''}builtin printf '%s:\\n' ${quote(label)}; ${binary} ${flags.map(quote).join(' ')} -- "$${variable}/" || return $?;`).join(' ')} };`,
+      );
+      return helper;
+    }
     // 单目录无标题列举可保持标签；-d、多目标、递归和带值选项暂不改写。
     const parsed = options(args, { short: 'aAlhtrSUXisFpQq1mxCnogBNbcuv' });
     if (parsed.operands.length > 1) fail('shell_literal_metadata_binding_unverified');
     const path = parsed.operands[0] ?? '.';
+    if (!path) fail('shell_literal_metadata_binding_unverified');
     const entry = await boundary.target(path, 'metadata');
     if (!entry.exists || !entry.directory || entry.link)
       fail('shell_literal_metadata_binding_unverified');
@@ -1294,6 +1350,107 @@ export async function analyzeReadOnlyShell(
     const helper = `__agentlab_wc_${helpers.length}`;
     helpers.push(
       `${helper}() { builtin local line output status; ${wcOutput(invocation, mapped)} };`,
+    );
+    return helper;
+  };
+  const globCat = async (nodes: Parser.SyntaxNode[]) => {
+    const groups: Array<
+      | { literal: string }
+      | { directory: string; pattern: string; files: Array<{ raw: string; variable: string }> }
+    > = [];
+    const expanded: string[] = [];
+    await bindRoot();
+    for (const node of nodes) {
+      try {
+        const value = literal(node);
+        groups.push({ literal: value });
+        expanded.push(value);
+        continue;
+      } catch (error) {
+        if (!(error instanceof Unverified) || error.reasonCode !== 'shell_expansion') throw error;
+      }
+      // 只支持未引用 word 的末级 *；没有自行解释引号、转义、括号范围、globstar 或环境展开。
+      const word = node.text;
+      if (node.type !== 'word' || /[\\\s?\[\]{}~$`'"]/.test(word))
+        fail('shell_glob_pattern_unverified');
+      const slash = word.lastIndexOf('/');
+      const parent = slash < 0 ? '.' : word.slice(0, slash) || '/';
+      const pattern = word.slice(slash + 1);
+      if (
+        parent.includes('*') ||
+        !pattern.includes('*') ||
+        pattern.includes('**') ||
+        pattern.startsWith('.')
+      )
+        fail('shell_glob_pattern_unverified');
+      const directory = await boundary.target(parent, 'content');
+      if (
+        !directory.exists ||
+        !directory.directory ||
+        directory.link ||
+        directory.actual !== resolve(boundary.cwd, parent)
+      )
+        fail('shell_glob_directory_unverified');
+      const files: Array<{ raw: string; variable: string }> = [];
+      for (const item of await readdir(directory.actual, { encoding: 'buffer' })) {
+        const name = item.toString('utf8');
+        if (!Buffer.from(name).equals(item)) fail('shell_glob_filename_unverified');
+        if (
+          !minimatch(name, pattern, {
+            dot: false,
+            nocase: false,
+            noext: true,
+            nobrace: true,
+            nonegate: true,
+            nocomment: true,
+          })
+        )
+          continue;
+        const operand = slash < 0 ? name : `${word.slice(0, slash + 1)}${name}`;
+        // 展开的选项和 '-' stdin 不能被悄悄改成文件操作数。
+        if (operand === '-' || (operand.startsWith('-') && !expanded.includes('--')))
+          fail('shell_glob_option_injection');
+        const entry = await boundary.target(operand, 'content');
+        if (
+          !entry.exists ||
+          !entry.regular ||
+          entry.link ||
+          entry.actual !== resolve(boundary.cwd, operand)
+        )
+          fail('shell_glob_file_unverified');
+        files.push({ raw: name, variable: bind(entry, 'file') });
+        expanded.push(operand);
+      }
+      if (!files.length) fail('shell_glob_empty_unverified');
+      groups.push({ directory: bind(directory, 'directory'), pattern, files });
+    }
+    const parsed = options(expanded, FILE_READ_SPECS.cat);
+    const operands = new Set(parsed.operandIndices);
+    let index = 0;
+    const steps: string[] = [];
+    for (const group of groups) {
+      if ('literal' in group) {
+        const value = group.literal;
+        if (operands.has(index) && value !== '-') {
+          const entry = await boundary.target(value, 'content');
+          if (!entry.exists || !entry.regular || entry.link) fail('shell_read_target_unverified');
+          steps.push(`argv+=("$${bind(entry, 'file')}");`);
+        } else steps.push(`argv+=(${quote(value)});`);
+        index++;
+      } else {
+        const pattern = group.pattern.split('*').map(quote).join('*');
+        const stale =
+          "builtin printf '%s\\n' 'approval_stale: glob selection changed' >&2; return 125;";
+        // Bash 自己完成获授权后的排序与匹配；在读取任何文件前检查完整集合并映射到已打开的 fd。
+        steps.push(
+          `matches=("$${group.directory}/"${pattern}); (( \${#matches[@]} == ${group.files.length} )) || { ${stale} }; for raw in "\${matches[@]}"; do case "$raw" in ${group.files.map(({ raw, variable }) => `"$${group.directory}/"${quote(raw)}) argv+=("$${variable}");;`).join(' ')} *) ${stale}; esac; done;`,
+        );
+        index += group.files.length;
+      }
+    }
+    const helper = `__agentlab_glob_${helpers.length}`;
+    helpers.push(
+      `${helper}() { builtin local raw; builtin local -a argv matches; argv=(); ${steps.join(' ')} ${quote(await boundary.binary('cat'))} "\${argv[@]}"; };`,
     );
     return helper;
   };
@@ -1452,7 +1609,26 @@ export async function analyzeReadOnlyShell(
     if (node.type === 'command') {
       try {
         // 必须与执行分析使用相同词法解码，引号/转义不能绕过前序读取的 fd 绑定。
-        if (literal(node.childForFieldName('name')!) === 'xargs') return true;
+        const name = literal(node.childForFieldName('name')!);
+        if (name === 'xargs') return true;
+        if (
+          name === 'cat' &&
+          node.namedChildren.some((arg) => arg.type === 'word' && arg.text.includes('*'))
+        )
+          return true;
+        if (
+          name === 'ls' &&
+          recursiveListing(
+            node.namedChildren.map((arg) => {
+              try {
+                return literal(arg);
+              } catch {
+                return '';
+              }
+            }),
+          )
+        )
+          return true;
       } catch {
         /* 未解析命令不会放行。 */
       }
@@ -1513,6 +1689,13 @@ export async function analyzeReadOnlyShell(
           normalized.set(node.id, await dynamicWc(argNodes));
           return;
         }
+        if (
+          name === 'cat' &&
+          argNodes.some((arg) => arg.type === 'word' && arg.text.includes('*'))
+        ) {
+          normalized.set(node.id, await globCat(argNodes));
+          return;
+        }
         const args = argNodes.map(literal);
         if (name === 'cd') {
           if (!cdFlow || hasAncestor(node, 'pipeline') || hasAncestor(node, 'command_substitution'))
@@ -1539,7 +1722,7 @@ export async function analyzeReadOnlyShell(
           normalized.set(node.id, (await findSelection(args)).helper);
           return;
         }
-        if (name === 'ls' && boundary.requiresBoundContent) {
+        if (name === 'ls' && (boundary.requiresBoundContent || recursiveListing(args))) {
           normalized.set(node.id, await literalListing(args));
           return;
         }

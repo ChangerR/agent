@@ -115,16 +115,41 @@ it.skipIf(process.platform !== 'linux')(
         expect(
           rows().filter((row) => row.kind === 'judge' || row.event?.type === 'permission_request'),
         ).toHaveLength(0);
+        for (const [i, browse] of [
+          'ls -R src/synthetic 2>/dev/null | head -80',
+          "cd . && find src/synthetic -name '*.ts' -type f | wc -l && cat src/synthetic/*.ts | wc -l",
+        ].entries()) {
+          const browseExpected = execFileSync(
+            '/usr/bin/bash',
+            ['--noprofile', '--norc', '-p', '-c', browse],
+            { cwd: fixture.project, env: readOnlyShellEnvironment(), encoding: 'utf8' },
+          );
+          terminal.send(browse);
+          await terminal.wait(
+            () => rows().filter((row) => row.event?.type === 'loop_end').length === 3 + i,
+            '真实 trace 的读取没有完成',
+          );
+          expect(
+            rows()
+              .filter((row) => row.event?.type === 'tool_result')
+              .at(-1)?.event?.result?.content,
+          ).toBe(browseExpected);
+          expect(
+            rows().filter(
+              (row) => row.kind === 'judge' || row.event?.type === 'permission_request',
+            ),
+          ).toHaveLength(0);
+        }
         terminal.send('创建 pty-write.txt，内容为 verified。');
         await terminal.wait(
-          () => rows().filter((row) => row.event?.type === 'loop_end').length === 3,
+          () => rows().filter((row) => row.event?.type === 'loop_end').length === 5,
           '受许可写入没有完成',
         );
         expect(readFileSync(join(fixture.project, 'pty-write.txt'), 'utf8')).toBe('verified');
         expect(rows().filter((row) => row.kind === 'judge')).toHaveLength(1);
         terminal.send('禁止创建 pty-denied.txt。');
         await terminal.wait(
-          () => rows().filter((row) => row.event?.type === 'loop_end').length === 4,
+          () => rows().filter((row) => row.event?.type === 'loop_end').length === 6,
           '受控拒绝没有完成',
         );
         expect(existsSync(join(fixture.project, 'pty-denied.txt'))).toBe(false);
