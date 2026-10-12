@@ -12,7 +12,7 @@ export async function openShellBindings(bindings: readonly ReadOnlyShellBinding[
       // NONBLOCK 避免竞态把普通文件换成 FIFO 后阻塞；NOFOLLOW 不跟随最后一个链接。
       const handle = await open(
         binding.path,
-        constants.O_RDONLY |
+        (binding.kind === 'discard' ? constants.O_WRONLY : constants.O_RDONLY) |
           constants.O_NOFOLLOW |
           constants.O_NONBLOCK |
           (binding.kind === 'directory' ? constants.O_DIRECTORY : 0),
@@ -21,7 +21,11 @@ export async function openShellBindings(bindings: readonly ReadOnlyShellBinding[
       const stat = await handle.stat({ bigint: true });
       if (
         `${stat.dev}:${stat.ino}:${stat.mode}:${stat.nlink}` !== binding.identity ||
-        (binding.kind === 'directory' ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1n)
+        (binding.kind === 'directory'
+          ? !stat.isDirectory()
+          : binding.kind === 'discard'
+            ? !stat.isCharacterDevice() || stat.rdev !== 259n
+            : !stat.isFile() || stat.nlink !== 1n)
       )
         throw new Error('approval_stale: bound file identity changed');
     }

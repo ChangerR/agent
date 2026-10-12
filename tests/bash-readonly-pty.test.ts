@@ -95,16 +95,36 @@ it.skipIf(process.platform !== 'linux')(
             (row) => row.event?.type === 'tool_execution' && row.event.phase === 'policy',
           )?.event?.reasonCode,
         ).toBe('safe_read');
-        terminal.send('创建 pty-write.txt，内容为 verified。');
+        const nulCommand =
+          "find src -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null | wc -l";
+        const nulExpected = execFileSync(
+          '/usr/bin/bash',
+          ['--noprofile', '--norc', '-p', '-c', nulCommand],
+          { cwd: fixture.project, env: readOnlyShellEnvironment(), encoding: 'utf8' },
+        );
+        terminal.send(nulCommand);
         await terminal.wait(
           () => rows().filter((row) => row.event?.type === 'loop_end').length === 2,
+          'NUL 管道没有完成',
+        );
+        expect(
+          rows()
+            .filter((row) => row.event?.type === 'tool_result')
+            .at(-1)?.event?.result?.content,
+        ).toBe(nulExpected);
+        expect(
+          rows().filter((row) => row.kind === 'judge' || row.event?.type === 'permission_request'),
+        ).toHaveLength(0);
+        terminal.send('创建 pty-write.txt，内容为 verified。');
+        await terminal.wait(
+          () => rows().filter((row) => row.event?.type === 'loop_end').length === 3,
           '受许可写入没有完成',
         );
         expect(readFileSync(join(fixture.project, 'pty-write.txt'), 'utf8')).toBe('verified');
         expect(rows().filter((row) => row.kind === 'judge')).toHaveLength(1);
         terminal.send('禁止创建 pty-denied.txt。');
         await terminal.wait(
-          () => rows().filter((row) => row.event?.type === 'loop_end').length === 3,
+          () => rows().filter((row) => row.event?.type === 'loop_end').length === 4,
           '受控拒绝没有完成',
         );
         expect(existsSync(join(fixture.project, 'pty-denied.txt'))).toBe(false);

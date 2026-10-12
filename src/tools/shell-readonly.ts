@@ -43,7 +43,7 @@ export interface ShellPathFact {
 export interface ReadOnlyShellBinding {
   path: string;
   identity: string;
-  kind: 'directory' | 'file';
+  kind: 'directory' | 'file' | 'discard';
 }
 class Unverified extends Error {
   constructor(readonly reasonCode: string) {
@@ -1056,6 +1056,7 @@ interface FileSelection {
   roots: Array<{ label: string; entry: Entry }>;
   files: Array<{ operand: string; entry: Entry }>;
   predicates: string[];
+  nullTerminated: boolean;
 }
 
 /** 仅证明隐式 AND 的普通文件选择；其他 find 表达式仍由原只读分析或 reviewer 处理。 */
@@ -1067,11 +1068,11 @@ function fileFindSpec(args: readonly string[]) {
   const predicates = args.slice(i);
   const names: string[] = [];
   let regular = false;
-  let print = false;
+  let print: 'line' | 'nul' | undefined;
   while (i < args.length) {
     const flag = args[i++];
-    if (flag === '-print' && i === args.length) {
-      print = true;
+    if ((flag === '-print' || flag === '-print0') && i === args.length) {
+      print = flag === '-print0' ? 'nul' : 'line';
       break;
     }
     const value = args[i++];
@@ -1086,12 +1087,18 @@ function fileFindSpec(args: readonly string[]) {
     roots: roots.length ? roots : ['.'],
     names,
     predicates: print ? predicates.slice(0, -1) : predicates,
+    nullTerminated: print === 'nul',
   };
 }
 
 async function selectFiles(args: string[], boundary: Boundary): Promise<FileSelection> {
   const spec = fileFindSpec(args) ?? fail('shell_substitution_find_unverified');
-  const selection: FileSelection = { roots: [], files: [], predicates: [...spec.predicates] };
+  const selection: FileSelection = {
+    roots: [],
+    files: [],
+    predicates: [...spec.predicates],
+    nullTerminated: spec.nullTerminated,
+  };
   for (const label of spec.roots) {
     const root = await boundary.target(label, 'metadata');
     if (!root.exists || !root.directory || root.link) fail('shell_find_root_unverified');
@@ -1195,6 +1202,9 @@ export async function analyzeReadOnlyShell(
   const bindings: ReadOnlyShellBinding[] = [];
   const helpers: string[] = [];
   const selections = new Map<string, { selection: FileSelection; helper: string }>();
+  const combinedPipelines = new Map<number, string>();
+  const stderrSinks = new Map<number, number>();
+  const consumedSinks = new Set<number>();
   const bind = (entry: Entry, kind: ReadOnlyShellBinding['kind']) => {
     if (process.platform !== 'linux') fail('shell_descriptor_platform_unverified');
     let index = bindings.findIndex(
@@ -1209,6 +1219,16 @@ export async function analyzeReadOnlyShell(
   };
   const bindRoot = async () => {
     if (!bindings.length) bind(await boundary.target(boundary.root, 'metadata'), 'directory');
+  };
+  const discardStderr = async () => {
+    // 不按可变路径重新打开输出文件；只绑定 Linux 的 null 字符设备。
+    const entry = await boundary.identity('/dev/null');
+    const stat = await lstat('/dev/null', { bigint: true });
+    if (entry.link || !stat.isCharacterDevice() || stat.rdev !== 259n)
+      fail('shell_discard_device_unverified');
+    await bindRoot();
+    const variable = bind(entry, 'discard');
+    return Number(variable.slice('AGENTLAB_BOUND_'.length)) + 3;
   };
   const wcOutput = (invocation: string, mapped: Array<{ operand: string; variable: string }>) => {
     const labels = mapped.map(
@@ -1281,7 +1301,7 @@ export async function analyzeReadOnlyShell(
       const allowed = operands.length
         ? operands.map(({ operand }) => quote(operand)).join('|')
         : '';
-      return `"$${roots[i]}"/*) value=${quote(`${label}/`)}"\${raw#\"$${roots[i]}/\"}"; case "$value" in ${allowed ? `${allowed}) builtin printf '%s\\n' "$value";;` : ''} *) builtin printf '%s\\n' 'approval_stale: find selection changed' >&2; return 125;; esac;;`;
+      return `"$${roots[i]}"/*) value=${quote(`${label}/`)}"\${raw#\"$${roots[i]}/\"}"; case "$value" in ${allowed ? `${allowed}) builtin printf ${selection.nullTerminated ? "'%s\\0'" : "'%s\\n'"} "$value";;` : ''} *) builtin printf '%s\\n' 'approval_stale: find selection changed' >&2; return 125;; esac;;`;
     });
     helpers.push(
       `${helper}() ( builtin set -o pipefail; ${quote(binary)} ${roots.map((variable) => `"$${variable}/"`).join(' ')} ${selection.predicates.map(quote).join(' ')} '-print0' | { while IFS= builtin read -r -d '' raw; do case "$raw" in ${cases.join(' ')} *) return 125;; esac; done; } );`,
@@ -1305,6 +1325,8 @@ export async function analyzeReadOnlyShell(
     )
       fail('shell_substitution_find_unverified');
     const findArgs = child.namedChildren.filter((n) => n.id !== nameNode!.id).map(literal);
+    // Bash 会移除替换中的 NUL，不能将 -print0 等价于按行输出。
+    if (fileFindSpec(findArgs)?.nullTerminated) fail('shell_substitution_nul_unverified');
     const flags = args.slice(0, -1).map(literal);
     const normalizedFlags = flags.at(-1) === '--' ? flags.slice(0, -1) : flags;
     if (
@@ -1331,6 +1353,51 @@ export async function analyzeReadOnlyShell(
       `${helper}() { builtin local arg line output status selection; builtin local -a files; files=(); selection=$(${find}) || return $?; for arg in $selection; do case "$arg" in ${cases.join(' ')} *) builtin printf '%s\\n' 'approval_stale: wc operand changed' >&2; return 125;; esac; done; ${wcOutput(`${quote(binary)} ${normalizedFlags.map(quote).join(' ')} -- "\${files[@]}"`, mapped)} };`,
     );
     return helper;
+  };
+  const combineXargs = async (node: Parser.SyntaxNode): Promise<boolean> => {
+    const children = node.namedChildren;
+    if (children.length < 2 || children[0].type !== 'command' || children[1].type !== 'command')
+      return false;
+    const first = children[0].childForFieldName('name');
+    const second = children[1].childForFieldName('name');
+    if (!first || !second || literal(first) !== 'find' || literal(second) !== 'xargs') return false;
+    if (
+      children
+        .slice(0, 2)
+        .some((child) => child.namedChildren.some((n) => n.type === 'variable_assignment'))
+    )
+      fail('shell_assignment');
+    const findArgs = children[0].namedChildren.filter((n) => n.id !== first.id).map(literal);
+    const xargsArgs = children[1].namedChildren.filter((n) => n.id !== second.id).map(literal);
+    if (
+      !fileFindSpec(findArgs)?.nullTerminated ||
+      xargsArgs.length !== 2 ||
+      !['-0', '--null'].includes(xargsArgs[0]) ||
+      xargsArgs[1] !== 'cat'
+    )
+      fail('shell_xargs_shape_unverified');
+    if (node.children.some((child) => !child.isNamed && child.type !== '|'))
+      fail('shell_async_or_control');
+    const { selection, helper: find } = await findSelection(findArgs);
+    const cases: string[] = [];
+    for (const { operand, entry } of selection.files) {
+      if (operand.startsWith('-')) fail('shell_xargs_option_injection');
+      await boundary.file(entry.actual);
+      cases.push(`${quote(operand)}) files+=("$${bind(entry, 'file')}");;`);
+    }
+    const xargs = await boundary.binary('xargs');
+    const cat = await boundary.binary('cat');
+    const sink = children.length === 2 ? stderrSinks.get(node.id) : undefined;
+    if (sink !== undefined) consumedSinks.add(node.id);
+    const helper = `__agentlab_xargs_${helpers.length}`;
+    // 完整 NUL 输入和 find 退出状态都验证后才把已绑定 fd 交给真实 xargs/cat。
+    // 保留 xargs 空输入和退出码；fd 路径长度可能改变批次，故仅支持普通 cat 内容串联。
+    helpers.push(
+      `${helper}() { builtin local arg pid valid; builtin local -a files; files=(); valid=1; while IFS= builtin read -r -d '' arg; do case "$arg" in ${cases.join(' ')} *) valid=0;; esac; done < <(${find}); pid=$!; builtin wait "$pid" || return 125; if (( ! valid )); then return 125; fi; { if (( \${#files[@]} )); then builtin printf '%s\\0' "\${files[@]}"; fi; } | ${quote(xargs)} '-0' ${quote(cat)}${sink === undefined ? '' : ` 2>&${sink}`}; };`,
+    );
+    commands.push(['find', ...findArgs], ['xargs', ...xargsArgs]);
+    combinedPipelines.set(node.id, helper);
+    return true;
   };
   const record = (error: unknown) => {
     signal.throwIfAborted();
@@ -1360,10 +1427,56 @@ export async function analyzeReadOnlyShell(
       !commandOperators(tree.rootNode).includes('||'));
   const hasSubstitution = (node: Parser.SyntaxNode): boolean =>
     node.type === 'command_substitution' || node.namedChildren.some(hasSubstitution);
-  boundary.requiresBoundContent = hasCd(tree.rootNode) || hasSubstitution(tree.rootNode);
+  const hasBoundPipeline = (node: Parser.SyntaxNode): boolean => {
+    if (node.type === 'redirected_statement') return true;
+    if (node.type === 'command') {
+      try {
+        // 必须与执行分析使用相同词法解码，引号/转义不能绕过前序读取的 fd 绑定。
+        if (literal(node.childForFieldName('name')!) === 'xargs') return true;
+      } catch {
+        /* 未解析命令不会放行。 */
+      }
+    }
+    return node.namedChildren.some(hasBoundPipeline);
+  };
+  boundary.requiresBoundContent =
+    hasCd(tree.rootNode) || hasSubstitution(tree.rootNode) || hasBoundPipeline(tree.rootNode);
   const collect = async (node: Parser.SyntaxNode, piped = false): Promise<void> => {
     signal.throwIfAborted();
     if (++nodes > 4096) fail('shell_ast_limit');
+    if (node.type === 'redirected_statement') {
+      try {
+        const body = node.childForFieldName('body');
+        const redirects = node.namedChildren.filter((child) => child.id !== body?.id);
+        if (!body || redirects.length !== 1) return fail('shell_redirect_unverified');
+        const redirect = redirects[0];
+        if (
+          redirect.type !== 'file_redirect' ||
+          redirect.childForFieldName('descriptor')?.text !== '2' ||
+          literal(redirect.childForFieldName('destination')!) !== '/dev/null' ||
+          redirect.children
+            .filter((child) => !child.isNamed)
+            .map((child) => child.type)
+            .join('') !== '>'
+        )
+          fail('shell_redirect_unverified');
+        stderrSinks.set(body.id, await discardStderr());
+        await collect(body, piped);
+        return;
+      } catch (error) {
+        record(error);
+      }
+    }
+    if (node.type === 'pipeline') {
+      try {
+        if (await combineXargs(node)) {
+          for (const child of node.namedChildren.slice(2)) await collect(child, true);
+          return;
+        }
+      } catch (error) {
+        record(error);
+      }
+    }
     if (node.type === 'command') {
       try {
         const nameNode = node.childForFieldName('name');
@@ -1432,6 +1545,12 @@ export async function analyzeReadOnlyShell(
   const render = (node: Parser.SyntaxNode): string => {
     if (node.hasError || node.isMissing) return fail('shell_parse_error');
     if (node.type === 'comment') return '';
+    if (node.type === 'redirected_statement') {
+      const body = node.childForFieldName('body');
+      const sink = body && stderrSinks.get(body.id);
+      if (!body || sink === undefined) return fail('shell_redirect_unverified');
+      return render(body) + (consumedSinks.has(body.id) ? '' : ` 2>&${sink}`);
+    }
     if (node.type === 'command') {
       if (node.namedChildren.some((child) => child.type === 'variable_assignment'))
         return fail('shell_assignment');
@@ -1443,6 +1562,10 @@ export async function analyzeReadOnlyShell(
       return node.namedChildren.map(render).filter(Boolean).join('; ');
     }
     if (node.type === 'list' || node.type === 'pipeline') {
+      if (combinedPipelines.has(node.id))
+        return [combinedPipelines.get(node.id), ...node.namedChildren.slice(2).map(render)].join(
+          ' | ',
+        );
       const parts: string[] = [];
       for (const child of node.children) {
         if (child.isNamed) parts.push(render(child));

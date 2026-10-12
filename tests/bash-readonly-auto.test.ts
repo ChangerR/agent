@@ -91,6 +91,166 @@ afterEach(async () => {
 });
 
 describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替换', () => {
+  it.each([
+    "find src -type f -name '*.ts' -print0 | xargs -0 cat | wc -l",
+    "find src -type f -name '*.ts' -print0 | xargs --null cat 2>/dev/null | wc -l",
+    "echo count; find . -type f -name '*.ts' | wc -l; find . -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null | wc -l",
+    "cd src && find . -type f -name '*.ts' -print0 | xargs -0 cat | wc -l",
+    'cat src/module-0000.ts 2>/dev/null',
+  ])('绑定的 NUL find/xargs 与 stderr 丢弃保持输出：%s', async (command) => {
+    const { cwd } = await project(220);
+    for (const name of ['white space.ts', 'new\nline.ts', '-dash.ts', 'glob*.ts', "quote'file.ts"])
+      await writeFile(join(cwd, 'src', name), 'one\ntwo\n');
+    const state = chain(cwd);
+    const result = await state.run(command);
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toBe(await reference(cwd, command));
+    expect(state.provider.requests).toHaveLength(0);
+    expect(state.human).not.toHaveBeenCalled();
+  });
+  it('NUL find/xargs 空输入与符号链接排除保持原语义', async () => {
+    const { root, cwd } = await project(0);
+    await writeFile(join(root, 'outside.ts'), 'SECRET\n');
+    await symlink(join(root, 'outside.ts'), join(cwd, 'src', 'link.ts'));
+    const command = "find src -type f -name '*.ts' -print0 | xargs -0 cat | wc -l";
+    const state = chain(cwd);
+    expect((await state.run(command)).content).toBe(await reference(cwd, command));
+    expect(state.provider.requests).toHaveLength(0);
+  });
+  it('find -name 的 -print0 值不是输出动作，不能改变分隔符或误接 xargs -0', async () => {
+    const { cwd } = await project(0);
+    await writeFile(join(cwd, 'src', '-print0'), 'one\n');
+    const find = "find src -type f -name '-print0'";
+    const state = chain(cwd);
+    expect((await state.run(find)).content).toBe(await reference(cwd, find));
+    expect((await state.run(`wc -l $(${find})`)).content).toBe(
+      await reference(cwd, `wc -l $(${find})`),
+    );
+    expect(state.provider.requests).toHaveLength(0);
+    expect((await analyzeReadOnlyShell(`${find} | xargs -0 cat`, cwd, [], signal())).complete).toBe(
+      false,
+    );
+  });
+  it('NUL 内容候选中的硬链接和敏感文件仍不能由规则放行', async () => {
+    const { root, cwd } = await project();
+    await writeFile(join(root, 'outside.ts'), 'EXTERNAL');
+    await link(join(root, 'outside.ts'), join(cwd, 'src', 'linked.ts'));
+    const command = 'find src -type f -print0 | xargs -0 cat';
+    expect((await analyzeReadOnlyShell(command, cwd, [], signal())).complete).toBe(false);
+    await unlink(join(cwd, 'src', 'linked.ts'));
+    await writeFile(join(cwd, 'src', '.env'), 'SECRET');
+    const state = chain(cwd);
+    expect((await state.run(command)).isError).toBe(true);
+    expect(state.provider.requests).toHaveLength(0);
+    expect(state.human).toHaveBeenCalledTimes(1);
+  });
+  it.each(["'xargs'", '"xargs"', 'xar"gs"', 'xar\\gs'])(
+    '解码命令名 %s 时前序 cat 也必须绑定，替换 symlink 不越界',
+    async (name) => {
+      const { root, cwd } = await project();
+      await writeFile(join(cwd, 'notes.txt'), 'APPROVED\n');
+      await writeFile(join(root, 'outside.txt'), 'OUTSIDE_REPLACEMENT\n');
+      const analysis = await analyzeReadOnlyShell(
+        `cat notes.txt; find src -type f -print0 | ${name} -0 cat`,
+        cwd,
+        [],
+        signal(),
+      );
+      expect(analysis.complete).toBe(true);
+      expect(analysis.bindings!.some((binding) => binding.path === join(cwd, 'notes.txt'))).toBe(
+        true,
+      );
+      const bound = await openShellBindings(analysis.bindings!, cwd);
+      try {
+        await unlink(join(cwd, 'notes.txt'));
+        await symlink(join(root, 'outside.txt'), join(cwd, 'notes.txt'));
+        const output = await new Promise<string>((resolve, reject) => {
+          const child = spawn(
+            '/usr/bin/bash',
+            ['--noprofile', '--norc', '-p', '-c', analysis.command!],
+            {
+              cwd: bound.cwd,
+              env: { ...readOnlyShellEnvironment(), ...bound.env },
+              stdio: bound.stdio,
+            },
+          );
+          let stdout = '';
+          child.stdout!.on('data', (chunk) => (stdout += String(chunk)));
+          child.once('error', reject);
+          child.once('close', () => resolve(stdout));
+        });
+        expect(output).toContain('APPROVED');
+        expect(output).not.toContain('OUTSIDE_REPLACEMENT');
+      } finally {
+        await bound.close();
+      }
+    },
+  );
+  it.each([false, true])('新候选在读取任何内容之前拒绝，末端 wc=%s 不隐藏诊断', async (tail) => {
+    const { cwd } = await project();
+    const command =
+      "find src -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null" + (tail ? ' | wc -l' : '');
+    const analysis = await analyzeReadOnlyShell(command, cwd, [], signal());
+    expect(analysis.complete).toBe(true);
+    const bound = await openShellBindings(analysis.bindings!, cwd);
+    try {
+      await writeFile(join(cwd, 'src', 'new.ts'), 'UNAUTHORIZED');
+      const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
+        (resolve, reject) => {
+          const child = spawn(
+            '/usr/bin/bash',
+            ['--noprofile', '--norc', '-p', '-c', analysis.command!],
+            {
+              cwd: bound.cwd,
+              env: { ...readOnlyShellEnvironment(), ...bound.env },
+              stdio: bound.stdio,
+            },
+          );
+          let stdout = '',
+            stderr = '';
+          child.stdout!.on('data', (chunk) => (stdout += String(chunk)));
+          child.stderr!.on('data', (chunk) => (stderr += String(chunk)));
+          child.once('error', reject);
+          child.once('close', (code) => resolve({ code, stdout, stderr }));
+        },
+      );
+      expect(result.code).toBe(tail ? 0 : 125);
+      expect(result.stdout).toBe(tail ? '0\n' : '');
+      expect(result.stderr).toContain('approval_stale');
+    } finally {
+      await bound.close();
+    }
+  });
+  it('discard 描述符不接受普通文件替代 null 设备', async () => {
+    const { cwd } = await project();
+    const analysis = await analyzeReadOnlyShell(
+      'cat src/module-0000.ts 2>/dev/null',
+      cwd,
+      [],
+      signal(),
+    );
+    const file = analysis.bindings!.find((b) => b.kind === 'file')!;
+    await expect(
+      openShellBindings([analysis.bindings![0], { ...file, kind: 'discard' }], cwd),
+    ).rejects.toThrow('approval_stale');
+  });
+  it.each([
+    'find src -type f -print | xargs cat',
+    'find src -type f -print0 | xargs -0 sh -c \'cat"$@"\' --',
+    'find src -type f -print0 | xargs -0 -I{} cat {}',
+    'find src -type f -print0 | xargs -0 -P2 cat',
+    'find src -type f -print0 | xargs -0 cat -n',
+    'find src -type f -exec cat {} + | wc -l',
+    'wc -l $(find src -type f -print0)',
+    'cat src/module-0000.ts 2>errors.txt',
+    'cat src/module-0000.ts >/dev/null',
+    'cat src/module-0000.ts 2>>/dev/null',
+    'cat src/module-0000.ts 2>&1',
+    'cat src/module-0000.ts 2>/dev/null >/dev/null',
+  ])('不推广任意 xargs/重定向：%s', async (command) => {
+    const { cwd } = await project();
+    expect((await analyzeReadOnlyShell(command, cwd, [], signal())).complete).toBe(false);
+  });
   it.each([220, 300])('原命令同形，%i 个 TS 文件实际输出一致，零人工零模型', async (count) => {
     const { cwd } = await project(count);
     const state = chain(cwd);
@@ -336,11 +496,11 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
 });
 
 describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准绑定', () => {
-  it('真实工作流发现的 find/xargs 未知形状，带规划历史仍保留证据并进入默认预算审批', async () => {
+  it('find/xargs 的未支持 cat 选项，带规划历史仍保留证据并进入默认预算审批', async () => {
     const { cwd } = await project(220);
     const state = chain(cwd);
     const command =
-      "echo '--- ts count ---'; find . -type f -name '*.ts' | wc -l; echo '--- total lines ---'; find . -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null | wc -l";
+      "echo '--- ts count ---'; find . -type f -name '*.ts' | wc -l; echo '--- total lines ---'; find . -type f -name '*.ts' -print0 | xargs -0 cat -n 2>/dev/null | wc -l";
     const messages: Message[] = Array.from({ length: 5 }, (_, index) => ({
       role: 'user',
       content: [
