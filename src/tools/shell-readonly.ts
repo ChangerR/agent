@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { basename, dirname, join, resolve } from 'node:path';
 import Parser from 'tree-sitter';
 import Bash from 'tree-sitter-bash';
+import { minimatch } from 'minimatch';
 import type { ToolAnalysis } from '../sdk/capabilities.js';
 import { foreignPath, searchPluginEntries, sensitivePath, within } from './search-scope.js';
 
@@ -27,6 +28,22 @@ export interface ReadOnlyShellAnalysis {
   environment: Record<string, string>;
   commands: string[][];
   unresolved: string[];
+  /** Linux 执行门只继承这些已核验身份的描述符；不重新按动态输出打开文件。 */
+  bindings?: ReadOnlyShellBinding[];
+  pathFacts: ShellPathFact[];
+}
+export interface ShellPathFact {
+  raw: string;
+  actual: string;
+  exists: boolean;
+  kind: 'directory' | 'file' | 'special' | 'missing';
+  symlink: boolean;
+  nlink: number;
+}
+export interface ReadOnlyShellBinding {
+  path: string;
+  identity: string;
+  kind: 'directory' | 'file';
 }
 class Unverified extends Error {
   constructor(readonly reasonCode: string) {
@@ -86,27 +103,41 @@ interface Entry {
   regular: boolean;
   link: boolean;
   nlink: number;
+  identity: string;
 }
 class Boundary {
   readonly environment: Record<string, string> = {};
   readonly effects: Effect[] = [];
   readonly targets = new Set<string>();
+  readonly pathFacts = new Map<string, ShellPathFact>();
   count = 0;
+  cwd: string;
+  requiresBoundContent = false;
   constructor(
     readonly root: string,
     readonly entries: readonly string[],
     readonly signal: AbortSignal,
-  ) {}
+  ) {
+    this.cwd = root;
+  }
   async identity(path: string): Promise<Entry> {
     this.signal.throwIfAborted();
     if (++this.count > LIMIT) fail('shell_scope_limit');
-    const raw = path.startsWith('/') ? path : `${this.root}/${path}`;
+    const raw = path.startsWith('/') ? path : `${this.cwd}/${path}`;
     try {
       const first = await lstat(raw, { bigint: true });
       const actual = await realpath(raw);
       const stat = await lstat(actual, { bigint: true });
       this.environment[`path:${raw}`] =
         `${actual}:${first.dev}:${first.ino}:${first.mode}:${first.size}:${first.mtimeNs}:${first.ctimeNs}:${stat.dev}:${stat.ino}:${stat.mode}:${stat.nlink}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+      this.pathFacts.set(raw, {
+        raw,
+        actual,
+        exists: true,
+        kind: stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'special',
+        symlink: first.isSymbolicLink(),
+        nlink: Number(stat.nlink),
+      });
       return {
         raw,
         actual,
@@ -115,6 +146,7 @@ class Boundary {
         regular: stat.isFile(),
         link: first.isSymbolicLink(),
         nlink: Number(stat.nlink),
+        identity: `${stat.dev}:${stat.ino}:${stat.mode}:${stat.nlink}`,
       };
     } catch (error) {
       if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
@@ -123,6 +155,14 @@ class Boundary {
       const ancestor = await this.identity(parent);
       const actual = join(ancestor.actual, basename(raw));
       this.environment[`path:${raw}`] = `missing:${actual}`;
+      this.pathFacts.set(raw, {
+        raw,
+        actual,
+        exists: false,
+        kind: 'missing',
+        symlink: false,
+        nlink: 0,
+      });
       return {
         raw,
         actual,
@@ -131,6 +171,7 @@ class Boundary {
         regular: false,
         link: false,
         nlink: 0,
+        identity: 'missing',
       };
     }
   }
@@ -149,7 +190,7 @@ class Boundary {
   }
   async target(raw: string, kind: ReadKind): Promise<Entry> {
     if (foreignPath(raw)) fail('foreign_platform_path');
-    const entry = await this.identity(raw.startsWith('/') ? raw : `${this.root}/${raw}`);
+    const entry = await this.identity(raw.startsWith('/') ? raw : `${this.cwd}/${raw}`);
     const scope = this.scope(entry, kind);
     this.effects.push({ kind: 'read', target: entry.actual, scope });
     this.targets.add(entry.actual);
@@ -361,6 +402,11 @@ async function simpleCommand(
       },
       optionalLong: { '--color': ['always', 'auto', 'never'], '--hyperlink': ['never'] },
     });
+    if (
+      boundary.requiresBoundContent &&
+      (parsed.operands.some((path) => path !== '.') || anyFlag(parsed, '-R', '--recursive'))
+    )
+      fail('shell_literal_metadata_binding_unverified');
     for (const path of parsed.operands.length ? parsed.operands : ['.']) {
       if (anyFlag(parsed, '-d', '--directory')) await boundary.target(path, 'metadata');
       else await boundary.tree(path, 'metadata', true, anyFlag(parsed, '-R', '--recursive'));
@@ -398,13 +444,26 @@ async function simpleCommand(
         long: ['--bytes', '--chars', '--lines', '--words', '--max-line-length'],
       },
     };
-    const parsed = options(args, specs[name]);
+    // GNU/BSD 的常见旧式行数写法仍是静态选项，不把负数识别成文件路径。
+    const checked =
+      (name === 'head' || name === 'tail') && /^-\d+$/.test(args[0] ?? '')
+        ? ['-n', args[0].slice(1), ...args.slice(1)]
+        : args;
+    const parsed = options(checked, specs[name]);
+    if (boundary.requiresBoundContent && parsed.operands.some((path) => path !== '-'))
+      fail('shell_literal_read_binding_unverified');
     for (const path of parsed.operands) await boundary.file(path);
     return args;
   }
-  if (name === 'find') return findCommand(args, boundary);
+  if (name === 'find') {
+    if (boundary.requiresBoundContent) fail('shell_find_expression_binding_unverified');
+    return findCommand(args, boundary);
+  }
   if (name === 'grep' || name === 'rg') return searchCommand(name, args, boundary, piped);
-  if (name === 'git') return gitCommand(args, boundary);
+  if (name === 'git') {
+    if (boundary.requiresBoundContent) fail('shell_literal_read_binding_unverified');
+    return gitCommand(args, boundary);
+  }
   return fail('shell_command_not_supported');
 }
 
@@ -661,6 +720,8 @@ async function searchCommand(
     allValues(parsed, '-d', '--directories').includes('recurse');
   if (!paths.length && recursive && (name === 'grep' || !piped || patternFiles.includes('-')))
     paths.push('.');
+  if (boundary.requiresBoundContent && [...paths, ...patternFiles].some((path) => path !== '-'))
+    fail('shell_literal_read_binding_unverified');
   for (const path of paths) {
     if (path === '-') continue;
     const entry = await boundary.target(path, 'content');
@@ -982,6 +1043,103 @@ function literal(node: Parser.SyntaxNode): string {
   }
 }
 
+interface FileSelection {
+  roots: Array<{ label: string; entry: Entry }>;
+  files: Array<{ operand: string; entry: Entry }>;
+  predicates: string[];
+}
+
+/** 仅证明隐式 AND 的普通文件选择；其他 find 表达式仍由原只读分析或 reviewer 处理。 */
+function fileFindSpec(args: readonly string[]) {
+  let i = args[0] === '-P' ? 1 : 0;
+  const roots: string[] = [];
+  while (i < args.length && !args[i].startsWith('-') && !['!', '(', ')', ','].includes(args[i]))
+    roots.push(args[i++]);
+  const predicates = args.slice(i);
+  const names: string[] = [];
+  let regular = false;
+  let print = false;
+  while (i < args.length) {
+    const flag = args[i++];
+    if (flag === '-print' && i === args.length) {
+      print = true;
+      break;
+    }
+    const value = args[i++];
+    if (flag === '-type' && value === 'f') regular = true;
+    else if (flag === '-name' && value !== undefined && !/[?\[\]{}\\/\0]/.test(value))
+      names.push(value);
+    else return undefined;
+  }
+  if (!regular) return undefined;
+  if (roots.some((root) => !root || root.endsWith('/'))) return undefined;
+  return {
+    roots: roots.length ? roots : ['.'],
+    names,
+    predicates: print ? predicates.slice(0, -1) : predicates,
+  };
+}
+
+async function selectFiles(args: string[], boundary: Boundary): Promise<FileSelection> {
+  const spec = fileFindSpec(args) ?? fail('shell_substitution_find_unverified');
+  const selection: FileSelection = { roots: [], files: [], predicates: [...spec.predicates] };
+  for (const label of spec.roots) {
+    const root = await boundary.target(label, 'metadata');
+    if (!root.exists || !root.directory || root.link) fail('shell_find_root_unverified');
+    if (boundary.scope(root, 'metadata') !== 'project') fail('outside_project');
+    selection.roots.push({ label: label.replace(/\/+$/, '') || '/', entry: root });
+    const walk = async (dir: string, suffix: string): Promise<void> => {
+      boundary.signal.throwIfAborted();
+      // 不把不可往返的文件名字节当成另一个 Unicode 路径。
+      for (const item of await readdir(dir, { withFileTypes: true, encoding: 'buffer' })) {
+        const name = item.name.toString('utf8');
+        if (!Buffer.from(name).equals(item.name)) fail('shell_find_filename_unverified');
+        const path = join(dir, name);
+        const child = suffix ? `${suffix}/${name}` : name;
+        if (item.isSymbolicLink()) {
+          await boundary.identity(path); // find -P 不跟随发现的链接。
+          continue;
+        }
+        const entry = await boundary.target(path, 'metadata');
+        if (entry.link || boundary.scope(entry, 'metadata') !== 'project')
+          fail('shell_find_changed');
+        if (entry.directory) await walk(entry.actual, child);
+        else if (
+          entry.regular &&
+          spec.names.every((pattern) =>
+            minimatch(name, pattern, {
+              dot: true,
+              nonegate: true,
+              nocomment: true,
+              noext: true,
+              nobrace: true,
+              noglobstar: true,
+            }),
+          )
+        )
+          selection.files.push({ operand: `${label.replace(/\/+$/, '')}/${child}`, entry });
+      }
+    };
+    await walk(root.actual, '');
+  }
+  return selection;
+}
+
+/** 每个候选都必须保持为同一个 wc 操作数；不对拆分/通配后的任意 argv 猜测安全性。 */
+function substitutionOperand(operand: string): void {
+  if (!operand || operand.startsWith('-') || /[\s*?\[\]\0]/.test(operand))
+    fail('shell_substitution_word_expansion');
+}
+
+function hasAncestor(node: Parser.SyntaxNode, type: string): boolean {
+  for (let parent = node.parent; parent; parent = parent.parent)
+    if (parent.type === type) return true;
+  return false;
+}
+function commandOperators(node: Parser.SyntaxNode): string[] {
+  return node.children.flatMap((child) => (child.isNamed ? commandOperators(child) : [child.type]));
+}
+
 export async function analyzeReadOnlyShell(
   command: string,
   cwd: string,
@@ -999,6 +1157,7 @@ export async function analyzeReadOnlyShell(
     environment: {},
     commands,
     unresolved: [reasonCode],
+    pathFacts: [],
   });
   if (
     typeof command !== 'string' ||
@@ -1024,6 +1183,103 @@ export async function analyzeReadOnlyShell(
     return empty('shell_parse_error');
   }
   const normalized = new Map<number, string>();
+  const bindings: ReadOnlyShellBinding[] = [];
+  const helpers: string[] = [];
+  const selections = new Map<string, { selection: FileSelection; helper: string }>();
+  const bind = (entry: Entry, kind: ReadOnlyShellBinding['kind']) => {
+    if (process.platform !== 'linux') fail('shell_descriptor_platform_unverified');
+    let index = bindings.findIndex(
+      (binding) => binding.path === entry.actual && binding.kind === kind,
+    );
+    if (index < 0) {
+      if (bindings.length >= 768) fail('shell_descriptor_limit');
+      index = bindings.length;
+      bindings.push({ path: entry.actual, identity: entry.identity, kind });
+    }
+    return `AGENTLAB_BOUND_${index}`;
+  };
+  const bindRoot = async () => {
+    if (!bindings.length) bind(await boundary.target(boundary.root, 'metadata'), 'directory');
+  };
+  const findSelection = async (args: string[]) => {
+    const key = JSON.stringify([boundary.cwd, args]);
+    const cached = selections.get(key);
+    if (cached) return cached;
+    const selection = await selectFiles(args, boundary);
+    if (
+      selection.roots.some((root, i) =>
+        selection.roots.some(
+          (other, j) =>
+            j < i && root.entry.actual === other.entry.actual && root.label !== other.label,
+        ),
+      )
+    )
+      fail('shell_find_alias_unverified');
+    await bindRoot();
+    const helper = `__agentlab_find_${selections.size}`;
+    const roots = selection.roots.map(({ entry }) => bind(entry, 'directory'));
+    const binary = await boundary.binary('find');
+    // 实际 find 在获授权后才运行。目录通过 fd 锚定，NUL 帧保留文件名，返回集合须属于已验证候选。
+    const cases = selection.roots.map(({ label }, i) => {
+      const operands = selection.files.filter(({ operand }) => operand.startsWith(`${label}/`));
+      const allowed = operands.length
+        ? operands.map(({ operand }) => quote(operand)).join('|')
+        : '';
+      return `"$${roots[i]}"/*) value=${quote(`${label}/`)}"\${raw#\"$${roots[i]}/\"}"; case "$value" in ${allowed ? `${allowed}) builtin printf '%s\\n' "$value";;` : ''} *) builtin printf '%s\\n' 'approval_stale: find selection changed' >&2; return 125;; esac;;`;
+    });
+    helpers.push(
+      `${helper}() ( builtin set -o pipefail; ${quote(binary)} ${roots.map((variable) => `"$${variable}/"`).join(' ')} ${selection.predicates.map(quote).join(' ')} '-print0' | { while IFS= builtin read -r -d '' raw; do case "$raw" in ${cases.join(' ')} *) return 125;; esac; done; } );`,
+    );
+    const result = { selection, helper };
+    selections.set(key, result);
+    return result;
+  };
+  const dynamicWc = async (args: Parser.SyntaxNode[]) => {
+    const substitution = args.at(-1)!;
+    if (!substitution.text.startsWith('$(')) fail('shell_substitution_form_unverified');
+    const nested = substitution.namedChildren.filter((child) => child.type !== 'comment');
+    if (nested.length !== 1 || nested[0].type !== 'command')
+      fail('shell_substitution_find_unverified');
+    const child = nested[0];
+    const nameNode = child.childForFieldName('name');
+    if (
+      !nameNode ||
+      literal(nameNode) !== 'find' ||
+      child.namedChildren.some((n) => n.type === 'variable_assignment')
+    )
+      fail('shell_substitution_find_unverified');
+    const findArgs = child.namedChildren.filter((n) => n.id !== nameNode!.id).map(literal);
+    const flags = args.slice(0, -1).map(literal);
+    const normalizedFlags = flags.at(-1) === '--' ? flags.slice(0, -1) : flags;
+    if (
+      options(flags, {
+        short: 'clmwL',
+        long: ['--bytes', '--chars', '--lines', '--words', '--max-line-length'],
+      }).operands.length
+    )
+      fail('shell_substitution_operands_unverified');
+    const { selection, helper: find } = await findSelection(findArgs);
+    const mapped: Array<{ operand: string; variable: string }> = [];
+    for (const { operand, entry } of selection.files) {
+      substitutionOperand(operand);
+      await boundary.file(entry.actual);
+      mapped.push({ operand, variable: bind(entry, 'file') });
+    }
+    const helper = `__agentlab_wc_${helpers.length}`;
+    const binary = await boundary.binary('wc');
+    const cases = mapped.map(
+      ({ operand, variable }) => `${quote(operand)}) files+=("$${variable}");;`,
+    );
+    const labels = mapped.map(
+      ({ operand, variable }) =>
+        `*" $${variable}") builtin printf '%s %s\\n' "\${line%\" $${variable}\"}" ${quote(operand)};;`,
+    );
+    // 先验证完整 argv，再读任何 fd。wc 的数值、顺序、total 和退出状态保留，仅还原 fd 标签。
+    helpers.push(
+      `${helper}() { builtin local arg line output status selection; builtin local -a files; files=(); selection=$(${find}) || return $?; for arg in $selection; do case "$arg" in ${cases.join(' ')} *) builtin printf '%s\\n' 'approval_stale: wc operand changed' >&2; return 125;; esac; done; output=$(${quote(binary)} ${normalizedFlags.map(quote).join(' ')} -- "\${files[@]}"); status=$?; while IFS= builtin read -r line; do case "$line" in ${labels.join(' ')} *) builtin printf '%s\\n' "$line";; esac; done <<< "$output"; return "$status"; };`,
+    );
+    return helper;
+  };
   const record = (error: unknown) => {
     signal.throwIfAborted();
     unresolved.push(error instanceof Unverified ? error.reasonCode : 'shell_filesystem_unverified');
@@ -1035,6 +1291,24 @@ export async function analyzeReadOnlyShell(
     record(error);
   }
   let nodes = 0;
+  // cd 的后续路径只在全 && 链成功分支里传播；分号、|| 与管道内的 cd 不猜测运行时 cwd。
+  const hasCd = (node: Parser.SyntaxNode): boolean => {
+    if (node.type === 'command') {
+      try {
+        if (literal(node.childForFieldName('name')!) === 'cd') return true;
+      } catch {
+        /* 未解析命令不会放行。 */
+      }
+    }
+    return node.namedChildren.some(hasCd);
+  };
+  const cdFlow =
+    !hasCd(tree.rootNode) ||
+    (tree.rootNode.namedChildren.filter((node) => node.type !== 'comment').length === 1 &&
+      !commandOperators(tree.rootNode).includes('||'));
+  const hasSubstitution = (node: Parser.SyntaxNode): boolean =>
+    node.type === 'command_substitution' || node.namedChildren.some(hasSubstitution);
+  boundary.requiresBoundContent = hasCd(tree.rootNode) || hasSubstitution(tree.rootNode);
   const collect = async (node: Parser.SyntaxNode, piped = false): Promise<void> => {
     signal.throwIfAborted();
     if (++nodes > 4096) fail('shell_ast_limit');
@@ -1046,9 +1320,40 @@ export async function analyzeReadOnlyShell(
         const argNodes = node.namedChildren.filter(
           (child) => child.id !== nameNode!.id && child.type !== 'variable_assignment',
         );
-        const args = argNodes.map(literal);
-        commands.push([name, ...args]);
+        commands.push([name, ...argNodes.map((arg) => arg.text)]);
         if (name.includes('/')) fail('shell_command_path_unverified');
+        if (node.namedChildren.some((child) => child.type === 'variable_assignment'))
+          fail('shell_assignment');
+        if (name === 'wc' && argNodes.at(-1)?.type === 'command_substitution') {
+          normalized.set(node.id, await dynamicWc(argNodes));
+          return;
+        }
+        const args = argNodes.map(literal);
+        if (name === 'cd') {
+          if (!cdFlow || hasAncestor(node, 'pipeline') || hasAncestor(node, 'command_substitution'))
+            fail('shell_cwd_flow_unverified');
+          const parsed = options(args, { short: 'LP' });
+          if (parsed.operands.length !== 1) fail('shell_cd_target_unverified');
+          const target = parsed.operands[0];
+          if (target === '-') fail('shell_cd_previous_directory_unverified');
+          const entry = await boundary.target(target, 'metadata');
+          if (!entry.exists || !entry.directory || entry.link) fail('shell_cd_target_unverified');
+          await bindRoot();
+          const variable = bind(entry, 'directory');
+          const logical = resolve(boundary.cwd, target);
+          if (logical !== entry.actual) fail('shell_cd_symlink_unverified');
+          boundary.cwd = entry.actual;
+          // cd 必须在当前 shell 生效，只有设置 PWD 与 cd 作为同一 && 单元。
+          normalized.set(
+            node.id,
+            `{ builtin cd -P -- "$${variable}" && builtin export PWD=${quote(logical)}; }`,
+          );
+          return;
+        }
+        if (name === 'find' && process.platform === 'linux' && fileFindSpec(args)) {
+          normalized.set(node.id, (await findSelection(args)).helper);
+          return;
+        }
         const argv = await simpleCommand(name, args, boundary, piped);
         const prefix = ['echo', 'pwd', 'printf'].includes(name)
           ? ['builtin', name]
@@ -1098,8 +1403,10 @@ export async function analyzeReadOnlyShell(
   };
   let safeCommand: string | undefined;
   try {
-    safeCommand = render(tree.rootNode);
+    const body = render(tree.rootNode);
+    safeCommand = [...helpers, body].join(' ');
     if (!safeCommand) fail('shell_empty_command');
+    if (Buffer.byteLength(safeCommand) > 96 * 1024) fail('shell_execution_contract_limit');
   } catch (error) {
     record(error);
   }
@@ -1125,10 +1432,12 @@ export async function analyzeReadOnlyShell(
     effects,
     targets: [...boundary.targets].sort(),
     ...(complete ? { command: safeCommand } : {}),
+    ...(complete && bindings.length ? { bindings } : {}),
     environment: Object.fromEntries(
       Object.entries(boundary.environment).sort(([a], [b]) => a.localeCompare(b)),
     ),
     commands,
     unresolved: [...new Set(unresolved)],
+    pathFacts: [...boundary.pathFacts.values()].sort((a, b) => a.raw.localeCompare(b.raw)),
   };
 }

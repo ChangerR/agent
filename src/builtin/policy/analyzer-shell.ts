@@ -34,6 +34,7 @@ export async function analyzeShell(
             contract: 'AST + literal argv + canonical targets + controlled bash',
           }),
         },
+        { source: 'shell-path-boundaries', detail: JSON.stringify(contract.pathFacts) },
       ],
       summary: `bash: ${parsed.command}`,
     };
@@ -71,6 +72,7 @@ export async function analyzeShell(
           unresolved: contract.unresolved,
         }),
       },
+      { source: 'shell-path-boundaries', detail: JSON.stringify(contract.pathFacts) },
     ],
   };
 }
