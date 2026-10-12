@@ -559,9 +559,7 @@ describe('默认加载审批员不改变确定性权限优先级', () => {
       reasonCode: 'review_uncertain',
       source: 'mode',
     });
-    expect(fixture.decisions.find((event) => event.phase === 'judge')?.decision.kind).toBe(
-      'allow',
-    );
+    expect(fixture.decisions.find((event) => event.phase === 'judge')?.decision.kind).toBe('allow');
     expect(fixture.execute).toHaveBeenCalledTimes(1);
     expect(fixture.requests).toHaveLength(0);
   });

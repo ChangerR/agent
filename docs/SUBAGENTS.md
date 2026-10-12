@@ -63,7 +63,7 @@ child 人工审批只批准当前 run 的本次调用，不记住或复制到兄
 
 | pluginConfig 字段   |  默认值 | 含义                                                         |
 | ------------------- | ------: | ------------------------------------------------------------ |
-| maxRunning          |       4 | 正在运行或结算的 child，根不计入                             |
+| maxRunning          |       2 | 全树正在运行或结算的 child，根不计入                         |
 | maxDepth            |       1 | 根深度 0，默认 child 不能再 spawn                            |
 | maxTurns            |      16 | 每个 run 回合上限，同时受根 maxTurns 限制                    |
 | timeoutMs           |  300000 | 每个 run 五分钟时限                                          |
@@ -71,6 +71,12 @@ child 人工审批只批准当前 run 的本次调用，不记住或复制到兄
 | maxOutputChars      |  131072 | 每 run 累计模型文本、思考、工具 JSON、签名/redacted 字符预算 |
 | previewChars        |    8192 | 回传父上下文与工具列表的预览                                 |
 | maxAgents / maxRuns | 32 / 32 | 每会话 child 数 / 每 child 历史 run 数                       |
+
+普通只读仓库审查在共享约定读取完成后，使用两个互不依赖的 child 并行审查，
+先分别 spawn，再 wait 和汇总；有依赖的工作先等待前置结果。简单任务不强制创建 child。
+计划的只读范围自动与 child 的 `readOnly` 取交集，不能向更宽权限的已有 child 追加任务。
+拒绝会保留具体来源并阻止同计划自动重试或换 child 绕过。以上仍走原有 Supervisor 和执行门，
+不增加任务队列或另一套调度框架。
 
 达到输出硬预算保留已收文本，标 limited/truncated；不完整工具 JSON/签名不执行。
 取消时工具部分结果保留在结果与 child 历史。预览截断可查看全文；硬预算之外的内容

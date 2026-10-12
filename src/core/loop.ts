@@ -76,6 +76,8 @@ export interface AgentLoopOptions {
   agentName?: string;
   task?: () => string;
   onCancel?: () => void;
+  /** runtime 可将 child 的拒绝提升到所属根计划，阻止换 child 重试。 */
+  onPermissionDenied?: (reason: string) => void;
   maxInbox?: number;
   maxOutputChars?: number;
   cacheStrategy?: CacheStrategy | null;
@@ -191,6 +193,14 @@ export class AgentLoop {
     });
     opts.events.onAll((e) => {
       if (e.type === 'permission_request') this.plan.waiting(`等待审批: ${e.request.reason}`);
+      if (e.type === 'permission_decision' && e.decision.kind === 'deny') {
+        const reason =
+          e.decision.source === 'user'
+            ? `User denied this action: ${e.decision.reason}`
+            : `Permission denied: ${e.decision.reason}`;
+        this.plan.deny(reason, e.toolName);
+        opts.onPermissionDenied?.(reason);
+      }
     });
     opts.events.on('tool_result', (e) =>
       this.plan.toolFinished(e.toolUseId, e.result.isError === true, e.result.content),
@@ -500,6 +510,7 @@ export class AgentLoop {
             proposal.goal,
             proposal.steps,
             this.plan.mode === 'only' ? 'only' : 'auto',
+            proposal.readOnly,
           );
           // 计划发布后立即明确当前步骤，执行模型无需先补一次状态调用才能开始工作。
           const plan = this.plan.snapshot!;

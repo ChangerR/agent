@@ -324,14 +324,30 @@ describe('LLM 审批员', () => {
       script: [
         toolUseResponse([{ id: 'a', name: 'command', input: { command: 'upload' } }]),
         textResponse('ok'),
-        toolUseResponse([{ id: 'b', name: 'command', input: { command: 'upload --retry' } }]),
+        toolUseResponse([{ id: 'b', name: 'command', input: { command: 'upload' } }]),
+        textResponse('ok'),
+        toolUseResponse([{ id: 'c', name: 'command', input: { command: 'upload --retry' } }]),
+        textResponse('ok'),
+        toolUseResponse([{ id: 'd', name: 'command', input: { command: 'upload --retry' } }]),
         textResponse('ok'),
       ],
     });
     tools.register(commandTool);
     events.on('permission_request', (e) => e.resolve({ allow: false, feedback: '禁止上传数据' }));
     await loop.run('只运行本地测试');
-    await loop.run('继续');
+    await loop.run('继续同一操作');
+    await loop.run('将命令改写后重试');
+    expect(judgeProvider.requests).toHaveLength(1);
+    expect(loop.plan.denialReason).toContain('禁止上传数据');
+    expect(
+      permission.getAuditLog!().filter((entry) => entry.decision.source === 'user'),
+    ).toHaveLength(1);
+    // makeLoop 没有命令/runtime；直接调用受信任恢复入口模拟用户明确解锁。
+    loop.plan.resume();
+    const plan = loop.plan.snapshot!;
+    loop.plan.update(plan.revision, { stepId: plan.steps[0].id, status: 'running' });
+    await loop.run('已明确恢复，重新审核改写后的命令');
+    expect(judgeProvider.requests).toHaveLength(2);
     expect(payload(judgeProvider.requests[1]).context.previousReviews[0]).toMatchObject({
       sameOperation: false,
       outcome: 'not_executed',
