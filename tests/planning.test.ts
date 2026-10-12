@@ -171,7 +171,8 @@ describe('规划到执行', () => {
     ]);
     f.agent.loop.plan.force = true;
     expect((await f.agent.loop.run('实现并测试')).reason).toBe('error');
-    expect(f.fake.requests).toHaveLength(1);
+    expect(f.fake.requests).toHaveLength(2);
+    expect(f.fake.requests.every((request) => request.tools.length === 0)).toBe(true);
     await expect(readFile(join(f.cwd, 'no.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('模型自然结束不能把未完成步骤变成完成；执行失败保留阻塞原因', async () => {

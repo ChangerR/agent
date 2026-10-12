@@ -33,6 +33,7 @@ async function fixture(
     judge?: (payload: Payload) => 'allow' | 'ask' | 'deny' | 'unknown';
     respond?: () => UserDecision;
     calls?: (input: string) => Call[];
+    planning?: (attempt: number) => string;
   } = {},
 ) {
   const cwd = options.cwd ?? (await mkdtemp(join(tmpdir(), 'auto-workflow-')));
@@ -46,9 +47,11 @@ async function fixture(
   let pending: Call[] = [];
   const reviews: Payload[] = [];
   const observed: AgentEvent[] = [];
+  let planningAttempt = 0;
   const provider = new FakeProvider([
     (request) => {
-      if (request.system.startsWith('[agentlab planning:auto]')) return textResponse('null');
+      if (request.system.startsWith('[agentlab planning:auto]'))
+        return textResponse(options.planning?.(++planningAttempt) ?? 'null');
       if (!request.tools.length) {
         const payload: Payload = JSON.parse(request.messages[0].content as string);
         expect(payload.operation.cwd).toBe(cwd);
@@ -112,6 +115,45 @@ async function fixture(
 }
 
 describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () => {
+  it('项目 package/tsconfig 普通读取零 judge/人工，凭据配置仍保护', async () => {
+    const f = await fixture();
+    const files = {
+      'package.json': '{"name":"synthetic-project","type":"module"}\n',
+      'tsconfig.json': '{"compilerOptions":{"strict":true}}\n',
+      '.env': 'SYNTHETIC_SECRET=fixture\n',
+      'mcp.json': '{"env":{"SYNTHETIC_SECRET":"fixture"}}\n',
+    };
+    for (const [path, content] of Object.entries(files))
+      await writeFile(join(f.cwd, path), content);
+    const results = await f.run(
+      [
+        { name: 'read_file', input: { path: 'package.json' } },
+        { name: 'read_file', input: { path: 'tsconfig.json' } },
+        { name: 'bash', input: { command: 'cat package.json tsconfig.json' } },
+      ],
+      '读取项目依赖及 TypeScript 编译设置，不修改文件。',
+    );
+    expect(results.every((result) => !result.isError)).toBe(true);
+    const output = results.map((result) => result.content).join('\n');
+    expect(output).toContain(files['package.json'].trim());
+    expect(output).toContain(files['tsconfig.json'].trim());
+    expect(
+      results.some((result) =>
+        result.content.includes(files['package.json'] + files['tsconfig.json']),
+      ),
+    ).toBe(true);
+    expect(f.reviews).toHaveLength(0);
+    expect(f.observed.filter((event) => event.type === 'permission_request')).toHaveLength(0);
+    for (const path of ['.env', 'mcp.json']) {
+      // 每项是宿主接受的独立新任务；不能让上一项的 Plan 拒绝锁冒充本项路径保护。
+      f.agent.loop.plan.clear();
+      expect(
+        (await f.run([{ name: 'read_file', input: { path } }], `读取 ${path}。`))[0].isError,
+      ).toBe(true);
+    }
+    expect(f.observed.filter((event) => event.type === 'permission_request')).toHaveLength(2);
+    expect(f.reviews).toHaveLength(0);
+  });
   it.each(['ask', 'unknown', 'provider_error'] as const)(
     '%s 失败关闭：实际写工具转人工、拒绝后文件不存在',
     async (decision) => {
@@ -288,13 +330,25 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     const id = f.agent.session.id;
     await f.agent.session.save();
     await f.agent.dispose();
-    const restored = await fixture({ cwd: f.cwd });
+    const restored = await fixture({
+      cwd: f.cwd,
+      planning: (attempt) =>
+        attempt === 1 ? '<｜｜DSML｜｜ calls>invoke bash</｜｜DSML｜｜ calls>' : 'null',
+    });
     await restored.agent.session.resume(id);
     expect(
       (await restored.run([{ name: 'bash', input: { command } }], '重复已授权的同一操作。'))[0]
         .content,
     ).toContain('12345');
     expect(restored.reviews).toHaveLength(0);
+    expect(restored.observed.filter((event) => event.type === 'permission_request')).toHaveLength(
+      0,
+    );
+    expect(
+      restored.provider.requests.filter((request) =>
+        request.system.startsWith('[agentlab planning:auto]'),
+      ),
+    ).toHaveLength(2);
     expect(
       (
         await restored.run(
