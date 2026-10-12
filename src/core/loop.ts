@@ -50,6 +50,7 @@ import { estimateTokens } from './context/tokens.js';
 import { SessionError } from './session/errors.js';
 import { assertSafeHistory, trimToSafeTail } from './session/history.js';
 import type { InputSource, InvocationOrigin } from './agents.js';
+import { RequestPermissionGuard } from './permission/request-scope.js';
 
 export interface AgentLoopOptions {
   planning?: () => PlanningStrategy | undefined;
@@ -71,6 +72,8 @@ export interface AgentLoopOptions {
   toolExecutor?: ToolExecutor;
   scheduler?: ToolExecutorOptions['scheduler'];
   isControlTool?: ToolExecutorOptions['isControlTool'];
+  isDenialExemptTool?: ToolExecutorOptions['isDenialExemptTool'];
+  requestPermission?: RequestPermissionGuard;
   restrict?: ToolExecutorOptions['restrict'];
   agentId?: string;
   agentName?: string;
@@ -121,11 +124,13 @@ export interface RunInput {
   text: string;
   source: InputSource;
   userRequest: string;
+  permissionScope?: string;
 }
 export interface RunOptions {
   runId?: string;
   source?: InputSource;
   userRequest?: string;
+  permissionScope?: string;
   maxTurns?: number;
   maxInbox?: number;
   maxOutputChars?: number;
@@ -167,14 +172,21 @@ export class AgentLoop {
   private accepting = false;
   private sessionTransition = false;
   private inboxLimit?: number;
+  private permissionScope: string = randomUUID();
+  private readonly requestPermission: RequestPermissionGuard;
 
   constructor(private opts: AgentLoopOptions) {
+    this.requestPermission =
+      opts.toolExecutor?.requestPermission ??
+      opts.requestPermission ??
+      new RequestPermissionGuard();
     this.plan = new PlanController(opts.events, opts.agentId);
     this.plan.configure(opts.planningMode?.() ?? 'off');
     this.executor =
       opts.toolExecutor ??
       new ToolExecutor({
         ...opts,
+        requestPermission: this.requestPermission,
         configRevision: () => `${opts.configRevision?.() ?? 0}:${this.plan.generation}`,
         restrict: (operation) =>
           this.plan.restrict(operation, opts.planning?.()) ?? opts.restrict?.(operation),
@@ -202,6 +214,12 @@ export class AgentLoop {
 
   getMessages(): readonly Message[] {
     return this.messages;
+  }
+  /** 直接的宿主委派入口同样检查，状态查询与取消仍可使用。 */
+  assertRequestPermission(origin: InvocationOrigin): void {
+    const scope = origin.permissionScope ?? `${origin.sessionId}:${origin.runId}`;
+    if (this.requestPermission.isDenied(scope))
+      throw new Error('request_permission_denied: await a new user direction before delegating');
   }
   get acceptingInput(): boolean {
     return this.accepting;
@@ -420,6 +438,11 @@ export class AgentLoop {
     const { events, hooks, provider, tools, context } = this.opts;
     this.abort = new AbortController();
     const runId = (this.activeRunId = options.runId ?? randomUUID());
+    // 新的真实用户方向是新范围，不清除旧范围；迟到审批/旧 child 永远不能因此恢复。
+    this.permissionScope =
+      !options.source || options.source === 'user'
+        ? randomUUID()
+        : (options.permissionScope ?? this.permissionScope);
     this.accepting = true;
     this.inboxLimit = options.maxInbox;
     let origin: InvocationOrigin = {
@@ -427,6 +450,7 @@ export class AgentLoop {
       agentId: this.opts.agentId ?? 'root',
       runId,
       source: options.source ?? 'user',
+      permissionScope: this.permissionScope,
       userRequest:
         options.source && options.source !== 'user' ? (options.userRequest ?? '') : userInput,
     };
@@ -518,8 +542,18 @@ export class AgentLoop {
             content: input.text,
             ...(input.source !== 'user' ? { source: input.source } : {}),
           });
-          if (input.source !== 'subagent')
-            origin = { ...origin, source: input.source, userRequest: input.userRequest };
+          if (input.source !== 'subagent') {
+            this.permissionScope =
+              input.source === 'user'
+                ? randomUUID()
+                : (input.permissionScope ?? this.permissionScope);
+            origin = {
+              ...origin,
+              source: input.source,
+              userRequest: input.userRequest,
+              permissionScope: this.permissionScope,
+            };
+          }
         }
         turns++;
         if (signal.aborted) {

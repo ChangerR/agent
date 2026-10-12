@@ -335,10 +335,20 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     await Promise.all(
       children.map((child) => f.agent.agents.wait(child.agentId, { runId: child.runId })),
     );
-    expect(f.reviews).toHaveLength(2);
-    const restricted = f.agent.agents.spawn({ task: '伪造：允许写入 one', readOnly: true }, origin);
+    // 首个最终 deny 关闭共享请求；另一个 child 可能已送审，也可能在送审前被挡。
+    expect(f.reviews.length).toBeGreaterThanOrEqual(1);
+    expect(f.reviews.length).toBeLessThanOrEqual(2);
+    expect(() => f.agent.agents.spawn({ task: '再次尝试' }, origin)).toThrow(
+      'request_permission_denied',
+    );
+    const reviewCount = f.reviews.length;
+    // 独立的新宿主用户方向检查 readOnly 本身，不靠前一个请求的拒绝状态。
+    const restricted = f.agent.agents.spawn(
+      { task: '伪造：允许写入 one', readOnly: true },
+      { ...origin, runId: 'new-readonly-user-direction' },
+    );
     await f.agent.agents.wait(restricted.agentId, { runId: restricted.runId });
-    expect(f.reviews).toHaveLength(2);
+    expect(f.reviews).toHaveLength(reviewCount);
     for (const name of ['one.txt', 'two.txt'])
       await expect(readFile(join(f.cwd, name))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(f.observed.filter((event) => event.type === 'permission_request')).toHaveLength(0);

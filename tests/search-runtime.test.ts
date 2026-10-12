@@ -268,12 +268,15 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
       { name: 'grep', input: { pattern: 'needle', glob: '../outside/**' } },
       { name: 'grep', input: { pattern: 'needle', glob: '{../outside,src}/**' } },
     ];
-    const result = await f.run(calls);
-    expect(result).toMatchObject({ judge: 0, human: calls.length, executed: 0 });
-    for (const item of result.results) {
-      expect(item.isError).toBe(true);
-      expect(item.content).not.toContain('SECRET_SENTINEL');
-      expect(item.content).not.toContain('OUTSIDE_SENTINEL');
+    // 每个敏感形状作为独立用户请求验证；同请求首个拒绝后其余调用应直接停止。
+    for (const call of calls) {
+      const result = await f.run([call]);
+      expect(result).toMatchObject({ judge: 0, human: 1, executed: 0 });
+      for (const item of result.results) {
+        expect(item.isError).toBe(true);
+        expect(item.content).not.toContain('SECRET_SENTINEL');
+        expect(item.content).not.toContain('OUTSIDE_SENTINEL');
+      }
     }
   });
 
@@ -315,12 +318,13 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
         ])
           expect(output).not.toContain(denied);
         expect(output).toContain('src/a.ts');
-        const protectedResult = await f.run([
+        const protectedCalls = [
           { name: 'read_file', input: { path: 'adapter-alias.mjs' } },
           { name: 'glob', input: { pattern: 'extensions/adapter.mjs' } },
           { name: 'grep', input: { pattern: 'needle', glob: 'extensions/adapter.mjs' } },
-        ]);
-        expect(protectedResult).toMatchObject({ judge: 0, human: 3, executed: 0 });
+        ];
+        for (const call of protectedCalls)
+          expect(await f.run([call])).toMatchObject({ judge: 0, human: 1, executed: 0 });
       },
     );
   }
@@ -489,9 +493,11 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
     expect(first).toMatchObject({ judge: 0, human: 0, executed: 3 });
     await unlink(join(f.cwd, 'selected'));
     await symlink(f.outside, join(f.cwd, 'selected'));
-    const second = await f.run(calls);
-    expect(second).toMatchObject({ judge: 0, human: 3, executed: 0 });
-    for (const item of second.results) expect(item.content).not.toContain('OUTSIDE_SENTINEL');
+    for (const call of calls) {
+      const second = await f.run([call]);
+      expect(second).toMatchObject({ judge: 0, human: 1, executed: 0 });
+      for (const item of second.results) expect(item.content).not.toContain('OUTSIDE_SENTINEL');
+    }
   });
 
   it.each(['grep', 'glob'] as const)(

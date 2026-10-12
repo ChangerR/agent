@@ -27,6 +27,7 @@ import { AgentSupervisor, type SubagentLimits } from './subagents.js';
 import { ChildEventBus } from './child-events.js';
 import { ToolScheduler } from '../core/tool-scheduler.js';
 import type { SubagentRecord } from '../core/agents.js';
+import { RequestPermissionGuard } from '../core/permission/request-scope.js';
 export interface CreateAgentOptions {
   lifecycleTimeoutMs?: number;
   autoSaveSessions?: boolean;
@@ -249,6 +250,14 @@ export async function createRuntime(
         (control) => control.ownerPlugin === tool.ownerPlugin && control.name === tool.name,
       ) === true;
     const loopOptions: AgentLoopOptions = {
+      requestPermission: new RequestPermissionGuard(),
+      isDenialExemptTool: (tool) =>
+        preset.controlTools?.some(
+          (control) =>
+            control.ownerPlugin === tool.ownerPlugin &&
+            control.name === tool.name &&
+            control.allowedAfterDenial === true,
+        ) === true,
       planning: () => planning,
       planningMode: () => planningMode,
       provider: providers.get(config.provider),

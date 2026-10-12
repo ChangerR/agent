@@ -73,6 +73,8 @@ export interface PolicyInput extends AnalysisInput {
   readonly policyRevision?: string | number;
 }
 export type PolicyDecision = Omit<Decision, 'kind'> & {
+  /** 仅用于工具路由等可重试的拒绝；缺省 deny 终止当前用户请求。模型/人工拒绝不可缩小范围。 */
+  denialScope?: 'invocation';
   kind: 'allow' | 'ask' | 'deny' | 'review';
   reasonCode?: string;
   reviewEligible?: boolean;

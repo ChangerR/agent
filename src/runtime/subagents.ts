@@ -171,6 +171,7 @@ export class AgentSupervisor {
   spawn(input: SpawnAgentInput, provided?: InvocationOrigin): AgentAddress {
     const origin = this.origin(provided);
     this.check(origin);
+    if (provided) this.opts.rootLoop.assertRequestPermission(provided);
     this.parentPlan(origin).assertDelegation();
     taskText(input.task);
     if (this.nodes.size >= this.limits.maxAgents) throw new Error('Agent history limit reached');
@@ -225,6 +226,9 @@ export class AgentSupervisor {
         text: input.task,
         source: provided ? 'delegation' : 'user',
         userRequest: provided ? origin.userRequest : input.task,
+        permissionScope: provided
+          ? (provided.permissionScope ?? `${provided.sessionId}:${provided.runId}`)
+          : undefined,
       },
       limits: { ...this.limits, maxTurns, timeoutMs },
     });
@@ -254,6 +258,7 @@ export class AgentSupervisor {
     text: string,
     provided?: InvocationOrigin,
   ): AgentAddress & { queued: boolean } {
+    if (provided) this.opts.rootLoop.assertRequestPermission(provided);
     this.parentPlan(provided).assertDelegation();
     const node = this.get(agentId, provided);
     if (provided && provided.agentId !== 'root') {
@@ -271,6 +276,9 @@ export class AgentSupervisor {
       text,
       source: provided ? 'delegation' : 'user',
       userRequest: provided ? provided.userRequest : text,
+      permissionScope: provided
+        ? (provided.permissionScope ?? `${provided.sessionId}:${provided.runId}`)
+        : undefined,
     };
     if (node.active?.status === 'cancelling') throw new Error('Agent cancellation has not settled');
     if (

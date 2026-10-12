@@ -9,6 +9,8 @@ export interface InvocationOrigin {
   readonly source: InputSource;
   /** 只由真实用户入口绑定；委派文本与工具结果不得填入这个字段。 */
   readonly userRequest: string;
+  /** 宿主为真实用户方向创建的执行范围；委派必须继承，不能由模型重置。 */
+  readonly permissionScope?: string;
 }
 export type SubagentStatus =
   | 'queued'

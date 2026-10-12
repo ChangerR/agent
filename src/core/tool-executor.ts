@@ -17,6 +17,7 @@ import type { HookRunner } from './hooks.js';
 import type { Decision, JudgeStatus, ReviewHistoryStore } from './permission/contracts.js';
 import { jsonInput } from './permission/input-validation.js';
 import { CapabilityTimeout } from './permission/async.js';
+import { RequestPermissionGuard } from './permission/request-scope.js';
 import type { Message, ToolResult, ToolResultBlock, ToolUseBlock } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
 import type { InvocationOrigin } from './agents.js';
@@ -58,6 +59,9 @@ export interface ToolExecutorOptions {
   scheduler?: ToolScheduler;
   /** 由宿主按注册身份指定控制工具，不采用工具自报 risk。 */
   isControlTool?: (tool: Tool) => boolean;
+  /** 拒绝后仅允许宿主指定的观察/取消/计划控制，不允许再委派工作。 */
+  isDenialExemptTool?: (tool: Tool) => boolean;
+  requestPermission?: RequestPermissionGuard;
   restrict?: (input: PolicyInput) => string | undefined;
   agentName?: string;
   task?: () => string;
@@ -88,9 +92,11 @@ export class ToolExecutor {
   private readonly history?: ReviewHistoryStore;
   private readonly used = new Map<string, Set<string>>();
   private readonly pending = new Set<Promise<ToolResultBlock>>();
+  readonly requestPermission: RequestPermissionGuard;
 
   constructor(private readonly opts: ToolExecutorOptions) {
     this.history = opts.reviewHistory ?? opts.reviewer?.createHistory?.();
+    this.requestPermission = opts.requestPermission ?? new RequestPermissionGuard();
     if (!opts.policy) throw new Error('ToolExecutor requires a selected policy');
   }
 
@@ -137,6 +143,9 @@ export class ToolExecutor {
     const { signal } = context;
     const { events, tools, hooks, cwd } = this.opts;
     const requestId = randomUUID();
+    const permissionScope =
+      context.origin?.permissionScope ??
+      `${String(safeMetadata(() => this.sessionId()))}:${context.runId}`;
     let tool = tools.get(toolUse.name);
     let input: Record<string, unknown> = {};
     let resultEmitted = false;
@@ -191,6 +200,15 @@ export class ToolExecutor {
       audit('execution', 'cancelled');
       return fail('Tool cancelled');
     };
+    const requestDenied = () =>
+      this.requestPermission.isDenied(permissionScope) &&
+      !(tool && this.opts.isDenialExemptTool?.(tool));
+    const stopped = () => {
+      audit('execution', 'request_permission_denied', 'deny');
+      return fail(
+        'request_permission_denied: this user request was denied; stop work and await a new user direction',
+      );
+    };
 
     try {
       if (signal.aborted) return cancelled();
@@ -200,6 +218,7 @@ export class ToolExecutor {
         audit('validation', 'unknown_tool');
         return fail(`Unknown tool: ${toolUse.name}`);
       }
+      if (requestDenied()) return stopped();
       if ((context.depth ?? 0) > 32) {
         audit('validation', 'nesting_limit');
         return fail('Tool nesting limit exceeded');
@@ -241,6 +260,7 @@ export class ToolExecutor {
       // 配置或环境在询问期间改变时重新评估，绝不复用之前的一次性批准。
       for (let attempt = 0; attempt < 3; attempt++) {
         if (signal.aborted) return cancelled();
+        if (requestDenied()) return stopped();
         jsonInput(input, tool.inputSchema);
         if (tools.get(toolUse.name) !== tool) {
           audit('validation', 'tool_changed');
@@ -333,6 +353,7 @@ export class ToolExecutor {
             reasonCode: 'analyzer_error',
           };
         }
+        if (requestDenied()) return stopped();
         let decision: Decision = {
           ...policyDecision,
           kind: policyDecision.kind === 'review' ? 'ask' : policyDecision.kind,
@@ -348,6 +369,10 @@ export class ToolExecutor {
             phase,
             decision: structuredClone(decision),
           });
+        const invocationOnlyDenial =
+          policyDecision.kind === 'deny' && policyDecision.denialScope === 'invocation';
+        if (policyDecision.kind === 'deny' && !invocationOnlyDenial)
+          this.requestPermission.deny(permissionScope);
         emitDecision('pipeline');
         audit(
           'policy',
@@ -384,6 +409,8 @@ export class ToolExecutor {
           const started = Date.now();
           decision = await this.review(operation, policyDecision, context, signal, requestId);
           if (signal.aborted) return cancelled();
+          if (requestDenied()) return stopped();
+          if (decision.kind === 'deny') this.requestPermission.deny(permissionScope);
           this.recordDecision(descriptor, input, decision);
           emitDecision('judge');
           audit(
@@ -396,6 +423,7 @@ export class ToolExecutor {
         }
 
         if (decision.kind === 'deny') {
+          if (!invocationOnlyDenial) this.requestPermission.deny(permissionScope);
           this.history?.record(
             descriptor,
             input,
@@ -434,6 +462,7 @@ export class ToolExecutor {
           });
           const userDecision = await this.ask(request, signal);
           if (signal.aborted) return cancelled();
+          if (requestDenied()) return stopped();
           if (!userDecision) {
             audit('human', 'approval_required', 'ask', binding);
             this.history?.record(
@@ -453,6 +482,7 @@ export class ToolExecutor {
               : `用户拒绝本次操作${userDecision.feedback ? `：${userDecision.feedback}` : ''}`,
             reasonCode: userDecision.allow ? 'user_allow' : 'user_deny',
           };
+          if (!userDecision.allow) this.requestPermission.deny(permissionScope);
           this.recordDecision(descriptor, input, decision);
           emitDecision('user');
           audit('human', decision.reasonCode!, decision.kind, binding);
@@ -468,6 +498,7 @@ export class ToolExecutor {
             };
           }
           if (!userDecision.allow) {
+            this.requestPermission.deny(permissionScope);
             this.history?.record(
               descriptor,
               input,
@@ -483,6 +514,7 @@ export class ToolExecutor {
         }
 
         if (signal.aborted) return cancelled();
+        if (requestDenied()) return stopped();
         const control = this.opts.isControlTool?.(tool) === true;
         if (control && context.lease)
           return fail('Control tools cannot run inside a workspace tool lease');
@@ -517,6 +549,7 @@ export class ToolExecutor {
           }
         }
         if (signal.aborted) return cancelled();
+        if (requestDenied()) return stopped();
         if (!environmentValid || !this.bindingValid(binding, toolUse.name, input)) {
           audit(
             'execution',
@@ -554,6 +587,7 @@ export class ToolExecutor {
         events.emit({ type: 'tool_call', toolUse: { ...toolUse, input: structuredClone(input) } });
         // 观测者可能同步取消或更新配置，所以 tool_call 后还须检查一次绑定。
         if (signal.aborted) return cancelled();
+        if (requestDenied()) return stopped();
         if (
           !this.bindingValid({ ...binding, policyRevision: expectedRevision }, toolUse.name, input)
         ) {
@@ -908,6 +942,9 @@ function validDecision(value: unknown): value is PolicyDecision {
     'kind' in value &&
     typeof value.kind === 'string' &&
     ['allow', 'ask', 'deny', 'review'].includes(value.kind) &&
+    (!('denialScope' in value) ||
+      value.denialScope === undefined ||
+      (value.kind === 'deny' && value.denialScope === 'invocation')) &&
     'reason' in value &&
     typeof value.reason === 'string' &&
     'source' in value &&

@@ -171,11 +171,14 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           canonicalDeny.raw,
         );
       if (analysis.reasonCode === 'windows_shell_dedicated_tool')
-        return decision(
-          'deny',
-          'use_dedicated_tool',
-          '读文件用 read_file，列目录和按名字找文件用 glob，搜索内容用 grep。这条 PowerShell 没有执行，不需要人工确认。',
-        );
+        return {
+          ...decision(
+            'deny',
+            'use_dedicated_tool',
+            '读文件用 read_file，列目录和按名字找文件用 glob，搜索内容用 grep。这条 PowerShell 没有执行，不需要人工确认。',
+          ),
+          denialScope: 'invocation',
+        };
       // 歧义路径是确定性人工约束。未解析的 PowerShell 在下方单独返回，模型 allow 不能补全缺失语义。
       // 其余未验收的 Windows Shell 不在这里改成人工，否则 reviewer 被跳过。
       if (analysis.reasonCode === 'native_windows_unverified')

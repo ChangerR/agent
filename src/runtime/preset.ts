@@ -15,7 +15,7 @@ export interface PresetContext {
   modelInfo(model: string): { contextWindow: number; maxOutputTokens: number } | undefined;
 }
 export interface Preset {
-  controlTools?: readonly { ownerPlugin: string; name: string }[];
+  controlTools?: readonly { ownerPlugin: string; name: string; allowedAfterDenial?: boolean }[];
   plugins: Plugin[];
   selections: CapabilitySelections;
 }
