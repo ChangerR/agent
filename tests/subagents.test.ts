@@ -275,11 +275,18 @@ describe('子 agent 运行与控制面', () => {
   it('全树并发/深度/inbox 限制明确返回，child 不重置限制', async () => {
     const gate = deferred();
     const f = await fixture({ before: async () => gate.promise });
-    f.agent.agents.configure({ maxInbox: 1, maxDepth: 2 });
+    f.agent.agents.configure({ maxInbox: 1 });
+    expect(() => f.agent.agents.configure({ maxDepth: 2 })).toThrow('maxDepth');
     expect(f.agent.agents.settings.maxRunning).toBe(2);
     const a = f.agent.agents.spawn({ task: 'one' });
-    const b = f.agent.agents.spawn({ task: 'nested' }, childOrigin(f.agent, a.agentId));
-    expect(f.agent.agents.status(b.agentId)[0].depth).toBe(2);
+    expect(() => f.agent.agents.spawn({ task: 'nested' }, childOrigin(f.agent, a.agentId))).toThrow(
+      'Only the root agent',
+    );
+    const b = f.agent.agents.spawn({ task: 'peer' });
+    expect(f.agent.agents.status(b.agentId)[0].depth).toBe(1);
+    expect(() => f.agent.agents.send(b.agentId, '转派', childOrigin(f.agent, a.agentId))).toThrow(
+      'Only the root agent',
+    );
     expect(() => f.agent.agents.spawn({ task: 'over' })).toThrow('Running agent limit');
     await vi.waitFor(() => expect(f.entered).toHaveLength(2));
     f.agent.agents.send(a.agentId, 'one message');
@@ -287,7 +294,7 @@ describe('子 agent 运行与控制面', () => {
     f.agent.agents.configure({ maxRunning: 3 });
     expect(() =>
       f.agent.agents.spawn({ task: 'too deep' }, childOrigin(f.agent, b.agentId)),
-    ).toThrow('depth limit');
+    ).toThrow('Only the root agent');
     expect(() =>
       f.agent.agents.status(a.agentId, undefined, {
         ...rootOrigin(f.agent),
@@ -520,12 +527,12 @@ describe('子权限、工具协调与会话', () => {
       { task: 'allowlist sender', allowedTools: ['agent_send'] },
     ]) {
       await wait(f.agent, f.agent.agents.spawn(restricted));
-      expect(JSON.stringify(f.fake.requests.at(-1))).toContain('broader child permissions');
+      expect(JSON.stringify(f.fake.requests.at(-1))).toContain('outside child allowedTools');
     }
     expect(f.agent.agents.status(b.agentId)[0].runs).toHaveLength(1);
     await expect(readFile(join(f.cwd, 'changed.txt'))).rejects.toThrow();
   });
-  it('完成通知 send 竞态有新 run，旧 run cancel 幂等且不取消后续 descendants', async () => {
+  it('完成通知 send 竞态有新 run，旧 run cancel 幂等且不取消其他单层child', async () => {
     const gate = deferred();
     const f = await fixture({
       before: async (req, signal) => {
@@ -536,7 +543,6 @@ describe('子权限、工具协调与会话', () => {
           });
       },
     });
-    f.agent.agents.configure({ maxDepth: 2 });
     let followup: ReturnType<Agent['agents']['send']> | undefined;
     f.agent.events.on('subagent_event', (event) => {
       if (event.kind === 'complete' && !followup)
@@ -547,7 +553,7 @@ describe('子权限、工具协调与会话', () => {
     await f.agent.agents.whenSettled();
     expect(followup).toBeDefined();
     expect((await wait(f.agent, followup!)).run.status).toBe('completed');
-    const c = f.agent.agents.spawn({ task: 'descendant' }, childOrigin(f.agent, a.agentId));
+    const c = f.agent.agents.spawn({ task: 'descendant' });
     await vi.waitFor(() =>
       expect(f.entered.some((req) => lastText(req) === 'descendant')).toBe(true),
     );

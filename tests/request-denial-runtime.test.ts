@@ -149,30 +149,17 @@ describe('拒绝请求的 runtime 隔离', () => {
     );
     expect(f.agent.agents.status()[0].runs[0].reason).toBe('permission_denied');
   });
-  it('宿主直接 child 的孙任务拒绝仍提升根计划，全树后续委派被阻止', async () => {
-    let parentTurn = 0;
-    let grandchildTurn = 0;
+  it('宿主直接child也不能创建孙任务，未执行的请求不转人工', async () => {
+    let turn = 0;
     const f = await fixture(
-      (request) => {
-        if (latestUser(request) === 'HOST_CHILD') {
-          if (++parentTurn === 1)
-            return call('agent_spawn', { task: 'GRANDCHILD', name: 'nested' });
-          return textResponse('已启动孙任务');
-        }
-        if (++grandchildTurn === 1) return call('read_file', { path: 'note.txt' });
-        return textResponse('拒绝后停止');
-      },
+      () => (++turn === 1 ? call('agent_spawn', { task: 'GRANDCHILD' }) : textResponse('停止')),
       { planning: false },
     );
-    f.agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
-    // 默认深度为一；此反例显式启用既有二层能力，全树并发仍保持默认二。
-    f.agent.agents.configure({ maxDepth: 2 });
-    f.agent.agents.spawn({ task: 'HOST_CHILD' });
+    expect(() => f.agent.agents.configure({ maxDepth: 4 })).toThrow('maxDepth');
+    f.agent.agents.spawn({ task: 'HOST_CHILD', allowedTools: ['agent_spawn'] });
     await f.agent.agents.whenSettled();
-    expect(f.agent.agents.status()).toHaveLength(2);
-    expect(f.agent.loop.plan.denialReason).toContain('nested');
-    expect(() => f.agent.agents.spawn({ task: '不能换子任务' })).toThrow('plan_denied');
-    expect(f.events.filter((e) => e.type === 'permission_request')).toHaveLength(1);
+    expect(f.agent.agents.status()).toHaveLength(1);
+    expect(f.events.filter((e) => e.type === 'permission_request')).toHaveLength(0);
   });
   it.each(['tool', 'subagent', 'delegation'] as const)(
     'Plan off：%s 来源的续跑及其授权措辞不能解锁旧请求',

@@ -107,7 +107,7 @@ export class AgentSupervisor {
     const next = { ...this.limits, ...limits };
     const bounds: SubagentLimits = {
       maxRunning: 16,
-      maxDepth: 4,
+      maxDepth: 1,
       maxTurns: 128,
       timeoutMs: 3_600_000,
       maxInbox: 64,
@@ -163,64 +163,54 @@ export class AgentSupervisor {
   plan(agentId: string) {
     return this.get(agentId).runtime.loop.plan;
   }
-  private parentPlan(origin?: InvocationOrigin) {
-    return origin && origin.agentId !== 'root'
-      ? this.get(origin.agentId, origin).runtime.loop.plan
-      : this.opts.rootLoop.plan;
+  private assertRootDelegation(origin: InvocationOrigin): void {
+    this.check(origin);
+    if (origin.agentId !== 'root')
+      throw new Error('Only the root agent may delegate; children execute assigned work directly');
   }
   spawn(input: SpawnAgentInput, provided?: InvocationOrigin): AgentAddress {
     const origin = this.origin(provided);
-    this.check(origin);
+    this.assertRootDelegation(origin);
     if (provided) this.opts.rootLoop.assertRequestPermission(provided);
     if (this.opts.rootLoop.plan.denialReason)
       throw new Error(
         `plan_denied: explicit user continuation required: ${this.opts.rootLoop.plan.denialReason}`,
       );
-    this.parentPlan(origin).assertDelegation();
+    this.opts.rootLoop.plan.assertDelegation();
     taskText(input.task);
     if (this.nodes.size >= this.limits.maxAgents) throw new Error('Agent history limit reached');
     if (this.runningCount() >= this.limits.maxRunning)
       throw new Error('Running agent limit reached');
-    const parent = origin.agentId === 'root' ? undefined : this.get(origin.agentId, origin);
-    const depth = (parent?.record.depth ?? 0) + 1;
-    if (depth > this.limits.maxDepth) throw new Error('Agent depth limit reached');
     if (input.context && !['fresh', 'snapshot'].includes(input.context))
       throw new Error('Unknown context mode');
     if (input.name && (input.name.length > 80 || /[\u0000-\u001f\u007f]/u.test(input.name)))
       throw new Error('Invalid agent name');
     const maxTurns = positive(input.maxTurns, this.limits.maxTurns, 'maxTurns');
     const timeoutMs = positive(input.timeoutMs, this.limits.timeoutMs, 'timeoutMs');
-    const allowedTools = input.allowedTools
-      ? input.allowedTools.filter(
-          (name) => !parent?.record.allowedTools || parent.record.allowedTools.includes(name),
-        )
-      : parent?.record.allowedTools?.slice();
-    this.parentPlan(origin).validateChildStep(input.planStepId);
+    const allowedTools = input.allowedTools?.slice();
+    this.opts.rootLoop.plan.validateChildStep(input.planStepId);
     const record: SubagentRecord = {
       agentId: `a-${randomUUID()}`,
       sessionId: newSessionId(),
       rootSessionId: this.opts.rootSession.id,
       parentAgentId: origin.agentId,
       name: input.name ?? `agent-${this.nodes.size + 1}`,
-      depth,
+      depth: 1,
       context: input.context ?? 'fresh',
-      readOnly:
-        parent?.record.readOnly || this.parentPlan(origin).researchOnly || input.readOnly === true,
+      readOnly: this.opts.rootLoop.plan.researchOnly || input.readOnly === true,
       ...(allowedTools ? { allowedTools } : {}),
       runs: [],
     };
     const node = this.create(record);
-    const snapshot = (parent?.runtime.loop ?? this.opts.rootLoop).exportSession();
+    const snapshot = this.opts.rootLoop.exportSession();
     node.runtime.loop.importSession({
       ...snapshot,
       plan: undefined,
       messages: record.context === 'snapshot' ? snapshot.messages : [],
     });
-    const parentPlan = (parent?.runtime.loop ?? this.opts.rootLoop).plan;
-    node.runtime.loop.plan.configure(parentPlan.snapshot?.mode ?? parentPlan.mode);
     this.nodes.set(record.agentId, node);
     const run = this.newRun(node, input.task);
-    this.parentPlan(origin).bindChild(input.planStepId, {
+    this.opts.rootLoop.plan.bindChild(input.planStepId, {
       agentId: record.agentId,
       runId: run.runId,
       name: record.name,
@@ -267,27 +257,18 @@ export class AgentSupervisor {
     text: string,
     provided?: InvocationOrigin,
   ): AgentAddress & { queued: boolean } {
+    this.assertRootDelegation(this.origin(provided));
     if (provided) this.opts.rootLoop.assertRequestPermission(provided);
     if (this.opts.rootLoop.plan.denialReason)
       throw new Error(
         `plan_denied: explicit user continuation required: ${this.opts.rootLoop.plan.denialReason}`,
       );
-    this.parentPlan(provided).assertDelegation();
+    this.opts.rootLoop.plan.assertDelegation();
     const node = this.get(agentId, provided);
-    if (this.parentPlan(provided).researchOnly && !node.record.readOnly)
+    if (this.opts.rootLoop.plan.researchOnly && !node.record.readOnly)
       throw new Error(
         'Cannot delegate a read-only task to an agent with broader child permissions',
       );
-    if (provided && provided.agentId !== 'root') {
-      const sender = this.get(provided.agentId, provided).record;
-      if (
-        (sender.readOnly && !node.record.readOnly) ||
-        (sender.allowedTools &&
-          (!node.record.allowedTools ||
-            node.record.allowedTools.some((name) => !sender.allowedTools!.includes(name))))
-      )
-        throw new Error('Cannot delegate to an agent with broader child permissions');
-    }
     taskText(text);
     const input: RunInput = {
       text,
@@ -314,16 +295,10 @@ export class AgentSupervisor {
     }
     if (!node.job && this.runningCount() >= this.limits.maxRunning)
       throw new Error('Running agent limit reached');
-    const localPlan = node.runtime.loop.plan.snapshot;
-    if (
-      localPlan &&
-      (localPlan.denialReason || ['paused', 'cancelled', 'interrupted'].includes(localPlan.phase))
-    )
-      node.runtime.loop.plan.resume();
+    // 根请求已经通过真实继续/权限检查；child只保留执行状态，不恢复独立计划。
+    if (node.runtime.loop.plan.snapshot) node.runtime.loop.plan.clear();
     const run = this.newRun(node, text);
-    (
-      this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop
-    ).plan.childRestarted(agentId, run);
+    this.opts.rootLoop.plan.childRestarted(agentId, run);
     node.queue.push({ run, input, limits: { ...this.limits } });
     this.emit(node, run, 'status');
     this.launch(node);
@@ -524,18 +499,8 @@ export class AgentSupervisor {
           throw new Error('Invalid child session ownership');
         seen.add(record.agentId);
         seen.add(record.sessionId);
-        const parent = records.find((parent) => parent.agentId === record.parentAgentId);
-        if (
-          record.parentAgentId === 'root'
-            ? record.depth !== 1
-            : !parent ||
-              parent.depth !== record.depth - 1 ||
-              (parent.readOnly && !record.readOnly) ||
-              (parent.allowedTools &&
-                (!record.allowedTools ||
-                  record.allowedTools.some((name) => !parent.allowedTools!.includes(name))))
-        )
-          throw new Error('Invalid child task tree or permission intersection');
+        if (record.parentAgentId !== 'root' || record.depth !== 1)
+          throw new Error('Invalid child task tree: only single-level delegation is supported');
         const node = this.create(record);
         try {
           await node.runtime.session.resume(record.sessionId, { signal });
@@ -568,10 +533,7 @@ export class AgentSupervisor {
     this.switching = false;
     for (const node of this.nodes.values()) {
       const run = node.record.runs.at(-1);
-      if (run)
-        (
-          this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop
-        ).plan.childChanged(node.record.agentId, node.record.name, run);
+      if (run) this.opts.rootLoop.plan.childChanged(node.record.agentId, node.record.name, run);
     }
   }
   private create(record: SubagentRecord): Node {
@@ -729,7 +691,7 @@ export class AgentSupervisor {
       output,
       error: run.error,
     });
-    const parent = this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop;
+    const parent = this.opts.rootLoop;
     try {
       parent.deliverData(data);
     } catch {
@@ -819,7 +781,7 @@ export class AgentSupervisor {
     kind: 'status' | 'text' | 'usage' | 'complete',
     fields: Partial<Extract<AgentEvent, { type: 'subagent_event' }>> = {},
   ): void {
-    const parent = this.nodes.get(node.record.parentAgentId)?.runtime.loop ?? this.opts.rootLoop;
+    const parent = this.opts.rootLoop;
     parent.plan.childChanged(node.record.agentId, node.record.name, run);
     this.opts.events.emit({
       ...fields,

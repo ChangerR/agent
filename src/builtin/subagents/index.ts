@@ -14,7 +14,7 @@ const integer = (max: number, value: number) => z.number().int().min(1).max(max)
 export const SubagentConfigSchema = z
   .object({
     maxRunning: integer(16, DEFAULT_SUBAGENT_LIMITS.maxRunning),
-    maxDepth: integer(4, 1),
+    maxDepth: z.literal(1).default(1),
     maxTurns: integer(128, 16),
     timeoutMs: integer(3_600_000, 300_000),
     maxInbox: integer(64, 16),
@@ -76,7 +76,7 @@ export function subagentsPlugin(services: RuntimeServices, cwd: string) {
       > = {
         agent_spawn: {
           description:
-            '启动独立上下文子任务，立即返回 agentId/runId。默认 fresh 并继承当前模型；同步结果用 agent_wait。委派不会扩大真实用户授权。',
+            '仅父任务可按需启动一个单层子任务；简单任务不必委派。立即返回 agentId/runId。默认 fresh 并继承当前模型；同步结果用 agent_wait。委派不会扩大真实用户授权。',
           properties: {
             task: textSchema,
             planStepId: { type: 'string', minLength: 1 },

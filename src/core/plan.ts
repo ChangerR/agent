@@ -44,6 +44,7 @@ export const PlanSchema = z
             'interrupted',
           ]),
           evidence: z.string().max(2000).optional(),
+          evidenceStepIds: z.array(text).max(64).optional(),
           reason: z.string().max(2000).optional(),
           children: z
             .array(
@@ -223,6 +224,7 @@ export class PlanController {
       stepId?: string;
       status?: 'running' | 'blocked' | 'completed';
       evidence?: string;
+      evidenceStepIds?: string[];
       reason?: string;
       goal?: string;
       steps?: { id?: string; title: string }[];
@@ -267,11 +269,27 @@ export class PlanController {
         if ([...this.calls.values()].includes(s.id)) throw new Error('Execution has not settled');
         if (s.children.some((c) => c.status !== 'completed'))
           throw new Error('Child work has not completed');
-        if (!this.successful.has(s.id) && !s.children.length)
+        const references = input.evidenceStepIds ?? [];
+        if (
+          references.length &&
+          (!this.researchOnly ||
+            references.some((id) => {
+              const index = p.steps.findIndex((step) => step.id === id);
+              return (
+                index < 0 ||
+                index >= p.steps.indexOf(s) ||
+                p.steps[index].status !== 'completed' ||
+                !p.steps[index].evidence?.trim()
+              );
+            }))
+        )
+          throw new Error('Analysis evidence must reference earlier completed read-only steps');
+        if (!this.successful.has(s.id) && !s.children.length && !references.length)
           throw new Error('No successful execution evidence for this step');
         if (s.status !== 'running')
           throw new Error('Start the step and resolve blockers before completing it');
         s.evidence = input.evidence;
+        if (references.length) s.evidenceStepIds = [...new Set(references)];
       }
       if (input.status === 'running') {
         const other = p.steps.find(
