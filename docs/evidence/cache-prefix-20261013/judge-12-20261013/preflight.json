@@ -1,0 +1,78 @@
+{
+  "at": "2026-10-13T10:09:00.132Z",
+  "stage": "authorized_judge_12_network_preflight",
+  "environmentAvailable": true,
+  "worktreeAvailable": true,
+  "credentialsPresent": true,
+  "credentialsPrinted": false,
+  "provider": "openai",
+  "model": "deepseek-flash",
+  "officialEndpointVerified": true,
+  "baseline": {
+    "head": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "clean": true
+  },
+  "candidate": {
+    "base": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "branch": "fix/cache-prefix-evidence-20261013",
+    "sourceFingerprint": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "unchangedSinceOfflineValidation": true
+  },
+  "checks": [
+    {
+      "kind": "dns",
+      "mode": "default",
+      "domains": ["api.deepseek.com", "api-docs.deepseek.com"],
+      "result": "EAI_AGAIN"
+    },
+    {
+      "kind": "dns",
+      "mode": "with_additional_network_permissions",
+      "domains": ["api.deepseek.com", "api-docs.deepseek.com"],
+      "result": "EAI_AGAIN"
+    },
+    {
+      "kind": "dns",
+      "mode": "require_escalated",
+      "domains": ["api.deepseek.com", "api-docs.deepseek.com"],
+      "result": "EAI_AGAIN"
+    },
+    {
+      "kind": "public_document_fetch",
+      "url": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "transport": "curl_existing_environment_proxy",
+      "result": "CONNECT tunnel failed, response 403",
+      "httpStatus": 0,
+      "modelAPI": false
+    },
+    {
+      "kind": "public_document_fetch",
+      "transport": "web",
+      "result": "timeout/empty search",
+      "modelAPI": false
+    }
+  ],
+  "blocker": "当前环境直连DNS解析失败，现有代理拒绝CONNECT；提升执行网络权限后仍失败。未尝试模型API，未更换机器、端点或绕过网络限制。",
+  "lowPeak": {
+    "startFromExplicitUserAuthorization": true,
+    "currentOfficialPricingRevalidationSucceeded": false,
+    "sendGateOpened": false
+  },
+  "rawPromptsPersisted": false,
+  "modelResponsesReceived": 0,
+  "modelTransportAttempts": 0,
+  "publication": {
+    "committed": false,
+    "pushed": false,
+    "prCreated": false
+  },
+  "remaining": "需要当前环境恢复官方API网络访问后，重新核对仍在获准低峰窗口，再启动独立12次硬上限gate；本记录不是已运行实验结果。",
+  "resolution": {
+    "at": "2026-10-13T10:16:59.008Z",
+    "existingProxyAPITunnelStatus": 200,
+    "publicDocsBlockDidNotProveAPIBlocked": true,
+    "usedSameEnvironment": true,
+    "modelRequestsWereOnlyAfterBudgetGate": true,
+    "currentStatus": "completed_12_see_summary"
+  }
+}

@@ -92,7 +92,7 @@ export const planningStrategy: PlanningStrategy = {
           tools: [],
         },
         input.signal,
-        { events: input.events, purpose: 'agent', runId: input.runId },
+        { events: input.events, purpose: 'agent', modelRole: 'planner', runId: input.runId },
       );
       const response = await collectStreamAsync(
         (async function* () {

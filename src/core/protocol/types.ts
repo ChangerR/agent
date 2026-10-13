@@ -50,8 +50,8 @@ export interface ToolResultBlock {
 
 export interface UserMessage {
   role: 'user';
-  /** 自动压缩产生的消息来源；未标记的旧消息按用户原文处理。 */
-  source?: 'summary' | 'delegation' | 'subagent' | 'tool';
+  /** 运行时、摘要及委派数据均不构成用户授权；无 source 的消息才是用户原文。 */
+  source?: 'summary' | 'delegation' | 'subagent' | 'tool' | 'runtime';
   content: string | Array<TextBlock | ToolResultBlock>;
 }
 
@@ -89,11 +89,25 @@ export function emptyUsage(): TokenUsage {
 }
 
 /** 只覆盖 patch 里有定义的字段。避免后到的 usage 片段把前面的计数冲成 0 */
-export function mergeUsage(target: TokenUsage, patch: Partial<TokenUsage>): void {
+export function mergeUsage(target: Partial<TokenUsage>, patch: Partial<TokenUsage>): void {
   if (patch.inputTokens !== undefined) target.inputTokens = patch.inputTokens;
   if (patch.outputTokens !== undefined) target.outputTokens = patch.outputTokens;
   if (patch.cacheReadTokens !== undefined) target.cacheReadTokens = patch.cacheReadTokens;
   if (patch.cacheWriteTokens !== undefined) target.cacheWriteTokens = patch.cacheWriteTokens;
+}
+
+/** 缓存输入字段必须齐全；未命中包括本次写入缓存的输入，缺失字段不按零计。 */
+export function cacheUsage(usage: Partial<TokenUsage>) {
+  if (
+    usage.inputTokens === undefined ||
+    usage.cacheReadTokens === undefined ||
+    usage.cacheWriteTokens === undefined
+  )
+    return undefined;
+  return {
+    hitTokens: usage.cacheReadTokens,
+    missTokens: usage.inputTokens + usage.cacheWriteTokens,
+  };
 }
 
 export type StreamEvent =

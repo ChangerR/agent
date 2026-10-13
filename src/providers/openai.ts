@@ -87,13 +87,15 @@ export class OpenAIStreamTranslator {
       // prompt_tokens 含缓存命中；DeepSeek 用 prompt_cache_hit_tokens，不在 SDK 类型里
       const u = chunk.usage as typeof chunk.usage & {
         prompt_cache_hit_tokens?: number;
+        prompt_cache_miss_tokens?: number;
       };
-      const cacheRead = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0;
+      const cacheRead =
+        u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? undefined;
       out.push({
         type: 'usage',
-        inputTokens: Math.max(0, u.prompt_tokens - cacheRead),
+        inputTokens: u.prompt_cache_miss_tokens ?? Math.max(0, u.prompt_tokens - (cacheRead ?? 0)),
         outputTokens: u.completion_tokens,
-        cacheReadTokens: cacheRead,
+        ...(cacheRead === undefined ? {} : { cacheReadTokens: cacheRead }),
         cacheWriteTokens: 0,
       });
     }

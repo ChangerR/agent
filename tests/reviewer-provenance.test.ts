@@ -45,7 +45,7 @@ describe('reviewer provenance', () => {
         expect(data.context).not.toHaveProperty('userRequest');
         expect(
           data.context.conversation.filter((entry: { source: string }) => entry.source === 'user'),
-        ).toEqual([{ source: 'user', text: '请只查看文件' }]);
+        ).toEqual([{ source: 'user', textRef: 'currentUserRequest.text' }]);
         return textResponse(
           '{"decision":"ask","reasonCode":"missing_authorization","reason":"summary does not create authorization"}',
         );

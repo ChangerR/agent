@@ -110,6 +110,16 @@ describe('edit_file', () => {
 });
 
 describe('write_file', () => {
+  it.each(['CACHE_AUDIT_OK', 'CACHE_AUDIT_OK\n'])(
+    '新建文件不增删模型参数的尾部换行 %j',
+    async (content) => {
+      await writeFileTool.execute({ path: 'exact.txt', content }, ctx());
+      expect(await readFile(join(tmp, 'exact.txt'))).toEqual(Buffer.from(content));
+      const readBack = await readFileTool.execute({ path: 'exact.txt' }, ctx());
+      expect(readBack.content).toBe(`1\tCACHE_AUDIT_OK${content.endsWith('\n') ? '\n2\t' : ''}`);
+    },
+  );
+
   it('覆盖时保留原来的 CRLF 和 BOM', async () => {
     await writeFile(join(tmp, 'crlf.txt'), '\uFEFFkeep\r\nme\r\n');
     const r = await writeFileTool.execute({ path: 'crlf.txt', content: 'keep\nthis\n' }, ctx());

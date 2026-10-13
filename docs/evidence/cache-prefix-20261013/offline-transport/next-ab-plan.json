@@ -1,0 +1,76 @@
+{
+  "status": "proposal_only_no_new_API_authorization",
+  "purpose": "区分序列化前缀稳定性、实际缓存观察和端到端任务质量；不预设命中率必须提高。",
+  "recommendedFirstStageTransports": 12,
+  "optionalWorkflowTransports": 176,
+  "combinedUpperBound": 188,
+  "oldBudget": { "used": 48, "remaining": 0, "reuse": false },
+  "versions": {
+    "A": "冻结基线 6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "B": "开始前冻结候选工作树源码指纹；不得把后续离线修正冒充旧48次实测版本",
+    "publicationRequired": false
+  },
+  "fixedConditions": [
+    "相同 provider、endpoint、model、模型参数、缓存配置、工具 schema、用户提示和预置文件字节；每项保存大小/散列，不输出 key。",
+    "两版顺序运行于同一匿名合成项目路径，每个 workflow 开始前恢复相同初始文件和独立会话；避免随机路径、不同工具授权或已有批准规则成为混杂因素。",
+    "启动前冻结全部提示、输入、预期输出、步骤与预算；不根据一版结果单独调整另一版提示。先以假 transport 验证配额、重试和隔离。",
+    "不能清除服务端缓存；禁止把首次观察命名为确定 cold，禁止用随机 nonce 人为制造前缀差异。只标 first-observed、exact-repeat 和 changed-operation，记录顺序和间隔。"
+  ],
+  "judgeDiagnostic": {
+    "blocks": ["A", "B", "B", "A"],
+    "transportsReservedPerBlock": 3,
+    "requestsPerBlock": [
+      "冻结完整授权和操作A的审查请求，第一次观察",
+      "完全相同请求重发，必须实际最终 fetch body SHA256 相等；否则标为不可比较并停止该 block",
+      "同一授权下操作B的固定请求；保留完整操作/风险证据，不丢字段换取前缀"
+    ],
+    "isolation": "独立构造冻结 reviewer 请求，只诊断模型审查与缓存，不执行工具，不缓存或复用其批准。端到端 workflow 继续真实 reviewer。每版第二 block 重用各自冻结请求，不插入新 nonce。",
+    "success": "每次响应完整合法、usage缺失显式unknown；相同body条件经hash验证；完整记录first/repeat/changed分组与邻接及同范围前缀。允许零缓存或无改善结果。",
+    "limitation": "每版两个block仅是小样本诊断，不能宣称统计稳定或因果成本收益。"
+  },
+  "workflows": [
+    {
+      "case": "项目只读浏览",
+      "order": ["A", "B", "B", "A"],
+      "transportsReservedPerRun": 8,
+      "caseReservation": 32,
+      "rationale": "此前基线成功路径7次；本次为每run独立预留8次，包含planner/main及任何重试。",
+      "acceptance": "真实读取合成220+文件目录，计数与摘要正确；normal auto下0人工、可证明读取0judge；计划完成、无工具错误、无悬挂请求。"
+    },
+    {
+      "case": "同授权精确写入",
+      "order": ["B", "A", "A", "B"],
+      "transportsReservedPerRun": 16,
+      "caseReservation": 64,
+      "rationale": "此前基线12次且turn上限阻断；本次正常main逻辑回合上限12，另为planner和两次judge保留容量，所有retry共享16上限。",
+      "acceptance": "analyzer→policy→reviewer→executor完整链路；两文件逐字节匹配，无额外LF；真实授权绑定不变，0人工，无工具错误，计划/任务完整结束。"
+    },
+    {
+      "case": "受限父子只读任务",
+      "order": ["A", "B", "B", "A"],
+      "transportsReservedPerRun": 20,
+      "caseReservation": 80,
+      "rationale": "此前候选10次、基线被全局配额截断；预留root12、child5、planner1及2次重试容量，所有角色共用每run20上限。",
+      "acceptance": "父子工具schema与授权预先固定且跨版一致；child真实读取并结算，parent消费结果并完成计划；0人工、可证明读取0judge，无工具错误或未结算任务。"
+    }
+  ],
+  "budgetEnforcement": [
+    "这只是预算提案，必须收到新授权和新的有效时间窗口才可运行。建议先授权12次诊断，按证据决定是否另启176次workflow；不为耗完额度强行运行。",
+    "开始前为所有case/run独立预留份额，不能让先运行的case耗掉后续case预算；余量不得自动借用或追加。",
+    "实际fetch发送前原子扣减全局与本run额度；每次SDK重试、planner、main、child、judge、compact均计入。拒绝第N+1次发送，不凭逻辑事件数代替实际transport数。",
+    "每个case超额即明确incomplete/budget_exhausted；失败和超额也保留记录，不通过自动放宽权限、增加回合或只保留成功重跑补齐。",
+    "授权时间窗口结束立即停止新增transport；标记window_censored，与模型失败和额度不足分开。网络未知usage不计为零。",
+    "任何跨版工具数组/授权/设置变化都标为不可比较；不按角色总额掩盖单case失败。"
+  ],
+  "measurements": [
+    "实际fetch body字节/sha256与相邻及同授权同actor同角色LCP；结构投影system/messages/tools/settings和reviewer字段大小/sha256。不保存原始prompt、用户路径或凭据。",
+    "每次transport的model/role/run匿名ID、顺序、耗时、结果类别、input/output/cache hit/miss及unknown。只按已知usage估算成本，列明未知量。",
+    "逐case任务完成、实际文件字节校验、人工审批数、规则/模型审批数、工具错误、plan状态与child结算。",
+    "已失败、受限或不可比较的case单独报告，不用于宣称成本/命中改善；成功样本也保持initial/repeat与跨版分组。"
+  ],
+  "overallAcceptance": [
+    "先满足任务正确、安全边界和完整证据，再讨论缓存；不以命中率提高作为通过前提。",
+    "负向权限/注入/边界反例继续离线回归，不能为在线预算或通过率关闭reviewer/yolo放行。",
+    "如结果仍只有小样本或初始缓存状态不可控，结论限定为观察，不写成已证明优化。"
+  ]
+}

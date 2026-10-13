@@ -1,0 +1,26 @@
+{
+  "baseline": {
+    "head": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "dirty": false
+  },
+  "candidate": {
+    "head": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "dirty": true,
+    "diffSha256": "ffb4d5594c6cae53dac8ca010b2950e332cbf144804878b2113653f64aa94223",
+    "untracked": [
+      {
+        "path": "src/builtin/reviewer-model/review-evidence.ts",
+        "sha256": "ccbc9c4f5732edac137c4307bfa4c310fba58b6ae17eba6df033bcb3188d0e88"
+      },
+      {
+        "path": "tests/cache-prefix-evidence.test.ts",
+        "sha256": "2674c5075732f683d565b2929c496eb45afbc3dc8b516bc1961e30378d2b84dc"
+      },
+      {
+        "path": "tests/helpers/runtime-plan.ts",
+        "sha256": "026ada259b34ae7e2258a4eb1718562705988deed936c2f2eefd11d9fa9a37ab"
+      }
+    ],
+    "sourceFingerprint": "f7ad8995f1ee731e1cda9b6bc36a541428f3250085a73b88a0508f3d3dd72a37"
+  }
+}

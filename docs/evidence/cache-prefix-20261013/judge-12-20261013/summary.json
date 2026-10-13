@@ -1,0 +1,183 @@
+{
+  "at": "2026-10-13T10:19:51.885Z",
+  "status": "completed_budget_exhausted_stop",
+  "authorization": {
+    "limit": 12,
+    "scope": "judge_only",
+    "startUTC": "2026-10-13T10:05:00Z",
+    "conservativeStopUTC": "2026-10-13T10:50:00Z",
+    "userSource": "父线程转达用户可以，批准12次专项，暂不扩大workflow"
+  },
+  "budget": {
+    "used": 12,
+    "remaining": 0,
+    "sdkRetries": 0,
+    "networkFailures": 0,
+    "http200": 12,
+    "old48Reused": false,
+    "old575Reused": false,
+    "workflowCalls": 0
+  },
+  "actualWindow": {
+    "first": "2026-10-13T10:16:59.008Z",
+    "last": "2026-10-13T10:17:25.825Z",
+    "finished": "2026-10-13T10:17:27.699Z"
+  },
+  "versions": {
+    "baseline": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "candidate": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f"
+  },
+  "settings": {
+    "model": "deepseek-flash",
+    "maxTokens": 8192,
+    "prefixCache": false,
+    "timeoutMs": 60000,
+    "maxRequestBytes": 65536,
+    "maxResponseBytes": 65536,
+    "maxRetries": 0
+  },
+  "settingsHash": "17bf67f3f9737fd27bcfe6e2f09361aec52531d74fffdba4cfda4834b809046e",
+  "authorizationHash": "626f049b9af3304e5903c282ec9ccec49b2bf4db792081a605f0f0d3d60c9d8a",
+  "inputHashes": {
+    "baseline": [
+      "5eed85fc654401df7df564cdbd1947b5f18c4698cda26ab12283f1ac5a39d245",
+      "c0779e18b4c484351b5787a8a7057a2e5c02949467de42e647f3066a18f9f5d3"
+    ],
+    "candidate": [
+      "5eed85fc654401df7df564cdbd1947b5f18c4698cda26ab12283f1ac5a39d245",
+      "c0779e18b4c484351b5787a8a7057a2e5c02949467de42e647f3066a18f9f5d3"
+    ]
+  },
+  "systemHashes": {
+    "baseline": "5f0f0439f51911ce01cc1189ce0301b122cf73668562a9314fc92e1c57baed10",
+    "candidate": "4317835a8cc57de93788cc5cdc4bd0fb6b05bdcf9c96b73f3d8af9dcbfff4f71"
+  },
+  "totals": {
+    "baseline": {
+      "transports": 6,
+      "inputTotal": 9064,
+      "hit": 6400,
+      "miss": 2664,
+      "output": 1463,
+      "hitFraction": 0.706090026478376,
+      "unknownUsage": 0,
+      "valid": 6,
+      "allow": 6
+    },
+    "candidate": {
+      "transports": 6,
+      "inputTotal": 8548,
+      "hit": 6528,
+      "miss": 2020,
+      "output": 1283,
+      "hitFraction": 0.7636874122601778,
+      "unknownUsage": 0,
+      "valid": 6,
+      "allow": 6
+    }
+  },
+  "observations": {
+    "requestBytes": {
+      "baseline": 6231,
+      "candidate": 5985,
+      "reductionBytes": 246
+    },
+    "changedOperationRawBytePrefix": {
+      "baseline": 3864,
+      "candidate": 4258,
+      "increaseBytes": 394
+    },
+    "firstChangedOperation": {
+      "baseline": {
+        "index": 3,
+        "hit": 640,
+        "miss": 872,
+        "input": 1512
+      },
+      "candidate": {
+        "index": 6,
+        "hit": 768,
+        "miss": 658,
+        "input": 1426
+      }
+    },
+    "exactRepeats": {
+      "count": 4,
+      "allBodyHashesEqual": true,
+      "allHitTokens": 1280
+    },
+    "laterChangedOperation": {
+      "baseline": {
+        "index": 12,
+        "hit": 1280
+      },
+      "candidate": {
+        "index": 9,
+        "hit": 1280
+      }
+    }
+  },
+  "conclusion": "本样本直接测到候选请求更小、操作变化时原始字节前缀更长，首次changed-operation多命中128tokens。不能单独归因于排序或证明稳定缓存收益：候选同时改变system提示、去重引用和模型证据字段，既有服务端缓存不能清空，每版只有两个block。后续操作及全部exact-repeat两版均命中1280tokens。",
+  "limitations": [
+    "仅独立judge，模型批准未执行或复用，不能证明端到端workflow质量",
+    "block-initial不等于cold；第二轮block的相同body此前已发送",
+    "供应商缓存以tokens计，原始JSON字节LCP不是缓存命中token数",
+    "parts/evidence是重编码投影而非wire子串",
+    "无原始prompt或模型响应正文持久化；只存计数/枚举/散列",
+    "本轮官方定价页被网络代理拒绝，低峰起点依据明确用户授权；不报告价格或账单成本"
+  ],
+  "network": {
+    "mode": "same_environment_existing_proxy",
+    "nodeFlag": "--use-env-proxy",
+    "redirect": "error",
+    "endpoint": "https://api.deepseek.com",
+    "directDNS": "EAI_AGAIN",
+    "publicDocsProxyConnect": 403,
+    "apiProxyConnectPreflight": 200,
+    "apiConnectOnlyPreflightCount": 1,
+    "apiConnectOnlyPreflightSentAPIRequest": false
+  },
+  "privacy": {
+    "credentialsPersisted": false,
+    "rawPromptPersisted": false,
+    "rawResponsePersisted": false,
+    "redactionCheck": "pass"
+  },
+  "files": {
+    "eventsSha256": "11c25b458ccc8fc0e24857899078d5e6f2b41f17d91a85bda4c3171e78fe6d0e",
+    "budgetSha256": "598488c77dcf95f7306007e0878342b7e48afbc29d9ef17864871b75727b123f",
+    "harnessSha256": "ea5ebf891cef505250477e7384f0650fc6eb529c92540ca0276a56d71e996b59",
+    "gateSha256": "d5dfc935d793d6111267146b68b950532a0754c1e852d41104d92cc77b24f0f3",
+    "budgetOriginalSha256": "c21123b5107eb8ff8b76413101ec27fa035c50d95b0af52435607e6f3edb7b65"
+  },
+  "publication": {
+    "committed": false,
+    "pushed": false,
+    "prCreated": false
+  },
+  "validation": {
+    "sourceUnchangedSinceOffline": true,
+    "priorFullSuite": {
+      "files": 81,
+      "passed": 1592,
+      "skipped": 2,
+      "reference": "../offline-transport/validation.json"
+    },
+    "gateTests": {
+      "passed": 2,
+      "logSha256": "6dc4c6b0b7c197928387c2b92eba26b60cd05e6cd57d825fd8d1c361e4dbf5af"
+    },
+    "finalOfflineMockTransports": 12,
+    "evidenceVerifier": {
+      "command": "node docs/evidence/cache-prefix-20261013/judge-12-20261013/verify.mts",
+      "exitCode": 0,
+      "logSha256": "32790663d406fc3e9d2d32620e8aa1fa8caf33071a045b31f2ede4e8e764ba7a"
+    },
+    "format": {
+      "command": "pnpm format:check",
+      "exitCode": 0,
+      "logSha256": "e8f08fb3f7af3dc94cafb38f58e0f3a26e3e92445051e083fa69d0582811b26e"
+    },
+    "independentReview": "review.json"
+  }
+}

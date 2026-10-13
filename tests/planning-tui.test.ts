@@ -14,11 +14,12 @@ import { definePlugin } from '../src/sdk/index.js';
 import { startTui } from '../src/cli/app.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
 import type { ChatRequest } from '../src/core/provider.js';
-import { PlanController, type Plan } from '../src/core/plan.js';
+import { PlanController } from '../src/core/plan.js';
 import { EventBus } from '../src/core/events.js';
 import { emptyUsage } from '../src/core/protocol/types.js';
 import { planLines } from '../src/builtin/planning/tui.js';
 import { mkdtempProject } from './helpers/project.js';
+import { requestPlan as planFrom } from './helpers/runtime-plan.js';
 
 class MemoryTerminal implements Terminal {
   kittyProtocolActive = false;
@@ -49,8 +50,6 @@ const gate = () => {
   });
   return { promise, resolve };
 };
-const planFrom = (request: ChatRequest): Plan =>
-  JSON.parse(request.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\n')[0]);
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();

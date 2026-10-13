@@ -14,10 +14,10 @@ type Call = { name: string; input: Record<string, unknown> };
 type Payload = {
   operation: { toolName: string; input: Record<string, unknown>; cwd: string };
   currentUserRequest: { source: string; text: string };
+  previousReviews: Array<{ decision: { kind: string } }>;
   context: {
     userRequestRef: string;
     conversation: Array<{ source: string; text: string }>;
-    previousReviews: Array<{ decision: { kind: string } }>;
   };
 };
 const roots: string[] = [];
@@ -66,7 +66,9 @@ async function fixture(
           }),
         );
       }
-      const last = request.messages.at(-1)?.content;
+      const last = [...request.messages]
+        .reverse()
+        .find((m) => m.role !== 'user' || m.source !== 'runtime')?.content;
       if (typeof last !== 'string') return textResponse('WORKFLOW_DONE');
       return toolUseResponse(
         (options.calls?.(last) ?? pending).map((call) => ({ ...call, id: randomUUID() })),
@@ -287,9 +289,7 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
       judge: (payload) => {
         expect(payload.currentUserRequest.text).toBe(request);
         if (payload.operation.toolName === 'edit_file')
-          expect(payload.context.previousReviews.some((row) => row.decision.kind === 'deny')).toBe(
-            true,
-          );
+          expect(payload.previousReviews.some((row) => row.decision.kind === 'deny')).toBe(true);
         return 'deny';
       },
       respond: () => ({ allow: true }),

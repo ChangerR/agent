@@ -1,0 +1,102 @@
+{
+  "experiment": "judge-12-20261013",
+  "limit": 12,
+  "attempts": [
+    {
+      "index": 1,
+      "at": "2026-10-13T10:16:59.007Z",
+      "block": 0,
+      "version": "baseline",
+      "phase": "block-initial",
+      "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e"
+    },
+    {
+      "index": 2,
+      "at": "2026-10-13T10:17:01.678Z",
+      "block": 0,
+      "version": "baseline",
+      "phase": "exact-repeat",
+      "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e"
+    },
+    {
+      "index": 3,
+      "at": "2026-10-13T10:17:04.130Z",
+      "block": 0,
+      "version": "baseline",
+      "phase": "changed-operation",
+      "bodySha256": "db8fc85b71a328257e35bbd42eac3005ae76ce9b12002548bc197354e833f67a"
+    },
+    {
+      "index": 4,
+      "at": "2026-10-13T10:17:06.141Z",
+      "block": 1,
+      "version": "candidate",
+      "phase": "block-initial",
+      "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645"
+    },
+    {
+      "index": 5,
+      "at": "2026-10-13T10:17:08.277Z",
+      "block": 1,
+      "version": "candidate",
+      "phase": "exact-repeat",
+      "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645"
+    },
+    {
+      "index": 6,
+      "at": "2026-10-13T10:17:10.154Z",
+      "block": 1,
+      "version": "candidate",
+      "phase": "changed-operation",
+      "bodySha256": "c06cc2f401d1f1c1a77ff7e5ea50dc2124265a741ca275f9d9662945fc17d5e9"
+    },
+    {
+      "index": 7,
+      "at": "2026-10-13T10:17:12.026Z",
+      "block": 2,
+      "version": "candidate",
+      "phase": "block-initial",
+      "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645"
+    },
+    {
+      "index": 8,
+      "at": "2026-10-13T10:17:14.736Z",
+      "block": 2,
+      "version": "candidate",
+      "phase": "exact-repeat",
+      "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645"
+    },
+    {
+      "index": 9,
+      "at": "2026-10-13T10:17:17.439Z",
+      "block": 2,
+      "version": "candidate",
+      "phase": "changed-operation",
+      "bodySha256": "c06cc2f401d1f1c1a77ff7e5ea50dc2124265a741ca275f9d9662945fc17d5e9"
+    },
+    {
+      "index": 10,
+      "at": "2026-10-13T10:17:19.929Z",
+      "block": 3,
+      "version": "baseline",
+      "phase": "block-initial",
+      "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e"
+    },
+    {
+      "index": 11,
+      "at": "2026-10-13T10:17:22.718Z",
+      "block": 3,
+      "version": "baseline",
+      "phase": "exact-repeat",
+      "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e"
+    },
+    {
+      "index": 12,
+      "at": "2026-10-13T10:17:25.825Z",
+      "block": 3,
+      "version": "baseline",
+      "phase": "changed-operation",
+      "bodySha256": "db8fc85b71a328257e35bbd42eac3005ae76ce9b12002548bc197354e833f67a"
+    }
+  ]
+}

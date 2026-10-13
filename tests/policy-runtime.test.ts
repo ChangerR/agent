@@ -26,7 +26,9 @@ async function runFixture(scoped: boolean, path = 'src/a.ts', reviewerAllows = t
           }),
         );
       }
-      return typeof request.messages.at(-1)?.content === 'string'
+      return typeof [...request.messages]
+        .reverse()
+        .find((m) => m.role !== 'user' || m.source !== 'runtime')?.content === 'string'
         ? toolUseResponse([
             { id: 'scoped-write', name: 'write_file', input: { path, content: 'new content' } },
           ])

@@ -141,8 +141,12 @@ export function fromAnthropicEvent(
           type: 'usage',
           inputTokens: u.input_tokens,
           outputTokens: u.output_tokens,
-          cacheReadTokens: u.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+          ...(typeof u.cache_read_input_tokens === 'number'
+            ? { cacheReadTokens: u.cache_read_input_tokens }
+            : {}),
+          ...(typeof u.cache_creation_input_tokens === 'number'
+            ? { cacheWriteTokens: u.cache_creation_input_tokens }
+            : {}),
         },
       ];
     }

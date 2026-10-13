@@ -5,7 +5,7 @@
  * 厂商 SDK 的所有细节都被关在各自的 adapter 里。
  */
 import type { Message, StreamEvent, ToolDefinition, StopReason } from './protocol/types.js';
-import { emptyUsage, mergeUsage, type TokenUsage } from './protocol/types.js';
+import { cacheUsage, emptyUsage, mergeUsage, type TokenUsage } from './protocol/types.js';
 import { randomUUID } from 'node:crypto';
 import type { EventBus } from './events.js';
 
@@ -51,26 +51,55 @@ export interface Provider {
   stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent>;
 }
 
+/** 角色独立于事件用途，planner 不再与主循环用量混在一起。 */
+export type ModelRole = 'main' | 'planner' | 'child' | 'judge' | 'compact';
+
+/** 规范化请求的 UTF-8 JSON 大小，不冒充 SDK wire 字节或厂商 token 计数。 */
+export function requestSize(req: ChatRequest) {
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+  return {
+    normalizedJsonBytes: bytes(req),
+    systemBytes: Buffer.byteLength(req.system),
+    messagesJsonBytes: bytes(req.messages),
+    toolsJsonBytes: bytes(req.tools),
+  };
+}
+
+export type RequestSize = ReturnType<typeof requestSize>;
+
 /** 记录独立请求快照与实际收到的用量；归一化统计同时覆盖主模型、压缩与审批。 */
 export async function* observedStream(
   provider: Provider,
   req: ChatRequest,
   signal: AbortSignal,
-  trace: { events: EventBus; purpose: 'agent' | 'compact' | 'judge'; runId?: string },
+  trace: {
+    events: EventBus;
+    purpose: 'agent' | 'compact' | 'judge';
+    modelRole?: ModelRole;
+    runId?: string;
+  },
 ): AsyncIterable<StreamEvent> {
   const requestId = randomUUID();
-  const usage = emptyUsage();
+  const reportedUsage: Partial<TokenUsage> = {};
+  let usageReported = false;
+  const modelRole = trace.modelRole ?? (trace.purpose === 'agent' ? 'main' : trace.purpose);
+  const size = requestSize(req);
   trace.events.emit({
     type: 'model_request',
     requestId,
     runId: trace.runId,
     purpose: trace.purpose,
+    modelRole,
+    size,
     provider: provider.name,
     request: structuredClone(req),
   });
   try {
     for await (const event of provider.stream(req, signal)) {
-      if (event.type === 'usage') mergeUsage(usage, event);
+      if (event.type === 'usage') {
+        usageReported = true;
+        mergeUsage(reportedUsage, event);
+      }
       yield event;
     }
   } finally {
@@ -79,7 +108,10 @@ export async function* observedStream(
       requestId,
       runId: trace.runId,
       purpose: trace.purpose,
-      usage,
+      modelRole,
+      usageReported,
+      cache: cacheUsage(reportedUsage),
+      usage: { ...emptyUsage(), ...reportedUsage },
     });
   }
 }

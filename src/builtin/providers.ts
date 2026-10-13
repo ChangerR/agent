@@ -26,11 +26,16 @@ function demoScript(): ScriptedResponse {
       return textResponse(
         JSON.stringify({ goal: '离线规划演示：读取并核对文件', steps: ['读取文件', '核对结果'] }),
       );
-    const marker = '当前所属计划（版本变化后须重新读取）: ';
-    if (req.system.includes(marker)) {
-      const plan = JSON.parse(
-        req.system.split(marker)[1].split('\n')[0],
-      ) as import('../core/plan.js').Plan;
+    const state = [...req.messages]
+      .reverse()
+      .find((message) => message.role === 'user' && message.source === 'runtime');
+    const plan = state
+      ? (JSON.parse(state.content as string).plan as import('../core/plan.js').Plan | null)
+      : null;
+    const history = req.messages.filter(
+      (message) => message.role !== 'user' || message.source !== 'runtime',
+    );
+    if (plan && req.tools.some((tool) => tool.name === 'plan_update')) {
       if (plan.mode === 'only')
         return textResponse('[fake provider] 只规划：请查看计划区；未执行文件操作。');
       const step =
@@ -38,7 +43,7 @@ function demoScript(): ScriptedResponse {
         plan.steps.find((s) => s.status === 'pending');
       if (!step) return textResponse('[fake provider] 计划演示已完成。');
       const id = 'demo-plan-' + ++planCall;
-      const last = req.messages.at(-1);
+      const last = history.at(-1);
       if (
         Array.isArray(last?.content) &&
         last.content.some((b) => b.type === 'tool_result' && b.isError)
@@ -52,7 +57,7 @@ function demoScript(): ScriptedResponse {
             input: { revision: plan.revision, stepId: step.id, status: 'running' },
           },
         ]);
-      const previous = req.messages.at(-2);
+      const previous = history.at(-2);
       const read =
         previous?.role === 'assistant' &&
         previous.content.some((b) => b.type === 'tool_use' && b.name === 'read_file');
@@ -75,7 +80,7 @@ function demoScript(): ScriptedResponse {
       const path = /[\w.-]+\.(txt|md|ts|js|json)/i.exec(String(source))?.[0] ?? 'README.md';
       return toolUseResponse([{ id, name: 'read_file', input: { path } }]);
     }
-    const last = req.messages.at(-1);
+    const last = history.at(-1);
     const text =
       typeof last?.content === 'string' ? last.content : JSON.stringify(last?.content ?? '');
     if (!called) {

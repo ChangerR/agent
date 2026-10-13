@@ -20,7 +20,7 @@ ctx.provide.provider('offline-browse',{name:'offline-browse',capabilities:{think
  if(!req.tools.length){log({kind:'judge'});throw Error('项目读取不应调用judge');}
  log({kind:'request',actor});
  if(child){if(++turns.child===1){yield* call('read_file',{path:'src/runtime/subagents.ts'});return;}if(!JSON.stringify(req.messages).includes('class AgentSupervisor'))throw Error('缺少实际child源码');yield* text('子任务完成：建议暴露任务结算状态');return;}
- const plan=JSON.parse(req.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\\n')[0]);
+ const plan=JSON.parse([...req.messages].reverse().find(m=>m.source==='runtime').content).plan;
  const n=++turns[actor];
  const update=(i,status,extra={})=>call('plan_update',{revision:plan.revision,stepId:plan.steps[i].id,status,...extra});
  if(n===1){yield* call('read_file',{path:child?'src/runtime/subagents.ts':'src/core/loop.ts'});return;}

@@ -1,0 +1,786 @@
+{
+  "at": "2026-10-13T04:35:50.650Z",
+  "versions": {
+    "baseline": {
+      "head": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+      "dirty": false
+    },
+    "candidate": {
+      "head": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+      "dirty": true,
+      "diffSha256": "ffb4d5594c6cae53dac8ca010b2950e332cbf144804878b2113653f64aa94223",
+      "untracked": [
+        {
+          "path": "src/builtin/reviewer-model/review-evidence.ts",
+          "sha256": "ccbc9c4f5732edac137c4307bfa4c310fba58b6ae17eba6df033bcb3188d0e88"
+        },
+        {
+          "path": "tests/cache-prefix-evidence.test.ts",
+          "sha256": "2674c5075732f683d565b2929c496eb45afbc3dc8b516bc1961e30378d2b84dc"
+        },
+        {
+          "path": "tests/helpers/runtime-plan.ts",
+          "sha256": "026ada259b34ae7e2258a4eb1718562705988deed936c2f2eefd11d9fa9a37ab"
+        }
+      ],
+      "sourceFingerprint": "f7ad8995f1ee731e1cda9b6bc36a541428f3250085a73b88a0508f3d3dd72a37"
+    }
+  },
+  "offline": {
+    "testFilesPassed": 80,
+    "testsPassed": 1573,
+    "platformSkipped": 2,
+    "format": "pass",
+    "typecheck": "pass",
+    "build": "pass",
+    "gateTestsPassed": 2,
+    "controlledSSEScenariosPassed": 6
+  },
+  "budget": {
+    "limit": 48,
+    "used": 48,
+    "remaining": 0,
+    "startUTC": "2026-10-13T04:05:00Z",
+    "stopNewRequestsUTC": "2026-10-13T05:50:00Z",
+    "actualFirstAttemptUTC": "2026-10-13T04:20:25.978Z",
+    "actualLastAttemptUTC": "2026-10-13T04:25:50.036Z"
+  },
+  "pricing": {
+    "currency": "USD",
+    "perMillionTokens": {
+      "hit": 0.003,
+      "miss": 0.15,
+      "output": 0.6
+    },
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "fetchedDate": "2026-10-13",
+    "tier": "off-peak",
+    "note": "按已报告用量估算；缺失usage未假定零费用，不是账户账单。"
+  },
+  "groups": [
+    {
+      "version": "baseline",
+      "scenario": "read",
+      "role": "planner",
+      "transports": 4,
+      "withUsage": 1,
+      "unknownUsage": 3,
+      "hit": 2304,
+      "miss": 171,
+      "output": 203,
+      "input": 2475,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.00015436199999999998,
+      "transportJsonBytes": 45180,
+      "logicalRequests": 2,
+      "normalizedJsonBytes": 22328,
+      "systemBytes": 21468,
+      "messagesJsonBytes": 518,
+      "toolsJsonBytes": 4,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.9309090909090909
+    },
+    {
+      "version": "candidate",
+      "scenario": "read",
+      "role": "planner",
+      "transports": 1,
+      "withUsage": 1,
+      "unknownUsage": 0,
+      "hit": 0,
+      "miss": 2475,
+      "output": 82,
+      "input": 2475,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.00042045,
+      "transportJsonBytes": 11295,
+      "logicalRequests": 1,
+      "normalizedJsonBytes": 11164,
+      "systemBytes": 10734,
+      "messagesJsonBytes": 259,
+      "toolsJsonBytes": 2,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0
+    },
+    {
+      "version": "candidate",
+      "scenario": "read",
+      "role": "main",
+      "transports": 3,
+      "withUsage": 3,
+      "unknownUsage": 0,
+      "hit": 8960,
+      "miss": 5491,
+      "output": 363,
+      "input": 14451,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.00106833,
+      "transportJsonBytes": 72361,
+      "logicalRequests": 3,
+      "normalizedJsonBytes": 55348,
+      "systemBytes": 29004,
+      "messagesJsonBytes": 5679,
+      "toolsJsonBytes": 19977,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.620026295758079
+    },
+    {
+      "version": "baseline",
+      "scenario": "read",
+      "role": "main",
+      "transports": 6,
+      "withUsage": 6,
+      "unknownUsage": 0,
+      "hit": 17536,
+      "miss": 16137,
+      "output": 1075,
+      "input": 33673,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.003118158,
+      "transportJsonBytes": 158545,
+      "logicalRequests": 6,
+      "normalizedJsonBytes": 124756,
+      "systemBytes": 59978,
+      "messagesJsonBytes": 23085,
+      "toolsJsonBytes": 39954,
+      "distinctSystemHashes": 4,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.5207733198705194
+    },
+    {
+      "version": "baseline",
+      "scenario": "review",
+      "role": "planner",
+      "transports": 1,
+      "withUsage": 1,
+      "unknownUsage": 0,
+      "hit": 2176,
+      "miss": 310,
+      "output": 183,
+      "input": 2486,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000162828,
+      "transportJsonBytes": 11345,
+      "logicalRequests": 1,
+      "normalizedJsonBytes": 11214,
+      "systemBytes": 10734,
+      "messagesJsonBytes": 309,
+      "toolsJsonBytes": 2,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.8753016894609815
+    },
+    {
+      "version": "baseline",
+      "scenario": "review",
+      "role": "main",
+      "transports": 9,
+      "withUsage": 9,
+      "unknownUsage": 0,
+      "hit": 36096,
+      "miss": 17265,
+      "output": 2050,
+      "input": 53361,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.003928038,
+      "transportJsonBytes": 242344,
+      "logicalRequests": 9,
+      "normalizedJsonBytes": 202454,
+      "systemBytes": 89461,
+      "messagesJsonBytes": 50347,
+      "toolsJsonBytes": 59931,
+      "distinctSystemHashes": 4,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.6764490920335077
+    },
+    {
+      "version": "baseline",
+      "scenario": "review",
+      "role": "judge",
+      "transports": 2,
+      "withUsage": 2,
+      "unknownUsage": 0,
+      "hit": 1280,
+      "miss": 2410,
+      "output": 357,
+      "input": 3690,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.0005795399999999999,
+      "transportJsonBytes": 14758,
+      "logicalRequests": 2,
+      "normalizedJsonBytes": 14462,
+      "systemBytes": 6546,
+      "messagesJsonBytes": 7706,
+      "toolsJsonBytes": 4,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.34688346883468835
+    },
+    {
+      "version": "candidate",
+      "scenario": "review",
+      "role": "planner",
+      "transports": 1,
+      "withUsage": 1,
+      "unknownUsage": 0,
+      "hit": 2304,
+      "miss": 182,
+      "output": 273,
+      "input": 2486,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000198012,
+      "transportJsonBytes": 11345,
+      "logicalRequests": 1,
+      "normalizedJsonBytes": 11214,
+      "systemBytes": 10734,
+      "messagesJsonBytes": 309,
+      "toolsJsonBytes": 2,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.9267900241351569
+    },
+    {
+      "version": "candidate",
+      "scenario": "review",
+      "role": "main",
+      "transports": 3,
+      "withUsage": 3,
+      "unknownUsage": 0,
+      "hit": 12928,
+      "miss": 775,
+      "output": 299,
+      "input": 13703,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000334434,
+      "transportJsonBytes": 70756,
+      "logicalRequests": 3,
+      "normalizedJsonBytes": 53198,
+      "systemBytes": 29004,
+      "messagesJsonBytes": 3529,
+      "toolsJsonBytes": 19977,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.9434430416697074
+    },
+    {
+      "version": "candidate",
+      "scenario": "review",
+      "role": "judge",
+      "transports": 2,
+      "withUsage": 2,
+      "unknownUsage": 0,
+      "hit": 768,
+      "miss": 2611,
+      "output": 710,
+      "input": 3379,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000819954,
+      "transportJsonBytes": 14006,
+      "logicalRequests": 2,
+      "normalizedJsonBytes": 13710,
+      "systemBytes": 6858,
+      "messagesJsonBytes": 6642,
+      "toolsJsonBytes": 4,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.22728617934300088
+    },
+    {
+      "version": "candidate",
+      "scenario": "child",
+      "role": "planner",
+      "transports": 1,
+      "withUsage": 1,
+      "unknownUsage": 0,
+      "hit": 2176,
+      "miss": 312,
+      "output": 214,
+      "input": 2488,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000181728,
+      "transportJsonBytes": 11379,
+      "logicalRequests": 1,
+      "normalizedJsonBytes": 11248,
+      "systemBytes": 10734,
+      "messagesJsonBytes": 343,
+      "toolsJsonBytes": 2,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.8745980707395499
+    },
+    {
+      "version": "candidate",
+      "scenario": "child",
+      "role": "main",
+      "transports": 7,
+      "withUsage": 7,
+      "unknownUsage": 0,
+      "hit": 46336,
+      "miss": 6478,
+      "output": 1809,
+      "input": 52814,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.002196108,
+      "transportJsonBytes": 239382,
+      "logicalRequests": 7,
+      "normalizedJsonBytes": 206615,
+      "systemBytes": 67676,
+      "messagesJsonBytes": 90711,
+      "toolsJsonBytes": 46613,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.8773431287158708
+    },
+    {
+      "version": "candidate",
+      "scenario": "child",
+      "role": "child",
+      "transports": 2,
+      "withUsage": 2,
+      "unknownUsage": 0,
+      "hit": 4736,
+      "miss": 1461,
+      "output": 304,
+      "input": 6197,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.00041575799999999996,
+      "transportJsonBytes": 27895,
+      "logicalRequests": 2,
+      "normalizedJsonBytes": 25599,
+      "systemBytes": 20016,
+      "messagesJsonBytes": 1671,
+      "toolsJsonBytes": 3452,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.7642407616588672
+    },
+    {
+      "version": "baseline",
+      "scenario": "child",
+      "role": "planner",
+      "transports": 1,
+      "withUsage": 1,
+      "unknownUsage": 0,
+      "hit": 2304,
+      "miss": 184,
+      "output": 353,
+      "input": 2488,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000246312,
+      "transportJsonBytes": 11379,
+      "logicalRequests": 1,
+      "normalizedJsonBytes": 11248,
+      "systemBytes": 10734,
+      "messagesJsonBytes": 343,
+      "toolsJsonBytes": 2,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.9260450160771704
+    },
+    {
+      "version": "baseline",
+      "scenario": "child",
+      "role": "main",
+      "transports": 3,
+      "withUsage": 3,
+      "unknownUsage": 0,
+      "hit": 5760,
+      "miss": 9492,
+      "output": 737,
+      "input": 15252,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.0018832799999999998,
+      "transportJsonBytes": 74734,
+      "logicalRequests": 4,
+      "normalizedJsonBytes": 82160,
+      "systemBytes": 39940,
+      "messagesJsonBytes": 14378,
+      "toolsJsonBytes": 26636,
+      "distinctSystemHashes": 4,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.3776553894571204
+    },
+    {
+      "version": "baseline",
+      "scenario": "child",
+      "role": "child",
+      "transports": 2,
+      "withUsage": 2,
+      "unknownUsage": 0,
+      "hit": 4352,
+      "miss": 853,
+      "output": 285,
+      "input": 5205,
+      "unknownCache": 0,
+      "estimatedKnownCostUSD": 0.000312006,
+      "transportJsonBytes": 22333,
+      "logicalRequests": 2,
+      "normalizedJsonBytes": 21405,
+      "systemBytes": 18700,
+      "messagesJsonBytes": 1259,
+      "toolsJsonBytes": 986,
+      "distinctSystemHashes": 1,
+      "distinctToolsHashes": 1,
+      "cacheHitFractionKnown": 0.8361191162343901
+    }
+  ],
+  "results": [
+    {
+      "version": "baseline",
+      "scenario": "read",
+      "at": "2026-10-13T04:20:32.417Z",
+      "kind": "scenario_result",
+      "reason": "error",
+      "turns": 0,
+      "human": 0,
+      "errors": 1,
+      "toolResults": [],
+      "planPhase": null,
+      "outputCharacters": 0,
+      "answerHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "resultVerified": false,
+      "taskVerified": false,
+      "verifiedReadCount": 0,
+      "children": []
+    },
+    {
+      "version": "candidate",
+      "scenario": "read",
+      "at": "2026-10-13T04:21:50.903Z",
+      "kind": "scenario_result",
+      "reason": "completed",
+      "turns": 3,
+      "human": 0,
+      "errors": 0,
+      "toolResults": [
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        }
+      ],
+      "planPhase": "completed",
+      "outputCharacters": 160,
+      "answerHash": "31186cb197ae00b180b6d4760abff3ca4653203a03367c51264b320e05311a92",
+      "resultVerified": true,
+      "taskVerified": true,
+      "verifiedReadCount": 1,
+      "children": []
+    },
+    {
+      "version": "baseline",
+      "scenario": "read",
+      "at": "2026-10-13T04:22:46.579Z",
+      "kind": "scenario_result",
+      "reason": "completed",
+      "turns": 6,
+      "human": 0,
+      "errors": 0,
+      "toolResults": [
+        {
+          "name": "plan_status",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": true
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        }
+      ],
+      "planPhase": "completed",
+      "outputCharacters": 170,
+      "answerHash": "991d96c5a29d0485235b1c191c70e654e5ee2d5ab684c7d5112c4e67d7ba4d73",
+      "resultVerified": false,
+      "taskVerified": true,
+      "verifiedReadCount": 1,
+      "children": []
+    },
+    {
+      "version": "baseline",
+      "scenario": "review",
+      "at": "2026-10-13T04:25:06.667Z",
+      "kind": "scenario_result",
+      "reason": "max_turns",
+      "turns": 9,
+      "human": 0,
+      "errors": 0,
+      "toolResults": [
+        {
+          "name": "write_file",
+          "error": false
+        },
+        {
+          "name": "write_file",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": true
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": true
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": true
+        }
+      ],
+      "planPhase": "blocked",
+      "outputCharacters": 0,
+      "answerHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "resultVerified": false,
+      "taskVerified": true,
+      "verifiedReadCount": 2,
+      "children": []
+    },
+    {
+      "version": "candidate",
+      "scenario": "review",
+      "at": "2026-10-13T04:25:19.684Z",
+      "kind": "scenario_result",
+      "reason": "completed",
+      "turns": 3,
+      "human": 0,
+      "errors": 0,
+      "toolResults": [
+        {
+          "name": "write_file",
+          "error": false
+        },
+        {
+          "name": "write_file",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        }
+      ],
+      "planPhase": null,
+      "outputCharacters": 135,
+      "answerHash": "925ea62484a61b8ddb683655ff8e9266ac87edf65dfac09488dda04ae32acf51",
+      "resultVerified": false,
+      "taskVerified": false,
+      "verifiedReadCount": 2,
+      "children": []
+    },
+    {
+      "version": "candidate",
+      "scenario": "child",
+      "at": "2026-10-13T04:25:40.009Z",
+      "kind": "scenario_result",
+      "reason": "completed",
+      "turns": 7,
+      "human": 0,
+      "errors": 0,
+      "toolResults": [
+        {
+          "name": "agent_spawn",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "agent_wait",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": true
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        }
+      ],
+      "planPhase": "completed",
+      "outputCharacters": 210,
+      "answerHash": "13569f01b0baf8114ffd899ede133b36ae4adfd89417373754f6678ccb8824ce",
+      "resultVerified": false,
+      "taskVerified": true,
+      "verifiedReadCount": 2,
+      "children": [
+        {
+          "runs": [
+            {
+              "status": "completed",
+              "turns": 2
+            }
+          ],
+          "readOnly": true
+        }
+      ]
+    },
+    {
+      "version": "baseline",
+      "scenario": "child",
+      "at": "2026-10-13T04:25:53.809Z",
+      "kind": "scenario_result",
+      "reason": "error",
+      "turns": 4,
+      "human": 0,
+      "errors": 1,
+      "toolResults": [
+        {
+          "name": "agent_spawn",
+          "error": false
+        },
+        {
+          "name": "read_file",
+          "error": false
+        },
+        {
+          "name": "agent_wait",
+          "error": false
+        },
+        {
+          "name": "plan_update",
+          "error": false
+        }
+      ],
+      "planPhase": "blocked",
+      "outputCharacters": 0,
+      "answerHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "resultVerified": false,
+      "taskVerified": false,
+      "verifiedReadCount": 1,
+      "children": [
+        {
+          "runs": [
+            {
+              "status": "completed",
+              "turns": 2
+            }
+          ],
+          "readOnly": true
+        }
+      ]
+    }
+  ],
+  "successfulScenarios": 1,
+  "failedScenarios": 6,
+  "observations": {
+    "transportErrors": 3,
+    "usageObserverErrors": 0,
+    "inconsistentUsage": 0,
+    "prompts": [
+      {
+        "version": "baseline",
+        "scenario": "read",
+        "promptHash": "f8f1ac7202655292dfaa0ed87bbe53a7f63b98146926285c858c2d2a970db87a",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      },
+      {
+        "version": "candidate",
+        "scenario": "read",
+        "promptHash": "f8f1ac7202655292dfaa0ed87bbe53a7f63b98146926285c858c2d2a970db87a",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      },
+      {
+        "version": "baseline",
+        "scenario": "read",
+        "promptHash": "f8f1ac7202655292dfaa0ed87bbe53a7f63b98146926285c858c2d2a970db87a",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      },
+      {
+        "version": "baseline",
+        "scenario": "review",
+        "promptHash": "947f12ff678387d6f6338c19f981abee92a97cc2dff737e995281709c2447620",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      },
+      {
+        "version": "candidate",
+        "scenario": "review",
+        "promptHash": "947f12ff678387d6f6338c19f981abee92a97cc2dff737e995281709c2447620",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      },
+      {
+        "version": "candidate",
+        "scenario": "child",
+        "promptHash": "a85e2f7d8596f411ef501e5a071267e8976272ae6189ca2b5feff7ec13531123",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      },
+      {
+        "version": "baseline",
+        "scenario": "child",
+        "promptHash": "a85e2f7d8596f411ef501e5a071267e8976272ae6189ca2b5feff7ec13531123",
+        "settingsHash": "34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"
+      }
+    ]
+  },
+  "limitations": [
+    "每场景小样本、非随机顺序；服务端异步构建及基线/候选相互暖缓存，不能据此推断稳定因果降幅。",
+    "不同模型轨迹与输出长度共同影响成本；真实审批与权限没有关闭，人工询问被记录并拒绝，不伪造批准。",
+    "初次未启用环境代理的3次transport失败（含SDK重试）仍占额度，usage与费用未知。随后独立DNS探测曾返回EAI_AGAIN，但原始transport错误码未保存，不能逐次断言DNS是原因。启用Node既有环境代理后请求成功。",
+    "normalizedJsonBytes是规范化对象大小；transportJsonBytes是fetch的JSON body大小，均不含HTTP/TLS开销。",
+    "原生Windows未执行；当前Linux全量含Windows语义与权限模拟，2个原生平台用例跳过。"
+  ]
+}

@@ -14,7 +14,7 @@ export default {
       if (request.system.startsWith('[agentlab planning:auto]')) {
         yield {type:'message_start'};yield {type:'text_delta',text:'null'};yield {type:'message_stop',stopReason:'end_turn'};return;
       }
-      const input = request.messages.at(-1)?.content;
+      const input = [...request.messages].reverse().find(m=>m.role!=='user'||m.source!=='runtime')?.content;
       log({kind:'request',input,model:request.model});
       yield {type:'message_start'};
       yield {type:'text_delta',text:input === 'PARENT' ? 'PARENT_COMPLETE' : 'PRIVATE_CHILD_' + input};

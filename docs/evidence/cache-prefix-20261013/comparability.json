@@ -1,0 +1,204 @@
+{
+  "source": "同一离线检查脚本对真实scenario_start/request元数据分组；仅原提示与显式settings散列一致不意味着实际请求/工具/上下文相同。",
+  "cases": [
+    {
+      "scenario": "read",
+      "runs": 3,
+      "promptHashes": ["f8f1ac7202655292dfaa0ed87bbe53a7f63b98146926285c858c2d2a970db87a"],
+      "settingsHashes": ["34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"],
+      "roles": [
+        {
+          "role": "planner",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            }
+          ]
+        },
+        {
+          "role": "main",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["dc12b2094f807fc1db46e884c9b528b5a57560079653028a81f746c58d8f8fb1"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["dc12b2094f807fc1db46e884c9b528b5a57560079653028a81f746c58d8f8fb1"]
+            }
+          ]
+        },
+        {
+          "role": "judge",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": []
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": []
+            }
+          ]
+        },
+        {
+          "role": "child",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": []
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "review",
+      "runs": 2,
+      "promptHashes": ["947f12ff678387d6f6338c19f981abee92a97cc2dff737e995281709c2447620"],
+      "settingsHashes": ["34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"],
+      "roles": [
+        {
+          "role": "planner",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            }
+          ]
+        },
+        {
+          "role": "main",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["dc12b2094f807fc1db46e884c9b528b5a57560079653028a81f746c58d8f8fb1"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["dc12b2094f807fc1db46e884c9b528b5a57560079653028a81f746c58d8f8fb1"]
+            }
+          ]
+        },
+        {
+          "role": "judge",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            }
+          ]
+        },
+        {
+          "role": "child",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": []
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "child",
+      "runs": 2,
+      "promptHashes": ["a85e2f7d8596f411ef501e5a071267e8976272ae6189ca2b5feff7ec13531123"],
+      "settingsHashes": ["34c394814110a793b0836041bfb62b5c5ccc0671aa901f13f0282c2f141fef04"],
+      "roles": [
+        {
+          "role": "planner",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"]
+            }
+          ]
+        },
+        {
+          "role": "main",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["dc12b2094f807fc1db46e884c9b528b5a57560079653028a81f746c58d8f8fb1"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["dc12b2094f807fc1db46e884c9b528b5a57560079653028a81f746c58d8f8fb1"]
+            }
+          ]
+        },
+        {
+          "role": "judge",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": []
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": []
+            }
+          ]
+        },
+        {
+          "role": "child",
+          "versions": [
+            {
+              "version": "baseline",
+              "toolsHashes": ["4d25011d0decffe79245e83e57a3d2bb1d80c46cc61bbb89548ea64241aee064"]
+            },
+            {
+              "version": "candidate",
+              "toolsHashes": ["118acad4e5c1cd0a90a04bdc928dbe99dc5df848dbb96ffdd569b36af5b9da08"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "environment": {
+    "sameSyntheticProjectAndFixtures": true,
+    "sameConfiguredProviderModel": true,
+    "permissionMode": "auto",
+    "reviewer": "model",
+    "policy": "deterministic",
+    "autoSaveSessions": false,
+    "initialNetworkSetupDifferent": "最初baseline/read未启用Node既有环境代理，3次无usage失败；后续六场景均启用。",
+    "effectiveEnvironmentHashSaved": false,
+    "limitations": "未保存完整有效配置/环境散列，不能证明所有继承设置与环境逐字相同。未记录cache服务端状态。每角色实际工具hash见表。"
+  },
+  "execution": {
+    "rootMaxTurns": 9,
+    "childMaxTurns": 5,
+    "childMaxRunning": 1,
+    "childMaxDepth": 1,
+    "childTimeoutMs": 120000,
+    "baselineChildTruncatedByGlobalCap": true
+  }
+}

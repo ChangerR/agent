@@ -28,7 +28,11 @@ function deferred() {
   return { promise, resolve };
 }
 const lastText = (req: ChatRequest) =>
-  typeof req.messages.at(-1)?.content === 'string' ? (req.messages.at(-1)!.content as string) : '';
+  typeof [...req.messages].reverse().find((m) => m.role !== 'user' || m.source !== 'runtime')
+    ?.content === 'string'
+    ? ([...req.messages].reverse().find((m) => m.role !== 'user' || m.source !== 'runtime')!
+        .content as string)
+    : '';
 const task = (req: ChatRequest) =>
   req.messages.find(
     (m) => m.role === 'user' && typeof m.content === 'string' && m.source !== 'subagent',
@@ -405,14 +409,15 @@ describe('子权限、工具协调与会话', () => {
       });
       const f = await fixture({
         save: true,
-        lifecycleTimeoutMs: mode === 'late_commit' ? 100 : undefined,
+        // 同一期限还用于恢复后的真实磁盘保存；gate 保证初始写入仍先超时再迟到提交。
+        lifecycleTimeoutMs: mode === 'late_commit' ? 1000 : undefined,
         plugins: [plugin],
         config: { capabilities: { sessionStore: 'initial-store', reviewer: false } },
       });
       const a = f.agent.agents.spawn({ task: 'must never replay' });
       if (mode === 'late_commit') {
         expect(
-          await f.agent.agents.wait(a.agentId, { runId: a.runId, timeoutMs: 150 }),
+          await f.agent.agents.wait(a.agentId, { runId: a.runId, timeoutMs: 1500 }),
         ).toMatchObject({ timedOut: true, run: { status: 'queued' } });
         const pending = f.agent.agents.send(a.agentId, 'still waiting for real commit');
         expect(f.agent.agents.status(a.agentId, pending.runId)[0].runs[0].status).toBe('queued');
@@ -470,7 +475,8 @@ describe('子权限、工具协调与会话', () => {
       });
       const f = await fixture({
         save: true,
-        lifecycleTimeoutMs: 100,
+        // 建立真实磁盘夹具也走此超时；被测 load 由 gate 无限阻塞，不依赖 100ms 的 I/O 速度。
+        lifecycleTimeoutMs: 1000,
         plugins: [plugin],
         config: { capabilities: { sessionStore: 'slow-store', reviewer: false } },
       });
@@ -836,7 +842,11 @@ describe('子权限、工具协调与会话', () => {
       config: { permissionMode: 'ask' },
       script: [
         (req) =>
-          req.messages.at(-1)?.role === 'user' && typeof req.messages.at(-1)?.content === 'string'
+          [...req.messages].reverse().find((m) => m.role !== 'user' || m.source !== 'runtime')
+            ?.role === 'user' &&
+          typeof [...req.messages]
+            .reverse()
+            .find((m) => m.role !== 'user' || m.source !== 'runtime')?.content === 'string'
             ? toolUseResponse([
                 {
                   id: `write-${req.messages.length}`,
@@ -1041,7 +1051,11 @@ describe('子权限、工具协调与会话', () => {
                 reason: 'controlled temporary write',
               }),
             );
-          if (typeof req.messages.at(-1)?.content === 'string')
+          if (
+            typeof [...req.messages]
+              .reverse()
+              .find((m) => m.role !== 'user' || m.source !== 'runtime')?.content === 'string'
+          )
             return toolUseResponse([
               {
                 id: `write-${req.messages.length}`,
@@ -1077,6 +1091,33 @@ describe('子权限、工具协调与会话', () => {
       new Set(['agent', 'compact', 'judge']),
     );
     expect(new Set(childUsage.map((event) => event.requestId)).size).toBe(childUsage.length);
+    expect(
+      childUsage
+        .filter((event) => event.purpose === 'agent')
+        .every((event) => event.modelRole === 'child'),
+    ).toBe(true);
+    expect(
+      childUsage
+        .filter((event) => event.purpose === 'judge')
+        .every((event) => event.modelRole === 'judge'),
+    ).toBe(true);
+    expect(
+      childUsage
+        .filter((event) => event.purpose === 'agent')
+        .every((event) => {
+          const request = events.find(
+            (row) =>
+              row.type === 'subagent_event' &&
+              row.requestId === event.requestId &&
+              row.detail?.type === 'model_request',
+          );
+          return (
+            event.usageReported === true &&
+            request?.type === 'subagent_event' &&
+            (request.size?.normalizedJsonBytes ?? 0) > 0
+          );
+        }),
+    ).toBe(true);
     const rootUsage = new Set(
       events.filter((event) => event.type === 'model_usage').map((event) => event.requestId),
     );
@@ -1101,7 +1142,7 @@ describe('子权限、工具协调与会话', () => {
     expect(firstByRequest.size).toBe(3);
     expect(
       [...firstByRequest.values()].every(
-        (req) => JSON.parse(String(req.messages[0].content)).context.previousReviews.length === 0,
+        (req) => JSON.parse(String(req.messages[0].content)).previousReviews.length === 0,
       ),
     ).toBe(true);
   });

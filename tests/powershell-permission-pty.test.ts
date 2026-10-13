@@ -23,7 +23,7 @@ export default {
      log({kind:'review',completeness:data.analysis.completeness,summary:data.analysis.summary});
      yield* text(JSON.stringify({decision:'ask',reasonCode:'controlled_ask',reason:'受控 provider 要求人工'}));return;
     }
-    const last=request.messages.at(-1)?.content;
+    const last=[...request.messages].reverse().find(m=>m.role!=='user'||m.source!=='runtime')?.content;
     if(typeof last!=='string') {yield* text('PTY_PS_COMPLETED');return;}
     const call=last==='safe-read'?{name:'read_file',input:{path:'sentinel.txt'}}:{name:'bash',input:{command:last==='unknown-shell'?'git status':last==='sensitive-shell'?'sc .env fixture':'echo PREVIEW'}};
     yield {type:'message_start'};yield {type:'tool_use_start',id:'ps-pty-call',name:call.name};
