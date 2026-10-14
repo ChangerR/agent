@@ -1,0 +1,399 @@
+{
+  "at": "2026-10-13T11:49:23.494Z",
+  "base": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+  "branch": "fix/cache-prefix-evidence-20261013",
+  "recommendation": "适合限定范围Draft PR；不宣称全面workflow成熟验收",
+  "sourceFingerprint": "d247df466cd4f4068af16970459a1b874c249eae18b701068f3ad3358b571830",
+  "files": [
+    {
+      "path": "src/builtin/planning/index.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "2d5bbf1f0979e0dbb6a8685ef4d51da673140d1c536f6bd11189b89f1bff2f32"
+    },
+    {
+      "path": "src/builtin/providers.ts",
+      "added": 13,
+      "deleted": 8,
+      "new": false,
+      "sha256": "815cd22596a140ac99b89aa5aa7a3b77293d28a2d3c4dc78043855b60dc410f4"
+    },
+    {
+      "path": "src/builtin/reviewer-model/model.ts",
+      "added": 35,
+      "deleted": 48,
+      "new": false,
+      "sha256": "fc3f31f47b707419e1ab7900adc4615710422c14759a329e993287487bc73f4e"
+    },
+    {
+      "path": "src/builtin/reviewer-model/review-evidence.ts",
+      "added": 47,
+      "deleted": 0,
+      "new": true,
+      "sha256": "ccbc9c4f5732edac137c4307bfa4c310fba58b6ae17eba6df033bcb3188d0e88"
+    },
+    {
+      "path": "src/builtin/telemetry-jsonl/index.ts",
+      "added": 13,
+      "deleted": 0,
+      "new": false,
+      "sha256": "164c5e4b55a431a6cf6f4145a9475f01ed2757e1dd3c69ca61b8630022ebf18f"
+    },
+    {
+      "path": "src/cli/messages.ts",
+      "added": 1,
+      "deleted": 0,
+      "new": false,
+      "sha256": "a5878217454b5fec4a0ebc3581fd1baf1e30669545984d381a3f383e110a8967"
+    },
+    {
+      "path": "src/core/agents.ts",
+      "added": 8,
+      "deleted": 0,
+      "new": false,
+      "sha256": "d9f925552151efbc96fb5ecec3a721c35ebbaf193127a85f761e6c8db3eb6048"
+    },
+    {
+      "path": "src/core/context/coordinator.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "55b669d3fb605290e051dd3501314019f7dba04da5f02aa16de2b99a27fa50ae"
+    },
+    {
+      "path": "src/core/events.ts",
+      "added": 8,
+      "deleted": 1,
+      "new": false,
+      "sha256": "1feb906af07dd897ee4bcba091381064909b40a203838ceb74d5ca8052e9b48a"
+    },
+    {
+      "path": "src/core/loop.ts",
+      "added": 26,
+      "deleted": 11,
+      "new": false,
+      "sha256": "886f4cf6d3b0619bea52fbc12973c74970a46f9bc2377f1fa943838121f0f0fd"
+    },
+    {
+      "path": "src/core/permission/contracts.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "8e59e6e74fed46d4dcb99e76df646a6c39f475fe48555f619f50953f10b66fc9"
+    },
+    {
+      "path": "src/core/protocol/types.ts",
+      "added": 17,
+      "deleted": 3,
+      "new": false,
+      "sha256": "c81bb68b23b6b1668d13b3b8020468295bd3a1b6bdd7b4c9531b143409af554f"
+    },
+    {
+      "path": "src/core/provider.ts",
+      "added": 37,
+      "deleted": 5,
+      "new": false,
+      "sha256": "9dec51dbf57fc1001becb13346e5f2f3078f451cc32ba00c946d8e784d8ae0c0"
+    },
+    {
+      "path": "src/core/session/schema.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "beecc9eae21bd75e0134734eb4b8243401aa24c3e2508d48c1eef7f958a1da7c"
+    },
+    {
+      "path": "src/core/tool-executor.ts",
+      "added": 22,
+      "deleted": 3,
+      "new": false,
+      "sha256": "7548f8313551dbbf9054c06229e391524d6c2576aa111d155eb114704e6b7516"
+    },
+    {
+      "path": "src/providers/anthropic.ts",
+      "added": 6,
+      "deleted": 2,
+      "new": false,
+      "sha256": "f6f1a29cadee63b659897fddcc522ba53c37bd2274d606b3bb789ae54495ec27"
+    },
+    {
+      "path": "src/providers/openai.ts",
+      "added": 5,
+      "deleted": 3,
+      "new": false,
+      "sha256": "67550ac7dd0bbecd10f9c52328df453518b6c9f8069a66cc27d5234b3b4e265f"
+    },
+    {
+      "path": "src/runtime/subagents.ts",
+      "added": 14,
+      "deleted": 0,
+      "new": false,
+      "sha256": "45bd56f3d3b84b30d346bd60dc4949acfda3e39aa5826ee957036362ca8e2d55"
+    },
+    {
+      "path": "tests/auto-fallback.test.ts",
+      "added": 16,
+      "deleted": 7,
+      "new": false,
+      "sha256": "572d794d3baf22c5a199b1f763552048504743572d7e4ae387be6f35ecb1f036"
+    },
+    {
+      "path": "tests/auto-workflows.test.ts",
+      "added": 5,
+      "deleted": 5,
+      "new": false,
+      "sha256": "a833fe7f9320011c127ad3db699dd16f55cc1829446eed7ef60282bf2279fec3"
+    },
+    {
+      "path": "tests/bash-readonly-pty.test.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "311442c00054c52c79cb8cf923e2e6acf5e34c2d15a982286a35b50542bcc76b"
+    },
+    {
+      "path": "tests/cache-prefix-evidence.test.ts",
+      "added": 343,
+      "deleted": 0,
+      "new": true,
+      "sha256": "fbbae847f26c0b0217f777fd666aaba9b4f339b9b1735d68da8ef897546de590"
+    },
+    {
+      "path": "tests/cli-pty.test.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "1a474837231e16bb7340610194514ebcbc890a6071ee697996f254e0c8043f33"
+    },
+    {
+      "path": "tests/cli.test.ts",
+      "added": 11,
+      "deleted": 3,
+      "new": false,
+      "sha256": "dea1cad329def711da57b36221d6a39d3fc481bc5329a79fa097922d454105e4"
+    },
+    {
+      "path": "tests/helpers/runtime-plan.ts",
+      "added": 13,
+      "deleted": 0,
+      "new": true,
+      "sha256": "026ada259b34ae7e2258a4eb1718562705988deed936c2f2eefd11d9fa9a37ab"
+    },
+    {
+      "path": "tests/helpers/transport-prefix.ts",
+      "added": 154,
+      "deleted": 0,
+      "new": true,
+      "sha256": "5615a62de6606886dc6684c7caa75c1a5f4439055ec8cd522f679a225d450b9c"
+    },
+    {
+      "path": "tests/judge.test.ts",
+      "added": 17,
+      "deleted": 12,
+      "new": false,
+      "sha256": "a4e068a3a950b64eac42ee9d3e1b5a587e454d8706222d55722141c45cb05162"
+    },
+    {
+      "path": "tests/planning-pty.test.ts",
+      "added": 4,
+      "deleted": 3,
+      "new": false,
+      "sha256": "28b537c941aa071efdc93f9508c227c1a0e95eb77d10d783165122df3a6c3d5d"
+    },
+    {
+      "path": "tests/planning-tui.test.ts",
+      "added": 2,
+      "deleted": 3,
+      "new": false,
+      "sha256": "dfafa5789a4ba1b4bd2e148ceca018579c67297d72c037c7c31c427382318ce4"
+    },
+    {
+      "path": "tests/planning.test.ts",
+      "added": 271,
+      "deleted": 6,
+      "new": false,
+      "sha256": "3f41a2b5b0bdfa01df51ea9ec120ddf47d59c7af0d813c15532c02fcea62cbf8"
+    },
+    {
+      "path": "tests/policy-runtime.test.ts",
+      "added": 3,
+      "deleted": 1,
+      "new": false,
+      "sha256": "6dd4a31eaa1a1c3a86c035933fd9014be0acbd63f558c589e4031172824be3be"
+    },
+    {
+      "path": "tests/powershell-permission-pty.test.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "d8207ff73c6c0c3d9a136ae8e081766c53834ac23ac412b9ddc5bb7403797abf"
+    },
+    {
+      "path": "tests/project-browse-pty.test.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "35b5e66e64e8ceffebb313001dc66cc24964a01e34bd28a87a95391f7b32070f"
+    },
+    {
+      "path": "tests/reviewer-contract.test.ts",
+      "added": 15,
+      "deleted": 7,
+      "new": false,
+      "sha256": "5d27cffc907152cd46e363908f214a96a4e963220b7782d5c2aaaa81b318f54c"
+    },
+    {
+      "path": "tests/reviewer-provenance.test.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "7041f3bb54fdf85434b53ac56c34431256531b0abf7518f8f50e0e69da00aa76"
+    },
+    {
+      "path": "tests/subagents-pty.test.ts",
+      "added": 1,
+      "deleted": 1,
+      "new": false,
+      "sha256": "012e3f558b0c7df655f551c0fef49bdd3a74c0563a28f129b7d57538ea22906e"
+    },
+    {
+      "path": "tests/subagents.test.ts",
+      "added": 48,
+      "deleted": 7,
+      "new": false,
+      "sha256": "4558c40f612e1eaaa66c82d12376fcc693bad6089de6826c2ae2d18acdec5595"
+    },
+    {
+      "path": "tests/tool-executor.test.ts",
+      "added": 49,
+      "deleted": 0,
+      "new": false,
+      "sha256": "3efc8892306d9b6c612fa5c676c848fa20f55a4f91e126bac7a4a38b7b7ab60e"
+    },
+    {
+      "path": "tests/tools.test.ts",
+      "added": 10,
+      "deleted": 0,
+      "new": false,
+      "sha256": "89f01fdad492911ce94cab08f62473f553b032de6eb80c7c03ed7acf218dd48e"
+    },
+    {
+      "path": "tests/transport-prefix.test.ts",
+      "added": 539,
+      "deleted": 0,
+      "new": true,
+      "sha256": "8842c4294ea6c63501aa3d82573160db87e5c458667460d0c2e0deed16fe53c6"
+    }
+  ],
+  "groups": {
+    "src/": {
+      "files": 18,
+      "added": 256,
+      "deleted": 88
+    },
+    "tests/": {
+      "files": 22,
+      "added": 1506,
+      "deleted": 60
+    }
+  },
+  "liveCandidateReference": "judge-12-20261013/summary.json",
+  "thisCloseoutAdditionalAPI": 0,
+  "liveBudgets": {
+    "earlier": 48,
+    "judgeOnly": 12,
+    "remaining": 0
+  },
+  "scope": [
+    "稳定system与追加runtime计划消息",
+    "完整审批授权前置、无损精确引用",
+    "内核授权绑定保持",
+    "必要的轻量usage/size/role观测与准确拒绝审计"
+  ],
+  "cleanup": ["reportedUsage单份累计", "请求大小单次计算", "size/evidenceBytes仅请求事件记录"],
+  "confirmedBoundaryFix": "OpenAI缓存null转为未知；避免严格reviewer因错误usage回退",
+  "validation": {
+    "fullTests": {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "sha256": "0b24f6b053c18ce2b26dcff4d3441d643fe1eaa6720c5c5323ce863b07de1cb6",
+      "tail": [
+        "",
+        " Test Files  81 passed (81)",
+        "      Tests  1593 passed | 2 skipped (1595)",
+        "   Start at  11:46:03",
+        "   Duration  73.56s (transform 4.79s, setup 981ms, collect 37.85s, tests 149.37s, environment 21ms, prepare 8.31s)"
+      ],
+      "files": 81,
+      "passed": 1593,
+      "skipped": 2
+    },
+    "typecheck": {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "sha256": "a445ed378ed6e797487d6892e32de950732e50e989b30c4d9471c9f3e2527ac4",
+      "tail": [
+        "[WARN] Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install",
+        "$ tsc --noEmit"
+      ]
+    },
+    "build": {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "sha256": "bc5ffef08b80e38496462a41c0b172f12cdb37205c6835dd5b0a2af0125f8ae7",
+      "tail": [
+        "ESM dist/chunk-YT3EBCOX.js 58.33 KB",
+        "ESM dist/chunk-RXJMKXUE.js 470.00 B",
+        "ESM dist/app-DTZBLVJQ.js   126.58 KB",
+        "ESM dist/chunk-OHK4QE67.js 517.77 KB",
+        "ESM ⚡️ Build success in 382ms"
+      ]
+    },
+    "originalPTY": {
+      "includedInFullSuite": true,
+      "command": "pnpm dev",
+      "normalAuto": true
+    },
+    "evidenceVerifiers": [
+      {
+        "command": "node docs/evidence/cache-prefix-20261013/verify.mts",
+        "exitCode": 0,
+        "sha256": "56047db83670b2c92b8ebfbfefa12be26fcb97c6446918c65eb07601c3d6cda1",
+        "tail": [
+          "{\"transports\":48,\"knownUsage\":45,\"unknownUsage\":3,\"systemPrefixBytes\":389,\"estimatedKnownUSD\":0.01601929799999999}"
+        ]
+      },
+      {
+        "command": "node docs/evidence/cache-prefix-20261013/judge-12-20261013/verify.mts",
+        "exitCode": 0,
+        "sha256": "32790663d406fc3e9d2d32620e8aa1fa8caf33071a045b31f2ede4e8e764ba7a",
+        "tail": [
+          "{\"actualTransports\":12,\"remaining\":0,\"usageUnknown\":0,\"totals\":{\"baseline\":{\"transports\":6,\"inputTotal\":9064,\"hit\":6400,\"miss\":2664,\"output\":1463,\"hitFraction\":0.706090026478376,\"unknownUsage\":0,\"valid\":6,\"allow\":6},\"candidate\":{\"transports\":6,\"inputTotal\":8548,\"hit\":6528,\"miss\":2020,\"output\":1283,\"hitFraction\":0.7636874122601778,\"unknownUsage\":0,\"valid\":6,\"allow\":6}}}"
+        ]
+      }
+    ],
+    "format": {
+      "command": "pnpm format:check",
+      "exitCode": 0,
+      "sha256": "e8f08fb3f7af3dc94cafb38f58e0f3a26e3e92445051e083fa69d0582811b26e"
+    }
+  },
+  "independentReview": {
+    "reviewer": "cache_static_review",
+    "result": "最后用量简化/null修复未引入绑定或指标回归；适合Draft",
+    "reviewerAPICalls": 0
+  },
+  "limits": [
+    "native Windows未运行",
+    "完整真实workflow尚未全部严格通过",
+    "模型额外LF问题没有用工具改写掩盖",
+    "12次judge不足以证明排序单因果和稳定缓存收益",
+    "最后精简/null修复仅离线验证"
+  ],
+  "publication": {
+    "committed": false,
+    "pushed": false,
+    "prCreated": false
+  }
+}

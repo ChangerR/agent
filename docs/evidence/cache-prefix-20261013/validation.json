@@ -1,0 +1,152 @@
+{
+  "at": "2026-10-13T04:52:21.486Z",
+  "phase": "offline_diagnosis_after_live_budget_exhaustion",
+  "source": {
+    "base": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "branch": "fix/cache-prefix-evidence-20261013",
+    "liveCandidate": "versions.json",
+    "currentCandidate": "offline-source-fingerprints.json",
+    "note": "48次实测对应冻结liveCandidate；新增audit修正与测试夹具调整仅完成离线验证，不冒充已重新实测。"
+  },
+  "validation": {
+    "fullTests": {
+      "command": "pnpm test --maxWorkers=2 --minWorkers=2",
+      "exitCode": 0,
+      "files": 80,
+      "passed": 1581,
+      "skipped": 2,
+      "failed": 0,
+      "sha256": "24b5cb51b4a088609ed8eb094eced82a91992524c4abeae77e25b1d6600d0d48",
+      "summary": [
+        "",
+        " Test Files  80 passed (80)",
+        "      Tests  1581 passed | 2 skipped (1583)",
+        "   Start at  04:49:39",
+        "   Duration  92.61s (transform 3.81s, setup 665ms, collect 29.47s, tests 130.40s, environment 19ms, prepare 6.25s)"
+      ]
+    },
+    "typecheck": {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "sha256": "a445ed378ed6e797487d6892e32de950732e50e989b30c4d9471c9f3e2527ac4",
+      "summary": [
+        "[WARN] Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install",
+        "$ tsc --noEmit"
+      ]
+    },
+    "build": {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "sha256": "4d429fdd3ec91957b2fcd41eb9acd5560e76debd534a3dbce492d566fdbe1b3b",
+      "summary": [
+        "ESM dist/chunk-RXJMKXUE.js 470.00 B",
+        "ESM dist/chunk-63A6EWPP.js 518.05 KB",
+        "ESM dist/chunk-YT3EBCOX.js 58.33 KB",
+        "ESM dist/app-DTZBLVJQ.js   126.58 KB",
+        "ESM ⚡️ Build success in 599ms"
+      ]
+    },
+    "realPTY": {
+      "includedInFullSuite": true,
+      "commandUnderTest": "pnpm dev",
+      "normalAutoPermission": true,
+      "controlledProvidersOnly": true
+    },
+    "format": {
+      "command": "pnpm format:check",
+      "exitCode": 0,
+      "status": "pass"
+    },
+    "evidenceVerifier": {
+      "command": "node docs/evidence/cache-prefix-20261013/verify.mts",
+      "exitCode": 0,
+      "network": false
+    }
+  },
+  "environment": {
+    "node": "24.19.0",
+    "platform": "Linux",
+    "pnpmEnvironmentOverride": "pnpm_config_verify_deps_before_run=warn",
+    "reason": "已有node_modules/lockfile同步警告；避免自动安装访问不可写HOME，没有执行依赖安装。",
+    "nativeWindowsRun": false
+  },
+  "defectFixed": {
+    "file": "src/core/tool-executor.ts",
+    "before": "所有restrict拒绝误记child_restriction；policy之后judge之前再次restrict拒绝未留audit。",
+    "after": "已知内核类别使用白名单reasonCode，其余execution_restriction；二次restrict补同绑定audit。无冒号自定义理由不得误识别。",
+    "permissionBehaviorUnchanged": true
+  },
+  "regression": {
+    "normalAutoRootRead": true,
+    "sameReadInputDeniedWithoutRunningStepThenAllowed": true,
+    "modelJudgeCallsForProvenRead": 0,
+    "humanPrompts": 0,
+    "writeByteExactCases": ["no final newline", "one final LF"],
+    "readBackDistinguishesFinalLF": true
+  },
+  "testFixtureOnlyChanges": {
+    "nonResponsiveLoadDeadlineMs": [100, 1000],
+    "lateCommitDeadlineMs": [100, 1000],
+    "lateCommitWaitMs": [150, 1500],
+    "productionDeadlineChanged": false,
+    "lateCommitStillTimesOutBeforeGateRelease": true
+  },
+  "failureHistory": {
+    "candidateInitialFull": {
+      "failed": 18,
+      "passed": 1555,
+      "skipped": 2
+    },
+    "candidateTwoWorkersBeforeFixtureFix": {
+      "failed": 1,
+      "passed": 1572,
+      "skipped": 2
+    },
+    "baselineTwoWorkers": {
+      "failed": 1,
+      "passed": 1548,
+      "skipped": 2
+    },
+    "candidateFirstDiagnosticFull": {
+      "failed": 0,
+      "passed": 1580,
+      "skipped": 2
+    },
+    "candidateLastBeforeLateCommitFixtureFix": {
+      "failed": 1,
+      "passed": 1580,
+      "skipped": 2
+    },
+    "classification": "diagnosis.json",
+    "note": "保留失败记录，不用重跑通过覆盖；基线和最后候选同一late_commit最终save超时，早期candidate是不同load夹具准备save超时。"
+  },
+  "realRequests": {
+    "additionalAPI": 0,
+    "total": 48,
+    "limit": 48,
+    "remaining": 0,
+    "knownUsage": 45,
+    "unknownUsage": 3,
+    "newRetries": 0,
+    "oldBudgetsReused": false
+  },
+  "independentReview": {
+    "agent": "cache_static_review",
+    "scope": "源码、安全边界、预算、逐请求usage、前缀上下界、换行绑定、失败分类",
+    "result": "未发现新的权限或证据推断问题；无冒号分类缺陷已修复；歧义字段baselineChildComplete已改名。",
+    "apiCalls": 0
+  },
+  "remaining": [
+    "真实judge缓存改善未被证明；原payload缺失不能恢复精确token/字节公共前缀。",
+    "真实候选review仍有多LF，child存在必要计划门拒绝后的恢复；没有放松精确内容/无工具错误验收。",
+    "基线child场景受48预算截断，父任务未完成。",
+    "后续实测须新授权预算；当前无任何新增API。",
+    "原生Windows未执行。"
+  ],
+  "publication": {
+    "committed": false,
+    "pushed": false,
+    "prCreated": false,
+    "merged": false
+  }
+}

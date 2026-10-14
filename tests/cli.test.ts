@@ -425,7 +425,9 @@ describe('TUI 审批模型运行状态', () => {
     const requests: string[] = [];
     vi.spyOn(ui.agent.providers.get('fake'), 'stream').mockImplementation(
       async function* (request, signal) {
-        const last = request.messages.at(-1)?.content;
+        const last = [...request.messages]
+          .reverse()
+          .find((message) => message.role !== 'user' || message.source !== 'runtime')?.content;
         const input = typeof last === 'string' ? last : '';
         requests.push(input);
         yield { type: 'message_start' };
@@ -485,7 +487,9 @@ describe('TUI 审批模型运行状态', () => {
     const ui = await mountTui({ permissionMode: 'ask', capabilities: { reviewer: false } });
     vi.spyOn(ui.agent.providers.get('fake'), 'stream').mockImplementation(
       async function* (request) {
-        const last = request.messages.at(-1)?.content;
+        const last = [...request.messages]
+          .reverse()
+          .find((message) => message.role !== 'user' || message.source !== 'runtime')?.content;
         if (last === 'PARENT_DURING_APPROVAL') {
           yield* textResponse('PARENT_APPROVAL_REPLY');
           return;
@@ -1380,7 +1384,11 @@ describe('真实 TUI 离线交互', () => {
           (message) => message.role === 'user' && message.content === '请读取笔记',
         ),
       ).toBe(true);
-      expect(request.messages.at(-1)).toMatchObject({ role: 'user', content: '接着说' });
+      expect(
+        [...request.messages]
+          .reverse()
+          .find((message) => message.role !== 'user' || message.source !== 'runtime'),
+      ).toMatchObject({ role: 'user', content: '接着说' });
       expect(request.tools.length).toBeGreaterThan(0);
     } finally {
       session?.stop();

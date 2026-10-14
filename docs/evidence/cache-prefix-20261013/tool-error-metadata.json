@@ -1,0 +1,141 @@
+[
+  {
+    "toolName": "plan_update",
+    "toolUseId": "call_00_ET_LSqFWWvTSZcBbpuPu81D4629",
+    "execution": [
+      {
+        "runId": "31139b2e-03b7-484d-8f2e-bdd8ca25cac9",
+        "phase": "validation",
+        "reasonCode": "input_valid"
+      },
+      {
+        "runId": "31139b2e-03b7-484d-8f2e-bdd8ca25cac9",
+        "phase": "analysis",
+        "reasonCode": "agent_control",
+        "inputHash": "17514b2371fbec4f37a396aa78eafe1c66373c7bcb7350cac9bdbedc7bb2a980"
+      },
+      {
+        "runId": "31139b2e-03b7-484d-8f2e-bdd8ca25cac9",
+        "phase": "policy",
+        "reasonCode": "plan_control",
+        "inputHash": "17514b2371fbec4f37a396aa78eafe1c66373c7bcb7350cac9bdbedc7bb2a980"
+      },
+      {
+        "runId": "31139b2e-03b7-484d-8f2e-bdd8ca25cac9",
+        "phase": "execution",
+        "reasonCode": "tool_error",
+        "inputHash": "17514b2371fbec4f37a396aa78eafe1c66373c7bcb7350cac9bdbedc7bb2a980"
+      }
+    ]
+  },
+  {
+    "toolName": "plan_update",
+    "toolUseId": "call_00_eFQy5h2EvZKqJipqsfp67921",
+    "execution": [
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "validation",
+        "reasonCode": "input_valid"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "analysis",
+        "reasonCode": "agent_control",
+        "inputHash": "9e12bafffd3548bcccea0218d5af32ee2199bc3dd515c65e8782f0ad54519562"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "policy",
+        "reasonCode": "plan_control",
+        "inputHash": "9e12bafffd3548bcccea0218d5af32ee2199bc3dd515c65e8782f0ad54519562"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "execution",
+        "reasonCode": "tool_error",
+        "inputHash": "9e12bafffd3548bcccea0218d5af32ee2199bc3dd515c65e8782f0ad54519562"
+      }
+    ]
+  },
+  {
+    "toolName": "plan_update",
+    "toolUseId": "call_00_Bvj18UNYWOFaa7hCjBax5674",
+    "execution": [
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "validation",
+        "reasonCode": "input_valid"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "analysis",
+        "reasonCode": "agent_control",
+        "inputHash": "65dcdcdc583be491c517d6a820d262bd92f105fd5c02e80b0f64127be97e7ab1"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "policy",
+        "reasonCode": "plan_control",
+        "inputHash": "65dcdcdc583be491c517d6a820d262bd92f105fd5c02e80b0f64127be97e7ab1"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "execution",
+        "reasonCode": "tool_error",
+        "inputHash": "65dcdcdc583be491c517d6a820d262bd92f105fd5c02e80b0f64127be97e7ab1"
+      }
+    ]
+  },
+  {
+    "toolName": "plan_update",
+    "toolUseId": "call_00_e4v1gixju8qkwYwvALuu0441",
+    "execution": [
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "validation",
+        "reasonCode": "input_valid"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "analysis",
+        "reasonCode": "agent_control",
+        "inputHash": "919388c2c81c045402d3e00273b1e078fc7ee3b77d31cae8dae036417d84e035"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "policy",
+        "reasonCode": "plan_control",
+        "inputHash": "919388c2c81c045402d3e00273b1e078fc7ee3b77d31cae8dae036417d84e035"
+      },
+      {
+        "runId": "5733bfc9-f841-467a-96fe-4a6cecf84b53",
+        "phase": "execution",
+        "reasonCode": "tool_error",
+        "inputHash": "919388c2c81c045402d3e00273b1e078fc7ee3b77d31cae8dae036417d84e035"
+      }
+    ]
+  },
+  {
+    "toolName": "read_file",
+    "toolUseId": "call_01_0gdod6hCbn9JTLr7XIit6793",
+    "execution": [
+      {
+        "runId": "64989011-f149-42fd-a293-5b5067349b6b",
+        "phase": "validation",
+        "reasonCode": "input_valid"
+      },
+      {
+        "runId": "64989011-f149-42fd-a293-5b5067349b6b",
+        "phase": "analysis",
+        "reasonCode": "bounded_file",
+        "inputHash": "912e07396aa2a897377838696b9427b1891b325665d4a42b92aea67f7040a658"
+      },
+      {
+        "runId": "64989011-f149-42fd-a293-5b5067349b6b",
+        "phase": "policy",
+        "reasonCode": "child_restriction",
+        "inputHash": "912e07396aa2a897377838696b9427b1891b325665d4a42b92aea67f7040a658"
+      }
+    ]
+  }
+]

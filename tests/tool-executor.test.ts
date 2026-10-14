@@ -85,6 +85,55 @@ function fixture(options: Partial<ToolExecutorOptions> = {}) {
 }
 
 describe('ToolExecutor 唯一授权门', () => {
+  it('无分隔符的自定义限制不冒充内核类别', async () => {
+    const f = fixture({ restrict: () => 'plan_deniedX' });
+    expect((await f.run()).isError).toBe(true);
+    expect(f.audits).toContainEqual(
+      expect.objectContaining({ phase: 'policy', reasonCode: 'execution_restriction' }),
+    );
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['plan_step_required', 'task_read_only', 'plan_denied'])(
+    '限制 %s 保留脱敏类别，不再误记为 child 权限',
+    async (code) => {
+      const f = fixture({ restrict: () => `${code}: private task detail` });
+      expect((await f.run()).isError).toBe(true);
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.audits).toContainEqual(
+        expect.objectContaining({ phase: 'policy', decision: 'deny', reasonCode: code }),
+      );
+      expect(JSON.stringify(f.audits)).not.toContain('private task detail');
+    },
+  );
+
+  it('policy 等待期间新增限制仍在 judge 前拒绝，并留下脱敏审计', async () => {
+    let restricted = false;
+    const reviewer = { review: vi.fn() };
+    const f = fixture({
+      reviewer,
+      policy: {
+        ...review,
+        decide: (input, signal) => {
+          restricted = true;
+          return review.decide(input, signal);
+        },
+      },
+      restrict: () => (restricted ? 'private custom restriction' : undefined),
+    });
+    expect((await f.run()).isError).toBe(true);
+    expect(reviewer.review).not.toHaveBeenCalled();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.audits).toContainEqual(
+      expect.objectContaining({
+        phase: 'policy',
+        decision: 'deny',
+        reasonCode: 'execution_restriction',
+      }),
+    );
+    expect(JSON.stringify(f.audits)).not.toContain('private custom restriction');
+  });
+
   it.each(['allow', 'ask', 'review'] as const)(
     '%s 不能借 invocation 范围绕过最终拒绝',
     async (kind) => {

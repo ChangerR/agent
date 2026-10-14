@@ -77,9 +77,13 @@ function reviewResponse(
 
 function payload(request: ChatRequest) {
   return JSON.parse(request.messages[0].content as string) as {
-    operation: { input: Record<string, unknown> };
+    operation: { input: Record<string, unknown>; cwd: string };
     currentUserRequest: { source: string; text: string };
-    context: Omit<ReturnType<ReviewHistory['build']>, 'userRequest'> & { userRequestRef: string };
+    context: Omit<ReturnType<ReviewHistory['build']>, 'userRequest' | 'previousReviews' | 'cwd'> & {
+      userRequestRef: string;
+      cwdRef: string;
+    };
+    previousReviews: ReturnType<ReviewHistory['build']>['previousReviews'];
   };
 }
 
@@ -153,7 +157,7 @@ describe('LLM 审批员', () => {
       'pipeline',
       'judge',
     ]);
-    const retryContext = payload(judgeProvider.requests[2]).context;
+    const retryContext = payload(judgeProvider.requests[2]);
     expect(
       retryContext.previousReviews.find((entry) => entry.input?.command === commands[1]),
     ).toMatchObject({ sameOperation: false, outcome: 'error' });
@@ -198,7 +202,7 @@ describe('LLM 审批员', () => {
     events.on('permission_decision', (e) => phases.push(`${e.phase}:${e.decision.kind}`));
     await loop.run('创建这个 PR');
     expect(asks).toBe(1);
-    expect(payload(judgeProvider.requests[1]).context.previousReviews[0]).toMatchObject({
+    expect(payload(judgeProvider.requests[1]).previousReviews[0]).toMatchObject({
       sameOperation: false,
       input: { command: original },
       outcome: 'error',
@@ -257,14 +261,15 @@ describe('LLM 审批员', () => {
     });
     await loop.run('修复类型错误，禁止发布');
     const data = payload(judgeProvider.requests[0]);
-    expect(data.context.cwd).toBe(tmp);
+    expect(data.context.cwdRef).toBe('operation.cwd');
+    expect(data.operation.cwd).toBe(tmp);
     expect(data.currentUserRequest.text).toBe('修复类型错误，禁止发布');
     expect(data.context.userRequestRef).toBe('currentUserRequest.text');
     expect(data.context.conversation).toContainEqual({
       source: 'assistant',
       text: '根据诊断修复项目文件',
     });
-    expect(data.context.previousReviews[0]).toMatchObject({
+    expect(data.previousReviews[0]).toMatchObject({
       toolName: 'read_file',
       outcome: 'error',
       result: '报错位置 src/a.ts:42',
@@ -277,7 +282,7 @@ describe('LLM 审批员', () => {
     const judgeProvider = new FakeProvider([
       reviewResponse('ask', '首次需确认'),
       (req) => {
-        const review = payload(req).context.previousReviews[0];
+        const review = payload(req).previousReviews[0];
         return reviewResponse(
           review.sameOperation && review.decision.source === 'user' ? 'allow' : 'ask',
         );
@@ -305,7 +310,7 @@ describe('LLM 审批员', () => {
     await loop.run('运行测试');
     await loop.run('修复后再运行测试');
     expect(asks).toBe(1);
-    expect(payload(judgeProvider.requests[1]).context.previousReviews[0]).toMatchObject({
+    expect(payload(judgeProvider.requests[1]).previousReviews[0]).toMatchObject({
       sameOperation: true,
       userRequest: '运行测试',
       outcome: 'success',
@@ -353,7 +358,7 @@ describe('LLM 审批员', () => {
     loop.plan.update(plan.revision, { stepId: plan.steps[0].id, status: 'running' });
     await loop.run('已明确恢复，重新审核改写后的命令');
     expect(judgeProvider.requests).toHaveLength(2);
-    expect(payload(judgeProvider.requests[1]).context.previousReviews[0]).toMatchObject({
+    expect(payload(judgeProvider.requests[1]).previousReviews[0]).toMatchObject({
       sameOperation: false,
       outcome: 'not_executed',
       decision: { kind: 'deny', source: 'user', reason: '用户拒绝本次操作：禁止上传数据' },
@@ -377,7 +382,7 @@ describe('LLM 审批员', () => {
       throw new Error('disk full');
     });
     await loop.run('写文件');
-    expect(payload(judgeProvider.requests[1]).context.previousReviews[0]).toMatchObject({
+    expect(payload(judgeProvider.requests[1]).previousReviews[0]).toMatchObject({
       sameOperation: false,
       input: { path: 'x', content: 'old' },
       outcome: 'error',
@@ -421,7 +426,7 @@ describe('LLM 审批员', () => {
     await loop.run('测试');
     loop.importSession({ messages: [{ role: 'user', content: '新会话' }] });
     await loop.run('再测试');
-    expect(payload(judgeProvider.requests[1]).context.previousReviews).toEqual([]);
+    expect(payload(judgeProvider.requests[1]).previousReviews).toEqual([]);
   });
 
   it('模型历史压缩后仍保留原始用户请求与此前人工确认记录', async () => {
@@ -457,7 +462,7 @@ describe('LLM 审批员', () => {
     const review = data.context;
     expect(data.currentUserRequest.text).toBe('重复测试，仍然禁止发布');
     expect(review.userRequestRef).toBe('currentUserRequest.text');
-    expect(review.previousReviews[0]).toMatchObject({
+    expect(data.previousReviews[0]).toMatchObject({
       sameOperation: true,
       userRequest: '只运行本地测试',
       decision: { source: 'user' },

@@ -67,7 +67,7 @@ export interface ReviewContext {
   cwd: string;
   userRequest: string;
   conversation: Array<{
-    source: 'user' | 'assistant' | 'tool' | 'summary' | 'delegation' | 'subagent';
+    source: 'user' | 'assistant' | 'tool' | 'summary' | 'delegation' | 'subagent' | 'runtime';
     text: string;
   }>;
   previousReviews: Array<ReviewRecord & { sameOperation: boolean }>;

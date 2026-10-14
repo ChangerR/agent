@@ -11,12 +11,13 @@ const text=value=>[{type:'message_start'},{type:'text_delta',text:value},{type:'
 const tool=(name,input)=>[{type:'message_start'},{type:'tool_use_start',id:'call-'+stage,name},{type:'tool_use_delta',id:'call-'+stage,input:JSON.stringify(input)},{type:'tool_use_stop',id:'call-'+stage},{type:'message_stop',stopReason:'tool_use'}];
 export default {manifest:{id:'test.plan-pty',version:'1.0.0',apiVersion:1},setup(ctx){
 ctx.provide.provider('offline-plan',{name:'offline-plan',capabilities:{thinking:false,streaming:true},async *stream(req,signal){
-  const input=req.messages.at(-1)?.content;log({kind:'request',input});
+  const input=req.messages.filter(m=>m.source!=='runtime').at(-1)?.content;log({kind:'request',input});
   if(!req.tools.length){if(input==='PARENT_AFTER'||input==='CHILD_WRITE'){yield* text('null');return;}stage=0;verified=false;yield* text(JSON.stringify({goal:'PTY 目标',steps:['写入结果','验证结果']}));return;}
   if(input==='PARENT_AFTER'){yield* text('PARENT_AFTER_OK');return;}
   if(input==='CHILD_WRITE'){yield* tool('write_file',{path:'child-result.txt',content:'child ok'});return;}
-  if(!req.system.includes('当前所属计划（版本变化后须重新读取）: ')){yield* text('CHILD_DONE');return;}
-  const p=JSON.parse(req.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\\n')[0]);
+  const state=[...req.messages].reverse().find(m=>m.source==='runtime');
+  const p=state?JSON.parse(state.content).plan:null;
+  if(!p||!req.tools.some(t=>t.name==='plan_update')){yield* text('CHILD_DONE');return;}
   stage++;
   if(p.steps[0].status!=='completed'){
     if(p.activeStepId!==p.steps[0].id){yield* tool('plan_update',{revision:p.revision,stepId:p.steps[0].id,status:'running'});return;}

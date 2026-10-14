@@ -428,6 +428,7 @@ export function renderHistory(
             delegation: '委派任务',
             subagent: '子 agent 来源数据',
             tool: '工具来源数据',
+            runtime: '运行时计划状态',
           };
           components.push(
             new CollapsibleText(labels[message.source], message.content, options.expanded),

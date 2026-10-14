@@ -31,6 +31,13 @@ export function redactedEvent(event: Readonly<TelemetryEvent>): Record<string, u
         status: event.status,
         requestId: event.requestId,
         purpose: event.purpose,
+        modelRole: event.modelRole,
+        model: event.model,
+        provider: event.provider,
+        size: event.size,
+        evidenceBytes: event.evidenceBytes,
+        usageReported: event.usageReported,
+        cache: event.cache,
         usage: event.usage,
         detailType: event.detail?.type,
       };
@@ -42,6 +49,9 @@ export function redactedEvent(event: Readonly<TelemetryEvent>): Record<string, u
         toolCallId: event.toolCallId,
         toolRequestId: event.toolRequestId,
         purpose: event.purpose,
+        modelRole: event.modelRole,
+        size: event.size,
+        evidenceBytes: event.evidenceBytes,
         provider: event.provider,
         model: event.request.model,
         messageCount: event.request.messages.length,
@@ -55,6 +65,9 @@ export function redactedEvent(event: Readonly<TelemetryEvent>): Record<string, u
         toolCallId: event.toolCallId,
         toolRequestId: event.toolRequestId,
         purpose: event.purpose,
+        modelRole: event.modelRole,
+        usageReported: event.usageReported,
+        cache: event.cache,
         usage: event.usage,
       };
     case 'text_delta':

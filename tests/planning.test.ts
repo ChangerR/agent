@@ -18,6 +18,11 @@ import { PlanController, type Plan } from '../src/core/plan.js';
 import { EventBus } from '../src/core/events.js';
 import { planLines } from '../src/builtin/planning/tui.js';
 import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
+import { requestPlan } from './helpers/runtime-plan.js';
+import { toOpenAIMessages } from '../src/providers/openai.js';
+import { toAnthropicMessages } from '../src/providers/anthropic.js';
+import type { AgentEvent } from '../src/core/events.js';
+import { assertSafeHistory } from '../src/core/session/history.js';
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const f of cleanup.splice(0).reverse()) await f();
@@ -95,8 +100,7 @@ async function fixture(
   });
   return { agent, cwd, fake, planner };
 }
-const from = (req: ChatRequest): Plan =>
-  JSON.parse(req.system.split('当前所属计划（版本变化后须重新读取）: ')[1].split('\n')[0]);
+const from = requestPlan;
 let callId = 0;
 const call = (name: string, input: unknown, id = `${name}-${++callId}`) =>
   toolUseResponse([{ id, name, input }]);
@@ -121,6 +125,253 @@ function gate() {
 }
 
 describe('项目浏览的委派与综合结案', () => {
+  it('完成前一步后未启动下一步的 root 读取被计划门拦截；启动后原参数正常只读执行', async () => {
+    const f = await fixture(
+      [
+        call('read_file', { path: 'ordinary.txt' }),
+        (req) => {
+          const p = from(req);
+          return toolUseResponse([
+            {
+              id: 'finish-first',
+              name: 'plan_update',
+              input: {
+                revision: p.revision,
+                stepId: p.steps[0].id,
+                status: 'completed',
+                evidence: '已实际读取 ordinary.txt',
+              },
+            },
+            { id: 'before-running', name: 'read_file', input: { path: 'ordinary.txt' } },
+          ]);
+        },
+        (req) => update(req, 1, 'running'),
+        call('read_file', { path: 'ordinary.txt' }, 'after-running'),
+        (req) => update(req, 1, 'completed', '已实际读回 ordinary.txt'),
+        textResponse('核对完成'),
+      ],
+      {
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+        planning: [textResponse(JSON.stringify({ goal: '核对', steps: ['读取', '验证'] }))],
+      },
+    );
+    await writeFile(join(f.cwd, 'ordinary.txt'), 'EXACT_READ');
+    const events: AgentEvent[] = [];
+    f.agent.events.onAll((event) => events.push(event));
+    expect((await f.agent.loop.run('只读取 ordinary.txt 并核对')).reason).toBe('completed');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool_execution',
+        toolCallId: 'before-running',
+        reasonCode: 'plan_step_required',
+        decision: 'deny',
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool_result',
+        toolUseId: 'after-running',
+        result: expect.objectContaining({ content: expect.stringContaining('EXACT_READ') }),
+      }),
+    );
+    expect(events.some((event) => event.type === 'permission_request')).toBe(false);
+    expect(
+      events.some((event) => event.type === 'model_request' && event.purpose === 'judge'),
+    ).toBe(false);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+  });
+
+  it.each(['off', 'auto'] as const)(
+    '首次 %s 无计划仍传递模式，后续请求不重复追加相同空状态',
+    async (mode) => {
+      const f = await fixture([textResponse('收到'), textResponse('收到后续请求')], {
+        config: {
+          permissionMode: 'auto',
+          capabilities: { reviewer: 'model' },
+          pluginConfig: { 'agentlab.planning': { mode } },
+        },
+      });
+      await f.agent.loop.run('你好');
+      await f.agent.loop.run('再确认一下');
+      expect(f.fake.requests).toHaveLength(2);
+      for (const request of f.fake.requests) {
+        const states = request.messages.filter(
+          (message) => message.role === 'user' && message.source === 'runtime',
+        );
+        expect(states).toHaveLength(1);
+        expect(JSON.parse(states[0].content as string)).toEqual({
+          source: 'runtime_plan',
+          owner: 'root',
+          planningMode: mode,
+          planningOnly: false,
+          plan: null,
+        });
+      }
+    },
+  );
+
+  it('失败后恢复历史再读取时不重复追加相同状态，也不重放失败请求', async () => {
+    let first = true;
+    const f = await fixture(
+      [call('read_file', { path: 'ordinary.txt' }), textResponse('恢复后已读取')],
+      {
+        config: {
+          permissionMode: 'auto',
+          capabilities: { reviewer: 'model' },
+          pluginConfig: { 'agentlab.planning': { mode: 'off' } },
+        },
+        before: async () => {
+          if (first) {
+            first = false;
+            throw new Error('受控 provider 失败');
+          }
+        },
+      },
+    );
+    await writeFile(join(f.cwd, 'ordinary.txt'), 'RESTORED_READ_OK');
+    expect((await f.agent.loop.run('只读 ordinary.txt')).reason).toBe('error');
+    expect(f.fake.requests).toHaveLength(0);
+    const snapshot = f.agent.loop.exportSession();
+    const original = snapshot.messages.find(
+      (message) => message.role === 'user' && message.source === 'runtime',
+    );
+    expect(original).toBeDefined();
+    f.agent.loop.importSession(JSON.parse(JSON.stringify(snapshot)));
+    expect((await f.agent.loop.run('重试只读 ordinary.txt')).reason).toBe('completed');
+    expect(f.fake.requests).toHaveLength(2);
+    for (const request of f.fake.requests) {
+      expect(
+        request.messages.filter(
+          (message) => message.role === 'user' && message.source === 'runtime',
+        ),
+      ).toEqual([original]);
+    }
+    expect(JSON.stringify(f.fake.requests[1].messages)).toContain('RESTORED_READ_OK');
+  });
+
+  it('压缩去掉旧状态后重新追加当前状态，保留真实工具结果与协议邻接', async () => {
+    const compact = definePlugin({
+      manifest: { id: 'test.runtime-compact', version: '1.0.0', apiVersion: 1 },
+      setup(ctx) {
+        ctx.provide.compactor('runtime-compact', {
+          async compact(messages) {
+            return messages.filter(
+              (message) => message.role !== 'user' || message.source !== 'runtime',
+            );
+          },
+        });
+      },
+    });
+    const f = await fixture(
+      [call('read_file', { path: 'ordinary.txt' }), textResponse('压缩后已核对')],
+      {
+        plugins: [compact],
+        config: {
+          permissionMode: 'auto',
+          capabilities: { reviewer: 'model', compactor: 'runtime-compact' },
+          pluginConfig: { 'agentlab.planning': { mode: 'off' } },
+          compactThreshold: 1,
+        },
+      },
+    );
+    await writeFile(join(f.cwd, 'ordinary.txt'), 'COMPACT_READ_OK');
+    const compacted = vi.fn();
+    f.agent.events.on('compacted', compacted);
+    expect((await f.agent.loop.run('只读 ordinary.txt')).reason).toBe('completed');
+    expect(compacted).toHaveBeenCalled();
+    expect(f.fake.requests).toHaveLength(2);
+    for (const request of f.fake.requests) {
+      const states = request.messages.filter(
+        (message) => message.role === 'user' && message.source === 'runtime',
+      );
+      expect(states).toHaveLength(1);
+      expect(JSON.parse(states[0].content as string)).toMatchObject({
+        planningMode: 'off',
+        planningOnly: false,
+        plan: null,
+      });
+      assertSafeHistory(request.messages);
+      expect(toOpenAIMessages(request.messages)).toBeDefined();
+      expect(toAnthropicMessages(request.messages)).toBeDefined();
+    }
+    expect(JSON.stringify(f.fake.requests[1].messages)).toContain('COMPACT_READ_OK');
+  });
+
+  it('auto 真实读取与计划更新只追加状态，两个 adapter 保留之前完整前缀且不调用审批模型', async () => {
+    const f = await fixture(
+      [
+        (req) => update(req, 0, 'running'),
+        call('read_file', { path: 'ordinary.txt' }),
+        (req) => update(req, 0, 'completed', '已读取 ordinary.txt 的真实内容'),
+        (req) => update(req, 1, 'running'),
+        call('read_file', { path: 'ordinary.txt' }),
+        (req) => update(req, 1, 'completed', '重新读取并核对内容'),
+        textResponse('两次读取已核对。'),
+      ],
+      {
+        config: { permissionMode: 'auto', capabilities: { reviewer: 'model' } },
+        planning: [
+          textResponse(
+            JSON.stringify({ goal: '只读核对', steps: ['读取', '核对'], readOnly: true }),
+          ),
+        ],
+      },
+    );
+    await writeFile(join(f.cwd, 'ordinary.txt'), 'PREFIX_READ_OK');
+    const events: AgentEvent[] = [];
+    f.agent.events.onAll((event) => events.push(event));
+    expect((await f.agent.loop.run('只读 ordinary.txt 并再次核对，不修改文件')).reason).toBe(
+      'completed',
+    );
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(events.filter((event) => event.type === 'permission_request')).toHaveLength(0);
+    expect(
+      events.filter((event) => event.type === 'model_request' && event.purpose === 'judge'),
+    ).toHaveLength(0);
+    const results = events.filter(
+      (event) => event.type === 'tool_result' && event.name === 'read_file',
+    );
+    expect(results).toHaveLength(2);
+    for (const result of results) {
+      if (result.type === 'tool_result') {
+        expect(result.result.isError).not.toBe(true);
+        expect(result.result.content).toContain('PREFIX_READ_OK');
+      }
+    }
+    const requests = f.fake.requests;
+    expect(new Set(requests.map((request) => request.system)).size).toBe(1);
+    expect(requests[0].system).not.toContain('只读核对');
+    expect(requests[0].system).not.toContain(f.agent.loop.plan.snapshot!.id);
+    for (let index = 1; index < requests.length; index++) {
+      const previous = requests[index - 1];
+      const current = requests[index];
+      expect(current.tools).toEqual(previous.tools);
+      for (const translate of [toOpenAIMessages, toAnthropicMessages]) {
+        const prefix = translate(previous.messages);
+        expect(translate(current.messages).slice(0, prefix.length)).toEqual(prefix);
+      }
+    }
+    const states = requests
+      .at(-1)!
+      .messages.filter((message) => message.role === 'user' && message.source === 'runtime');
+    expect(states.length).toBeGreaterThan(1);
+    const payloads = states.map((state) => JSON.parse(state.content as string));
+    expect(new Set(payloads.map((state) => state.plan.revision)).size).toBe(payloads.length);
+    expect(
+      payloads.every((state) => state.source === 'runtime_plan' && state.owner === 'root'),
+    ).toBe(true);
+    expect(
+      events
+        .filter((event) => event.type === 'model_usage')
+        .map((event) => (event.type === 'model_usage' ? event.modelRole : undefined)),
+    ).toContain('planner');
+    expect(
+      events
+        .filter((event) => event.type === 'model_usage')
+        .map((event) => (event.type === 'model_usage' ? event.modelRole : undefined)),
+    ).toContain('main');
+  });
+
   it.each([false, true])(
     'child直接执行与follow-up都不请求规划器（显式来源=%s）',
     async (provided) => {
@@ -518,7 +769,9 @@ describe('直接描述任务，自动规划并持续执行', () => {
         },
         textResponse('计划已列好，接下来开始。'),
         (req) => {
-          expect(req.messages.at(-1)).toMatchObject({ role: 'user', source: 'tool' });
+          expect(
+            [...req.messages].reverse().find((m) => m.role !== 'user' || m.source !== 'runtime'),
+          ).toMatchObject({ role: 'user', source: 'tool' });
           return update(req, 0, 'running');
         },
         call('write_file', { path: 'result.txt', content: 'ok' }),
@@ -696,7 +949,9 @@ describe('直接描述任务，自动规划并持续执行', () => {
       [proposal, textResponse('接下来做'), call('write_file', { path: 'late.txt', content: 'no' })],
       {
         before: async (req, signal) => {
-          const last = req.messages.at(-1);
+          const last = [...req.messages]
+            .reverse()
+            .find((m) => m.role !== 'user' || m.source !== 'runtime');
           if (last?.role === 'user' && last.source === 'tool') {
             entered.resolve();
             await new Promise<void>((resolve) =>
@@ -807,7 +1062,9 @@ describe('PR #35/#36/#37 的 Windows 权限与规划续跑组合', () => {
         }),
         textResponse('计划已经建立，接下来读取。'),
         (req) => {
-          expect(req.messages.at(-1)).toMatchObject({ role: 'user', source: 'tool' });
+          expect(
+            [...req.messages].reverse().find((m) => m.role !== 'user' || m.source !== 'runtime'),
+          ).toMatchObject({ role: 'user', source: 'tool' });
           return update(req, 0, 'running');
         },
         call('read_file', { path: 'ordinary.txt' }),
@@ -1315,6 +1572,14 @@ it.each(['only', 'auto'] as const)(
     expect(plan.snapshot?.phase).toBe('completed');
     expect(plan.mode).toBe(mode);
     expect(plan.readOnly).toBe(mode === 'only');
+    const state = [...f.fake.requests.at(-1)!.messages]
+      .reverse()
+      .find((message) => message.role === 'user' && message.source === 'runtime');
+    expect(JSON.parse(state!.content as string)).toMatchObject({
+      planningMode: 'auto',
+      planningOnly: mode === 'only',
+      plan: { phase: 'completed' },
+    });
     await expect(readFile(join(f.cwd, 'extra.txt'))).rejects.toThrow();
     expect(
       (await f.agent.invokeTool('write_file', { path: 'sdk.txt', content: 'no' })).isError,
@@ -1597,7 +1862,7 @@ it('旧根计划完成后后台child迟到拒绝建立新阻塞，下一轮不�
     {
       config: { permissionMode: 'ask' },
       before: async (req) => {
-        if (!req.system.includes('当前所属计划')) await hold.promise;
+        if (!req.tools.some((tool) => tool.name === 'plan_update')) await hold.promise;
       },
     },
   );

@@ -1,0 +1,164 @@
+{
+  "at": "2026-10-13T06:30:06.419Z",
+  "stage": "offline_final_sdk_transport",
+  "networkRequests": 0,
+  "controlledFetches": 44,
+  "tests": [
+    {
+      "name": "openai SDK最终序列化请求 > 计划更新保持内容前缀；SDK缓存标记变化也如实计入原始公共前缀",
+      "fixtures": [
+        {
+          "requests": 7,
+          "roles": {
+            "planner": 1,
+            "main": 6
+          },
+          "judge": []
+        }
+      ]
+    },
+    {
+      "name": "openai SDK最终序列化请求 > 恢复与压缩分别观测：恢复保留前缀，压缩真实打断历史前缀但system/tools不变",
+      "fixtures": [
+        {
+          "requests": 3,
+          "roles": {
+            "main": 3
+          },
+          "judge": []
+        },
+        {
+          "requests": 2,
+          "roles": {
+            "main": 2
+          },
+          "judge": []
+        }
+      ]
+    },
+    {
+      "name": "openai SDK最终序列化请求 > 同授权写入经真实审批和执行；动态输入及历史变化可逐段测量，不伪造批准缓存",
+      "fixtures": [
+        {
+          "requests": 5,
+          "roles": {
+            "main": 3,
+            "judge": 2
+          },
+          "judge": [
+            {
+              "index": 2,
+              "bodyBytes": 6031,
+              "adjacentBodyPrefixBytes": 102,
+              "sameScopeBodyPrefixBytes": null
+            },
+            {
+              "index": 4,
+              "bodyBytes": 6814,
+              "adjacentBodyPrefixBytes": 102,
+              "sameScopeBodyPrefixBytes": 4127
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openai SDK最终序列化请求 > 父子工具数组分别观测；受限child只有真实获准工具，不能混进父级样本",
+      "fixtures": [
+        {
+          "requests": 5,
+          "roles": {
+            "main": 3,
+            "child": 2
+          },
+          "judge": []
+        }
+      ]
+    },
+    {
+      "name": "anthropic SDK最终序列化请求 > 计划更新保持内容前缀；SDK缓存标记变化也如实计入原始公共前缀",
+      "fixtures": [
+        {
+          "requests": 7,
+          "roles": {
+            "planner": 1,
+            "main": 6
+          },
+          "judge": []
+        }
+      ]
+    },
+    {
+      "name": "anthropic SDK最终序列化请求 > 恢复与压缩分别观测：恢复保留前缀，压缩真实打断历史前缀但system/tools不变",
+      "fixtures": [
+        {
+          "requests": 3,
+          "roles": {
+            "main": 3
+          },
+          "judge": []
+        },
+        {
+          "requests": 2,
+          "roles": {
+            "main": 2
+          },
+          "judge": []
+        }
+      ]
+    },
+    {
+      "name": "anthropic SDK最终序列化请求 > 同授权写入经真实审批和执行；动态输入及历史变化可逐段测量，不伪造批准缓存",
+      "fixtures": [
+        {
+          "requests": 5,
+          "roles": {
+            "main": 3,
+            "judge": 2
+          },
+          "judge": [
+            {
+              "index": 2,
+              "bodyBytes": 5912,
+              "adjacentBodyPrefixBytes": 35,
+              "sameScopeBodyPrefixBytes": null
+            },
+            {
+              "index": 4,
+              "bodyBytes": 6695,
+              "adjacentBodyPrefixBytes": 35,
+              "sameScopeBodyPrefixBytes": 4076
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "anthropic SDK最终序列化请求 > 父子工具数组分别观测；受限child只有真实获准工具，不能混进父级样本",
+      "fixtures": [
+        {
+          "requests": 5,
+          "roles": {
+            "main": 3,
+            "child": 2
+          },
+          "judge": []
+        }
+      ]
+    }
+  ],
+  "observationsSha256": "2cd7312c22762d8ed6d8f8145367922f5be4ae9b23f151e4e412020b3f915e84",
+  "redaction": {
+    "rawBodiesPersisted": false,
+    "credentialsPersisted": false,
+    "pathsPersisted": false,
+    "testNamesAreStatic": true,
+    "scopeHashesAreGroupingMetadataNotAuthorizationProof": true
+  },
+  "historicLiveBudget": {
+    "used": 48,
+    "limit": 48,
+    "newCalls": 0,
+    "changed": false
+  }
+}

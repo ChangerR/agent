@@ -1,0 +1,557 @@
+[
+  {
+    "index": 1,
+    "at": "2026-10-13T10:16:59.008Z",
+    "version": "baseline",
+    "source": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "block": 0,
+    "phase": "block-initial",
+    "operation": 0,
+    "observedSameBodyBefore": false,
+    "exactRepeatVerified": null,
+    "bodyBytes": 6231,
+    "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e",
+    "adjacent": null,
+    "sameScope": null,
+    "inputTotal": 1510,
+    "hit": 640,
+    "miss": 870,
+    "output": 194,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2670,
+    "responseBytes": 213,
+    "responseSha256": "066517d722b8f71c1f74343d119fd1fadf2f06d861f182a40009b363a30bd6b4",
+    "reasonCodeSha256": "afe06b048ba76540422c8264874bdf35437afbdec2d3b78d6a6cf48a653515d3"
+  },
+  {
+    "index": 2,
+    "at": "2026-10-13T10:17:01.678Z",
+    "version": "baseline",
+    "source": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "block": 0,
+    "phase": "exact-repeat",
+    "operation": 0,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": true,
+    "bodyBytes": 6231,
+    "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e",
+    "adjacent": {
+      "previousIndex": 1,
+      "bodyPrefixBytes": 6231,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 2705,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 1,
+      "bodyPrefixBytes": 6231,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 2705,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1510,
+    "hit": 1280,
+    "miss": 230,
+    "output": 219,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2452,
+    "responseBytes": 267,
+    "responseSha256": "2d72f054999bcb1eda4f04c0dd8daa1c16526f72024e80e501cff9985944b306",
+    "reasonCodeSha256": "6c7eadcb6d0bd4196316fea837b779281be09a6a98fd6b7f595d06854f5d3493"
+  },
+  {
+    "index": 3,
+    "at": "2026-10-13T10:17:04.130Z",
+    "version": "baseline",
+    "source": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "block": 0,
+    "phase": "changed-operation",
+    "operation": 1,
+    "observedSameBodyBefore": false,
+    "exactRepeatVerified": null,
+    "bodyBytes": 6231,
+    "bodySha256": "db8fc85b71a328257e35bbd42eac3005ae76ce9b12002548bc197354e833f67a",
+    "adjacent": {
+      "previousIndex": 2,
+      "bodyPrefixBytes": 3864,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 441,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 2,
+      "bodyPrefixBytes": 3864,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 441,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1512,
+    "hit": 640,
+    "miss": 872,
+    "output": 190,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2012,
+    "responseBytes": 226,
+    "responseSha256": "f84d470210e2db0ee0f3d3903ce4159565d439f2bdcfb732980bca9bff8e04d2",
+    "reasonCodeSha256": "35af9a11f33e61b2ec9b46f2061a6717c252c725978e71b324c3e0177ccb4aa5"
+  },
+  {
+    "index": 4,
+    "at": "2026-10-13T10:17:06.141Z",
+    "version": "candidate",
+    "source": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "block": 1,
+    "phase": "block-initial",
+    "operation": 0,
+    "observedSameBodyBefore": false,
+    "exactRepeatVerified": null,
+    "bodyBytes": 5985,
+    "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645",
+    "adjacent": {
+      "previousIndex": 3,
+      "bodyPrefixBytes": 488,
+      "partPrefixBytes": {
+        "system": 422,
+        "messages": 30,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": null,
+    "inputTotal": 1424,
+    "hit": 640,
+    "miss": 784,
+    "output": 216,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2134,
+    "responseBytes": 258,
+    "responseSha256": "785916ebad5358fd95f98cdb46de48908ee881749ec6d05bb5b09592bd42e8d0",
+    "reasonCodeSha256": "3b8230ff3f9f3cc62dde23b719cb54dbe57fa84cb76fbbc00078d6adf3566223"
+  },
+  {
+    "index": 5,
+    "at": "2026-10-13T10:17:08.277Z",
+    "version": "candidate",
+    "source": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "block": 1,
+    "phase": "exact-repeat",
+    "operation": 0,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": true,
+    "bodyBytes": 5985,
+    "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645",
+    "adjacent": {
+      "previousIndex": 4,
+      "bodyPrefixBytes": 5985,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 2303,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 4,
+      "bodyPrefixBytes": 5985,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 2303,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1424,
+    "hit": 1280,
+    "miss": 144,
+    "output": 164,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 1880,
+    "responseBytes": 280,
+    "responseSha256": "6472e917e0214365cfe2ceb1b60d8cfd9526ab99a7af6dcfbe23794d46c5beda",
+    "reasonCodeSha256": "deaf60df73fc37cc95126ce01e4c61c559f4c41b3d17e1dcecdbff746515defd"
+  },
+  {
+    "index": 6,
+    "at": "2026-10-13T10:17:10.155Z",
+    "version": "candidate",
+    "source": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "block": 1,
+    "phase": "changed-operation",
+    "operation": 1,
+    "observedSameBodyBefore": false,
+    "exactRepeatVerified": null,
+    "bodyBytes": 5985,
+    "bodySha256": "c06cc2f401d1f1c1a77ff7e5ea50dc2124265a741ca275f9d9662945fc17d5e9",
+    "adjacent": {
+      "previousIndex": 5,
+      "bodyPrefixBytes": 4258,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 679,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 5,
+      "bodyPrefixBytes": 4258,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 679,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1426,
+    "hit": 768,
+    "miss": 658,
+    "output": 169,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 1871,
+    "responseBytes": 237,
+    "responseSha256": "05c6c5edaf52bc3772b52921207448d4c2b89ba9900ce941e475326657d64973",
+    "reasonCodeSha256": "6c7eadcb6d0bd4196316fea837b779281be09a6a98fd6b7f595d06854f5d3493"
+  },
+  {
+    "index": 7,
+    "at": "2026-10-13T10:17:12.026Z",
+    "version": "candidate",
+    "source": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "block": 2,
+    "phase": "block-initial",
+    "operation": 0,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": null,
+    "bodyBytes": 5985,
+    "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645",
+    "adjacent": {
+      "previousIndex": 6,
+      "bodyPrefixBytes": 4258,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 679,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 6,
+      "bodyPrefixBytes": 4258,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 679,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1424,
+    "hit": 1280,
+    "miss": 144,
+    "output": 274,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2710,
+    "responseBytes": 247,
+    "responseSha256": "5bc67444136974986a041775839e60b843d672b3a0d13b940ac8a29d7ab6e2e0",
+    "reasonCodeSha256": "6c7eadcb6d0bd4196316fea837b779281be09a6a98fd6b7f595d06854f5d3493"
+  },
+  {
+    "index": 8,
+    "at": "2026-10-13T10:17:14.736Z",
+    "version": "candidate",
+    "source": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "block": 2,
+    "phase": "exact-repeat",
+    "operation": 0,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": true,
+    "bodyBytes": 5985,
+    "bodySha256": "22a856e0f562a773697fa4d8bcd2dceb669d26762373721d5240b999fbecb645",
+    "adjacent": {
+      "previousIndex": 7,
+      "bodyPrefixBytes": 5985,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 2303,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 7,
+      "bodyPrefixBytes": 5985,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 2303,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1424,
+    "hit": 1280,
+    "miss": 144,
+    "output": 259,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2703,
+    "responseBytes": 249,
+    "responseSha256": "2ddc8349fdf32b325dd3e799bd1b6ddfed110ef516e6ec080d6626a8e326418d",
+    "reasonCodeSha256": "078d86e1401bf9c7d0e8ebe20371723b720c60635df1c74b7bb83a5b20e75bc1"
+  },
+  {
+    "index": 9,
+    "at": "2026-10-13T10:17:17.439Z",
+    "version": "candidate",
+    "source": "00ff288016105b0a492f933d58ab21d072fd5438579084dfbb9d3c09d261ea1f",
+    "block": 2,
+    "phase": "changed-operation",
+    "operation": 1,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": null,
+    "bodyBytes": 5985,
+    "bodySha256": "c06cc2f401d1f1c1a77ff7e5ea50dc2124265a741ca275f9d9662945fc17d5e9",
+    "adjacent": {
+      "previousIndex": 8,
+      "bodyPrefixBytes": 4258,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 679,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 8,
+      "bodyPrefixBytes": 4258,
+      "partPrefixBytes": {
+        "system": 3488,
+        "messages": 679,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1426,
+    "hit": 1280,
+    "miss": 146,
+    "output": 201,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2491,
+    "responseBytes": 325,
+    "responseSha256": "af6be124abed61ab25ec203e593223e0072be8e541db5a4ce75d7615e9dca760",
+    "reasonCodeSha256": "60bf93b0c54339dd47ebe163e84c11059a7a9678e1ccffa7aa23d17e953752a2"
+  },
+  {
+    "index": 10,
+    "at": "2026-10-13T10:17:19.930Z",
+    "version": "baseline",
+    "source": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "block": 3,
+    "phase": "block-initial",
+    "operation": 0,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": null,
+    "bodyBytes": 6231,
+    "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e",
+    "adjacent": {
+      "previousIndex": 9,
+      "bodyPrefixBytes": 488,
+      "partPrefixBytes": {
+        "system": 422,
+        "messages": 30,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 3,
+      "bodyPrefixBytes": 3864,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 441,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1510,
+    "hit": 1280,
+    "miss": 230,
+    "output": 287,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 2788,
+    "responseBytes": 306,
+    "responseSha256": "88252b21dafe033fe1de39c8527a4acd74579aab54cb0b1c39d51a00d6cc8d30",
+    "reasonCodeSha256": "078d86e1401bf9c7d0e8ebe20371723b720c60635df1c74b7bb83a5b20e75bc1"
+  },
+  {
+    "index": 11,
+    "at": "2026-10-13T10:17:22.718Z",
+    "version": "baseline",
+    "source": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "block": 3,
+    "phase": "exact-repeat",
+    "operation": 0,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": true,
+    "bodyBytes": 6231,
+    "bodySha256": "778af2e61843ed748515c3ddee1bf1bcaeabbd71f6d3d5358841afd5784b8f1e",
+    "adjacent": {
+      "previousIndex": 10,
+      "bodyPrefixBytes": 6231,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 2705,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 10,
+      "bodyPrefixBytes": 6231,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 2705,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 1,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1510,
+    "hit": 1280,
+    "miss": 230,
+    "output": 387,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 3107,
+    "responseBytes": 244,
+    "responseSha256": "0fc5e741b495678fae58aea295ab033c62d064ca6ad8ece0185c8e15dd5c9337",
+    "reasonCodeSha256": "b2c28c5698a207694d1c53624cacc2af5da38b0eae8485224eebe3406abf3413"
+  },
+  {
+    "index": 12,
+    "at": "2026-10-13T10:17:25.825Z",
+    "version": "baseline",
+    "source": "6980f8a887548cd292775a5d69bdceff3a9a7850",
+    "block": 3,
+    "phase": "changed-operation",
+    "operation": 1,
+    "observedSameBodyBefore": true,
+    "exactRepeatVerified": null,
+    "bodyBytes": 6231,
+    "bodySha256": "db8fc85b71a328257e35bbd42eac3005ae76ce9b12002548bc197354e833f67a",
+    "adjacent": {
+      "previousIndex": 11,
+      "bodyPrefixBytes": 3864,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 441,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "sameScope": {
+      "previousIndex": 11,
+      "bodyPrefixBytes": 3864,
+      "partPrefixBytes": {
+        "system": 3332,
+        "messages": 441,
+        "tools": 4,
+        "settings": 98
+      },
+      "equalLeadingMessages": 0,
+      "previousMessageCount": 1
+    },
+    "inputTotal": 1512,
+    "hit": 1280,
+    "miss": 232,
+    "output": 186,
+    "usageKnown": true,
+    "cacheFieldsConsistent": true,
+    "decision": "allow",
+    "valid": true,
+    "durationMs": 1874,
+    "responseBytes": 241,
+    "responseSha256": "0c465214878380b7f8aa6bfc406dde0ccd601152cce15d411282aa70fe6c32c2",
+    "reasonCodeSha256": "6c7eadcb6d0bd4196316fea837b779281be09a6a98fd6b7f595d06854f5d3493"
+  }
+]

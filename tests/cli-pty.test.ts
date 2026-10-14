@@ -21,7 +21,7 @@ export default {
       async *stream(request, signal) {
         if (request.system.startsWith('[agentlab planning:auto]')) { yield* text('null'); return; }
         log({kind:'request',judge:request.tools.length === 0});
-        const last = request.messages.at(-1)?.content;
+        const last = [...request.messages].reverse().find(m=>m.role!=='user'||m.source!=='runtime')?.content;
         if (!request.tools.length) { yield* text(JSON.stringify({decision:'ask',reasonCode:'offline',reason:'Offline review'})); return; }
         if (typeof last !== 'string') { yield* text('PTY_REQUEST_COMPLETED'); return; }
         if (last === 'cancel') {

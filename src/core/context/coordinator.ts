@@ -62,7 +62,7 @@ export class ContextManager implements ContextCoordinator {
         (event.type === 'model_request' || event.type === 'model_usage') &&
         event.purpose === 'compact'
       )
-        events!.emit({ ...structuredClone(event), runId });
+        events!.emit({ ...structuredClone(event), runId, modelRole: 'compact' });
     });
     let proposal: readonly Message[];
     let original: Promise<readonly Message[]> | undefined;

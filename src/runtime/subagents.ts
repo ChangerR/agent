@@ -736,6 +736,9 @@ export class AgentSupervisor {
         requestId: event.requestId,
         usage: { ...event.usage },
         purpose: event.purpose,
+        modelRole: event.modelRole,
+        usageReported: event.usageReported,
+        cache: event.cache,
       });
     } else if (event.type === 'permission_request') {
       run.activity = '等待审批';
@@ -771,6 +774,17 @@ export class AgentSupervisor {
         run.reason = 'output_limit';
       }
       this.emit(node, run, 'status', {
+        ...(event.type === 'model_request'
+          ? {
+              requestId: event.requestId,
+              purpose: event.purpose,
+              modelRole: event.modelRole,
+              model: event.request.model,
+              provider: event.provider,
+              size: event.size,
+              evidenceBytes: event.evidenceBytes,
+            }
+          : {}),
         detail: structuredClone(event) as unknown as Record<string, unknown>,
       });
     }

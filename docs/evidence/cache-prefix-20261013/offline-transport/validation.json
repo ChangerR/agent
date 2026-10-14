@@ -1,0 +1,105 @@
+{
+  "at": "2026-10-13T06:34:03.871Z",
+  "stage": "offline_final_serialized_transport",
+  "source": "source.json",
+  "newProductionChanges": false,
+  "checks": {
+    "fullTests": {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "logSha256": "9564c5ea1fcca5271a104c306911dd119f1e12aa7058073d7fe41991c92cfe8b",
+      "summary": [
+        "",
+        " Test Files  81 passed (81)",
+        "      Tests  1592 passed | 2 skipped (1594)",
+        "   Start at  06:32:43",
+        "   Duration  50.43s (transform 2.64s, setup 738ms, collect 25.18s, tests 106.14s, environment 17ms, prepare 5.45s)"
+      ],
+      "files": 81,
+      "passed": 1592,
+      "skipped": 2,
+      "failed": 0
+    },
+    "focused": {
+      "command": "TRANSPORT_PREFIX_EVIDENCE=<temporary-file> pnpm exec vitest run tests/transport-prefix.test.ts",
+      "exitCode": 0,
+      "logSha256": "9eacc2ff2785e43c5cbc635e9a164228107e5bb226c32d76e2ef0ca00cc5efb4",
+      "summary": [
+        "",
+        " Test Files  1 passed (1)",
+        "      Tests  11 passed (11)",
+        "   Start at  06:28:20",
+        "   Duration  1.89s (transform 703ms, setup 23ms, collect 1.18s, tests 418ms, environment 0ms, prepare 68ms)"
+      ],
+      "passed": 11
+    },
+    "typecheck": {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "logSha256": "a445ed378ed6e797487d6892e32de950732e50e989b30c4d9471c9f3e2527ac4",
+      "summary": [
+        "[WARN] Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install",
+        "$ tsc --noEmit"
+      ]
+    },
+    "build": {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "logSha256": "82d2e8d1acea95e7f53cb649f7119aca0549153bb9156473a41cfbaddfe1724f",
+      "summary": [
+        "ESM dist/chunk-RXJMKXUE.js 470.00 B",
+        "ESM dist/app-DTZBLVJQ.js   126.58 KB",
+        "ESM dist/chunk-YT3EBCOX.js 58.33 KB",
+        "ESM dist/chunk-63A6EWPP.js 518.05 KB",
+        "ESM ⚡️ Build success in 120ms"
+      ]
+    },
+    "priorEvidence": {
+      "command": "node docs/evidence/cache-prefix-20261013/verify.mts",
+      "exitCode": 0,
+      "logSha256": "56047db83670b2c92b8ebfbfefa12be26fcb97c6446918c65eb07601c3d6cda1",
+      "summary": [
+        "{\"transports\":48,\"knownUsage\":45,\"unknownUsage\":3,\"systemPrefixBytes\":389,\"estimatedKnownUSD\":0.01601929799999999}"
+      ]
+    },
+    "realPTY": {
+      "includedInFullSuite": true,
+      "commandUnderTest": "pnpm dev",
+      "normalAuto": true
+    },
+    "format": {
+      "command": "pnpm format:check",
+      "status": "pass",
+      "exitCode": 0,
+      "logSha256": "e8f08fb3f7af3dc94cafb38f58e0f3a26e3e92445051e083fa69d0582811b26e"
+    },
+    "independentReview": "review.json"
+  },
+  "environment": {
+    "platform": "linux",
+    "node": "v24.19.0",
+    "openaiSDK": "4.104.0",
+    "anthropicSDK": "0.131.0",
+    "nativeWindowsRun": false,
+    "pnpmOverride": "pnpm_config_verify_deps_before_run=warn",
+    "dependencyWarning": "已有node_modules/lockfile同步警告；未安装依赖"
+  },
+  "liveAPI": {
+    "newRequests": 0,
+    "historicUsed": 48,
+    "historicRemaining": 0,
+    "windowExpired": true
+  },
+  "publication": {
+    "committed": false,
+    "pushed": false,
+    "prCreated": false
+  },
+  "limitations": [
+    "离线脚本化模型不能证明真实模型正确性或缓存收益",
+    "当前actor/root授权文本分组并非完整授权快照；未覆盖child judge与模型compactor请求",
+    "字节前缀不等于token前缀；结构投影不是wire子串",
+    "无原生Windows验证"
+  ],
+  "nextBudgetProposal": "next-ab-plan.json"
+}

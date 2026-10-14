@@ -1,0 +1,325 @@
+{
+  "kind": "offline_diagnosis_of_frozen_live_sample",
+  "apiCallsAdded": 0,
+  "liveInputTokenRatios": {
+    "baseline": {
+      "requests": 2,
+      "hit": 1280,
+      "miss": 2410,
+      "total": 3690,
+      "hitRatio": 0.34688346883468835
+    },
+    "candidate": {
+      "requests": 2,
+      "hit": 768,
+      "miss": 2611,
+      "total": 3379,
+      "hitRatio": 0.22728617934300088
+    }
+  },
+  "perRequestAccounting": [
+    {
+      "index": 17,
+      "version": "baseline",
+      "systemUtf8Bytes": 3273,
+      "messagesJsonBytes": 3454,
+      "emptyToolsJsonBytes": 2,
+      "envelopeAndSystemEscapingBytes": 103,
+      "normalizedJsonBytes": 6832,
+      "transportJsonBytes": 6980,
+      "input": 1744,
+      "hit": 640,
+      "miss": 1104,
+      "output": 170,
+      "unknownUsage": false
+    },
+    {
+      "index": 18,
+      "version": "baseline",
+      "systemUtf8Bytes": 3273,
+      "messagesJsonBytes": 4252,
+      "emptyToolsJsonBytes": 2,
+      "envelopeAndSystemEscapingBytes": 103,
+      "normalizedJsonBytes": 7630,
+      "transportJsonBytes": 7778,
+      "input": 1946,
+      "hit": 640,
+      "miss": 1306,
+      "output": 187,
+      "unknownUsage": false
+    },
+    {
+      "index": 29,
+      "version": "candidate",
+      "systemUtf8Bytes": 3429,
+      "messagesJsonBytes": 2930,
+      "emptyToolsJsonBytes": 2,
+      "envelopeAndSystemEscapingBytes": 103,
+      "normalizedJsonBytes": 6464,
+      "transportJsonBytes": 6612,
+      "input": 1590,
+      "hit": 0,
+      "miss": 1590,
+      "output": 267,
+      "unknownUsage": false
+    },
+    {
+      "index": 30,
+      "version": "candidate",
+      "systemUtf8Bytes": 3429,
+      "messagesJsonBytes": 3712,
+      "emptyToolsJsonBytes": 2,
+      "envelopeAndSystemEscapingBytes": 103,
+      "normalizedJsonBytes": 7246,
+      "transportJsonBytes": 7394,
+      "input": 1789,
+      "hit": 768,
+      "miss": 1021,
+      "output": 443,
+      "unknownUsage": false
+    }
+  ],
+  "prefixes": {
+    "definition": "UTF-8 byte prefixes are not provider token prefixes. Full payloads were not persisted.",
+    "adjacentPairs": [
+      {
+        "from": 17,
+        "to": 18,
+        "sameUserAuthorization": true,
+        "exactSystemCommonPrefixBytes": 3273,
+        "sourceDerivedUserJsonPrefixLowerBoundBytes": 368,
+        "exactUserJsonCommonPrefixBytes": null
+      },
+      {
+        "from": 29,
+        "to": 30,
+        "sameUserAuthorization": true,
+        "exactSystemCommonPrefixBytes": 3429,
+        "sourceDerivedUserJsonPrefixLowerBoundBytes": 712,
+        "exactUserJsonCommonPrefixBytes": null
+      }
+    ],
+    "crossVersion": {
+      "from": 18,
+      "to": 29,
+      "sameSyntheticPromptHash": true,
+      "exactSystemCommonPrefixBytes": 389,
+      "characterAligned": true,
+      "fullRawRequestCommonPrefixBytes": null
+    },
+    "lowerBoundMethod": "工具说明/版本/owner来源为固定源码；同合成授权经scenario_start promptHash校验。计算到operation.input冒号为止，包含完整currentUserRequest时多344B。candidate operation407B与真实分段指标相符。inputHash将键排序，无法恢复实际input键序，所以不给最长公共前缀精确值。",
+    "missing": [
+      "原user JSON与wire payload",
+      "实际tokenizer前缀长度",
+      "服务端缓存段位置、创建/淘汰时间",
+      "基线各证据段大小"
+    ],
+    "keyOrderBoundsEvidence": "source-derived-prefix-bounds.json"
+  },
+  "candidateEvidence": {
+    "valueBytes": [
+      {
+        "index": 29,
+        "currentUserRequest": 322,
+        "operation": 407,
+        "analysis": 1042,
+        "policy": 169,
+        "context": 586,
+        "previousReviews": 2,
+        "omittedReviews": 1
+      },
+      {
+        "index": 30,
+        "currentUserRequest": 322,
+        "operation": 407,
+        "analysis": 1042,
+        "policy": 169,
+        "context": 586,
+        "previousReviews": 715,
+        "omittedReviews": 1
+      }
+    ],
+    "userJsonBytes": [2635, 3348],
+    "userJsonGrowthBytes": 713,
+    "serializedMessagesGrowthBytes": 782,
+    "interpretation": "实测previousReviews从2到715字节，解释user JSON增长713B；转义令messages增长782B。同大小不代表同内容。"
+  },
+  "hypotheses": [
+    {
+      "name": "cache_initial_state",
+      "directEvidence": "baseline首请求640hit，candidate首请求0hit；两版system模板hash不同，跨版system仅前389B一致。",
+      "verdict": "初始命中观测不同；不能确认服务端是否冷缓存、异步建缓存、淘汰或其他请求预热。"
+    },
+    {
+      "name": "turn_count",
+      "directEvidence": "judge各2次；root基线9轮max_turns，候选3轮完成。",
+      "verdict": "judge分母不是额外调用造成，而是实际输入token3379对3690不同；root轨迹与历史不相同。"
+    },
+    {
+      "name": "short_or_dynamic_prefix",
+      "directEvidence": "同版system固定；user JSON前缀下界368对712B。首个不同操作的input位于历史和执行身份之前。",
+      "verdict": "不能推断服务端命中具体对应这些字段；删除更靠后的执行身份不延长首个input差异之前的公共前缀。"
+    },
+    {
+      "name": "evidence_order",
+      "directEvidence": "candidate完整授权前置、重复值引用、历史窗口置尾；旧布局operation在授权之前。",
+      "verdict": "源码及离线回归确认布局和完整来源保留；一次真实对照不能量化它对cache命中的因果贡献。"
+    },
+    {
+      "name": "async_cache_timing",
+      "directEvidence": "首个usage事件到下个judge request事件间隔baseline17ms、candidate9ms。",
+      "verdict": "只知道事件间隔，未观测服务端缓存建立时间，不作原因断言。"
+    }
+  ],
+  "costs": {
+    "currency": "USD",
+    "isEstimate": true,
+    "judgeBaselineKnown": 0.00057954,
+    "judgeCandidateKnown": 0.000819954,
+    "delta": 0.000240414,
+    "deltaComponents": {
+      "hitTokens": -0.000001536,
+      "missTokens": 0.00003015,
+      "outputTokens": 0.0002118
+    },
+    "unknownTransportCount": 3,
+    "unknownCost": null
+  },
+  "comparability": {
+    "sameSyntheticTaskPrompt": true,
+    "sameExplicitSettings": true,
+    "sameRootTools": true,
+    "identicalEffectiveEnvironmentProven": false,
+    "sameChildTools": false,
+    "identicalActualRequests": false,
+    "statement": "全局预算截断baseline child；main不同计划/历史/轮数、judge不同system与写入尾部、child不同工具数组均须保留，不能宣称严格同请求成本A/B。",
+    "baselineChildScenarioComplete": false
+  },
+  "contentMismatch": {
+    "confirmed": "模型参数中已有LF；两条inputHash与已知合成LF候选一致，均绑定到analysis/policy/reviewer/execution tool_success。",
+    "toolBehavior": "write_file对新文件不添加或删除尾部LF；read_file会显示额外空行。离线字节/读回测试覆盖有LF与无LF。",
+    "assertion": "严格内容字符串与Buffer核对合理；未因模型多加LF而改断言。",
+    "classification": "模型生成/核对及judge授权语义判断失败；未发现工具执行添加LF的代码缺陷。",
+    "remaining": "不以自动trim或自然语言规则猜测改写已批准输入；模型可靠性需额外授权实测。"
+  },
+  "rootReadRestriction": {
+    "observed": "root run先agent_spawn/agent_wait，rev6 plan_update成功后同轮read被restrict拒绝；rev7 plan_update后相同inputHash读取成功。",
+    "sourceInference": "root未配置child restrict；此时phase=executing、mode=auto，bounded_file证明完整read，排除only/research只读副作用分支。依据源码推断为无running active step的plan_step_required。",
+    "certainty": "原拒绝字符串/step快照未保留，此为源码与时间线推断，不伪装原始reasonCode已记录。",
+    "reproduction": "正常auto+reviewer=model完整链路复现完成前一步后未启动下一步时拒绝、启动后同参数读取成功，0judge/0human。",
+    "fix": "仅修复所有restrict均误标child_restriction、review前二次restrict无audit的可观察性缺陷；权限条件和拒绝行为不变。"
+  },
+  "originalFailures": {
+    "initialCandidateFull": {
+      "failed": 18,
+      "staleFixtureAssumptions": 16,
+      "persistenceTimeouts": 2
+    },
+    "reducedWorkersBeforeFixtureDeadlineFix": {
+      "failed": 1,
+      "stage": "准备被测阻塞load之前的session.save()",
+      "deadlineMs": 100
+    },
+    "baselineFull": {
+      "failed": 1,
+      "stage": "另一个late_commit用例最终session.save()",
+      "deadlineMs": 100
+    },
+    "interpretation": "早期candidate不响应读取准备save与baseline late_commit最终save为不同用例；后续candidate也复现baseline同一late_commit最终save超时。两项只调整测试夹具期限，未改生产期限；资源竞争原因仍未获单独证明。",
+    "finalCandidateReproduction": {
+      "failed": 1,
+      "passed": 1580,
+      "skipped": 2,
+      "stage": "与baseline相同late_commit测试最终session.save()",
+      "deadlineMs": 100
+    },
+    "fixtureChanges": [
+      {
+        "test": "不响应读取",
+        "deadlineMs": {
+          "before": 100,
+          "after": 1000
+        },
+        "blockedLoadGateStillRequired": true
+      },
+      {
+        "test": "late_commit",
+        "deadlineMs": {
+          "before": 100,
+          "after": 1000
+        },
+        "waitMs": {
+          "before": 150,
+          "after": 1500
+        },
+        "initialSaveGateStillHeldPastDeadline": true
+      }
+    ]
+  },
+  "liveFailures": [
+    {
+      "version": "baseline",
+      "scenario": "read-startup",
+      "type": "transport_failure",
+      "attempts": 3,
+      "usageKnown": false,
+      "exactTransportCause": null,
+      "note": "后续独立DNS探测曾EAI_AGAIN，但原transport错误码未保存。"
+    },
+    {
+      "version": "baseline",
+      "scenario": "read",
+      "type": "recovered_plan_tool_error",
+      "count": 1,
+      "exactSubtype": null,
+      "taskCorrect": true,
+      "strictPass": false
+    },
+    {
+      "version": "baseline",
+      "scenario": "review",
+      "type": "plan_tool_errors_and_max_turns",
+      "toolErrors": 3,
+      "exactSubtype": null,
+      "taskBytesCorrect": true,
+      "completed": false
+    },
+    {
+      "version": "candidate",
+      "scenario": "review",
+      "type": "extra_lf_in_model_input",
+      "count": 2,
+      "completed": true,
+      "strictPass": false
+    },
+    {
+      "version": "candidate",
+      "scenario": "child",
+      "type": "recovered_root_plan_restriction",
+      "count": 1,
+      "taskCorrect": true,
+      "strictPass": false
+    },
+    {
+      "version": "baseline",
+      "scenario": "child",
+      "type": "global_transport_budget_exhausted",
+      "childCompleted": true,
+      "parentCompleted": false,
+      "transportBeyondCap": 0
+    }
+  ],
+  "remainingValidation": [
+    "没有新增真实API预算，修正未做新实测。",
+    "需同有效配置/相同实际工具、控制冷暖与顺序的重复样本才能估计cache因果效益。",
+    "下次获授权实验应在内存中计算相邻及同授权prefix长度/分段hash，仅落脱敏计数，避免再次丢失诊断能力。",
+    "基线child父任务未完成，缺完整对照。",
+    "原生Windows未运行，2个平台测试跳过。"
+  ],
+  "publication": {
+    "commit": false,
+    "push": false,
+    "pr": false,
+    "merge": false
+  }
+}

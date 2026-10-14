@@ -18,7 +18,7 @@ ctx.provide.provider('offline-bash',{name:'offline-bash',capabilities:{thinking:
   const decision=payload.currentUserRequest.text==='创建 pty-write.txt，内容为 verified。' && payload.operation.toolName==='write_file' && payload.operation.input.path==='pty-write.txt' && payload.operation.input.content==='verified'?'allow':'deny';
   log({kind:'judge',decision});yield* text(JSON.stringify({decision,reasonCode:'controlled_pty',reason:'受控审批'}));return;
  }
- const last=request.messages.at(-1).content;
+ const last=[...request.messages].reverse().find(m=>m.role!=='user'||m.source!=='runtime').content;
  if(typeof last!=='string'){yield* text('BASH_PTY_COMPLETED');return;}
  const write=last==='创建 pty-write.txt，内容为 verified。'||last==='禁止创建 pty-denied.txt。';
  const input=write?{path:last.startsWith('创建')?'pty-write.txt':'pty-denied.txt',content:'verified'}:{command:last};

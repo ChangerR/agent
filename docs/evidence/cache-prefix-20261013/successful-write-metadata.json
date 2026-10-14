@@ -1,0 +1,100 @@
+[
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:11.283Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_00_Jz9SkenC4wQvuSe7OU2Z7258",
+    "toolName": "write_file",
+    "phase": "validation",
+    "reasonCode": "input_valid"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:11.288Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_00_Jz9SkenC4wQvuSe7OU2Z7258",
+    "toolName": "write_file",
+    "phase": "analysis",
+    "inputHash": "85fe7292f348b16e95bb4f23163ed83bead4dcbff0bcbfd225275859ddf80d86",
+    "reasonCode": "bounded_file"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:11.290Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_00_Jz9SkenC4wQvuSe7OU2Z7258",
+    "toolName": "write_file",
+    "phase": "policy",
+    "inputHash": "85fe7292f348b16e95bb4f23163ed83bead4dcbff0bcbfd225275859ddf80d86",
+    "reasonCode": "review_uncertain"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:13.508Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_00_Jz9SkenC4wQvuSe7OU2Z7258",
+    "toolName": "write_file",
+    "phase": "reviewer",
+    "inputHash": "85fe7292f348b16e95bb4f23163ed83bead4dcbff0bcbfd225275859ddf80d86",
+    "reasonCode": "bounded_write_matches_request"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:13.512Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_00_Jz9SkenC4wQvuSe7OU2Z7258",
+    "toolName": "write_file",
+    "phase": "execution",
+    "inputHash": "85fe7292f348b16e95bb4f23163ed83bead4dcbff0bcbfd225275859ddf80d86",
+    "reasonCode": "tool_success"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:13.513Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_01_lH6QHAGn6O1nP98IYc1D9626",
+    "toolName": "write_file",
+    "phase": "validation",
+    "reasonCode": "input_valid"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:13.514Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_01_lH6QHAGn6O1nP98IYc1D9626",
+    "toolName": "write_file",
+    "phase": "analysis",
+    "inputHash": "0626c2e4f8ce3c5482b88d368d2ffea5c301f19cf263290f13b8018db48a3197",
+    "reasonCode": "bounded_file"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:13.514Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_01_lH6QHAGn6O1nP98IYc1D9626",
+    "toolName": "write_file",
+    "phase": "policy",
+    "inputHash": "0626c2e4f8ce3c5482b88d368d2ffea5c301f19cf263290f13b8018db48a3197",
+    "reasonCode": "review_uncertain"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:16.773Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_01_lH6QHAGn6O1nP98IYc1D9626",
+    "toolName": "write_file",
+    "phase": "reviewer",
+    "inputHash": "0626c2e4f8ce3c5482b88d368d2ffea5c301f19cf263290f13b8018db48a3197",
+    "reasonCode": "bounded_write_matches_request"
+  },
+  {
+    "sourceLog": "session-2026-10-13T04-25-07-337Z-c41a1cd4-9682-4f8a-9b60-7093f284af02.jsonl",
+    "at": "2026-10-13T04:25:16.776Z",
+    "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+    "toolCallId": "call_01_lH6QHAGn6O1nP98IYc1D9626",
+    "toolName": "write_file",
+    "phase": "execution",
+    "inputHash": "0626c2e4f8ce3c5482b88d368d2ffea5c301f19cf263290f13b8018db48a3197",
+    "reasonCode": "tool_success"
+  }
+]

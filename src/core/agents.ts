@@ -1,5 +1,6 @@
 /** 子任务的纯数据契约；不依赖具体 supervisor 或界面。 */
 import type { TokenUsage } from './protocol/types.js';
+import type { ModelRole, RequestSize } from './provider.js';
 
 export type InputSource = 'user' | 'delegation' | 'subagent' | 'tool';
 export interface InvocationOrigin {
@@ -64,6 +65,13 @@ export interface SubagentProgress {
   text?: string;
   requestId?: string;
   purpose?: 'agent' | 'compact' | 'judge';
+  modelRole?: ModelRole;
+  model?: string;
+  provider?: string;
+  size?: RequestSize;
+  evidenceBytes?: Record<string, number>;
+  usageReported?: boolean;
+  cache?: { hitTokens: number; missTokens: number };
   usage?: TokenUsage;
   /** child 的独立事件快照；不会作为父 loop 的 text/tool/session 事件重放。 */
   detail?: Record<string, unknown>;

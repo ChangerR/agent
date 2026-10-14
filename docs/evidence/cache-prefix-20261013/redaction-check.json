@@ -1,0 +1,25 @@
+{
+  "at": "2026-10-13T04:53:10.825Z",
+  "checkedFiles": [
+    "audit-excerpts.jsonl",
+    "budget.json",
+    "comparability.json",
+    "content-mismatch-proof.json",
+    "diagnosis.json",
+    "events.jsonl",
+    "judge-requests.json",
+    "offline-source-fingerprints.json",
+    "role-totals.json",
+    "source-derived-prefix-bounds.json",
+    "successful-write-metadata.json",
+    "summary.json",
+    "tool-error-metadata.json",
+    "validation.json",
+    "verify.mts",
+    "versions.json"
+  ],
+  "originalSyntheticPromptsAbsent": true,
+  "reportedUserPrivatePathAbsent": true,
+  "privateKeyPEMAbsent": true,
+  "method": "固定allowlist遥测字段；补查原合成提示全文/已报告真实路径/PEM标记。未读取或输出凭据；不是通用秘密扫描器。"
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "version": "baseline",
+    "possibleSourceDerivedUserJsonLcpBytes": [370, 383, 410],
+    "range": [370, 410],
+    "measuredOriginalPayload": false,
+    "method": "已知input字段值经真实执行canonical SHA256确认；枚举两个key各自两种顺序。第一处分歧早于未知analysis/history，因此不需要猜测尾部。实际key顺序未保存，不能选择其中单值。"
+  },
+  {
+    "version": "candidate",
+    "possibleSourceDerivedUserJsonLcpBytes": [714, 727, 756],
+    "range": [714, 756],
+    "measuredOriginalPayload": false,
+    "method": "已知input字段值经真实执行canonical SHA256确认；枚举两个key各自两种顺序。第一处分歧早于未知analysis/history，因此不需要猜测尾部。实际key顺序未保存，不能选择其中单值。"
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "runId": "8a26eb0a-91a8-4637-ba7b-e79600a0d4f0",
+  "writeHashMatches": [
+    {
+      "inputHash": "85fe7292f348b16e95bb4f23163ed83bead4dcbff0bcbfd225275859ddf80d86",
+      "match": {
+        "file": "audit-a.txt",
+        "ending": "LF",
+        "absolute": false
+      }
+    },
+    {
+      "inputHash": "0626c2e4f8ce3c5482b88d368d2ffea5c301f19cf263290f13b8018db48a3197",
+      "match": {
+        "file": "audit-b.txt",
+        "ending": "LF",
+        "absolute": false
+      }
+    }
+  ],
+  "method": "仅用已知合成输入候选重算执行绑定SHA256，未保存请求正文；精确内容断言仍不通过。"
+}

@@ -1,0 +1,23 @@
+{
+  "at": "2026-10-13T06:32:44.209Z",
+  "reviewer": "cache_static_review",
+  "type": "independent_static",
+  "result": "当前离线测试范围内无阻塞问题",
+  "fixedFindings": [
+    "OpenAI最终JSON带缩进，关联hash与原始观测分开",
+    "JSON.parse异常固定错误，不回显正文",
+    "scopeHash强制string，拒绝对象转换泄漏",
+    "restore新用户输入使用新scope并比较adjacent"
+  ],
+  "verified": [
+    "真实SDK且fetch没有网络回退",
+    "opt-in只输出白名单元数据",
+    "原始字节与结构投影指标明确区分"
+  ],
+  "limitations": [
+    "scope是actor/root输入分组，不是完整授权状态快照；扩展child judge需要实际child授权",
+    "受控compactor没有模型请求，本阶段没有模型compact角色样本",
+    "审查员未独立执行测试，测试执行结果单独记录"
+  ],
+  "apiCalls": 0
+}

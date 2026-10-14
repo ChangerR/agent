@@ -23,6 +23,22 @@ import type { Tool, ToolRegistry } from './registry.js';
 import type { InvocationOrigin } from './agents.js';
 import type { ToolLease, ToolScheduler } from './tool-scheduler.js';
 
+/** 只记录内核已知的限制类别；宿主自定义理由可能含路径或任务正文。 */
+function restrictionCode(reason: string): string {
+  const separator = reason.indexOf(':');
+  if (separator < 0) return 'execution_restriction';
+  const prefix = reason.slice(0, separator);
+  return [
+    'plan_preparing',
+    'plan_read_only',
+    'task_read_only',
+    'plan_step_required',
+    'plan_denied',
+  ].includes(prefix)
+    ? prefix
+    : 'execution_restriction';
+}
+
 export interface ToolInvocationContext {
   readonly signal: AbortSignal;
   readonly runId: string;
@@ -323,7 +339,7 @@ export class ToolExecutor {
         });
         const restricted = this.opts.restrict?.(operation);
         if (restricted) {
-          audit('policy', 'child_restriction', 'deny', binding);
+          audit('policy', restrictionCode(restricted), 'deny', binding);
           return fail(`Permission denied: ${restricted}`);
         }
         let policyDecision: PolicyDecision;
@@ -410,7 +426,10 @@ export class ToolExecutor {
         } else if (policyDecision.kind === 'review') {
           // 明确 ask/deny 不可被 reviewer 改写，只有 policy 的 review 才能委托一次。
           const finalRestriction = this.opts.restrict?.(operation);
-          if (finalRestriction) return fail(`Permission denied: ${finalRestriction}`);
+          if (finalRestriction) {
+            audit('policy', restrictionCode(finalRestriction), 'deny', binding);
+            return fail(`Permission denied: ${finalRestriction}`);
+          }
           const started = Date.now();
           decision = await this.review(operation, policyDecision, context, signal, requestId);
           if (signal.aborted) return cancelled();
@@ -1018,7 +1037,7 @@ class ReviewerEventBus extends EventBus {
   }
   override emit(event: AgentEvent): void {
     if (event.type === 'model_request' || event.type === 'model_usage') {
-      this.#parent.emit({ ...event, ...this.#correlation, purpose: 'judge' });
+      this.#parent.emit({ ...event, ...this.#correlation, purpose: 'judge', modelRole: 'judge' });
     }
   }
   override track<T>(task: Promise<T>): Promise<T> {

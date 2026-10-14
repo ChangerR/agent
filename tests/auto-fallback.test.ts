@@ -92,7 +92,12 @@ async function assembled(
     (request) => {
       if (request.tools.length === 0)
         return typeof judgeResponse === 'function' ? judgeResponse(request) : judgeResponse;
-      if (typeof request.messages.at(-1)?.content !== 'string') return textResponse('done');
+      if (
+        typeof [...request.messages]
+          .reverse()
+          .find((m) => m.role !== 'user' || m.source !== 'runtime')?.content !== 'string'
+      )
+        return textResponse('done');
       return toolUseResponse([
         { id: `check-${++id}`, name: commandTool.name, input: { command: 'pnpm test' } },
       ]);
@@ -423,15 +428,19 @@ describe('模型规格与完整请求预算', () => {
     const result = await judge.review(operation({}, context), new AbortController().signal);
     expect(result.decision).toBe('ask');
     const payload = JSON.parse(fake.requests[0].messages[0].content as string);
-    const decoded = payload.context.previousReviews.map((record: Record<string, unknown>) => {
-      if (!record.userRequestRef) return record;
-      expect(record.userRequestRef).toBe('currentUserRequest.text');
-      const { userRequestRef: _, ...rest } = record;
-      return { ...rest, userRequest: payload.currentUserRequest.text };
+    const decoded = payload.previousReviews.map((record: Record<string, unknown>) => {
+      const { userRequestRef, cwdRef, ...rest } = record;
+      if (userRequestRef) expect(userRequestRef).toBe('currentUserRequest.text');
+      if (cwdRef) expect(cwdRef).toBe('operation.cwd');
+      return {
+        ...rest,
+        ...(userRequestRef ? { userRequest: payload.currentUserRequest.text } : {}),
+        ...(cwdRef ? { cwd: payload.operation.cwd } : {}),
+      };
     });
     expect(decoded).toEqual(audit.previousReviews);
     expect(context).toEqual(audit);
-    expect(payload.context.previousReviews[6].userRequest).toBe('只读检查；禁止修改尾部限制');
+    expect(payload.previousReviews[6].userRequest).toBe('只读检查；禁止修改尾部限制');
     expect(Buffer.byteLength(JSON.stringify(fake.requests[0]))).toBeLessThan(10_000);
   });
   it('已知模型在预算内完整审核较长参数与用户请求，不再固定卡在旧字符阈值', async () => {

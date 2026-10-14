@@ -60,7 +60,7 @@ export const MessageSchema = z.union([
   z
     .object({
       role: z.literal('user'),
-      source: z.enum(['summary', 'delegation', 'subagent', 'tool']).optional(),
+      source: z.enum(['summary', 'delegation', 'subagent', 'tool', 'runtime']).optional(),
       content: z.union([z.string(), z.array(UserBlockSchema)]),
     })
     .passthrough(),

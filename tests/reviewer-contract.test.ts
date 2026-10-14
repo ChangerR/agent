@@ -295,12 +295,10 @@ describe('reviewer budgets, provenance and cancellation', () => {
     });
     expect(data.context.conversation[0]).toEqual({ source: 'tool', text: malicious });
     expect(data.analysis).toEqual(current.analysis);
-    expect(data.policy).toMatchObject({ policyRevision: 4, configRevision: 'config-9' });
-    expect(data.provenance).toEqual({
-      sessionId: 'session-a',
-      runId: 'run-a',
-      toolCallId: 'tool-a',
-    });
+    expect(data.policy).toEqual({ decision: current.decision });
+    expect(data).not.toHaveProperty('provenance');
+    expect(data.policy).not.toHaveProperty('configRevision');
+    expect(data.policy).not.toHaveProperty('policyRevision');
   });
   it('requires current-user provenance and rejects mismatched cwd/context before using a model', async () => {
     const provider = new FakeProvider([textResponse(allow)]);
@@ -526,7 +524,7 @@ describe('provider selection, trace usage and prefix optimization', () => {
       decisionCacheHits: 0,
     });
   });
-  it('keeps provider prefix cache off by default and joins judge request/usage without duplicate calls', async () => {
+  it('omits explicit cache markers by default and joins judge request/usage without duplicate calls', async () => {
     const provider = new FakeProvider([textResponse(allow)]);
     const events = new EventBus();
     const requests: Array<Extract<AgentEvent, { type: 'model_request' }>> = [];
@@ -538,11 +536,21 @@ describe('provider selection, trace usage and prefix optimization', () => {
     expect(provider.requests[0]?.cache).toBeUndefined();
     expect(requests).toHaveLength(1);
     expect(usage).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      modelRole: 'judge',
+      runId: 'run-a',
+      toolCallId: 'tool-a',
+      size: { normalizedJsonBytes: Buffer.byteLength(JSON.stringify(provider.requests[0])) },
+      evidenceBytes: { currentUserRequest: expect.any(Number), analysis: expect.any(Number) },
+    });
     expect(usage[0]).toMatchObject({
       requestId: requests[0]?.requestId,
       purpose: 'judge',
+      modelRole: 'judge',
+      usageReported: true,
       usage: { inputTokens: 10, outputTokens: 10 },
     });
+    expect(usage[0]?.cache).toBeUndefined();
   });
 });
 
