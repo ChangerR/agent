@@ -114,6 +114,14 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 
 可用 `judgeModel` 指定兼容同一 provider / endpoint 的独立审批模型。项目未写该字段时继承全局配置，最终未指定时跟随当前模型；`"judgeModel": ""` 则明确跟随当前模型并覆盖全局指定值。跟随模式会随 `/model` 和恢复会话更新，显式指定的审批模型保持不变。`/permissions` 可查看实际加载的审批模型及来源；需要未命中规则的操作都询问时使用 `ask` 模式。
 
+## Windows 桌面工作台
+
+运行 `pnpm desktop` 启动 Electron + React 工作台，或运行 `pnpm desktop:package` 生成 Windows 应用目录。首次安装依赖后，若 Electron 二进制未下载，先运行 `node node_modules/electron/install.js`。
+
+桌面版复用现有 agent、项目配置、权限管线和会话；支持项目/会话、流式聊天、真实审批与停止、文件预览、受限 Git 检查和项目设置。可先选择“打开离线演示”，无需真实 key。已打包应用携带独立 Node 运行时。
+
+启动、打包、检查范围与验证说明见 [desktop/README.md](desktop/README.md)。
+
 ## 配置目录与作用域
 
 - 全局默认：`~/.agent/config.json`；项目只保留需要覆盖的 `<项目根>/agent.config.json`。首次运行 `pnpm dev` / CLI 会创建用户配置与本项目的 sessions / logs 状态目录；配置只写静态内置默认（默认 ask），不复制项目权限、环境变量或密钥，已有文件原样保留。`--help`、参数错误和 SDK 只读配置加载不创建文件。

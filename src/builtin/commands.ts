@@ -195,6 +195,24 @@ export function sessionCommandsPlugin(services: BuiltinCommandServices) {
   return definePlugin({
     manifest: { id: 'agentlab.session', version: '1.0.0', apiVersion: 1 },
     setup(ctx) {
+      ctx.provide.command('stats', {
+        description: '查看当前会话 token、缓存命中率，无需模型请求',
+        handler() {
+          const usage = services.session().tokenUsage;
+          const totalInput = usage.inputTokens + usage.cacheReadTokens;
+          const hitRate = totalInput
+            ? `${((usage.cacheReadTokens / totalInput) * 100).toFixed(1)}%`
+            : '暂无输入用量';
+          return text(
+            `当前会话累计用量（包括规划、压缩与审批请求）：\n` +
+              `输入（未命中缓存）：${usage.inputTokens.toLocaleString()} tokens\n` +
+              `输出：${usage.outputTokens.toLocaleString()} tokens\n` +
+              `缓存读取：${usage.cacheReadTokens.toLocaleString()} tokens\n` +
+              `缓存写入：${usage.cacheWriteTokens.toLocaleString()} tokens\n` +
+              `缓存命中率：${hitRate}（缓存读取 /（未命中输入 + 缓存读取））`,
+          );
+        },
+      });
       ctx.provide.command('save', {
         description: '保存当前会话',
         async handler(_input, context) {
