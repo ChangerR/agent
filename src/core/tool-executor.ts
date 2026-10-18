@@ -212,6 +212,26 @@ export class ToolExecutor {
         ...(durationMs !== undefined ? { durationMs } : {}),
       });
     };
+    const restrictedResult = (reason: string, binding: Binding) => {
+      const reasonCode = restrictionCode(reason);
+      // 执行约束拒绝也进入权限审计；只记录当前调用，不产生新的整请求拒绝锁。
+      // 已有的计划拒绝/用户拒绝仍由各自状态机保留，不能通过此事件解除。
+      events.emit({
+        type: 'permission_decision',
+        permissionScope: context.origin?.permissionScope,
+        rootPermissionScope: context.origin?.rootPermissionScope,
+        denialScope: 'invocation',
+        runId: context.runId,
+        requestId,
+        toolUseId: toolUse.id,
+        toolName: toolUse.name,
+        input: structuredClone(input),
+        phase: 'pipeline',
+        decision: { kind: 'deny', source: 'builtin', reasonCode, reason },
+      });
+      audit('policy', reasonCode, 'deny', binding);
+      return fail(`Permission denied: ${reason}`);
+    };
     const cancelled = () => {
       audit('execution', 'cancelled');
       return fail('Tool cancelled');
@@ -338,10 +358,7 @@ export class ToolExecutor {
           policyRevision: binding.policyRevision,
         });
         const restricted = this.opts.restrict?.(operation);
-        if (restricted) {
-          audit('policy', restrictionCode(restricted), 'deny', binding);
-          return fail(`Permission denied: ${restricted}`);
-        }
+        if (restricted) return restrictedResult(restricted, binding);
         let policyDecision: PolicyDecision;
         try {
           policyDecision = structuredClone(
@@ -426,10 +443,7 @@ export class ToolExecutor {
         } else if (policyDecision.kind === 'review') {
           // 明确 ask/deny 不可被 reviewer 改写，只有 policy 的 review 才能委托一次。
           const finalRestriction = this.opts.restrict?.(operation);
-          if (finalRestriction) {
-            audit('policy', restrictionCode(finalRestriction), 'deny', binding);
-            return fail(`Permission denied: ${finalRestriction}`);
-          }
+          if (finalRestriction) return restrictedResult(finalRestriction, binding);
           const started = Date.now();
           decision = await this.review(operation, policyDecision, context, signal, requestId);
           if (signal.aborted) return cancelled();

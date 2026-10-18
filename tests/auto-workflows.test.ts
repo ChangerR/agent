@@ -1,3 +1,4 @@
+import { selectPlan } from './helpers/plan-command.js';
 /** 默认装配的完整 auto 工作流；只替换 provider，真实工具、审批员、规划与子任务均保留。 */
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -190,7 +191,7 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
   });
   it('默认装配进入 Plan only 后保留专用读，写入、Bash 和子任务在模型之前拒绝', async () => {
     const f = await fixture({ judge: () => 'allow', respond: () => ({ allow: true }) });
-    await f.agent.dispatchCommand('/plan only');
+    await selectPlan(f.agent, 'only');
     expect((await f.agent.invokeTool('read_file', { path: 'README.md' })).content).toContain(
       'needle',
     );

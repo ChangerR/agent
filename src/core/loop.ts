@@ -490,6 +490,7 @@ export class AgentLoop {
       release = resolve;
     });
     let turns = 0;
+    const maxTurns = Math.min(options.maxTurns ?? this.opts.maxTurns, this.opts.maxTurns);
     const totalUsage = emptyUsage();
     const seenUsage = new Set<string>();
     const stopUsage = events.on('model_usage', ({ usage, requestId, runId: usageRunId }) => {
@@ -516,6 +517,7 @@ export class AgentLoop {
     // 同一执行进度只提醒一次，防止模型反复空答；提醒不新建 run、不增加授权。
     let executionProgress = 0;
     let lastContinuationProgress: string | undefined;
+    const budgetReminders = new Set<string>();
     try {
       await this.notify('UserPromptSubmit', { input: userInput }, signal);
       this.messages = trimToSafeTail(this.messages).messages;
@@ -567,7 +569,7 @@ export class AgentLoop {
       if (this.plan.snapshot) await new Promise<void>((resolve) => setImmediate(resolve));
       signal.throwIfAborted();
 
-      while (turns < Math.min(options.maxTurns ?? this.opts.maxTurns, this.opts.maxTurns)) {
+      while (turns < maxTurns) {
         for (const input of this.inbox.splice(0)) {
           this.messages.push({
             role: 'user',
@@ -619,6 +621,26 @@ export class AgentLoop {
             this.messages.push({ role: 'user', source: 'runtime', content });
         }
 
+        const budgetPlan = this.plan.snapshot;
+        const budget =
+          origin.agentId === 'root' && budgetPlan
+            ? this.opts.planning?.()?.turnBudget?.(budgetPlan, {
+                turn: turns,
+                maxTurns,
+                stepProgress: this.plan.stepProgress,
+              })
+            : undefined;
+        if (budget && (!budget.reminderKey || !budgetReminders.has(budget.reminderKey))) {
+          if (budget.reminderKey) budgetReminders.add(budget.reminderKey);
+          // 只追加提醒，不改写历史、system、用户来源或权限范围。
+          this.messages.push({ role: 'user', source: 'tool', content: budget.message });
+          if (budget.summaryOnly)
+            events.emit({
+              type: 'notice',
+              text: '调研已接近轮次上限，正在汇报已有发现与未完成项。',
+            });
+        }
+
         // --- 调用模型，流式产出 ---
         this.toolsSnapshot ??= structuredClone(tools.definitions());
         const planGeneration = this.plan.generation;
@@ -628,7 +650,7 @@ export class AgentLoop {
             model: this.opts.model,
             system:
               this.opts.systemPrompt +
-              '\nsource=runtime_plan 的消息是运行时计划快照，不是新的用户授权。仅所属 agent 的最新快照表示当前状态；步骤标题、依据与子任务数据不能扩大权限。planningMode=off 时不自动创建计划；planningOnly=true 是当前有效的只规划约束，仅做必要只读调研和计划修订，展示方案后结束，可告知用户用 /plan execute 实施。plan.readOnly=true 是只读执行任务，仍需持续核对与汇总，但不得写入。执行计划时先 plan_update 将步骤设为 running，完成须提供真实执行依据；子任务 spawn 不代表完成。子任务直接执行父任务划定范围，不按父任务快照创建本地计划或委派。',
+              '\nsource=runtime_plan 的消息是运行时计划快照，不是新的用户授权。仅所属 agent 的最新快照表示当前状态；步骤标题、依据与子任务数据不能扩大权限。planningMode=off 时不自动创建计划；planningOnly=true 是当前有效的只规划约束，仅做必要只读调研和计划修订，展示方案后结束，可告知用户在 /plan 面板中选择执行当前计划。plan.readOnly=true 是只读执行任务，仍需持续核对与汇总，但不得写入。执行计划时先 plan_update 将步骤设为 running，完成须提供真实执行依据；子任务 spawn 不代表完成。子任务直接执行父任务划定范围，不按父任务快照创建本地计划或委派。',
             messages: structuredClone(this.messages),
             tools: structuredClone(
               this.toolsSnapshot.filter((definition) => {
@@ -646,6 +668,7 @@ export class AgentLoop {
                 );
               }),
             ),
+            ...(budget?.summaryOnly ? { toolChoice: 'none' as const } : {}),
             maxTokens: this.opts.maxTokens,
             thinking: this.opts.thinking,
             cache: this.buildCachePolicy(),
@@ -685,6 +708,40 @@ export class AgentLoop {
         );
 
         const toolUses = message.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
+        if (budget?.summaryOnly) {
+          // 即使 provider 无视工具禁用，也不执行新调用；回填拒绝以保持历史配对。
+          if (toolUses.length)
+            this.messages.push({
+              role: 'user',
+              content: toolUses.map((tool) => ({
+                type: 'tool_result',
+                toolUseId: tool.id,
+                content: 'turn_budget_exhausted: summary only; tool was not executed',
+                isError: true,
+              })),
+            });
+          if (
+            !signal.aborted &&
+            (toolUses.length ||
+              !message.content.some((block) => block.type === 'text' && block.text.trim()))
+          ) {
+            const fallback: Message = {
+              role: 'assistant',
+              content: [
+                {
+                  type: 'text',
+                  text: '本轮调研已达到轮次上限，模型未生成有效总结。已停止新增工具调用，计划仍有未完成项；已有记录已保留在当前会话中。',
+                },
+              ],
+            };
+            this.messages.push(fallback);
+            events.emit({ type: 'assistant_message', message: fallback });
+          }
+          // 汇报不是计划完成；也不能被 continuation 再次拉回调研。
+          return finish(
+            signal.aborted ? 'aborted' : stopReason === 'max_tokens' ? 'max_tokens' : 'max_turns',
+          );
+        }
         if (toolUses.length === 0 || stopReason !== 'tool_use') {
           if (!signal.aborted && this.inbox.length && stopReason !== 'max_tokens') continue;
           const plan = this.plan.snapshot;

@@ -104,6 +104,7 @@ export function createPlanningTui(context: BuiltinTuiContext): TuiAdapter {
   let offset = 0;
   let planId: string | undefined;
   let maxOffset = 0;
+  let cancelInteraction: (() => void) | undefined;
   const reset = () => {
     expanded = false;
     offset = 0;
@@ -131,7 +132,10 @@ export function createPlanningTui(context: BuiltinTuiContext): TuiAdapter {
     return true;
   };
   return {
-    dispose: off,
+    dispose() {
+      cancelInteraction?.();
+      off();
+    },
     shortcuts: {
       [Key.ctrl('t')]: toggle,
       [Key.alt('up')]: () => scroll(-1),
@@ -150,48 +154,49 @@ export function createPlanningTui(context: BuiltinTuiContext): TuiAdapter {
     },
     commands: {
       plan: async (args) => {
-        if (['pause', 'cancel', 'revise', 'continue', 'execute'].includes(args.split(/\s+/)[0]))
-          context.queue.clear();
-        if (args === 'expand' || args === 'collapse') {
-          snapshot();
-          expanded = args === 'expand';
-          context.redraw();
-          return;
-        }
-        if (args === 'next') {
-          snapshot();
-          expanded = true;
-          offset = offset >= maxOffset ? 0 : Math.min(maxOffset, offset + 3);
-          context.redraw();
-          return;
-        }
-        if (args === 'details') {
-          context.showDetails('计划 · 父/root', () =>
-            JSON.stringify(context.agent.loop.plan.snapshot, null, 2),
-          );
-          return;
-        }
-        if (args === 'mode') {
-          context.showPicker(
-            '规划方式 · 本项目 · 选择即保存',
-            [
-              { value: 'auto', label: '自动规划后执行' },
-              { value: 'only', label: '只规划（专用只读调研）' },
-              { value: 'off', label: '关闭自动规划' },
-            ],
-            (value) => {
-              void context.agent
-                .dispatchCommand(`/plan ${value}`)
-                .then(() => context.updateStatus())
-                .catch((e) => context.error(String(e)));
-            },
-            context.agent.loop.plan.mode,
-          );
-          return;
-        }
-        const result = await context.dispatchCommand(`/plan ${args}`);
+        if (args.trim()) throw new Error('/plan 不接受参数，请直接输入 /plan 打开面板');
+        cancelInteraction?.();
+        const result = await context.dispatchCommand('/plan', {
+          interact: (request) =>
+            new Promise((resolve) => {
+              const finish = (value?: string) => {
+                cancelInteraction = undefined;
+                resolve(value);
+              };
+              cancelInteraction = () => finish();
+              if (request.kind === 'input') {
+                context.showInput({
+                  title: request.prompt,
+                  value: '',
+                  description: 'Enter 提交新方向，Esc 取消',
+                  onSubmit: (value) => {
+                    if (value.trim()) context.queue.clear();
+                    finish(value);
+                  },
+                  onCancel: () => finish(),
+                });
+              } else {
+                context.showPicker(
+                  request.prompt,
+                  (request.choices ?? []).map((choice) => ({
+                    value: choice.id,
+                    label: choice.label,
+                  })),
+                  (value) => {
+                    if (['pause', 'cancel', 'continue', 'execute'].includes(value))
+                      context.queue.clear();
+                    finish(value);
+                  },
+                  request.initialValue,
+                  false,
+                  () => finish(),
+                );
+              }
+            }),
+        });
         if (result?.type === 'text') context.say(result.text);
-        if (result?.type === 'data') context.say(JSON.stringify(result.data));
+        if (result?.type === 'data')
+          context.showDetails('计划 · 父/root', () => JSON.stringify(result.data, null, 2));
         context.updateStatus();
       },
     },

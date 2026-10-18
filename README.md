@@ -20,7 +20,7 @@
 
 - 事件驱动的 **agent loop**（core 不碰 UI，TUI 只是事件订阅者）
 - **规范化协议层** + 两个 provider 参考实现：Anthropic Messages API、OpenAI 兼容 API（DeepSeek/Kimi/通义/vLLM…）
-- **工具系统**：read_file / write_file / edit_file / bash / glob / grep，只读工具并行执行
+- **工具系统**：read_file / write_file / edit_file / bash / glob / grep，只读工具并行执行；read_file 默认返回 200 行，未读完时提示续读 offset，显式 limit 可调整范围
 - **权限引擎**：deny → 不可降级约束 → ask → 已验证精确授权 → 模式默认值的决策管线；ask/auto/yolo 三模式；"始终允许"会话规则；审计日志
 - **钩子**：PreToolUse / PostToolUse / UserPromptSubmit / TurnEnd
 - **MCP**：stdio + streamable-http，工具以 `mcp__server__tool` 桥接

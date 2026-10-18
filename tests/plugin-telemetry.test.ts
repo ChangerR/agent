@@ -39,13 +39,21 @@ describe('telemetry-jsonl 脱敏与注销', () => {
       toolName: 'bash',
       input: { token: 'SECRET_TOKEN' },
       phase: 'pipeline',
-      decision: { kind: 'ask', source: 'mode', reason: 'SECRET_REASON' },
+      denialScope: 'invocation',
+      decision: {
+        kind: 'deny',
+        source: 'builtin',
+        reasonCode: 'task_read_only',
+        reason: 'SECRET_REASON',
+      },
     });
     telemetry.onEvent({ type: 'error', error: new Error('SECRET_ERROR') });
     const saved = await fs.readFile(target, 'utf8');
     expect(saved).not.toContain('SECRET');
     expect(saved).toContain('request');
     expect(saved).toContain('bash');
+    expect(saved).toContain('"denialScope":"invocation"');
+    expect(saved).toContain('"reasonCode":"task_read_only"');
     await telemetry.dispose?.();
     telemetry.onEvent({ type: 'notice', text: 'after disposal' });
     expect(await fs.readFile(target, 'utf8')).toBe(saved);

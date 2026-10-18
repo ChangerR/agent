@@ -10,6 +10,7 @@ import { editFileTool } from '../src/tools/edit.js';
 import { globTool } from '../src/tools/glob.js';
 import { buildRgArgs, grepTool } from '../src/tools/grep.js';
 import { readFileTool } from '../src/tools/read.js';
+import { jsonInput } from '../src/core/permission/input-validation.js';
 import { fsCaseSensitive, matchPath, normalizeGrepLine } from '../src/tools/text.js';
 import { writeFileTool } from '../src/tools/write.js';
 
@@ -35,7 +36,39 @@ describe('read_file', () => {
 
   it('offset/limit 分页', async () => {
     const r = await readFileTool.execute({ path: 'a.txt', offset: 2, limit: 1 }, ctx());
-    expect(r.content).toBe('2\tworld');
+    expect(r.content).toBe('2\tworld\n[Showing lines 2-2 of 3; continue with offset=3]');
+  });
+
+  it('大文件默认分页且能按提示无遗漏续读，显式 limit 可以扩大范围', async () => {
+    await writeFile(
+      join(tmp, 'large.txt'),
+      Array.from({ length: 405 }, (_, i) => `line-${i + 1}`).join('\n'),
+    );
+    const first = await readFileTool.execute({ path: 'large.txt' }, ctx());
+    expect(first.content).toContain('200\tline-200');
+    expect(first.content).not.toContain('201\tline-201');
+    expect(first.content).toContain('of 405; continue with offset=201');
+    const second = await readFileTool.execute({ path: 'large.txt', offset: 201 }, ctx());
+    expect(second.content).toMatch(/^201\tline-201\n/);
+    expect(second.content).toContain('continue with offset=401');
+    const last = await readFileTool.execute({ path: 'large.txt', offset: 401 }, ctx());
+    expect(last.content).toBe(
+      Array.from({ length: 5 }, (_, i) => `${401 + i}\tline-${401 + i}`).join('\n'),
+    );
+    const explicit = await readFileTool.execute({ path: 'large.txt', limit: 405 }, ctx());
+    expect(explicit.content).toContain('405\tline-405');
+    expect(explicit.content).not.toContain('continue with');
+  });
+
+  it.each([
+    { offset: 0 },
+    { offset: -1 },
+    { offset: 1.5 },
+    { limit: 0 },
+    { limit: -1 },
+    { limit: 1.5 },
+  ])('分页参数 %j 在权限与执行之前拒绝', (range) => {
+    expect(() => jsonInput({ path: 'a.txt', ...range }, readFileTool.inputSchema)).toThrow();
   });
 
   it('CRLF 和 BOM 不出现在行内容里', async () => {

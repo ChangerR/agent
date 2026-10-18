@@ -106,6 +106,8 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `~/.agent/state/projects/<项目 ID>/logs/*.jsonl`。
 
+计划等执行约束的提前拒绝同时记录 `permission_decision` 和 `tool_execution`，用 requestId/toolUseId（工具审计中的 toolCallId）关联。此类事件标明 `denialScope: invocation`，仅记录当前调用的拒绝，不额外锁定整请求；已有的用户拒绝与计划锁不会因此解除。默认脱敏日志保留 scope/reasonCode，不记录参数和原始原因。
+
 ## 5. 权限策略与唯一执行门
 
 `src/core/tool-executor.ts` 是所有受支持工具调用的唯一入口；`src/builtin/policy/` 实现默认确定性策略，`src/builtin/reviewer-model/` 实现严格模型审批。默认能力 ID 为 `deterministic` / `model`，默认模式是 `ask`。
