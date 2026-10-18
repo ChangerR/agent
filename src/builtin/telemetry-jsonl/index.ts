@@ -107,6 +107,7 @@ export function redactedEvent(event: Readonly<TelemetryEvent>): Record<string, u
     case 'permission_decision':
       return {
         type: event.type,
+        denialScope: event.denialScope,
         runId: event.runId,
         requestId: event.requestId,
         toolUseId: event.toolUseId,

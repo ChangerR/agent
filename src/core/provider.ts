@@ -35,6 +35,8 @@ export interface ChatRequest {
   system: string;
   messages: Message[];
   tools: ToolDefinition[];
+  /** 保留工具定义与历史，仅限制本次响应是否允许产生工具调用。 */
+  toolChoice?: 'auto' | 'none';
   maxTokens?: number;
   thinking?: ThinkingLevel;
   cache?: CachePolicy;

@@ -697,7 +697,8 @@ export function startTui(
     agent.events.on('loop_end', (e) => {
       streams.finish();
       if (e.reason === 'aborted') say('本轮已中断');
-      if (e.reason === 'max_turns') say('已达到轮次上限，可继续输入');
+      if (e.reason === 'max_turns')
+        say(`本轮已停止：达到 ${e.turns} 轮上限，未完成项仍保留。可输入下一步方向继续。`);
       if (e.reason === 'max_tokens') say('回复达到输出上限，内容可能不完整');
       addMessage(new Spacer(1));
       toolMessages.clear();

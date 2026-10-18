@@ -169,6 +169,7 @@ export function toOpenAIParams(req: ChatRequest): OpenAI.ChatCompletionCreatePar
     model: req.model,
     messages: [{ role: 'system', content: req.system }, ...toOpenAIMessages(req.messages)],
     tools: req.tools.length > 0 ? toOpenAITools(req.tools) : undefined,
+    ...(req.toolChoice ? { tool_choice: req.toolChoice } : {}),
     max_tokens: req.maxTokens,
     stream: true,
     stream_options: { include_usage: true },

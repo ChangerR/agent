@@ -38,6 +38,8 @@ export class CommandRegistry {
     const args = match?.[2] ?? '';
     const entry = this.entries.get(name);
     if (!entry) throw new Error(`未知命令: /${name}，输入 /help 查看帮助`);
+    if (entry.command.acceptsArguments === false && args)
+      throw new Error(`/${name} 不接受参数，请直接输入 /${name}`);
     let input: Record<string, unknown> = { args };
     // JSON 参数支持插件的结构化脚本调用；普通参数保留原文。
     if (args.startsWith('{')) {

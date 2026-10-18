@@ -1,3 +1,4 @@
+import { selectPlan } from './helpers/plan-command.js';
 /** 离线对抗回归：模型继续尝试绕路，真实 runtime 必须在执行前阻止。 */
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFile, rm, writeFile } from 'node:fs/promises';
@@ -212,7 +213,7 @@ describe('拒绝请求的 runtime 隔离', () => {
     await f.agent.loop.run('读取 note.txt，拒绝后停止。');
     expect(f.agent.loop.plan.snapshot?.steps[0].status).toBe('blocked');
     f.agent.loop.plan.clear();
-    await f.agent.dispatchCommand('/plan off');
+    await selectPlan(f.agent, 'off');
     // 仅作为模式切换不能解锁的反例；其他验收都保持正常 auto 和默认 reviewer。
     f.agent.permission.setMode('yolo');
     expect(f.agent.loop.plan.snapshot).toBeUndefined();

@@ -97,13 +97,22 @@ export interface PlanningStrategy {
   ): Promise<{ goal: string; steps: string[]; readOnly?: boolean } | undefined>;
   /** 模型准备结束时，由规划插件决定是否提醒它继续；loop 仍负责预算和中断。 */
   continuation?(plan: Plan): string | undefined;
+  /** 插件决定预算提醒与汇报时机；loop 执行禁用工具，且不增加请求预算或授权。 */
+  turnBudget?(
+    plan: Plan,
+    budget: {
+      turn: number;
+      maxTurns: number;
+      stepProgress?: { stepId: string; successfulCalls: number };
+    },
+  ): { message: string; summaryOnly?: boolean; reminderKey?: string } | undefined;
   /** 只声明可用于调研的已注册工具身份；权限管线仍然必须通过。 */
   readTools: readonly { name: string; ownerPlugin: string }[];
   controlTools: readonly { name: string; ownerPlugin: string; planningSafe?: boolean }[];
 }
 export class PlanController {
   private value?: Plan;
-  private successful = new Set<string>();
+  private successful = new Map<string, number>();
   private calls = new Map<string, string>();
   private epoch = 0;
   private denialEpoch = 0;
@@ -154,6 +163,11 @@ export class PlanController {
     return this.value?.steps.find(
       (s) => s.id === this.value?.activeStepId && s.status === 'running',
     );
+  }
+  /** 仅统计本次进程实际结算的成功工具；不持久化，也不因提示或状态调用增加。 */
+  get stepProgress() {
+    const step = this.current;
+    return step && { stepId: step.id, successfulCalls: this.successful.get(step.id) ?? 0 };
   }
   private changed(invalidateExecution = true) {
     if (invalidateExecution) this.epoch++;
@@ -222,6 +236,8 @@ export class PlanController {
     revision: number,
     input: {
       stepId?: string;
+      /** 完成当前步骤时原子启动一个 pending 步骤，不自动选择或跳过阻塞。 */
+      nextStepId?: string;
       status?: 'running' | 'blocked' | 'completed';
       evidence?: string;
       evidenceStepIds?: string[];
@@ -237,14 +253,39 @@ export class PlanController {
       throw new Error(`plan_denied: explicit user continuation required: ${p.denialReason}`);
     if (['paused', 'cancelled', 'interrupted', 'completed'].includes(p.phase))
       throw new Error('Plan requires explicit user continuation');
+    // 切换条件先全部校验，失败不得提交当前步骤的完成证据或改变 revision。
+    const nextStep = p.steps.find((step) => step.id === input.nextStepId);
+    if (input.nextStepId !== undefined) {
+      if (input.steps || input.status !== 'completed')
+        throw new Error('nextStepId requires completing a single step');
+      if (!nextStep || nextStep.id === input.stepId || nextStep.status !== 'pending')
+        throw new Error('nextStepId must identify a different pending step');
+      if (
+        p.steps.some(
+          (step) => step.id !== input.stepId && step.status === 'running' && !step.children.length,
+        )
+      )
+        throw new Error('Finish or block the current parent step first');
+    }
     if (input.steps) {
+      // 旧工具必须先结算，不能删除或改名后把其结果归给另一项工作。
+      for (const stepId of this.calls.values()) {
+        const old = p.steps.find((step) => step.id === stepId)!;
+        const replacement = input.steps.find((step) => step.id === stepId);
+        if (!replacement || replacement.title !== old.title)
+          throw new Error('Revision must retain in-flight steps unchanged');
+      }
       const next = input.steps.map((s) => {
         const old = p.steps.find((x) => x.id === s.id);
         if (s.id && !old) throw new Error('Unknown stable step id');
         if (old && old.title !== s.title && (old.status === 'completed' || old.children.length))
           throw new Error('Retain completed/bound steps; add a new step for changed work');
         return old
-          ? { ...old, title: s.title }
+          ? {
+              ...old,
+              title: s.title,
+              ...(old.title !== s.title ? { evidence: undefined, evidenceStepIds: undefined } : {}),
+            }
           : { id: randomUUID(), title: s.title, status: 'pending' as const, children: [] };
       });
       if (
@@ -256,7 +297,16 @@ export class PlanController {
         )
       )
         throw new Error('Revision must retain completed and child-bound steps');
-      const parsed = PlanSchema.parse({ ...p, goal: input.goal ?? p.goal, steps: next });
+      const parsed = PlanSchema.parse({
+        ...p,
+        goal: input.goal ?? p.goal,
+        steps: next,
+        activeStepId: next.some((step) => step.id === p.activeStepId) ? p.activeStepId : undefined,
+      });
+      for (const old of p.steps) {
+        if (!next.some((step) => step.id === old.id && step.title === old.title))
+          this.successful.delete(old.id);
+      }
       this.value = parsed;
     } else {
       const s = p.steps.find((s) => s.id === input.stepId);
@@ -302,6 +352,11 @@ export class PlanController {
         throw new Error('Blocked steps require a reason');
       s.status = input.status;
       s.reason = input.status === 'blocked' ? input.reason : undefined;
+      if (nextStep) {
+        nextStep.status = 'running';
+        nextStep.reason = undefined;
+        p.activeStepId = nextStep.id;
+      }
     }
     const next = this.value!;
     next.phase = next.steps.every((s) => s.status === 'completed')
@@ -383,12 +438,19 @@ export class PlanController {
         !operation.analysis.effects.length ||
         operation.analysis.effects.some((effect) => effect.kind !== 'read'))
     ) {
-      // 未执行的未知命令不是步骤执行失败；保留可用只读工具继续调查的运行步骤。
+      // 未执行的未知命令（含管道格式化 execute）不应阻断后续安全读取。
+      // 已识别写入、网络、危险与敏感/外部目标仍保持原来的阻塞语义。
       // 只撤销可信调用登记，不能通过伪造工具错误文本绕过实际失败或明确拒绝。
       if (
         operation.toolCallId &&
         operation.analysis?.completeness !== 'complete' &&
-        !operation.analysis?.effects.some((effect) => !['read', 'unknown'].includes(effect.kind)) &&
+        operation.analysis?.reasonCode !== 'shell_dangerous' &&
+        !operation.analysis?.effects.some(
+          (effect) =>
+            !['read', 'unknown', 'execute'].includes(effect.kind) ||
+            effect.scope === 'sensitive' ||
+            effect.scope === 'external',
+        ) &&
         this.current?.status === 'running'
       ) {
         this.calls.delete(operation.toolCallId);
@@ -419,7 +481,7 @@ export class PlanController {
       s.reason = content.slice(0, 2000);
       this.changed();
     } else {
-      this.successful.add(s.id);
+      this.successful.set(s.id, (this.successful.get(s.id) ?? 0) + 1);
       if (!['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)) s.reason = undefined;
     }
   }

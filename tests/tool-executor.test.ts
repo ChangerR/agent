@@ -98,12 +98,21 @@ describe('ToolExecutor 唯一授权门', () => {
     '限制 %s 保留脱敏类别，不再误记为 child 权限',
     async (code) => {
       const f = fixture({ restrict: () => `${code}: private task detail` });
+      const decisions: AgentEvent[] = [];
+      f.events.on('permission_decision', (event) => decisions.push(event));
       expect((await f.run()).isError).toBe(true);
       expect(f.execute).not.toHaveBeenCalled();
       expect(f.audits).toContainEqual(
         expect.objectContaining({ phase: 'policy', decision: 'deny', reasonCode: code }),
       );
       expect(JSON.stringify(f.audits)).not.toContain('private task detail');
+      expect(decisions).toContainEqual(
+        expect.objectContaining({
+          type: 'permission_decision',
+          denialScope: 'invocation',
+          decision: expect.objectContaining({ kind: 'deny', reasonCode: code }),
+        }),
+      );
     },
   );
 

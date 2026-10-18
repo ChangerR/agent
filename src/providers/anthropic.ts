@@ -221,6 +221,7 @@ export function buildAnthropicBody(
     system: toAnthropicSystem(req.system, systemOn, ttl),
     messages: toAnthropicMessages(req.messages, new Set(breakpoints), ttl),
     tools: req.tools.length > 0 ? toAnthropicTools(req.tools, toolsOn, ttl) : undefined,
+    ...(req.toolChoice ? { tool_choice: { type: req.toolChoice } } : {}),
     // thinking 开启时 max_tokens 必须大于 budget_tokens
     max_tokens: thinkingOn
       ? Math.max(req.maxTokens ?? 8192, thinkingBudget + 4096)

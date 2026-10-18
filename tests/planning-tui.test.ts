@@ -1,6 +1,6 @@
 /** 普通输入经过真实 TUI、规划插件和工具执行；只替换模型及终端 I/O。 */
 import { afterEach, expect, it, vi } from 'vitest';
-import { rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -53,6 +53,52 @@ const gate = () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+it('/plan 直接打开面板，选择即保存，Esc 不写入，旧参数明确拒绝', async () => {
+  const cwd = await mkdtempProject(join(tmpdir(), 'agent-plan-menu-'));
+  const agent = await createAgent(cwd, {
+    autoSaveSessions: false,
+    config: { provider: 'fake', model: 'demo', capabilities: { reviewer: false } },
+  });
+  vi.stubEnv('AGENTLAB_SCREEN', 'alt');
+  let renderer!: TuiAltScreen;
+  const original = TuiAltScreen.prototype.start;
+  vi.spyOn(TuiAltScreen.prototype, 'start').mockImplementation(function (this: TuiAltScreen) {
+    renderer = this;
+    return original.call(this);
+  });
+  const terminal = new MemoryTerminal(120, 40);
+  const session = startTui(agent, { terminal, onExit: vi.fn() });
+  const screen = () => renderer.getScreenLines().map(stripTerminalSequences).join('\n');
+  const requests: unknown[] = [];
+  agent.events.on('model_request', (e) => requests.push(e));
+  try {
+    terminal.input?.('/plan');
+    terminal.input?.('\r');
+    await vi.waitFor(() => expect(screen()).toContain('规划方式'));
+    expect(screen()).toContain('只规划');
+    terminal.input?.('\x1b[B');
+    terminal.input?.('\r');
+    await vi.waitFor(() => expect(agent.loop.plan.mode).toBe('only'));
+    const saved = await readFile(join(cwd, 'agent.config.json'), 'utf8');
+    expect(JSON.parse(saved).pluginConfig['agentlab.planning'].mode).toBe('only');
+    terminal.input?.('/plan');
+    terminal.input?.('\r');
+    await vi.waitFor(() => expect(screen()).toContain('关闭自动规划'));
+    terminal.input?.('\x1b[B');
+    terminal.input?.('\x1b');
+    await vi.waitFor(() => expect(screen()).toContain('已取消'));
+    expect(await readFile(join(cwd, 'agent.config.json'), 'utf8')).toBe(saved);
+    terminal.input?.('/plan only');
+    terminal.input?.('\r');
+    await vi.waitFor(() => expect(screen()).toContain('/plan 不接受参数'));
+    expect(requests).toHaveLength(0);
+  } finally {
+    session?.stop();
+    await agent.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
 });
 
 it.each([

@@ -139,7 +139,7 @@ it.skipIf(process.platform !== 'linux').each([
       rmSync(join(f.home, 'release'));
       rmSync(join(f.project, 'pty-result.txt'));
       const mark = rows().length;
-      terminal.send('/plan auto 再实现并验证');
+      terminal.send('再实现并验证');
       await terminal.wait(
         () =>
           rows()
@@ -147,7 +147,14 @@ it.skipIf(process.platform !== 'linux').each([
             .filter((r) => r.kind === 'request' && r.input === '再实现并验证').length >= 2,
         '第二轮未开始',
       );
-      terminal.send('/plan pause');
+      const pauseMenuOffset = terminal.output.length;
+      terminal.send('/plan');
+      await terminal.wait(
+        () => terminal.output.slice(pauseMenuOffset).includes('规划方式'),
+        '暂停面板未显示',
+      );
+      for (let i = 0; i < 7; i++) terminal.key('\x1b[B');
+      terminal.key('\r');
       await terminal.wait(
         () =>
           rows()
@@ -155,7 +162,14 @@ it.skipIf(process.platform !== 'linux').each([
             .some((r) => r.event?.plan?.phase === 'paused'),
         '暂停未显示',
       );
-      terminal.send('/plan cancel');
+      const cancelMenuOffset = terminal.output.length;
+      terminal.send('/plan');
+      await terminal.wait(
+        () => terminal.output.slice(cancelMenuOffset).includes('规划方式'),
+        '取消面板未显示',
+      );
+      for (let i = 0; i < 8; i++) terminal.key('\x1b[B');
+      terminal.key('\r');
       await terminal.wait(
         () =>
           rows()
@@ -163,7 +177,7 @@ it.skipIf(process.platform !== 'linux').each([
             .some((r) => r.event?.plan?.phase === 'cancelled'),
         '取消未显示',
       );
-      terminal.send('/plan mode');
+      terminal.send('/plan');
       await terminal.wait(() => terminal.output.includes('规划方式'), '模式选择器未显示');
       terminal.key('\x1b[B');
       terminal.key('\r');
@@ -173,7 +187,7 @@ it.skipIf(process.platform !== 'linux').each([
       );
       const saved = readFileSync(join(f.project, 'agent.config.json'), 'utf8');
       const modeOffset = terminal.output.length;
-      terminal.send('/plan mode');
+      terminal.send('/plan');
       await terminal.wait(
         () => terminal.output.slice(modeOffset).includes('规划方式'),
         '取消设置菜单未显示',
@@ -194,7 +208,9 @@ it.skipIf(process.platform !== 'linux').each([
       await terminal.wait(() => terminal.output.includes('就绪'), '重启未就绪');
       expect(terminal.output).not.toContain('计划 0/2');
       terminal.send('/plan');
-      await terminal.wait(() => terminal.output.includes('"mode":"only"'), '重启未加载已保存设置');
+      await terminal.wait(() => terminal.output.includes('规划方式'), '重启后面板未打开');
+      expect(f.readConfig().pluginConfig?.['agentlab.planning']?.mode).toBe('only');
+      terminal.key('\x1b');
       const restoreOffset = terminal.output.length;
       terminal.send('/resume latest');
       await terminal.wait(

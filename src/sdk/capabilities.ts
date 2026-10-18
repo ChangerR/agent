@@ -185,6 +185,8 @@ export interface CommandContext {
 }
 export interface Command {
   description: string;
+  /** false 时仅接受裸命令；文本与 JSON 参数均在调度前拒绝。 */
+  acceptsArguments?: boolean;
   aliases?: readonly string[];
   inputSchema?: Record<string, unknown>;
   requiredCapabilities?: readonly { kind: CapabilityKind; id: string }[];
