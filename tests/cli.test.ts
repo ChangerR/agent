@@ -356,6 +356,46 @@ async function snapshot(name: string, lines: string[]) {
 }
 
 describe('TUI 审批模型运行状态', () => {
+  it('底栏与 stats 使用缓存写入分母，并明确缺失字段与模型角色', async () => {
+    const ui = await mountTui();
+    try {
+      ui.agent.events.emit({
+        type: 'model_request',
+        requestId: 'cache-fixture',
+        purpose: 'agent',
+        modelRole: 'main',
+        provider: 'anthropic',
+        request: { model: 'cache-model', system: '', messages: [], tools: [] },
+      });
+      ui.agent.events.emit({
+        type: 'model_usage',
+        requestId: 'cache-fixture',
+        purpose: 'agent',
+        modelRole: 'main',
+        usageReported: true,
+        cache: { hitTokens: 900, missTokens: 130 },
+        usage: { inputTokens: 10, outputTokens: 1, cacheReadTokens: 900, cacheWriteTokens: 120 },
+      });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('cache 87%'));
+      ui.send('/stats');
+      await vi.waitFor(() =>
+        expect(stripTerminalSequences(ui.terminal.output)).toContain(
+          'anthropic / cache-model / main: 87%',
+        ),
+      );
+      ui.agent.events.emit({
+        type: 'model_usage',
+        requestId: 'missing-cache',
+        purpose: 'judge',
+        usageReported: true,
+        usage: { inputTokens: 100, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      });
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('cache 87%（部分）'));
+    } finally {
+      await ui.dispose();
+    }
+  });
+
   it('会话切换中状态可读、控制拒绝；真实底栏渲染在恢复后继续显示新 child', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

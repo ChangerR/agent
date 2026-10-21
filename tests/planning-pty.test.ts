@@ -210,7 +210,12 @@ it.skipIf(process.platform !== 'linux').each([
       terminal.send('/plan');
       await terminal.wait(() => terminal.output.includes('规划方式'), '重启后面板未打开');
       expect(f.readConfig().pluginConfig?.['agentlab.planning']?.mode).toBe('only');
+      const dismissOffset = terminal.output.length;
       terminal.key('\x1b');
+      await terminal.wait(
+        () => terminal.output.slice(dismissOffset).includes('就绪'),
+        '关闭重启后的面板未返回输入',
+      );
       const restoreOffset = terminal.output.length;
       terminal.send('/resume latest');
       await terminal.wait(

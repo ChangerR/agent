@@ -13,6 +13,7 @@ import type { Plugin } from '../sdk/plugin.js';
 import type { Tool } from '../core/registry.js';
 import type { McpServerConfig } from './config.js';
 import { loadMcpConfig } from './config.js';
+import { McpResultConfig, McpResultStore } from './results.js';
 
 interface ConnectedServer {
   name: string;
@@ -23,6 +24,15 @@ interface ConnectedServer {
 export class McpClientManager {
   private servers: ConnectedServer[] = [];
   private closing?: Promise<void>;
+  private readonly results: McpResultStore;
+
+  constructor(options: { maxInlineChars?: number } = {}) {
+    this.results = new McpResultStore(options.maxInlineChars);
+  }
+
+  resultReader(): Tool {
+    return this.results.reader();
+  }
 
   async connect(
     name: string,
@@ -95,7 +105,10 @@ export class McpClientManager {
         const text = content
           .map((c) => (c.type === 'text' ? (c.text ?? '') : JSON.stringify(c)))
           .join('\n');
-        return { content: text || '(no content)', isError: Boolean(result.isError) };
+        return this.results.retain(
+          { content: text || '(no content)', isError: Boolean(result.isError) },
+          ctx,
+        );
       },
     }));
   }
@@ -135,9 +148,15 @@ export class McpClientManager {
 export function mcpPlugin(configPath: string): Plugin {
   return {
     manifest: { id: 'agentlab.mcp-client', version: '1.0.0', apiVersion: 1 },
+    config: {
+      schema: McpResultConfig,
+      ownedFields: ['maxInlineChars'],
+      defaults: {},
+      applyMode: 'newSession',
+    },
     async setup(ctx) {
       const config = loadMcpConfig(configPath);
-      const manager = new McpClientManager();
+      const manager = new McpClientManager(McpResultConfig.parse(ctx.config.value));
       ctx.onDispose(() => manager.closeAll());
       for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
         let client: Client | undefined;
@@ -161,6 +180,8 @@ export function mcpPlugin(configPath: string): Plugin {
           );
         }
       }
+      if (manager.serverNames().length > 0)
+        ctx.provide.tool('mcp_read_result', manager.resultReader());
     },
   };
 }

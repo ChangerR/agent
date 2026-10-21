@@ -165,7 +165,9 @@ export class ToolRegistry {
   }
 
   list(): Tool[] {
-    return [...this.state.tools.values()];
+    return [...this.state.tools.values()].sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
   }
 
   /** 发给模型的工具定义清单 */
@@ -173,7 +175,19 @@ export class ToolRegistry {
     return this.list().map((t) => ({
       name: t.name,
       description: t.description,
-      inputSchema: t.inputSchema,
+      inputSchema: canonicalSchema(t.inputSchema) as Record<string, unknown>,
     }));
   }
+}
+
+/** 只规范化 schema 对象的键；数组顺序与历史工具参数保持原样。 */
+function canonicalSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalSchema);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalSchema((value as Record<string, unknown>)[key])]),
+    );
+  return value;
 }
