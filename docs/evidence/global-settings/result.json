@@ -1,0 +1,940 @@
+{
+  "status": "passed",
+  "platform": "linux",
+  "macNativeTested": false,
+  "realEntry": "run.mjs",
+  "realSafeStorage": "gnome_libsecret with isolated GNOME Keyring/DBus",
+  "realIPCWorkerFilesystem": true,
+  "globalSections": [
+    {
+      "id": "configuration-connection",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-budgets",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-permissions",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-files",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-additional",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.provider-anthropic",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.provider-openai",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.provider-connections",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.local-tools",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.mcp",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.reviewer-model",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.compaction-summary",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.telemetry-jsonl",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.subagents",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-agentlab.planning",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-model-catalog",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/models.json"
+        }
+      ]
+    },
+    {
+      "id": "configuration-mcp-servers",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/mcp.json"
+        }
+      ]
+    },
+    {
+      "id": "capability-selection",
+      "scopes": [
+        {
+          "scope": "global",
+          "path": "/tmp/agentlab-global-ui-6YocZU/home/.agentlab/config.json"
+        }
+      ]
+    }
+  ],
+  "paidRequests": 0,
+  "plaintextLeakScan": "passed across isolated HOME/config/state/logs/profile/projects",
+  "passed": [
+    "无项目首次启动即可打开完整全局设置；读取不写默认或建立会话",
+    "全局 Provider 新增与 endpoint 配置；没有项目配置写入",
+    "UI 直接输入虚构 key，真实 gnome_libsecret 加密保存，读取和快照不泄露",
+    "全局自定义模型规格与主任务默认值可在没有项目时保存",
+    "打开两个不同项目，继承相同全局连接/模型/key，真实本地 Provider 请求采用",
+    "项目覆盖必须显式选择，模型覆盖后可恢复全局继承",
+    "项目专用设置返回全局时回到有效全局页面",
+    "真实保存冲突保留输入并显示失败，不覆盖其他写入",
+    "真实密钥写入失败提示且原 key 保留，密码输入不会进入快照",
+    "逐屏布局验收：正常、窄窗口与125%缩放，输入/按钮对齐且无横向溢出",
+    "关闭并重启 App 后全局配置和真实系统解密持久化，两个项目仍继承",
+    "UI 清除全局 key，密文删除、引用取消、重启不再读取旧 key",
+    "清除后新运行时不再使用旧 key（仅向本地假服务发出未授权请求）",
+    "真实 basic_text 后端拒绝 UI 和 IPC 保存，无明文降级"
+  ],
+  "requests": [
+    {
+      "authorized": true,
+      "model": "local-offline-model",
+      "task": true
+    },
+    {
+      "authorized": true,
+      "model": "local-offline-model",
+      "task": true
+    },
+    {
+      "authorized": true,
+      "model": "local-offline-model",
+      "task": true
+    },
+    {
+      "authorized": true,
+      "model": "local-offline-model",
+      "task": true
+    },
+    {
+      "authorized": false,
+      "model": "local-offline-model",
+      "task": true
+    }
+  ],
+  "layout": [
+    {
+      "name": "normal",
+      "id": "configuration-connection",
+      "css": {
+        "width": 1440,
+        "height": 960
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 483.1875,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 561.203125,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 1266.796875,
+          "y": 910,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 887.359375,
+        "y": 493,
+        "width": 499.4375,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 895,
+        "height": 65
+      }
+    },
+    {
+      "name": "normal",
+      "id": "configuration-agentlab.provider-connections",
+      "css": {
+        "width": 1440,
+        "height": 960
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 483.1875,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 561.203125,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 1266.796875,
+          "y": 910,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 682.1875,
+        "y": 798.5,
+        "width": 685.625,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 895,
+        "height": 65
+      }
+    },
+    {
+      "name": "normal",
+      "id": "configuration-model-catalog",
+      "css": {
+        "width": 1440,
+        "height": 960
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 483.1875,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 561.203125,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 1242.796875,
+          "y": 910,
+          "width": 154.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 682.1875,
+        "y": 505.5,
+        "width": 685.625,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 895,
+        "height": 65
+      }
+    },
+    {
+      "name": "normal",
+      "id": "configuration-budgets",
+      "css": {
+        "width": 1440,
+        "height": 960
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 483.1875,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 561.203125,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 1266.796875,
+          "y": 910,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 887.359375,
+        "y": 363,
+        "width": 499.4375,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 895,
+        "height": 65
+      }
+    },
+    {
+      "name": "normal",
+      "id": "configuration-permissions",
+      "css": {
+        "width": 1440,
+        "height": 960
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 483.1875,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 561.203125,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 1266.796875,
+          "y": 910,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 887.359375,
+        "y": 363,
+        "width": 499.4375,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 895,
+        "height": 65
+      }
+    },
+    {
+      "name": "normal",
+      "id": "configuration-mcp-servers",
+      "css": {
+        "width": 1440,
+        "height": 960
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 483.1875,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 561.203125,
+          "y": 910,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 1266.796875,
+          "y": 910,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 483.1875,
+        "y": 374.5,
+        "width": 13,
+        "height": 13,
+        "hit": true
+      },
+      "footer": {
+        "y": 895,
+        "height": 65
+      }
+    },
+    {
+      "name": "narrow",
+      "id": "configuration-connection",
+      "css": {
+        "width": 900,
+        "height": 700
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 420,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 498.015625,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 739.984375,
+          "y": 650,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 420,
+        "y": 407,
+        "width": 440,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 635,
+        "height": 65
+      }
+    },
+    {
+      "name": "narrow",
+      "id": "configuration-agentlab.provider-connections",
+      "css": {
+        "width": 900,
+        "height": 700
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 420,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 498.015625,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 739.984375,
+          "y": 650,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 573,
+        "y": 539.5,
+        "width": 274,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 635,
+        "height": 65
+      }
+    },
+    {
+      "name": "narrow",
+      "id": "configuration-model-catalog",
+      "css": {
+        "width": 900,
+        "height": 700
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 420,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 498.015625,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 725.984375,
+          "y": 650,
+          "width": 154.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 573,
+        "y": 505.5,
+        "width": 284,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 635,
+        "height": 65
+      }
+    },
+    {
+      "name": "narrow",
+      "id": "configuration-budgets",
+      "css": {
+        "width": 900,
+        "height": 700
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 420,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 498.015625,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 749.984375,
+          "y": 650,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 420,
+        "y": 467,
+        "width": 450,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 635,
+        "height": 65
+      }
+    },
+    {
+      "name": "narrow",
+      "id": "configuration-permissions",
+      "css": {
+        "width": 900,
+        "height": 700
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 420,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 498.015625,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 749.984375,
+          "y": 650,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 420,
+        "y": 467,
+        "width": 450,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 635,
+        "height": 65
+      }
+    },
+    {
+      "name": "narrow",
+      "id": "configuration-mcp-servers",
+      "css": {
+        "width": 900,
+        "height": 700
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 420,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 498.015625,
+          "y": 650,
+          "width": 70.015625,
+          "height": 36
+        },
+        {
+          "x": 749.984375,
+          "y": 650,
+          "width": 130.015625,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 420,
+        "y": 434.5,
+        "width": 13,
+        "height": 13,
+        "hit": true
+      },
+      "footer": {
+        "y": 635,
+        "height": 65
+      }
+    },
+    {
+      "name": "zoom125",
+      "id": "configuration-connection",
+      "css": {
+        "width": 576,
+        "height": 448
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 14,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 91.61250305175781,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 424.38751220703125,
+          "y": 398,
+          "width": 129.6125030517578,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 14,
+        "y": 277.3000183105469,
+        "width": 532,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 383.20001220703125,
+        "height": 64.80000305175781
+      }
+    },
+    {
+      "name": "zoom125",
+      "id": "configuration-agentlab.provider-connections",
+      "css": {
+        "width": 576,
+        "height": 448
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 14,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 91.61250305175781,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 424.38751220703125,
+          "y": 398,
+          "width": 129.6125030517578,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 26.80000114440918,
+        "y": 232.8000030517578,
+        "width": 506.3999938964844,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 383.20001220703125,
+        "height": 64.80000305175781
+      }
+    },
+    {
+      "name": "zoom125",
+      "id": "configuration-model-catalog",
+      "css": {
+        "width": 576,
+        "height": 448
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 14,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 91.61250305175781,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 408.38751220703125,
+          "y": 398,
+          "width": 153.6125030517578,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 26.80000114440918,
+        "y": 233,
+        "width": 514.4000244140625,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 383.20001220703125,
+        "height": 64.80000305175781
+      }
+    },
+    {
+      "name": "zoom125",
+      "id": "configuration-budgets",
+      "css": {
+        "width": 576,
+        "height": 448
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 14,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 91.61250305175781,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 432.38751220703125,
+          "y": 398,
+          "width": 129.6125030517578,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 14,
+        "y": 233.10000610351562,
+        "width": 540,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 383.20001220703125,
+        "height": 64.80000305175781
+      }
+    },
+    {
+      "name": "zoom125",
+      "id": "configuration-permissions",
+      "css": {
+        "width": 576,
+        "height": 448
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 14,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 91.61250305175781,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 432.38751220703125,
+          "y": 398,
+          "width": 129.6125030517578,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 14,
+        "y": 233.10000610351562,
+        "width": 540,
+        "height": 36,
+        "hit": true
+      },
+      "footer": {
+        "y": 383.20001220703125,
+        "height": 64.80000305175781
+      }
+    },
+    {
+      "name": "zoom125",
+      "id": "configuration-mcp-servers",
+      "css": {
+        "width": 576,
+        "height": 448
+      },
+      "overflow": false,
+      "buttons": [
+        {
+          "x": 14,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 91.61250305175781,
+          "y": 398,
+          "width": 69.61250305175781,
+          "height": 36
+        },
+        {
+          "x": 432.38751220703125,
+          "y": 398,
+          "width": 129.6125030517578,
+          "height": 36
+        }
+      ],
+      "primaryControl": {
+        "x": 14,
+        "y": 340.6000061035156,
+        "width": 13,
+        "height": 13,
+        "hit": true
+      },
+      "footer": {
+        "y": 383.20001220703125,
+        "height": 64.80000305175781
+      }
+    }
+  ],
+  "pageErrors": []
+}

@@ -1,12 +1,24 @@
 # agentlab 图形设置与 macOS 适配
 
-当前工作基于现有 Electron + React + 独立 Node worker App，没有替换框架。面向 master 的 PR 为 [#50](https://github.com/ChangerR/agent/pull/50)；它消费 master 已合并的缓存 schema，不复制缓存实现。功能和截图均来自独立 Linux 云端，不连接用户电脑、不发送真实模型请求、不签名/公证/发布安装包。
+当前工作基于现有 Electron + React + 独立 Node worker App，没有替换框架。原 [#50](https://github.com/ChangerR/agent/pull/50) 已合并；本轮 [#51](https://github.com/ChangerR/agent/pull/51) 纠正全局入口、直接密钥输入和控件布局。验证仅使用独立 Linux 云端、本地 HTTP 假模型和虚构凭据，不连接用户电脑、不发送付费请求、不签名/公证/发布安装包。
 
 ## 从哪里进入
 
 侧栏底部的“设置”、项目旁的设置按钮及原生菜单均打开真正设置页。macOS 菜单为 agentlab → 设置（Cmd+,）；其他平台为文件 → 设置（Ctrl+,）。收起侧栏时工具栏仍能进入设置。分类导航支持页面名称和字段名搜索；模型、Provider 和 MCP 服务器采用列表与详情编辑，其余配置按 schema 分组，无 JSON/YAML/文件编辑器兜底。
 
 当前会话的模型、模式、思考和外观选择即保存。模型/思考于下一请求使用；模式用于后续权限检查，已有审批仍由用户处理。连接组合、缓存费用参数、权限规则、插件入口和凭据等结构化事务显式“提交此节”。外观经白名单 IPC 保存在应用自己的 desktop-preferences.json；保存失败保留原主题并反馈。浏览器预览使用自身 localStorage，CLI 配置不增加 UI 字段。
+
+App 默认编辑 **全局配置**，没有项目或会话时也能维护连接、模型目录、角色、缓存、MCP、权限默认值和插件参数。独立设置 worker 只构建同一个 preset 的 schema/设置服务，不创建 Agent、会话、工具或网络连接。保存到 ~/.agentlab，两个项目默认继承；不会为查看/保存全局设置创建项目配置。项目覆盖必须在“高级 · 仅覆盖当前项目”中明确选择，取消覆盖并提交即可恢复全局继承。项目专用 `.env`、写入目录和会话动作仅在该作用域提供。
+
+## 直接输入 API key 与存储边界
+
+在主连接或 Provider 连接页的 **API key** 面板选择已保存连接，直接输入并点击“保存 API key”。可以先在无项目状态新增命名连接，再保存 key 和主任务模型。已有 key 仅返回“已保存”，密码输入在保存成功后清空，替换/清除须用户明确操作；清除共享 key 会影响所有引用它的项目下次装配。凭据与 provider、适配器类型及 endpoint 绑定；主进程与 worker 还会核对运行时实际端点，项目 `.env` 改变端点不能带走旧 key。
+
+实际使用 [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage)：密文保存在 **~/.agentlab/credentials.enc.json**，普通 config.json 只有 `apiKeyRef` 随机引用。内置 provider 的引用在各自 pluginConfig 命名空间；命名连接在对应条目中。该引用由专用密钥面板管理，不能把明文放进普通配置。安全存储不可用/未解锁、Linux `basic_text` 或未知后端时拒绝保存和解密，不回退明文或其他凭据。配置与密文使用 CAS；配置失败回滚本次密文，回滚冲突明确提示。没有实现自有 Keychain 客户端，也没有 macOS 实测；不声称该平台已经验证。
+
+CLI 保留原有 `.env`/shell + `apiKeyEnv` 高级方式，Node CLI 不依赖 Electron，已有配置和启动仍可使用。**App 保存的密钥引用需要 App 的可信解密宿主**；CLI 首次使用该连接时明确提示，不能自动解密或悄悄使用另一个环境变量 key。要改用 CLI 环境方式，先在 App 清除该连接的保存引用，再显式填写环境变量名。App 自己也支持此高级方式；不创建全局明文 `.env`，不替用户配置真实账户。清除 App key 会恢复原环境变量方式，包括 SDK 默认变量；已有环境变量不会被删除。
+
+保存的新连接、模型、key 在新打开项目、重新装配或重启时采用；当前已建立的 SDK 客户端/会话不会热换 key。恢复旧会话可能保留旧模型，新的启动默认值不会改写旧会话。不同操作的实际生效提示在页内显示。
 
 ## 配置与产品更名（破坏性变更）
 
@@ -15,6 +27,7 @@
 | 实际默认位置                                                                    | 用途                                               |
 | ------------------------------------------------------------------------------- | -------------------------------------------------- |
 | `~/.agentlab/config.json`                                                       | 用户级静态配置                                     |
+| `~/.agentlab/credentials.enc.json`                                              | App 系统安全存储加密的凭据，非明文/普通配置导出    |
 | `<项目根>/agent.config.json`                                                    | 项目覆盖，保留既有格式和位置                       |
 | `~/.agentlab/models.json`、`mcp.json`                                           | 没有显式覆盖引用时的默认领域文件                   |
 | `~/.agentlab/state/projects/<项目路径 SHA-256>/sessions`、`logs`、`mcp-results` | 项目隔离的会话、日志及 MCP 缓存结果                |
@@ -66,11 +79,13 @@
 
 保存继续执行文件身份、CAS、锁、原子替换、取消及 editor/generation/session/scope 绑定。后端校验错误、外部编辑和写入失败有可见反馈；失败不擅自重试写入。设置忙碌时阻止与任务/审批竞争的提交；真正工具执行仍经过唯一 ToolExecutor、deny/ask、危险检测与人工审批。
 
-既有敏感值只以宿主保管的随机句柄或掩码返回，既有原文不会返回渲染层；用户本次手动输入只暂存于表单，成功保存后换为宿主句柄。MCP args/env/headers/url、`.env` 手动新增/替换使用密码输入；保留/清除是明确动作。日志/错误/截图不包含原密钥。apiKeyEnv 是变量名，插件 sensitiveFields 按既有契约使用 env:NAME 引用；该引用不被发明为 MCP 插值规则。后端不能替任意未声明文本猜测秘密，插件作者仍须准确声明敏感字段。
+既有敏感值只以宿主保管的随机句柄或掩码返回，既有原文不会返回渲染层；用户本次手动输入只暂存于表单，成功保存后换为宿主句柄。MCP args/env/headers/url、`.env` 手动新增/替换使用密码输入；保留/清除是明确动作。日志/错误/截图不包含原密钥。apiKeyEnv 是变量名，插件 sensitiveFields 按既有契约使用 env:NAME 引用；该引用不被发明为 MCP 插值规则。后端不能替任意未声明文本猜测秘密，插件作者仍须准确声明敏感字段。项目 `.env` 和 MCP 参数保持现有 CLI 兼容文本格式，密码控件/0600 文件权限不等于加密；只有上述 Provider API key 专用面板使用系统 safeStorage。
 
 App 的“重新装配并新建会话”实际 dispose worker 并从磁盘重新创建 runtime，或退出重启后采用连接/预算/规则/插件/环境变化。CLI 需退出重启。普通恢复保存会话保留其原模型设置及原权限恢复边界；修改启动默认不改写旧会话。`.env` 更改不会写入当前进程环境。已有即时模型/mode/think、规划方式、子任务限制和外观仍采用原生效语义。
 
 ## 视觉设计与真实验收
+
+本轮 [全局设置证据](evidence/global-settings) 包含真实 Electron + 独立 GNOME Keyring/DBus 的 14 场景：首次无项目、直接输入虚构 key、两个项目继承、实际本地 Provider Authorization、关闭重启解密、显式项目覆盖/恢复、CAS/写失败、清除后的未授权验证，以及真实 basic_text 拒绝。六类页面各在正常/窄窗口/125% 缩放截图检查，控件、标题工具栏和底部操作栏统一尺寸。Linux 验证不代替 macOS。
 
 [imagegen 概念图](evidence/graphical-settings/00-imagegen-design-concept.png) 只用于布局参考，未作为运行背景或虚构功能。实际组件使用 React/CSS：分组搜索、列表详情、继承值、敏感状态、空态、焦点和响应式亮暗主题。
 

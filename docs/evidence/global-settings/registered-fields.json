@@ -1,0 +1,1563 @@
+{
+  "sections": 20,
+  "nodes": 173,
+  "fields": [
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "writeRoots",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "writeRoots[]",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-connection",
+      "title": "主任务与模型连接（启动默认值）",
+      "path": "provider",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-connection",
+      "title": "主任务与模型连接（启动默认值）",
+      "path": "model",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-connection",
+      "title": "主任务与模型连接（启动默认值）",
+      "path": "baseURL",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-connection",
+      "title": "主任务与模型连接（启动默认值）",
+      "path": "apiKeyEnv",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-connection",
+      "title": "主任务与模型连接（启动默认值）",
+      "path": "thinking",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-connection",
+      "title": "主任务与模型连接（启动默认值）",
+      "path": "judgeModel",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "maxTurns",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "compactThreshold",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "cache",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "cache.enabled",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "cache.ttl",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "5m, 1h"
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "cache.staticTtl",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "5m, 1h"
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "cache.ttlStrategy",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "fixed, legacy-reactive"
+    },
+    {
+      "section": "configuration-budgets",
+      "title": "上下文与缓存预算",
+      "path": "cache.escalateAfterMs",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 0"
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissionMode",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "ask, auto, yolo"
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions.allow",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions.allow[]",
+      "control": "工具与目标规则构建器",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions.ask",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions.ask[]",
+      "control": "工具与目标规则构建器",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions.deny",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-permissions",
+      "title": "权限与审批默认值",
+      "path": "permissions.deny[]",
+      "control": "工具与目标规则构建器",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "modelsFile",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "mcpConfig",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "pluginEntries",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "pluginEntries[]",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "pluginEntries[] [1]",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "pluginEntries[] [2]",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "pluginEntries[] [2].entry",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "pluginEntries[] [2].enabled",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "disabledPlugins",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-files",
+      "title": "配置文件与插件装配",
+      "path": "disabledPlugins[]",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-additional",
+      "title": "其他运行配置",
+      "path": "replayToolArguments",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.api",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "chat-completions, messages, generic"
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.thinkingLevels",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.thinkingLevels[]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.rawToolArguments",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.prefixCompaction",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.outputParameter",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "max_tokens, max_completion_tokens"
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.thinkingMode",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "budget, adaptive"
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "models.*.offEffort",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "apiKeyRef",
+      "control": "安全存储状态；专用 API key 输入 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-anthropic",
+      "title": "Anthropic 模型能力",
+      "path": "apiKeyEnv",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "dialect",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "auto, generic, deepseek"
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.api",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "chat-completions, messages, generic"
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.thinkingLevels",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.thinkingLevels[]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.rawToolArguments",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.prefixCompaction",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.outputParameter",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "max_tokens, max_completion_tokens"
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.thinkingMode",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "budget, adaptive"
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "models.*.offEffort",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "apiKeyRef",
+      "control": "安全存储状态；专用 API key 输入 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "apiKeyEnv",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.*",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接]",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].type",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].displayName",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].enabled",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].apiKeyRef",
+      "control": "安全存储状态；专用 API key 输入 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].baseURL",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].apiKeyEnv",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.api",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "chat-completions, messages, generic"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.thinkingLevels",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.thinkingLevels[]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.rawToolArguments",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.prefixCompaction",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.outputParameter",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "max_tokens, max_completion_tokens"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.thinkingMode",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "budget, adaptive"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].models.*.offEffort",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].dialect",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "auto, generic, deepseek"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接]",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].type",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].displayName",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].enabled",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].apiKeyRef",
+      "control": "安全存储状态；专用 API key 输入 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].baseURL",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].apiKeyEnv",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.api",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "chat-completions, messages, generic"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.thinkingLevels",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.thinkingLevels[]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.rawToolArguments",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.prefixCompaction",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.outputParameter",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "max_tokens, max_completion_tokens"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.thinkingMode",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "budget, adaptive"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [Anthropic 连接].models.*.offEffort",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [离线 Fake 连接]",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [离线 Fake 连接].type",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [离线 Fake 连接].displayName",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [离线 Fake 连接].enabled",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.local-tools",
+      "title": "本地工具",
+      "path": "disabled",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.local-tools",
+      "title": "本地工具",
+      "path": "disabled[]",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.mcp",
+      "title": "MCP 结果预算",
+      "path": "maxInlineChars",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1024; max 1000000"
+    },
+    {
+      "section": "configuration-agentlab.mcp",
+      "title": "MCP 结果预算",
+      "path": "maxAgeDays",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 0; max 36500"
+    },
+    {
+      "section": "configuration-agentlab.mcp",
+      "title": "MCP 结果预算",
+      "path": "maxStoredBytes",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 0; max 9007199254740991"
+    },
+    {
+      "section": "configuration-agentlab.mcp",
+      "title": "MCP 结果预算",
+      "path": "deduplicate",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.mcp",
+      "title": "MCP 结果预算",
+      "path": "maxSearchChars",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 8192; max 10000000"
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "provider",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "model",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "thinking",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "timeoutMs",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 300000"
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "maxRequestBytes",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 1048576"
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "maxResponseBytes",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 65536"
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "maxOutputTokens",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 8192"
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "prefixCache",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "prefixCache.enabled",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.reviewer-model",
+      "title": "审批模型与预算",
+      "path": "prefixCache.ttl",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "5m, 1h"
+    },
+    {
+      "section": "configuration-agentlab.compaction-summary",
+      "title": "摘要模型与预算",
+      "path": "provider",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.compaction-summary",
+      "title": "摘要模型与预算",
+      "path": "model",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.compaction-summary",
+      "title": "摘要模型与预算",
+      "path": "thinking",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.compaction-summary",
+      "title": "摘要模型与预算",
+      "path": "strategy",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "isolated, prefix"
+    },
+    {
+      "section": "configuration-agentlab.compaction-summary",
+      "title": "摘要模型与预算",
+      "path": "maxOutputTokens",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-agentlab.compaction-summary",
+      "title": "摘要模型与预算",
+      "path": "maxRequestBytes",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-agentlab.telemetry-jsonl",
+      "title": "会话日志",
+      "path": "includeBodies",
+      "control": "启用/关闭下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxRunning",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 16"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxDepth",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxTurns",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 128"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "timeoutMs",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 3600000"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxInbox",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 64"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxOutputChars",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 1048576"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "previewChars",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 65536"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxAgents",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 64"
+    },
+    {
+      "section": "configuration-agentlab.subagents",
+      "title": "辅助任务与并发",
+      "path": "maxRuns",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1; max 64"
+    },
+    {
+      "section": "configuration-agentlab.planning",
+      "title": "主任务规划",
+      "path": "mode",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "auto, only, off"
+    },
+    {
+      "section": "configuration-agentlab.planning",
+      "title": "主任务规划",
+      "path": "provider",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.planning",
+      "title": "主任务规划",
+      "path": "model",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-agentlab.planning",
+      "title": "主任务规划",
+      "path": "thinking",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "off, low, medium, high"
+    },
+    {
+      "section": "configuration-agentlab.planning",
+      "title": "主任务规划",
+      "path": "maxOutputTokens",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-agentlab.planning",
+      "title": "主任务规划",
+      "path": "maxRequestBytes",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-model-catalog",
+      "title": "模型目录",
+      "path": "catalog",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-model-catalog",
+      "title": "模型目录",
+      "path": "catalog.*",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-model-catalog",
+      "title": "模型目录",
+      "path": "catalog.*.displayName",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-model-catalog",
+      "title": "模型目录",
+      "path": "catalog.*.contextWindow",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-model-catalog",
+      "title": "模型目录",
+      "path": "catalog.*.maxOutputTokens",
+      "control": "数值输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "min 1"
+    },
+    {
+      "section": "configuration-project-environment",
+      "title": "连接密钥与项目环境",
+      "path": "variables",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-project-environment",
+      "title": "连接密钥与项目环境",
+      "path": "variables.*",
+      "control": "安全密码输入 / 保留 / 替换 / 清除",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.*",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [本地进程 stdio]",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [本地进程 stdio].command",
+      "control": "文本 / 候选输入",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [本地进程 stdio].args",
+      "control": "列表增删排序",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [本地进程 stdio].args[]",
+      "control": "安全密码输入 / 保留 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [本地进程 stdio].env",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [本地进程 stdio].env.*",
+      "control": "安全密码输入 / 保留 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [远程 HTTP（SDK 自动协商）]",
+      "control": "分组字段",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [远程 HTTP（SDK 自动协商）].url",
+      "control": "安全密码输入 / 保留 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [远程 HTTP（SDK 自动协商）].headers",
+      "control": "键值行 / 列表详情 / 增删改名",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "configuration-mcp-servers",
+      "title": "MCP 服务器配置",
+      "path": "mcpServers.* [远程 HTTP（SDK 自动协商）].headers.*",
+      "control": "安全密码输入 / 保留 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "policy",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "policy [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "deterministic"
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "reviewer",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "reviewer [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "model"
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "reviewer [2]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "compactor",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "compactor [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "summary"
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "cacheStrategy",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "cacheStrategy [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "prefix"
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "cacheStrategy [2]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "modelCatalog",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "modelCatalog [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "presets"
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "sessionStore",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "sessionStore [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "file"
+    }
+  ]
+}
