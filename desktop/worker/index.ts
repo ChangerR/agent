@@ -28,6 +28,7 @@ process.on('message', async (raw: WorkerRequest) => {
       await startup;
     } else if (raw.action.type === 'dispose') {
       await startup.catch(() => {});
+      await settings.dispose();
       await controller.dispose();
     } else await controller.handle(raw.action);
     send({ type: 'reply', id: raw.id });
@@ -47,7 +48,10 @@ process.on('message', async (raw: WorkerRequest) => {
 process.on('disconnect', () => {
   void startup
     .catch(() => {})
-    .then(() => controller.dispose())
+    .then(async () => {
+      await settings.dispose();
+      await controller.dispose();
+    })
     .finally(() => process.exit(0));
 });
 send({ type: 'ready' });

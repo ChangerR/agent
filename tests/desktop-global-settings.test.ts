@@ -119,6 +119,18 @@ describe('独立全局设置与安全凭据', () => {
     writeFileSync(join(other, 'agent.config.json'), 'bad JSON');
     expect(loadConfigWithSources(other, {}, { globalOnly: true }).config.model).toBe('shared');
     expect(existsSync(join(home, '.agentlab/state'))).toBe(false);
+    await controller.handle({ type: 'read', generation, sectionId: 'configuration-connection' });
+    const saving = controller.handle({
+      type: 'commit',
+      generation,
+      editorId: snapshot.settingsEditor!.id,
+      json: JSON.stringify({ provider: 'fake', model: 'closing-shared' }),
+    });
+    await Promise.all([saving, controller.dispose()]);
+    expect(read().model).toBe('closing-shared');
+    await expect(
+      controller.handle({ type: 'read', generation, sectionId: 'configuration-connection' }),
+    ).rejects.toThrow(/关闭/);
   });
   it('全局错误保存保留未知字段并报告 CAS，不吞掉外部更改', async () => {
     store({ model: 'before', future: { keep: true } });

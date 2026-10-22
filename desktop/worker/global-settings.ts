@@ -14,6 +14,7 @@ import type { Plugin, SettingsSection } from '../../src/sdk/index.js';
 import type { GlobalSettingsAction, SettingsSnapshot } from '../shared/protocol.js';
 
 export class GlobalSettingsController {
+  private disposed = false;
   private records: Array<{ id: string; section: SettingsSection }> = [];
   private editor?: { id: string; section: SettingsSection };
   private state!: SettingsSnapshot;
@@ -133,6 +134,7 @@ export class GlobalSettingsController {
     this.publish(structuredClone(this.state));
   }
   async handle(action: GlobalSettingsAction) {
+    if (this.disposed) throw new Error('全局设置已关闭。');
     const run = this.queue.then(async () => {
       if (action.generation !== this.state.generation) throw new Error('全局设置已重新加载。');
       const signal = new AbortController().signal;
@@ -187,5 +189,10 @@ export class GlobalSettingsController {
     });
     this.queue = run.catch(() => {});
     await run;
+  }
+  async dispose() {
+    this.disposed = true;
+    await this.queue;
+    this.editor = undefined;
   }
 }

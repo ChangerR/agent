@@ -142,7 +142,7 @@ try {
   ];
   await writeFile(output, md.join('\n'));
   await writeFile(
-    join(dirname(output), 'evidence/graphical-settings/registered-fields.json'),
+    join(dirname(output), 'evidence/global-settings/registered-fields.json'),
     JSON.stringify({ sections: sections.length, nodes: rows.length, fields: rows }, null, 2) + '\n',
   );
   console.log(JSON.stringify({ sections: sections.length, nodes: rows.length, output }));

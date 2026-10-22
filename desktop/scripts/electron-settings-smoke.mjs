@@ -143,6 +143,13 @@ async function launch() {
 const snapshot = () => page.evaluate(() => window.agentlab.snapshot());
 const editor = () => page.locator('.configuration-editor');
 const form = () => editor().locator('form');
+const currentEditor = async () => {
+  const s = await snapshot();
+  const scope = await editor()
+    .getByRole('combobox', { name: '配置作用域', exact: true })
+    .inputValue();
+  return (scope === 'global' ? s.globalSettings : s.runtime)?.settingsEditor;
+};
 // 作用于当前分组的直接字段，避免同名嵌套项互相命中。
 const groupField = (group, name) =>
   group.locator(`:scope > .configuration-field[data-field="${name}"]`);
@@ -154,7 +161,7 @@ async function openSection(id) {
     .locator('.configuration-nav')
     .getByRole('button', { name: section.title, exact: true })
     .click();
-  await expect.poll(async () => (await snapshot()).runtime?.settingsEditor?.sectionId).toBe(id);
+  await expect.poll(async () => (await currentEditor())?.sectionId).toBe(id);
   await expect(editor().getByRole('heading', { name: section.title, exact: true })).toBeVisible();
   await expect(editor().getByText('正在读取设置…', { exact: true })).toHaveCount(0);
 }
@@ -164,11 +171,11 @@ async function override(group, name) {
   return item;
 }
 async function save() {
-  const before = (await snapshot()).runtime.settingsEditor.id;
+  const before = (await currentEditor()).id;
   await form().getByRole('button', { name: '提交此节', exact: true }).click();
   await expect
     .poll(async () => {
-      const value = (await snapshot()).runtime?.settingsEditor;
+      const value = await currentEditor();
       return value?.error || (value?.id !== before && value?.saved ? 'saved' : 'waiting');
     })
     .toBe('saved');
@@ -331,6 +338,10 @@ try {
       item.click();
     });
     await expect(page.getByRole('region', { name: '应用设置', exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '配置作用域', exact: true })).toHaveValue(
+      'global',
+    );
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await expect(form().locator('textarea')).toHaveCount(0);
     await page.screenshot({ path: join(output, '01-settings-entry-linux-electron.png') });
   });
@@ -455,7 +466,7 @@ try {
     await editor()
       .getByRole('combobox', { name: '配置作用域', exact: true })
       .selectOption('global');
-    await expect.poll(async () => (await snapshot()).runtime.settingsEditor.scope).toBe('global');
+    await expect.poll(async () => (await currentEditor()).scope).toBe('global');
     await (
       await override(form().locator(':scope > fieldset'), 'maxTurns')
     )

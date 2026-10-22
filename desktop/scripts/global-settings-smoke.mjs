@@ -1,6 +1,16 @@
 /** 真正的 Electron / Secret Service / IPC / worker / 文件验收。仅本地 HTTP 假服务。 */
 import { _electron, expect } from '@playwright/test';
-import { mkdtemp, mkdir, writeFile, readFile, chmod, access, rename, rm } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  chmod,
+  access,
+  rename,
+  rm,
+  readdir,
+} from 'node:fs/promises';
 import { join, dirname, resolve, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
@@ -260,10 +270,11 @@ async function check(name, run) {
   passed.push(name);
   console.log('PASS ' + name);
 }
-async function screenshot(name) {
-  await editor().evaluate((e) => {
-    e.scrollTop = 0;
-  });
+async function screenshot(name, { top = true } = {}) {
+  if (top)
+    await editor().evaluate((e) => {
+      e.scrollTop = 0;
+    });
   await page.screenshot({ path: join(output, name) });
 }
 try {
@@ -376,6 +387,17 @@ try {
       .toBe('global');
     await screenshot('03-global-inheritance.png');
   });
+  await check('项目专用设置返回全局时回到有效全局页面', async () => {
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
+    await section('configuration-project-environment');
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
+    await expect
+      .poll(async () => (await snapshot()).globalSettings?.settingsEditor?.sectionId)
+      .toBe('configuration-connection');
+    await expect(
+      editor().getByRole('heading', { name: '主任务与模型连接（启动默认值）', exact: true }),
+    ).toBeVisible();
+  });
   await check('真实保存冲突保留输入并显示失败，不覆盖其他写入', async () => {
     await section('configuration-budgets');
     await (await override(rootFields(), 'maxTurns')).locator(':scope > input').fill('77');
@@ -439,6 +461,26 @@ try {
       }
       for (const id of sections) {
         await section(id);
+        const control = rootFields()
+          .locator(':scope > .configuration-field > label > input[type=checkbox]')
+          .first();
+        await control.scrollIntoViewIfNeeded();
+        const checked = await control.isChecked();
+        await control.click();
+        await expect(control).toBeChecked({ checked: !checked });
+        await control.press('Escape');
+        await expect(form().getByRole('button', { name: '提交此节', exact: true })).toBeDisabled();
+        const editable = rootFields()
+          .locator('input:not([type=checkbox]):visible, select:visible')
+          .first();
+        const target = (await editable.count()) ? editable : control;
+        await target.scrollIntoViewIfNeeded();
+        await target.click();
+        await target.press('Escape');
+        await target.scrollIntoViewIfNeeded();
+        await target.evaluate((e) => {
+          e.dataset.acceptanceControl = 'true';
+        });
         const evidence = await page.evaluate(() => {
           const area = document.querySelector('.configuration-editor'),
             footer = area.querySelector('.configuration-actions'),
@@ -450,6 +492,17 @@ try {
             css: { width: innerWidth, height: innerHeight },
             overflow: document.documentElement.scrollWidth > innerWidth,
             buttons,
+            primaryControl: (() => {
+              const e = area.querySelector('[data-acceptance-control]');
+              const r = e.getBoundingClientRect();
+              return {
+                x: r.x,
+                y: r.y,
+                width: r.width,
+                height: r.height,
+                hit: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === e,
+              };
+            })(),
             footer: (() => {
               const r = footer.getBoundingClientRect();
               return { y: r.y, height: r.height };
@@ -457,6 +510,12 @@ try {
           };
         });
         assert.equal(evidence.overflow, false);
+        assert.ok(evidence.primaryControl.hit, '首个表单控件必须实际可点击');
+        assert.ok(
+          evidence.primaryControl.y >= 0 &&
+            evidence.primaryControl.y + evidence.primaryControl.height < evidence.footer.y,
+          '控件必须位于保存栏上方的可见区域',
+        );
         assert.ok(
           evidence.footer.y >= 0 &&
             evidence.footer.y + evidence.footer.height <= evidence.css.height + 2,
@@ -465,7 +524,7 @@ try {
           evidence.buttons.every((b) => Math.abs(b.height - evidence.buttons[0].height) < 2),
         );
         layout.push({ name, id, ...evidence });
-        await screenshot('layout-' + name + '-' + id + '.png');
+        await screenshot('layout-' + name + '-' + id + '.png', { top: false });
       }
     }
     await app.evaluate(({ BrowserWindow }) => {
@@ -474,6 +533,14 @@ try {
       w.setSize(1440, 960);
     });
     await page.setViewportSize({ width: 1440, height: 960 });
+    const theme = page.getByRole('combobox', { name: '桌面主题', exact: true });
+    if (!(await theme.isVisible()))
+      await page.getByRole('button', { name: '显示侧栏', exact: true }).click();
+    await theme.selectOption('dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await section('configuration-agentlab.provider-connections');
+    await screenshot('06-dark-global-key.png');
+    await theme.selectOption('light');
   });
   await check('关闭并重启 App 后全局配置和真实系统解密持久化，两个项目仍继承', async () => {
     await app.close();
@@ -526,6 +593,20 @@ try {
       '粘贴或输入 API key',
     );
   });
+  async function assertNoPlaintext(path) {
+    for (const entry of await readdir(path, { withFileTypes: true })) {
+      const file = join(path, entry.name);
+      if (entry.isDirectory()) await assertNoPlaintext(file);
+      else if (entry.isFile())
+        assert.ok(
+          !(await readFile(file)).includes(Buffer.from(fixtureKey)),
+          '测试凭据不得进入普通文件/日志',
+        );
+    }
+  }
+  await assertNoPlaintext(home);
+  await assertNoPlaintext(projectA);
+  await assertNoPlaintext(projectB);
   const authorizedProofCount = requests.length;
   await check('清除后新运行时不再使用旧 key（仅向本地假服务发出未授权请求）', async () => {
     await chooseProject(projectA);
@@ -575,7 +656,12 @@ try {
         realEntry: 'run.mjs',
         realSafeStorage: 'gnome_libsecret with isolated GNOME Keyring/DBus',
         realIPCWorkerFilesystem: true,
+        globalSections: (await snapshot()).globalSettings.settings.map(({ id, scopes }) => ({
+          id,
+          scopes,
+        })),
         paidRequests: 0,
+        plaintextLeakScan: 'passed across isolated HOME/config/state/logs/profile/projects',
         passed,
         requests,
         layout,

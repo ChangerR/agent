@@ -54,16 +54,29 @@ try {
     await override(label);
     await page.getByRole('spinbutton', { name: label, exact: true }).fill(String(value));
   };
-  const save = async () => {
-    await expect(page.getByText('未保存', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '提交此节', exact: true }).click();
-    await expect(page.getByText('已保存', { exact: true })).toBeVisible();
+  const readState = async () => {
     const response = await page.request.post(origin + '/api/snapshot', {
       data: '{}',
       headers: { 'Content-Type': 'application/json' },
     });
     assert(response.ok());
-    return (await response.json()).runtime.settingsEditor.value;
+    return response.json();
+  };
+  const save = async () => {
+    const scope = await page
+      .getByRole('combobox', { name: '配置作用域', exact: true })
+      .inputValue();
+    const pick = (s) => (scope === 'global' ? s.globalSettings : s.runtime).settingsEditor;
+    const before = pick(await readState()).id;
+    await expect(page.getByText('未保存', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '提交此节', exact: true }).click();
+    await expect
+      .poll(async () => {
+        const e = pick(await readState());
+        return e.id !== before && e.saved;
+      })
+      .toBe(true);
+    return pick(await readState()).value;
   };
   await choose('上下文与缓存预算');
   await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');

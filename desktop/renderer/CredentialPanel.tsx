@@ -134,6 +134,9 @@ export function CredentialPanel({
       )}
       {saved && <p role="status">API key 已{status?.configured ? '加密保存' : '清除'}。</p>}
       <div className="credential-actions">
+        <button type="button" disabled={pending || !!key} onClick={() => void read()}>
+          重新检查安全存储
+        </button>
         <button
           type="button"
           className="primary"

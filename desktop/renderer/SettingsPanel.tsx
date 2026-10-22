@@ -427,7 +427,7 @@ export function SettingsPanel({
             </details>
             <p className="info">{timing}</p>
             {runtime && (
-              <p className="small">
+              <p className="small settings-current-runtime">
                 当前会话：{runtime.provider} / {runtime.model} · {runtime.mode} · 思考{' '}
                 {runtime.thinking}。启动默认值不覆盖已恢复会话。
               </p>
