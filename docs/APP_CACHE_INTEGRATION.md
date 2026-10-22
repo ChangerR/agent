@@ -93,3 +93,7 @@ AGENTLAB_UI_ORIGIN=http://127.0.0.1:4176 node desktop/scripts/ui-cache-smoke.mjs
 ## 开发启动 LICENSE 阻断修复
 
 后续用户实际启动暴露了此前显式 LICENSE 路径验收未覆盖的回归：run.mjs 不应要求 Node 的分发许可证。PR #50 尚未合并，因此直接追加开发 / 分发构建拆分；从本补丁开始，不能再把生产脚本差异描述为只有 import 顺序变化。普通 run / build 无需许可证也可进入 Electron 阶段，真正 package 仍强制校验同版本完整许可。5 项真实入口 / 布局回归和 33 项组合桌面检查通过；详见 [启动修复证据](evidence/master-closure/node-license-fix.json)。CLI / PTY 根因对照已暂停并保留，不以此次修复代替该待办。
+
+## CLI / PTY 对照恢复结果
+
+已完成 [同环境基线与容量诊断](CLI_STARTUP_DIAGNOSIS.md)：master 的正常六文件组合复现同类 PTY 就绪失败；相同 10 秒 headless 进程上限在基线和 App 的受控冷启动容量边界均表现为 SIGTERM / killed。CPU 节流、正确配置返回、共享资源和清理证据支持既有预算对云端容量敏感，未发现 App 配置 / 权限回归；没有活子进程残留，也未调整时限、跳过或无变化复跑全量。历史失败缺少同步资源采样，不能精确重建当时每次停顿；详细限制和可复现脚本已保留，不能声称本轮全量全绿。

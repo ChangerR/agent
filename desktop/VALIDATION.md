@@ -81,3 +81,7 @@ pnpm test 已执行，完整日志位于本机 desktop/.validation/full-tests.lo
 现 run.mjs / build.mjs 默认使用 development 暂存，缺少 LICENSE 不阻断；package.mjs 才使用 distribution 并强制同版本完整许可证和摘要校验。自动发现只检查解析后的当前安装前缀及文档目录；不联网下载、不搜索其他 Node、不把旧许可遗留到新开发构建。
 
 新增真实入口回归：把实际 Node 放在无 LICENSE 的临时版本目录，执行真实 build 和 run，后者仅替换最终 Electron 启动以验证已到达下一阶段；真实 package --validate 则应失败并说明当前版本来源。另覆盖 Homebrew / 符号链接路径、darwin arm64 元数据、旧许可清理、分发模式和摘要拒绝。5 项新测试、33 项组合桌面测试均通过；类型、无许可开发构建、sidecar smoke 和带同版本官方许可的分发输入校验通过。宿主为 Linux / Node v24.19.0，v24.11.1 的 macOS 布局为参数化模拟，不声称 macOS 实机通过。
+
+### CLI / PTY 基线对照补充
+
+六文件、两 worker 的 master / App / App / master 对照中，master 首轮复现同类 PTY 就绪超时，App 两轮及 master 末轮通过，组合结束均无活子进程残留。受控冷启动并发显示基线和 App 均会在 4 CPU 容量边界触及原有 10 秒上限，信号 SIGTERM / killed，暖启动恢复到约 1 秒。属于既有启动 / 退出预算对云端容量敏感的类别，未发现 App 权限或配置回归。未改时限或产品逻辑；不把受控负载当作历史全量的精确重建，也不把该诊断改写成全量通过。完整数据和复现工具见 [诊断文档](../docs/CLI_STARTUP_DIAGNOSIS.md)。
