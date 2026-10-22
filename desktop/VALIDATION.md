@@ -73,3 +73,11 @@ pnpm test 已执行，完整日志位于本机 desktop/.validation/full-tests.lo
 本次重新通过根工程 / desktop 类型、CLI / desktop 构建、sidecar smoke、linux/x64 打包输入校验、darwin 声明与不匹配拒绝断言，以及两套 Node / Playwright 验收。当前 checkout 的全量为 1754 passed / 2 failed / 2 skipped；两条失败为 CLI / PTY 启动时限，五个相关文件单独复跑 32/32 通过。另有相同生产源码在 #49 阶段的 1755 passed / 2 skipped 完整证据。不能把该历史结果冒充本次全量全绿。
 
 证据与复现见 [App / Cache 集成](../docs/APP_CACHE_INTEGRATION.md) 和 [收尾证据](../docs/evidence/master-closure/validation.json)。未在 macOS 实机验证，未签名、公证、外发安装包或合并 PR。
+
+### 开发启动被 Node LICENSE 阻断的修复
+
+用户的 Node v24.11.1 在 run.mjs → build.mjs 的许可证检查处失败。此前把开发启动与分发资产校验混为一体；云端显式提供 LICENSE 的验收漏掉了常见缺失布局。
+
+现 run.mjs / build.mjs 默认使用 development 暂存，缺少 LICENSE 不阻断；package.mjs 才使用 distribution 并强制同版本完整许可证和摘要校验。自动发现只检查解析后的当前安装前缀及文档目录；不联网下载、不搜索其他 Node、不把旧许可遗留到新开发构建。
+
+新增真实入口回归：把实际 Node 放在无 LICENSE 的临时版本目录，执行真实 build 和 run，后者仅替换最终 Electron 启动以验证已到达下一阶段；真实 package --validate 则应失败并说明当前版本来源。另覆盖 Homebrew / 符号链接路径、darwin arm64 元数据、旧许可清理、分发模式和摘要拒绝。5 项新测试、33 项组合桌面测试均通过；类型、无许可开发构建、sidecar smoke 和带同版本官方许可的分发输入校验通过。宿主为 Linux / Node v24.19.0，v24.11.1 的 macOS 布局为参数化模拟，不声称 macOS 实机通过。

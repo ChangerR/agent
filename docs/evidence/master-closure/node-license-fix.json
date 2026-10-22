@@ -1,0 +1,35 @@
+{
+  "issue": "run.mjs incorrectly required a redistribution LICENSE during development startup",
+  "reported_runtime": "macOS Node v24.11.1",
+  "host_validation": "independent cloud Linux x64 Node v24.19.0",
+  "pull_request": 50,
+  "development": "run and default build permit missing LICENSE without environment variable or network download",
+  "distribution": "package, including --validate, requires a current-installation or explicit same-version full Node LICENSE; rejects development metadata and a changed license digest",
+  "discovery": [
+    "resolved executable directory",
+    "installation prefix",
+    "share/doc/node",
+    "share/doc/nodejs",
+    "Homebrew versioned formula documentation"
+  ],
+  "real_entry_regressions": {
+    "tests": 5,
+    "passed": 5,
+    "setup": "real host Node copied into a temporary installation without LICENSE; actual build/run/package scripts executed",
+    "electron": "only final launch replaced with test stub; compiled main/preload/worker/renderer existence checked",
+    "missing_license_build": "passed",
+    "missing_license_run": "reached Electron launch",
+    "missing_license_distribution": "correctly rejected with version-specific source and instructions",
+    "darwin_24_11_1": "layout and runtime metadata simulated through exported staging helper; no native macOS claim"
+  },
+  "combined_desktop_tests": { "files": 4, "passed": 33, "failed": 0 },
+  "typecheck": "root and desktop passed",
+  "manual_development_build": "passed with AGENTLAB_NODE_LICENSE absent and nodeLicense=null",
+  "sidecar_smoke": "passed against development staging without LICENSE",
+  "distribution_input": "passed using official Node v24.19.0 LICENSE; no package generated or published",
+  "pty_diagnosis": "paused per urgent priority; original full-suite failures remain an independent open diagnostic item",
+  "native_macos_tested": false,
+  "user_computer_used": false,
+  "paid_model_calls": 0,
+  "remote_prs_merged": false
+}

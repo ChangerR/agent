@@ -3,13 +3,15 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, access } from 'node:fs/promises';
 import { packagingOptions } from './packaging.mjs';
+import { buildDesktop } from './build.mjs';
+import { assertDistributionRuntime } from './node-runtime.mjs';
 if (process.argv.slice(2).some((arg) => arg !== '--validate'))
   throw new Error('仅支持本机平台 / 架构打包；可传 --validate 只验证。');
-await import('./build.mjs');
+await buildDesktop({ mode: 'distribution' });
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const runtime = JSON.parse(await readFile(resolve(root, 'desktop/dist/node/runtime.json'), 'utf8'));
 const options = packagingOptions(root, process.platform, process.arch, runtime);
-await access(resolve(root, 'desktop/dist/node/LICENSE'));
+await assertDistributionRuntime(resolve(root, 'desktop/dist'), runtime);
 await access(resolve(root, 'desktop/dist/renderer/index.html'));
 if (process.argv.includes('--validate'))
   console.log(

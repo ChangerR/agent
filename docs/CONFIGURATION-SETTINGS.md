@@ -117,8 +117,10 @@ pnpm exec vitest run tests/configuration-settings.test.ts tests/runtime-settings
 git diff --check
 ```
 
-构建使用当前 Node 及其官方 LICENSE；若安装未附许可证，可显式设置
-AGENTLAB_NODE_LICENSE 指向同版本官方分发的 LICENSE。云端 Node v24.19.0 的验证
+开发启动 / 普通构建允许当前 Node 安装缺少 LICENSE，不需要重装或设置路径；
+只有正式分发入口 package.mjs 要求同版本完整许可证，并校验暂存模式及文件摘要。
+自动发现限定在解析后的 Node 安装前缀；如分发时仍找不到，才显式设置
+AGENTLAB_NODE_LICENSE 指向同版本官方分发的 LICENSE。云端 Node v24.19.0 的分发验证
 使用官方 nodejs/node v24.19.0 LICENSE，放在临时目录，不提交二进制或安装包。
 
 所有测试使用隔离 HOME、临时项目和固定假凭据。TUI 按键测试与 App UI 测试分别报告；

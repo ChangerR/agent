@@ -89,3 +89,7 @@ AGENTLAB_UI_ORIGIN=http://127.0.0.1:4176 node desktop/scripts/ui-cache-smoke.mjs
 停止 UI 预览后，针对这两个文件及 App 设置 / 缓存接入的五个文件单独复跑，32/32 通过。当前证据支持功能检查通过，但全量启动时限仍需在稳定环境复验；没有继续无变化反复长跑、放宽时限或跳过失败。PR 保持 Draft、maintainer_can_modify=false，尚未合并。
 
 [收尾结构化验证](evidence/master-closure/validation.json) · [本轮 Node UI](evidence/master-closure/ui-smoke.json) · [本轮缓存表单 UI](evidence/master-closure/cache-ui-smoke.json)。既有截图来自相同生产 UI；macOS AppKit / 原生菜单 / 目录 / Retina / Dock / .app 启动仍需独立 Mac，禁止使用用户电脑。
+
+## 开发启动 LICENSE 阻断修复
+
+后续用户实际启动暴露了此前显式 LICENSE 路径验收未覆盖的回归：run.mjs 不应要求 Node 的分发许可证。PR #50 尚未合并，因此直接追加开发 / 分发构建拆分；从本补丁开始，不能再把生产脚本差异描述为只有 import 顺序变化。普通 run / build 无需许可证也可进入 Electron 阶段，真正 package 仍强制校验同版本完整许可。5 项真实入口 / 布局回归和 33 项组合桌面检查通过；详见 [启动修复证据](evidence/master-closure/node-license-fix.json)。CLI / PTY 根因对照已暂停并保留，不以此次修复代替该待办。

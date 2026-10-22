@@ -17,7 +17,9 @@ node node_modules/electron/install.js
 pnpm desktop
 ```
 
-源码构建要求 Node.js 22.19.0+，并需要该 Node 分发的 LICENSE。仓库 assets/node-LICENSE.txt 对应原 Windows v22.23.2；其他版本请使用完整官方 Node 分发，或设置 AGENTLAB_NODE_LICENSE 指向同版本官方 LICENSE。构建会把许可证随运行时一起分发。
+源码启动要求 Node.js 22.19.0+。`node desktop/scripts/run.mjs` 和普通 `desktop:build` 使用开发暂存；当前 Node 安装没有 LICENSE 也可开发启动，不需要重装 Node、设置环境变量或联网下载。
+
+`desktop:package`（包括 `--validate`）另走分发构建，必须附同版本完整 Node LICENSE。自动发现限定在真实 Node 安装目录及其 `share/doc/node`、`share/doc/nodejs`、Homebrew `share/doc/node@主版本` 下，支持版本管理器及符号链接，不搜索其他 Node 安装。仓库 assets/node-LICENSE.txt 只对应 v22.23.2。找不到时会给出当前版本的官方文件链接和显式路径指引；不会自动下载、把旧版本许可套给新版或把无许可开发产物当成可分发包。
 
 ```powershell
 pnpm desktop:build     # 构建 React、Electron 与独立 agent 进程
