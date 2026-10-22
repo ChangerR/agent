@@ -11,6 +11,15 @@ type JsonSchema = {
   writeOnly?: boolean;
 };
 const names: Record<string, string> = {
+  replayToolArguments: '原始工具参数回放（默认关闭）',
+  staticTtl: '静态前缀 TTL（省略时继承会话 TTL）',
+  ttlStrategy: '缓存 TTL 策略',
+  strategy: '摘要策略（prefix 需显式开启）',
+  maxAgeDays: 'MCP 结果保留天数（0 关闭）',
+  maxStoredBytes: 'MCP 结果存储软上限（字节；0 关闭）',
+  deduplicate: 'MCP 结果去重（默认关闭）',
+  maxSearchChars: 'MCP 单次检索字符上限',
+  models: '模型 API 能力映射（JSON）',
   provider: 'Provider',
   model: '模型 ID',
   baseURL: 'Endpoint URL',

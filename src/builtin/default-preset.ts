@@ -35,11 +35,11 @@ export function defaultPreset(input: PresetContext): Preset {
         .map((entry) => (typeof entry === 'string' ? entry : entry.entry)),
     ),
     skillsLocalPlugin(cwd),
-    builtinMcpPlugin(config.mcpConfig),
+    builtinMcpPlugin(config.mcpConfig, cwd),
     createDeterministicPolicyPlugin({ cwd, config }),
     modelReviewerPlugin(input),
     createContextDefaultPlugin(),
-    createCompactionSummaryPlugin(),
+    createCompactionSummaryPlugin(input),
     createCachePrefixPlugin(),
     createModelCatalogPlugin(loadModelsFile(config.modelsFile)),
     createSessionFilePlugin(),
@@ -52,7 +52,7 @@ export function defaultPreset(input: PresetContext): Preset {
     sessionCommandsPlugin(services),
     uiPlugin(),
     subagentsPlugin(services, cwd),
-    planningPlugin(services, cwd),
+    planningPlugin(services, cwd, input),
   ];
   plugins.push(runtimeSettingsPlugin(input, plugins));
   return {

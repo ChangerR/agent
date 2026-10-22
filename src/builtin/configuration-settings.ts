@@ -47,6 +47,10 @@ export function settingsJsonSchema(schema: z.ZodTypeAny): Record<string, unknown
   if (value instanceof z.ZodString) return { type: 'string' };
   if (value instanceof z.ZodArray)
     return { type: 'array', items: settingsJsonSchema(value.element) };
+  if (value instanceof z.ZodRecord)
+    return { type: 'object', additionalProperties: settingsJsonSchema(value.valueSchema) };
+  if (value instanceof z.ZodUnion)
+    return { anyOf: (value.options as z.ZodTypeAny[]).map(settingsJsonSchema) };
   return {};
 }
 export function safeSettingsValue(value: unknown, key = ''): unknown {
@@ -74,22 +78,50 @@ function projectKnown(value: Record<string, unknown>, shape: Shape): Record<stri
   return Object.fromEntries(
     Object.entries(shape)
       .filter(([key]) => Object.hasOwn(value, key))
-      .map(([key, schema]) => {
-        const inner = unwrap(schema),
-          item = value[key];
-        return [
-          key,
-          inner instanceof z.ZodObject && record(item)
-            ? projectKnown(item, inner.shape as Shape)
-            : safeSettingsValue(item, key),
-        ];
-      }),
+      .map(([key, schema]) => [key, projectSchema(value[key], schema, key)]),
   );
+}
+function projectSchema(value: unknown, schema: z.ZodTypeAny, key = ''): unknown {
+  const inner = unwrap(schema);
+  if (inner instanceof z.ZodObject && record(value))
+    return projectKnown(value, inner.shape as Shape);
+  if (inner instanceof z.ZodRecord && record(value))
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([name]) => !dangerous.has(name))
+        .map(([name, item]) => [name, projectSchema(item, inner.valueSchema, name)]),
+    );
+  if (inner instanceof z.ZodArray && Array.isArray(value))
+    return value.map((item) => projectSchema(item, inner.element));
+  if (inner instanceof z.ZodUnion) {
+    const selected = (inner.options as z.ZodTypeAny[]).find(
+      (option) => option.safeParse(value).success,
+    );
+    if (selected) return projectSchema(value, selected, key);
+  }
+  return safeSettingsValue(value, key);
 }
 /** 只删除 schema 拥有的字段；未识别的嵌套字段也必须留下。 */
 function preserveUnknown(previous: unknown, next: unknown, schema: z.ZodTypeAny): unknown {
   if (next === MASKED_SETTING) return previous;
   const inner = unwrap(schema);
+  if (inner instanceof z.ZodRecord && record(next))
+    return Object.fromEntries(
+      Object.entries(next).map(([key, item]) => [
+        key,
+        preserveUnknown(record(previous) ? previous[key] : undefined, item, inner.valueSchema),
+      ]),
+    );
+  if (inner instanceof z.ZodArray && Array.isArray(next))
+    return next.map((item, index) =>
+      preserveUnknown(Array.isArray(previous) ? previous[index] : undefined, item, inner.element),
+    );
+  if (inner instanceof z.ZodUnion) {
+    const selected = (inner.options as z.ZodTypeAny[]).find(
+      (option) => option.safeParse(next).success,
+    );
+    if (selected) return preserveUnknown(previous, next, selected);
+  }
   if (!(inner instanceof z.ZodObject) || !record(previous)) return restoreMasked(previous, next);
   const result = { ...previous };
   for (const [key, child] of Object.entries(inner.shape as Shape)) {
@@ -323,12 +355,14 @@ export function configurationSections(
     );
     const titles: Record<string, string> = {
       'agentlab.provider-openai': 'OpenAI 兼容协议',
+      'agentlab.provider-anthropic': 'Anthropic 模型能力',
       'agentlab.local-tools': '本地工具',
       'agentlab.mcp': 'MCP 结果预算',
       'agentlab.reviewer-model': '审批模型与预算',
       'agentlab.telemetry-jsonl': '会话日志',
       'agentlab.subagents': '辅助任务与并发',
       'agentlab.planning': '主任务规划',
+      'agentlab.compaction-summary': '摘要模型与预算',
     };
     add(
       `configuration-${plugin.manifest.id}`,
