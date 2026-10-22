@@ -77,3 +77,15 @@ AGENTLAB_UI_ORIGIN=http://127.0.0.1:4176 node desktop/scripts/ui-cache-smoke.mjs
 该轮 master@1520808 尚未包含 #48，因此 #49 保留真实缓存依赖并携带 #47 的设置增强；其对 #48 的比较没有 src/core、src/providers、src/mcp 或 policy 的重复差异。这是此前状态的证据；最新交付关系以本文顶部为准。
 
 [本轮结构化验证](evidence/conflict-reconciliation/validation.json) · [Node UI](evidence/conflict-reconciliation/ui-smoke.json) · [缓存表单 UI](evidence/conflict-reconciliation/cache-ui-smoke.json)。原生 macOS 验收限制不变。
+
+## 面向 master 的收尾验证
+
+[PR #50](https://github.com/ChangerR/agent/pull/50) 直接面向 master@9fbffd6，来自实际集成 tip bed0728；普通 merge 提交 f8727d3 无文件冲突。与 bed0728 相比，生产源码只有规划文件两个相邻 import 的顺序变化，App / worker 行为未变；文档更新当前状态，测试拆分了两个独立的跨进程权限状态。没有重复提交缓存核心或权限实现。
+
+因此复用前轮同等生产源码的 96 文件 / 1755 passed / 2 skipped 组合证据，同时在本次 checkout 重新执行类型、CLI / desktop 构建、sidecar smoke、打包输入和 darwin 声明验证，均通过。两套新的 Node / Playwright 验收均通过，仍是 Linux Chromium + 隔离 FakeProvider，不是 macOS 实机。
+
+本轮全量检查不能报告全绿：前两次分别用 2 / 1 worker，在同一条复合 CLI 用例触及 15 秒限制。该用例在单独运行时通过；拆成“全局值被项目覆盖”和“项目恢复继承”两个独立用例，保留全部断言、默认 15 秒和子进程 10 秒限制。之后全量为 94 文件通过 / 2 文件失败，1754 passed / 2 failed / 2 skipped；失败为 pnpm dev 的 PTY 启动等待及另一条既有权限测试的 CLI 子进程启动失败，没有配置或权限断言失败。
+
+停止 UI 预览后，针对这两个文件及 App 设置 / 缓存接入的五个文件单独复跑，32/32 通过。当前证据支持功能检查通过，但全量启动时限仍需在稳定环境复验；没有继续无变化反复长跑、放宽时限或跳过失败。PR 保持 Draft、maintainer_can_modify=false，尚未合并。
+
+[收尾结构化验证](evidence/master-closure/validation.json) · [本轮 Node UI](evidence/master-closure/ui-smoke.json) · [本轮缓存表单 UI](evidence/master-closure/cache-ui-smoke.json)。既有截图来自相同生产 UI；macOS AppKit / 原生菜单 / 目录 / Retina / Dock / .app 启动仍需独立 Mac，禁止使用用户电脑。

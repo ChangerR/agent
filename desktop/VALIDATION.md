@@ -65,3 +65,11 @@ pnpm test 已执行，完整日志位于本机 desktop/.validation/full-tests.lo
 ### Review 与 Node 验收修正
 
 三项 P2 已补回归：清除空对象后删除覆盖以恢复继承；重选当前节不丢失 dirty 状态；连续相同校验失败使用独立反馈 revision 保持提示。当前会话模型 / 模式 / 思考提供选择即保存入口，结构化默认值继续显式提交。新增验收脚本已替换为 Node / Playwright，仓库不再使用新增 Python UI 脚本。完整回归 93 文件，1722 passed / 2 skipped；Node UI 冒烟与 sidecar smoke 通过。
+
+### 面向 master 的收尾 PR #50
+
+#48 已进入 master@9fbffd6，#49 进入缓存分支 bed0728；本轮从实际集成 tip 直接面向最新 master，不修改已合并 PR。App / worker 生产源码与 #49 已验收版相同，只有规划 import 顺序对齐 master；不重复修改缓存核心、provider、MCP 引用保护或权限管线。
+
+本次重新通过根工程 / desktop 类型、CLI / desktop 构建、sidecar smoke、linux/x64 打包输入校验、darwin 声明与不匹配拒绝断言，以及两套 Node / Playwright 验收。当前 checkout 的全量为 1754 passed / 2 failed / 2 skipped；两条失败为 CLI / PTY 启动时限，五个相关文件单独复跑 32/32 通过。另有相同生产源码在 #49 阶段的 1755 passed / 2 skipped 完整证据。不能把该历史结果冒充本次全量全绿。
+
+证据与复现见 [App / Cache 集成](../docs/APP_CACHE_INTEGRATION.md) 和 [收尾证据](../docs/evidence/master-closure/validation.json)。未在 macOS 实机验证，未签名、公证、外发安装包或合并 PR。
