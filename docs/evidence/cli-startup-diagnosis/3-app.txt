@@ -1,0 +1,26 @@
+
+ RUN  v2.1.9 /workspace/agent-app-master
+
+ ✓ tests/planning-pty.test.ts (2 tests) 12394ms
+   ✓ pnpm dev 真终端 {"rows":40,"cols":140}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复 6003ms
+   ✓ pnpm dev 真终端 {"rows":14,"cols":40}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复 6390ms
+ ✓ tests/cli-pty.test.ts (1 test) 14148ms
+   ✓ Linux pnpm dev 真 PTY：单选自动保存、取消、重启、shell/搜索零审批及失败恢复 14146ms
+ ✓ tests/permission-settings-restart.test.ts (9 tests) 12278ms
+   ✓ 权限模式自动保存后跨进程重启 > /mode auto 保存到项目，新进程为 auto，全局不变 2757ms
+   ✓ 权限模式自动保存后跨进程重启 > headless yolo 直接保存并应用，无二次确认 2175ms
+   ✓ 权限模式自动保存后跨进程重启 > 本项目直接选 auto 后立即生效，子目录重启仍为 auto，其他项目保持 ask 4648ms
+   ✓ 权限模式自动保存后跨进程重启 > 全局 auto 被项目 ask 覆盖，当前与重启都采用项目值 1153ms
+   ✓ 权限模式自动保存后跨进程重启 > 项目恢复继承后立即与重启都采用全局 auto 1223ms
+ ✓ tests/bash-readonly-pty.test.ts (1 test) 13966ms
+   ✓ 原样 pnpm dev、默认规划与 auto：原命令零审批，受控 reviewer 写入及拒绝生效 13964ms
+ ✓ tests/powershell-permission-pty.test.ts (1 test) 6889ms
+   ✓ 原样 pnpm dev：PowerShell 摘要、敏感/未知人工、真实 reviewer ask 与普通读取 6887ms
+ ✓ tests/subagents-pty.test.ts (1 test) 10760ms
+   ✓ Linux 真 PTY：两个后台 child、父输入、实时列表、补充取消、设置单选落盘 10758ms
+
+ Test Files  6 passed (6)
+      Tests  15 passed (15)
+   Start at  07:05:33
+   Duration  46.05s (transform 1.39s, setup 176ms, collect 2.39s, tests 70.44s, environment 2ms, prepare 614ms)
+

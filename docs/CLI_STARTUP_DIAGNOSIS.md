@@ -66,4 +66,4 @@ node docs/evidence/cli-startup-diagnosis/reproduce-cold-cli.mjs /path/to/master-
 
 容量控制的预期是记录机器边界，不保证每台机器在相同并发数超时；不得为得到预期结果反复循环或修改时限。所有探针只运行 FakeProvider 测试 / `/permissions`，不发送模型请求。
 
-[结构化证据](evidence/cli-startup-diagnosis/comparison.json) · [master 首轮原日志](evidence/cli-startup-diagnosis/1-master.log) · [App 首轮](evidence/cli-startup-diagnosis/2-app.log) · [App 次轮](evidence/cli-startup-diagnosis/3-app.log) · [master 次轮](evidence/cli-startup-diagnosis/4-master.log)。结构化证据保留文件 hash、资源前后差分、真实 close code / signal 与全部容量样本。
+[结构化证据](evidence/cli-startup-diagnosis/comparison.json) · [master 首轮原日志](evidence/cli-startup-diagnosis/1-master.txt) · [App 首轮](evidence/cli-startup-diagnosis/2-app.txt) · [App 次轮](evidence/cli-startup-diagnosis/3-app.txt) · [master 次轮](evidence/cli-startup-diagnosis/4-master.txt)。结构化证据保留文件 hash、资源前后差分、真实 close code / signal 与全部容量样本。
