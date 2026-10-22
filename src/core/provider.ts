@@ -50,6 +50,12 @@ export interface ProviderCapabilities {
 export interface Provider {
   readonly name: string;
   readonly capabilities: ProviderCapabilities;
+  /** 适配器可按最终协议估算实际输入及输出预算，尤其是额外 thinking 预留。 */
+  estimateRequest?(req: ChatRequest): {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
   stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent>;
 }
 

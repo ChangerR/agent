@@ -1,5 +1,5 @@
 /**
- * System prompt 组装器：环境信息 + 工具概览 + skill 清单 + 项目 AGENTS.md。
+ * System prompt 组装器：固定规则、工具、skill、项目说明在前，环境快照在后。
  *
  * skill 采用渐进式披露：这里只注入 name+description 清单，
  * 全文在模型调用 use_skill 工具时才读入。
@@ -40,14 +40,6 @@ export function buildDefaultContext(opts: {
 
   sections.push(`你是 AgentLab，运行在用户终端里的通用代理。回答问题、查资料、操作文件和命令、完成软件工程，都在职责里。需要真实环境才能确定的事用工具；能直接回答的不要调用工具。
 
-# 环境
-- 工作目录: ${cwd}
-- 操作系统: ${host.osLabel} (${host.platform})
-- Shell: ${host.shellLine}
-- 路径分隔符: ${host.pathLine}
-- rg: ${rg ?? '未安装，grep 工具使用内置扫描'}
-- 日期: ${new Date().toISOString().slice(0, 10)}
-
 # 做任务
 - 先看再改。要动一个文件或解释一段实现，先用工具读当前内容，不要凭记忆假设。
 - 只做任务直接要求的改动。不要顺手重构、加功能、补文档或“改进”没被要求的代码。
@@ -59,7 +51,6 @@ export function buildDefaultContext(opts: {
 - 只读任务中的 task_read_only 若说明命令形状无法验证，表示该命令没有执行；改用 read_file/glob/grep 等专用读取并正常审批，不重复同一形状、不重启当前计划步骤。已知写入、真正权限拒绝和 only 模式约束仍须遵守。
 
 # 用工具
-${host.toolBullets.map((bullet) => `- ${bullet}`).join('\n')}
 - 彼此独立的只读调用放在同一轮里一起发出。
 - 大文件先 grep 定位，再用 read_file 的 offset/limit 读取相关段落；默认只返回 200 行，看到续读提示不能声称已检查全文。已有足够证据时结束调查，不为提高缓存命中率重复读取。
 - 普通浏览和代码统计只读取任务需要的业务文件，不顺手读取 .env、agent.config.json、mcp.json 等凭据或权限配置；仅在任务明确需要这些内容时提出相应操作。
@@ -84,7 +75,10 @@ ${host.toolBullets.map((bullet) => `- ${bullet}`).join('\n')}
   if (skills.length > 0) {
     sections.push(`# 技能
 下面这些技能只列出了名称和用途。动手做匹配的工作之前，先用 use_skill 读入全文，再按其中的说明执行。
-${skills.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`);
+${[...skills]
+  .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  .map((s) => `- ${s.name}: ${s.description}`)
+  .join('\n')}`);
   }
 
   const agentsMd = join(cwd, 'AGENTS.md');
@@ -94,10 +88,21 @@ ${skills.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`);
     );
   }
 
+  sections.push(`# 环境（启动时快照）
+- 工作目录: ${cwd}
+- 操作系统: ${host.osLabel} (${host.platform})
+- Shell: ${host.shellLine}
+- 路径分隔符: ${host.pathLine}
+- rg: ${rg ?? '未安装，grep 工具使用内置扫描'}
+- 日期: ${new Date().toISOString().slice(0, 10)}
+
+# 平台工具
+${host.toolBullets.map((bullet) => `- ${bullet}`).join('\n')}`);
+
   return sections.map((text, index) => ({
     id: `default-${index}`,
     source: text.startsWith('# 项目说明') ? agentsMd : 'agentlab.context-default',
-    stability: index === 0 ? 'session' : 'stable',
+    stability: text.startsWith('# 环境') ? 'session' : 'stable',
     text,
   }));
 }

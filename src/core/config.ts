@@ -48,8 +48,8 @@ export const AgentConfigSchema = z.object({
   /** 思考等级：off / low / medium / high（可用 /think 切换） */
   thinking: z.enum(['off', 'low', 'medium', 'high']).default('off'),
   /**
-   * 提示缓存。enabled 只对认 cache_control 的 Anthropic 官方接口有写入效果；
-   * DeepSeek 等兼容端点会拒掉这个字段，应设 enabled: false（provider 也会在 400 后自动降级）。
+   * enabled 控制 Anthropic 显式 cache_control；OpenAI 兼容适配器不发送该标记。
+   * 此开关不能关闭 DeepSeek 等厂商的自动前缀缓存。
    * ttl 默认 5 分钟；escalateAfterMs > 0 且上一批工具超过这个时间时，下一轮改用 1 小时。
    */
   cache: z

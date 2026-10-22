@@ -9,6 +9,7 @@ import {
   type ScriptedResponse,
 } from '../providers/fake.js';
 import { definePlugin } from '../sdk/index.js';
+import { z } from 'zod';
 
 function demoScript(): ScriptedResponse {
   let called = false;
@@ -115,11 +116,18 @@ export function providerPlugins(config: AgentConfig) {
     }),
     definePlugin({
       manifest: { id: 'agentlab.provider-openai', version: '1.0.0', apiVersion: 1 },
+      config: {
+        schema: z.object({ dialect: z.enum(['auto', 'generic', 'deepseek']).default('auto') }),
+        ownedFields: ['dialect'],
+        defaults: {},
+        applyMode: 'newSession',
+      },
       setup(ctx) {
         const apiKeyEnv = config.provider === 'openai' ? config.apiKeyEnv : undefined;
         ctx.provide.provider(
           'openai',
           new OpenAIProvider({
+            dialect: ctx.config.value.dialect as 'auto' | 'generic' | 'deepseek',
             apiKeyEnv,
             apiKey: process.env[apiKeyEnv ?? 'OPENAI_API_KEY'],
             baseURL: config.provider === 'openai' ? config.baseURL : undefined,

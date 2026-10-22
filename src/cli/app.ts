@@ -10,6 +10,7 @@
  * - Esc 中断当前轮；Ctrl+C 先中断、空闲时退出
  * - /model /mode /think 与权限审批共用底部交互区，不遮挡对话
  */
+import { formatCacheHitRate, ModelUsageSummary, totalInputTokens } from './usage.js';
 import {
   CombinedAutocompleteProvider,
   Container,
@@ -151,13 +152,6 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-/** 命中率 = 缓存读取 / (缓存读取 + 未命中输入)。分母为 0 时没有可比较的输入 */
-function cacheHitRate(usage: TokenUsage): string {
-  const denom = usage.cacheReadTokens + usage.inputTokens;
-  if (denom === 0) return '-';
-  return `${Math.round((usage.cacheReadTokens / denom) * 100)}%`;
-}
-
 // ---------------------------------------------------------------------------
 // 主入口
 // ---------------------------------------------------------------------------
@@ -205,6 +199,8 @@ export function startTui(
   let thinking: ThinkingLevel = agent.config.thinking;
   let usage: TokenUsage = emptyUsage();
   const usageIds = new Set<string>();
+  const usageSummary = new ModelUsageSummary();
+  const childUsageSummary = new ModelUsageSummary();
   let phase = '就绪';
   let expanded = false;
   let startedAt = 0;
@@ -249,7 +245,7 @@ export function startTui(
       ),
       truncateToWidth(
         ui.muted(
-          ` ↑${fmtTokens(usage.inputTokens)} ↓${fmtTokens(usage.outputTokens)} · cache ${cacheHitRate(usage)} · ${safeTerminalText(model)}`,
+          ` ↑${fmtTokens(totalInputTokens(usage))} ↓${fmtTokens(usage.outputTokens)} · cache ${formatCacheHitRate(usageSummary.totals)} · ${safeTerminalText(model)}`,
         ),
         width,
       ),
@@ -574,6 +570,20 @@ export function startTui(
       if (!stopped) tui.requestRender(true);
     }),
     agent.events.on('subagent_event', (event) => {
+      if (event.requestId && event.provider && event.model && event.purpose)
+        childUsageSummary.request({
+          requestId: event.requestId,
+          provider: event.provider,
+          request: { model: event.model },
+          purpose: event.purpose,
+          modelRole: event.modelRole,
+        });
+      if (event.kind === 'usage' && event.requestId)
+        childUsageSummary.usage({
+          requestId: event.requestId,
+          cache: event.cache,
+          usageReported: event.usageReported,
+        });
       const key = `${event.agentId}:${event.runId}`;
       let card = traces.get(key);
       if (!card) {
@@ -671,6 +681,7 @@ export function startTui(
   // 后台审核只更新状态栏，自动放行的理由可在 /permissions 与日志里查看。
   unsubscribe.push(
     agent.events.on('model_request', (e) => {
+      usageSummary.request(e);
       if (e.purpose === 'judge') setPhase('自动审核工具权限');
     }),
   );
@@ -684,6 +695,7 @@ export function startTui(
     agent.events.on('model_usage', (e) => {
       if (usageIds.has(e.requestId)) return;
       usageIds.add(e.requestId);
+      usageSummary.usage(e);
       usage = {
         inputTokens: usage.inputTokens + e.usage.inputTokens,
         outputTokens: usage.outputTokens + e.usage.outputTokens,
@@ -761,6 +773,8 @@ export function startTui(
   unsubscribe.push(
     agent.events.on('session_restored', (e) => {
       usageIds.clear();
+      usageSummary.reset(true);
+      childUsageSummary.reset(true);
       nextSettingsGeneration();
       streams.finish();
       toolMessages.clear();
@@ -919,6 +933,10 @@ export function startTui(
     toggleDetails,
     detail: (id) => details.get(id),
     usage: () => usage,
+    cacheSummary: () => ({
+      rate: formatCacheHitRate(usageSummary.totals),
+      details: `主任务及辅助请求：\n${usageSummary.describe()}\n子任务（独立统计）：\n${childUsageSummary.describe()}`,
+    }),
     queue: { size: () => turns.size, clear: () => turns.clear() },
     showPermissionPicker: (request) => {
       picker = new InteractionPanel({
