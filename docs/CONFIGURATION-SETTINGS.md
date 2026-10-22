@@ -4,14 +4,13 @@
 
 ## 基线与交付边界
 
-本次从默认分支 `master` 的 `cb64528` 独立开发，未修改缓存增强分支。
+最初从默认分支 `master` 的 `cb64528` 独立开发。当前 PR 链和本轮冲突整理见 [App / Cache 集成](APP_CACHE_INTEGRATION.md)。
 该提交只有 TypeScript / Node.js 的 TUI，`package.json` 没有桌面脚本，
 也没有 Electron、React 或 macOS 打包配置。
 
-已有 Electron + React + 独立 Node worker 的桌面工作台在未合并的
+已有 Electron + React + 独立 Node worker 的桌面工作台最初来源于
 [PR #45](https://github.com/ChangerR/agent/pull/45)，提交 `d2536c7`。
-本 feature 已基于该 App 分支开发，并在本地纳入 master@cb64528；没有修改 #45
-或缓存任务原分支，也没有合并远端 PR。PR 以 #45 分支为 base，待其合并后调整到 master。
+初始 feature 基于该 App 开发并纳入 master@cb64528。现在 #45 已进入 master；#47 虽已合并，但进入的是旧 App 分支而非 master，因此本轮由 #49 对 #48 的真实叠加继续交付未落地的设置增强。#48 仅合入最新 master 解决冲突；本任务未合并任何远端 PR。
 本次交付 Electron/React 设置页面、受控 worker 接口和 macOS 代码适配。
 云端仅为 Linux，未执行 macOS 原生窗口 / 菜单 / Retina / 未签名包验收。
 没有替换框架、连接用户电脑或调用真实模型。

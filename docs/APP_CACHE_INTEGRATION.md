@@ -2,10 +2,12 @@
 
 ## 依赖与状态
 
-- App 独立 PR：#47，基于 #45，已包含 head 743878cb048519272de181cd7c7635819dacb0ab 的 review / Node / 即时保存修正。
-- 缓存实际运行时：PR #48 的最终 head 80b50c16c19964d5850fd59cbb42e0f6cab3d766，包含 schema、完整运行时、稀疏继承和 MCP 活跃项目租约保护。
-- 隔离分支：integration/macos-cache-settings。本分支本地合并上述来源，未修改两个原分支，未合并远端 PR。
-- 额外接入修正独立提交，可在依赖重排后 cherry-pick；最终树已包含接线，用户无需手动填写 schema 或 ownedFields。
+- 当前 master 为 15208088d3a148e0e9615fca05478b50db356c67，已包含 #45 的原 App。
+- #47 已合并关闭，但合并目标是 codex/desktop-session-recovery；它在 #45 进入 master 之后合入该分支，因此其 head 743878c 的设置/macOS 改动尚不在 master。
+- #48 仍为 Draft。缓存功能原 head 为 80b50c1；本轮以普通 merge 合入最新 master，解决规划 import 冲突后为 3856ed0，不改预算、权限或引用保护语义。
+- #49 仍为 Draft，现在叠加于真实依赖分支 feature/cache-runtime-budget-and-reuse，停用旧人工 integration/app-cache-base。其 diff 包含尚未进入 master 的 #47 App 增强，以及完整缓存设置接入；不重复包含缓存核心实现。
+- 两个 feature 均保留全部历史，未 force push，未修改已关闭的 #45/#47，未合并任何远端 PR 或改变 Draft。
+- #48 经用户批准并进入 master 后，#49 才适合调整到 master；当前不能把未合并缓存从 #49 的依赖中假装移除。
 
 #47 单独部署时只开放其实际 schema 的字段。合并缓存依赖与本接入修正后，以下全部字段可从实际 React 表单配置：
 
@@ -62,8 +64,16 @@ node desktop/scripts/ui-cache-smoke.mjs
 
 组合后的根工程 / desktop 类型检查、96 个测试文件全部通过（1755 passed / 2 平台相关 skipped），包括 MCP 活跃租约与文件身份回归。desktop:build、sidecar smoke 和两套 Node / Playwright UI 验收通过。未在 macOS 实机验证。
 
-接入代码独立 commit：d2b4403；PR diff 基于 integration/app-cache-base，只展示接线、schema 投影、元数据和回归，不重复显示整个 App / 缓存功能。依赖 #45 / #47 / #48 按用户授权进入默认分支后，可将接入 commit 重放到最新默认分支并调整 PR base；本任务没有合并或将 #48 标记 Ready。
+接入代码独立 commit：d2b4403。原先的人工 base 已不再用于当前 PR；本轮已将 #49 改为叠加 #48，保留 #47 尚未进入 master 的 App 代码。当前差异仅为这些 App 变更与接入修正，缓存预算、provider、MCP 引用保护及 core 权限实现均与 #48 相同。本任务没有合并或将 #48 标记 Ready。
 
 [结构化验证](evidence/app-cache-integration/validation.json) · [缓存稀疏覆盖截图](evidence/app-cache-integration/cache-sparse-overrides.png) · [摘要角色配置截图](evidence/app-cache-integration/summary-role-settings.png)。截图为独立 Linux 云端 Chromium，不能替代 macOS AppKit / 原生菜单 / Retina 验收。
 
 补充边界 commit 4748122：插件入口数组按 entry 身份保留未知元数据，重排不串接到其他插件。最终完整回归 96 文件 / 1755 passed / 2 skipped，打包输入验证与 sidecar smoke 再次通过。可重放的接入代码为 d2b4403 + 4748122；完整已解决依赖冲突的树在本 PR 分支。
+
+## 本轮冲突整理验证
+
+#48 合入 master@1520808 后保留全部历史，规划 import 同时保留 PlanningError 与 PresetContext。其完整回归为 93 文件 / 1732 passed / 2 skipped。#49 同步该真实依赖后业务代码与此前已验证 App 完全相同，完整组合回归为 96 文件 / 1755 passed / 2 skipped。两边根工程与 desktop 类型检查、CLI / 桌面构建、sidecar smoke 均通过；#49 两套 Node / Playwright UI 验收通过。未使用 force push 或修改已关闭 PR。
+
+本轮 master 未包含 #47 的设置增强，因此 #49 保留这些必要改动；对 #48 的比较不包含 src/core、src/providers、src/mcp 或 policy 的重复差异。#48 未合并前，不能将 #49 直接改到 master 假装依赖已经落地。
+
+[本轮结构化验证](evidence/conflict-reconciliation/validation.json) · [Node UI](evidence/conflict-reconciliation/ui-smoke.json) · [缓存表单 UI](evidence/conflict-reconciliation/cache-ui-smoke.json)。原生 macOS 验收限制不变。
