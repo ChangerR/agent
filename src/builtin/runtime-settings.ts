@@ -1,5 +1,7 @@
 /** 宿主实现选择的统一设置入口。提交即保存；重启后才重新装配活动能力。 */
-import { definePlugin, type SettingsScope } from '../sdk/index.js';
+import { definePlugin, type SettingsScope, type Plugin } from '../sdk/index.js';
+import { configurationSections } from './configuration-settings.js';
+import { mcpSettingsSection } from './mcp-settings.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import type { PresetContext } from '../runtime/preset.js';
 import { resolveAgentPaths } from '../core/paths.js';
@@ -15,11 +17,18 @@ function sourceMetadata(source: ConfigValueSource): ConfigValueSource {
 }
 export function runtimeSettingsPlugin(
   input: Pick<PresetContext, 'cwd' | 'capabilityChoices'> &
-    Partial<Pick<PresetContext, 'paths' | 'configSources' | 'logPath'>>,
+    Partial<Pick<PresetContext, 'paths' | 'configSources' | 'logPath' | 'config'>>,
+  plugins: readonly Plugin[] = [],
 ) {
   return definePlugin({
     manifest: { id: 'agentlab.runtime-settings', version: '1.0.0', apiVersion: 1 },
     setup(ctx) {
+      for (const { id, section } of configurationSections(input.cwd, plugins))
+        ctx.provide.settings(id, section);
+      ctx.provide.settings(
+        'configuration-mcp-servers',
+        mcpSettingsSection(input.cwd, input.config?.mcpConfig),
+      );
       const stores = createScopedConfigStores(input.cwd);
       const bases = new Map<SettingsScope, ConfigSnapshot>();
       const drafts = new WeakMap<

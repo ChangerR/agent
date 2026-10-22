@@ -1,0 +1,28 @@
+{
+  "default_baseline": "cb64528ccf5b675d9504252e4536797e4bb58e94",
+  "app_dependency": "d2536c7e87b5bb410771342221e210bbcc5e8a61",
+  "parallel_schema_reference": "a0562c033757e5c8943d1abd448afa1534158b85",
+  "typecheck": "passed (root and desktop)",
+  "full_tests": {
+    "files": 93,
+    "passed": 1722,
+    "skipped": 2,
+    "failed": 0
+  },
+  "build": "passed (CLI and desktop)",
+  "sidecar_smoke": "passed",
+  "packaging": "linux/x64 --validate passed; darwin metadata/platform guard assertions passed",
+  "ui_smoke": "passed; Node Playwright + actual React + isolated FakeProvider worker; autosave and review regressions",
+  "native_macos": {
+    "executed": false,
+    "reason": "No independent native macOS environment available"
+  },
+  "paid_model_calls": 0,
+  "user_computer_used": false,
+  "published_installers": false,
+  "review_fixes": [
+    "empty object reset restores inheritance",
+    "same-section selection preserves dirty draft",
+    "repeated validation failures retain feedback"
+  ]
+}

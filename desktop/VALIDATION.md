@@ -42,3 +42,26 @@ pnpm test 已执行，完整日志位于本机 desktop/.validation/full-tests.lo
 使用 FakeProvider、隔离 HOME、临时项目和固定假凭据。未读取用户真实 key，未发送真实模型请求。真实模型的端点与凭据由用户在项目配置后主动使用。
 
 交付是完整的可运行 Windows 应用目录。首版不包含安装向导、自动更新、完整 IDE/手动终端，以及尚未移植的 TUI 专有视图；详见 README.md。
+
+## 独立云端 macOS 适配与设置增强（2026-10-22）
+
+本次在 Linux 独立云端复用 #45，纳入 master@cb64528；没有使用用户电脑或真实模型。
+以下结果覆盖叠加后的源码，不以原 Windows 记录替代本次验证：
+
+- pnpm typecheck：根工程与 desktop 工程均通过。
+- pnpm test --maxWorkers=2 --minWorkers=1：93 文件通过，1720 passed / 2 平台相关 skipped。
+- pnpm build、desktop:build：通过；Node v24.19.0，随包 LICENSE 来自同版本官方 Node 源码。
+- desktop:smoke：实际随包 Node 加载原生模块，审批前无写入，批准后写入、保存、迟到批准拒绝，/stats 无模型请求。
+- desktop:package --validate：Linux/x64 输入校验通过；darwin bundle 声明与平台 / 架构不匹配拒绝另经断言验证。没有签名、公证、发布或外发安装包。
+- desktop/scripts/ui-smoke.mjs：真实 Chromium 操作 React 和构建 worker，覆盖设置提交、失败反馈、用户 / 项目隔离、未保存导航拦截、重置草稿、系统暗色和 900px / DPR 2 布局，无页面 JS 错误。
+- git diff --check：通过。
+
+截图和结构化结果在 [evidence](../docs/evidence/macos-app-settings/)，完整设置覆盖、并行缓存字段状态及 macOS 原生待验清单在 [配置文档](../docs/CONFIGURATION-SETTINGS.md)。
+
+限制：Linux Chromium UI / CSS 平台注入和 worker 测试不能证明 AppKit、原生菜单 / 目录、Retina 显示器切换、Dock 生命周期或 macOS .app 实际启动通过。macOS 尚无实机验证。
+
+设置交互区分：外观以及“当前会话”的模型 / 权限模式 / 思考选择即保存，继续调用原后端命令；模型与思考在下一请求采用，模式不处理已有审批。连接组合、缓存费用选项、权限规则和其他结构化启动默认值显式提交并重启；其草稿放弃提醒不等于额外的工具授权。验收工具统一为 Node / Playwright。
+
+### Review 与 Node 验收修正
+
+三项 P2 已补回归：清除空对象后删除覆盖以恢复继承；重选当前节不丢失 dirty 状态；连续相同校验失败使用独立反馈 revision 保持提示。当前会话模型 / 模式 / 思考提供选择即保存入口，结构化默认值继续显式提交。新增验收脚本已替换为 Node / Playwright，仓库不再使用新增 Python UI 脚本。完整回归 93 文件，1722 passed / 2 skipped；Node UI 冒烟与 sidecar smoke 通过。

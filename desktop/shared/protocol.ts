@@ -13,6 +13,23 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('stop'), ...binding }).strict(),
   z
     .object({
+      type: z.literal('settings-read'),
+      ...binding,
+      sectionId: z.string().min(1).max(200),
+      scope: z.enum(['project', 'global']),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('settings-commit'),
+      ...binding,
+      editorId: z.string().uuid(),
+      json: z.string().max(64 * 1024),
+    })
+    .strict(),
+  z.object({ type: z.literal('settings-close'), ...binding }).strict(),
+  z
+    .object({
       type: z.literal('approve'),
       ...binding,
       approvalId: z.string().uuid(),
@@ -112,8 +129,29 @@ export interface RuntimeSnapshot {
   plugins: Array<{ id: string; version: string }>;
   tools: Array<{ name: string; risk: string }>;
   commands: Array<{ id: string; description: string }>;
+  settings: SettingsDescriptor[];
+  settingsEditor?: SettingsEditor;
   inspection: { kind: 'files' | 'read' | 'diff'; path?: string; content: string; error?: boolean };
 }
+export interface SettingsDescriptor {
+  id: string;
+  title: string;
+  description?: string;
+  schema: Record<string, unknown>;
+  applyMode: 'immediate' | 'nextRequest' | 'idleBoundary' | 'newSession';
+  scopes: Array<{ scope: 'project' | 'global'; path: string }>;
+  editable: boolean;
+}
+export interface SettingsEditor {
+  id: string;
+  sectionId: string;
+  scope: 'project' | 'global';
+  value: unknown;
+  error?: string;
+  saved?: boolean;
+  feedbackRevision?: number;
+}
+export type DesktopNavigation = 'settings' | 'new-session' | 'open-project';
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -128,10 +166,13 @@ export interface DesktopState {
   projects: ProjectSummary[];
   runtime?: RuntimeSnapshot;
   error?: string;
+  platform?: string;
 }
 export interface DesktopBridge {
   snapshot(): Promise<DesktopState>;
   onState(listener: (state: DesktopState) => void): () => void;
+  onNavigate(listener: (action: DesktopNavigation) => void): () => void;
+  settingsDirty(dirty: boolean): Promise<void>;
   pickProject(): Promise<void>;
   openProject(id: string): Promise<void>;
   startDemo(): Promise<void>;
