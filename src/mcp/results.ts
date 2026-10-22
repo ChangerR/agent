@@ -78,6 +78,9 @@ export class McpResultStore {
   hasResults(cwd: string) {
     return this.store(cwd).hasResults();
   }
+  activate(cwd: string) {
+    return this.store(cwd).activate(new AbortController().signal);
+  }
   async close() {
     await Promise.all([...this.files.values()].map((file) => file.close()));
     this.files.clear();

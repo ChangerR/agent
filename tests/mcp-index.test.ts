@@ -190,3 +190,32 @@ it('真实会话保存/恢复后，远端不在线仍可续读；历史引用阻
     await second.dispose();
   }
 });
+
+it('另一个活跃runtime尚未保存/恢复的历史也受项目整体租约保护，空闲后才回收', async () => {
+  const producer = store({ maxInlineChars: 1024, maxStoredBytes: 1, maxAgeDays: 1 });
+  const id = idOf((await producer.retain({ content: 'old result'.repeat(1000) }, ctx())).content);
+  await producer.close();
+  const active = store();
+  await active.activate(cwd);
+  const gc = store({ maxInlineChars: 1024, maxStoredBytes: 1, maxAgeDays: 1 });
+  const future = Date.now() + 40 * 86400000;
+  const protectedResult = await gc.cleanup(cwd, signal(), future);
+  expect(protectedResult.removed).toBe(0);
+  expect(protectedResult.overCapacity).toBe(true);
+  expect(protectedResult.protectedBytes).toBeGreaterThan(0);
+  await active.close();
+  expect((await gc.cleanup(cwd, signal(), future)).removed).toBe(1);
+  await expect(gc.reader().execute({ result_id: id }, ctx())).rejects.toThrow();
+});
+
+it.each([
+  { maxAgeDays: 1, maxStoredBytes: 0, removed: 1 },
+  { maxAgeDays: 0, maxStoredBytes: 1, removed: 1 },
+  { maxAgeDays: 0, maxStoredBytes: 0, removed: 0 },
+])('年龄与容量开关独立生效，均关闭不回收：%j', async ({ removed, ...options }) => {
+  const producer = store(1024);
+  await producer.retain({ content: 'retention fixture'.repeat(1000) }, ctx());
+  await producer.close();
+  const gc = store({ maxInlineChars: 1024, ...options });
+  expect((await gc.cleanup(cwd, signal(), Date.now() + 40 * 86400000)).removed).toBe(removed);
+});
