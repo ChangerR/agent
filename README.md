@@ -86,6 +86,18 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 
 这里的 `openai` 是协议适配器名称，实际请求发送到 `baseURL` 指向的 DeepSeek 官方端点。端点已对照 [DeepSeek 官方接入文档](https://api-docs.deepseek.com/) 核验（2026-10-09）；模型 ID 请从该官方文档或你账户的模型列表确认，不能凭“Flash”等简称推断，也不要照搬其他厂商的模型名。上面的模型字段是明确的待替换占位符。
 
+DeepSeek 官方 HTTPS 端点会自动使用专用协议映射：`/think off` 显式发送 `thinking.type=disabled`；low 映射 low，medium/high 映射 high。携带 tools 时，所有历史 assistant 的推理通过独立的 `reasoning_content` 回传，包括纯回答轮，正文保持分离；没有 tools 时不回传被忽略的历史推理。未指定 thinking 的独立调用保留服务端默认值。经代理访问 DeepSeek 时，在 `pluginConfig["agentlab.provider-openai"]` 设置 `"dialect":"deepseek"`；`"generic"` 可强制沿用通用行为。默认 `auto` 只识别 `https://api.deepseek.com`，不根据模型名猜测厂商，其他兼容端点不会新增 DeepSeek 参数。修改后需重启。
+
+### 缓存、请求预算与大 MCP 结果
+
+固定规则、项目规范和确定排序后的工具/schema 位于前部，启动时的目录、日期及平台快照放在后部。已有消息和工具结果只追加；必要压缩会替换早期历史并重建缓存。每次主任务或子任务模型请求前，预算计入最终协议的 system、tools、消息和输出预留；超过阈值先尝试压缩，仍超过已知模型窗口时以 `context_budget_exceeded` 停止，保留历史，不发送该请求。输入是保守启发式估算，不能代替模型 tokenizer 或厂商 usage；未知模型请先配置正确规格。
+
+MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范围 1024–1000000，按 Unicode 码点限制含省略提示的结果正文；只在首次返回时处理，保留首尾和原错误标志。超限全文以私有文件保存到本项目的 `~/.agent/state/projects/<项目指纹>/mcp-results/`，工具结果返回不透明 `result_id`，使用 `mcp_read_result` 的 0-based `offset` 和 `limit` 分页续读。该工具同样经过权限门和子任务工具范围限制；显式 `allowedTools` 需要同时包含它。结果按项目隔离、跨进程保留，不自动清理；确认不再需要续读后可手工删除该项目结果目录。保存失败会报告原 MCP 操作已结束，不能自动重复操作。旧的直接 MCP 插件 `agentlab.mcp-client` 使用同名限额字段。
+
+底栏和 `/stats` 统一使用已报告的 `hit/(hit+miss)`，Anthropic 的 miss 包括本次缓存写入。`?` 表示未知，`（部分）` 表示仅统计已知请求；恢复会话不从补零的旧计数猜测完整缓存分桶。`/stats` 保留模型与角色维度，子任务独立列示。命中率不是成本节省率：不要为提高比例重复读取或保留无用历史。
+
+`cache.enabled/ttl` 仅控制 Anthropic 显式断点，不关闭 DeepSeek 自动缓存，也不向通用兼容端点发送 `cache_control`。DeepSeek 需匹配已持久化的完整前缀单元，构建需要时间且 best effort，不能假设任意公共前缀第二次立即命中或固定 64-token 粒度；OpenAI 缓存参数取决于具体模型和 API。本功能没有增加缓存预热请求。摘要器继续使用隔离的 system 和截断转写，原前缀摘要策略、原始工具参数回放及在线费用 A/B 留待独立验证。
+
 ### OpenAI 或其他 OpenAI 兼容服务
 
 使用 `provider: "openai"`，并填写该服务的完整 `model` 和 `baseURL`。默认 key 变量名是 `OPENAI_API_KEY`；若使用 `.env` 中的 `MY_MODEL_KEY=...`，JSON 里就写 `"apiKeyEnv": "MY_MODEL_KEY"`。`apiKeyEnv` 填变量名，不填密钥本身。OpenAI 官方默认端点为 `https://api.openai.com/v1`；其他服务应显式填写其接入文档要求的地址，不要让兼容服务的 key 误发到默认端点。

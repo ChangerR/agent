@@ -32,6 +32,8 @@ export interface TuiPluginContext {
   toggleDetails(): void;
   detail(id: number): { id: number; title: string; body: () => string } | undefined;
   usage(): TokenUsage;
+  /** 缓存按原始已知分桶统计，不能从补零后的 TokenUsage 猜测完整性。 */
+  cacheSummary?(): { rate: string; details: string };
   queue: { size(): number; clear(): number };
 }
 export interface BuiltinTuiContext extends TuiPluginContext {
