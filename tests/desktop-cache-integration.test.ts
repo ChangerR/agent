@@ -132,6 +132,29 @@ const expected: Record<string, string[]> = {
   ],
 };
 describe('App + 缓存最终 runtime 的实际设置接入', () => {
+  it('插件入口重排后未知元数据仍跟随原 entry，且不进入界面 DTO', async () => {
+    await writeFile(
+      join(cwd, 'agent.config.json'),
+      JSON.stringify({
+        provider: 'fake',
+        pluginEntries: [
+          { entry: './a.mjs', enabled: true, future: 'private-a' },
+          { entry: './b.mjs', enabled: true, future: 'private-b' },
+        ],
+      }),
+    );
+    await save('configuration-files', {
+      pluginEntries: [
+        { entry: './b.mjs', enabled: true },
+        { entry: './a.mjs', enabled: false },
+      ],
+    });
+    expect((await raw()).pluginEntries).toEqual([
+      { entry: './b.mjs', enabled: true, future: 'private-b' },
+      { entry: './a.mjs', enabled: false, future: 'private-a' },
+    ]);
+    expect(JSON.stringify(latest())).not.toContain('private-');
+  });
   it('所有新增字段在 worker 目录中注册且可读，打开不回填默认，均提示重启', async () => {
     const before = await readFile(join(cwd, 'agent.config.json'), 'utf8');
     for (const [id, fields] of Object.entries(expected)) {

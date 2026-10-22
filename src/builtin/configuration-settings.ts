@@ -113,9 +113,15 @@ function preserveUnknown(previous: unknown, next: unknown, schema: z.ZodTypeAny)
       ]),
     );
   if (inner instanceof z.ZodArray && Array.isArray(next))
-    return next.map((item, index) =>
-      preserveUnknown(Array.isArray(previous) ? previous[index] : undefined, item, inner.element),
-    );
+    return next.map((item, index) => {
+      // 插件入口重排时，未知元数据必须跟随同一 entry，不能附到另一个插件上。
+      const old = Array.isArray(previous)
+        ? record(item) && typeof item.entry === 'string'
+          ? previous.find((candidate) => record(candidate) && candidate.entry === item.entry)
+          : previous[index]
+        : undefined;
+      return preserveUnknown(old, item, inner.element);
+    });
   if (inner instanceof z.ZodUnion) {
     const selected = (inner.options as z.ZodTypeAny[]).find(
       (option) => option.safeParse(next).success,
