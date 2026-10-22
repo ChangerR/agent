@@ -47,15 +47,19 @@ export const AgentConfigSchema = z.object({
   judgeModel: z.string().optional(),
   /** 思考等级：off / low / medium / high（可用 /think 切换） */
   thinking: z.enum(['off', 'low', 'medium', 'high']).default('off'),
+  replayToolArguments: z.boolean().default(false),
   /**
    * enabled 控制 Anthropic 显式 cache_control；OpenAI 兼容适配器不发送该标记。
    * 此开关不能关闭 DeepSeek 等厂商的自动前缀缓存。
-   * ttl 默认 5 分钟；escalateAfterMs > 0 且上一批工具超过这个时间时，下一轮改用 1 小时。
+   * ttl 默认 5 分钟；staticTtl 可为静态前缀单独设置。默认 fixed，旧的事后升级须显式 legacy-reactive。
    */
   cache: z
     .object({
       enabled: z.boolean().default(true),
       ttl: z.enum(['5m', '1h']).default('5m'),
+      staticTtl: z.enum(['5m', '1h']).optional(),
+      /** fixed 不根据已结束的工具耗时升级；legacy-reactive 保留显式旧配置。 */
+      ttlStrategy: z.enum(['fixed', 'legacy-reactive']).default('fixed'),
       escalateAfterMs: z.number().int().nonnegative().default(0),
     })
     .default({ enabled: true, ttl: '5m', escalateAfterMs: 0 }),
