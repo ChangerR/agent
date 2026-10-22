@@ -8,6 +8,7 @@
  */
 import OpenAI from 'openai';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
+import { estimateTextTokens } from '../core/context/tokens.js';
 import type {
   ChatCompletionChunk,
   ChatCompletionMessageParam,
@@ -16,11 +17,34 @@ import type {
 import type { ChatRequest, Provider } from '../core/provider.js';
 import type { Message, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
 
+export type OpenAIDialect = 'generic' | 'deepseek';
+export type OpenAIDialectSetting = OpenAIDialect | 'auto';
+
+/** 只自动识别官方端点；代理须显式声明，不能从模型名猜测厂商。 */
+export function resolveOpenAIDialect(
+  baseURL: string | undefined,
+  setting: OpenAIDialectSetting = 'auto',
+): OpenAIDialect {
+  if (setting !== 'auto') return setting;
+  if (!baseURL) return 'generic';
+  try {
+    const url = new URL(baseURL);
+    return url.protocol === 'https:' && url.hostname === 'api.deepseek.com'
+      ? 'deepseek'
+      : 'generic';
+  } catch {
+    return 'generic';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 出站：规范化 -> OpenAI
 // ---------------------------------------------------------------------------
 
-export function toOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
+export function toOpenAIMessages(
+  messages: Message[],
+  reasoningHistory = false,
+): ChatCompletionMessageParam[] {
   const out: ChatCompletionMessageParam[] = [];
   for (const m of messages) {
     if (m.role === 'user') {
@@ -44,7 +68,7 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
       if (texts.length > 0) out.push({ role: 'user', content: texts.join('\n') });
       continue;
     }
-    // assistant：只回传正文。thinking 不并进 content，避免前缀随推理文本抖动
+    // 推理与正文分离；DeepSeek 携带 tools 时回传所有轮次的原始推理。
     const text = m.content
       .filter((b) => b.type === 'text')
       .map((b) => b.text)
@@ -60,6 +84,14 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
       role: 'assistant',
       content: text || null,
       ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      ...(reasoningHistory
+        ? {
+            reasoning_content: m.content
+              .filter((b) => b.type === 'thinking')
+              .map((b) => b.thinking)
+              .join(''),
+          }
+        : {}),
     });
   }
   return out;
@@ -161,22 +193,34 @@ export class OpenAIStreamTranslator {
 // ---------------------------------------------------------------------------
 
 /**
- * thinking 映射：OpenAI 系的 reasoning_effort（o 系列 / gpt-5 / DeepSeek 思考模型）。
- * off 或不支持时不传该参数。
+ * DeepSeek 显式映射开关与历史；通用兼容接口保留既有参数行为。
  */
-export function toOpenAIParams(req: ChatRequest): OpenAI.ChatCompletionCreateParamsStreaming {
+export function toOpenAIParams(
+  req: ChatRequest,
+  dialect: OpenAIDialect = 'generic',
+): OpenAI.ChatCompletionCreateParamsStreaming {
   return {
     model: req.model,
-    messages: [{ role: 'system', content: req.system }, ...toOpenAIMessages(req.messages)],
+    messages: [
+      { role: 'system', content: req.system },
+      ...toOpenAIMessages(req.messages, dialect === 'deepseek' && req.tools.length > 0),
+    ],
     tools: req.tools.length > 0 ? toOpenAITools(req.tools) : undefined,
     ...(req.toolChoice ? { tool_choice: req.toolChoice } : {}),
     max_tokens: req.maxTokens,
     stream: true,
     stream_options: { include_usage: true },
     // req.cache 只服务 Anthropic 的显式断点。这里靠前缀不变触发服务端自动缓存，不写任何标记。
-    ...(req.thinking && req.thinking !== 'off'
-      ? { reasoning_effort: req.thinking as 'low' | 'medium' | 'high' }
-      : {}),
+    ...(dialect === 'deepseek' && req.thinking !== undefined
+      ? {
+          thinking: { type: req.thinking === 'off' ? 'disabled' : 'enabled' },
+          ...(req.thinking === 'off'
+            ? {}
+            : { reasoning_effort: req.thinking === 'low' ? ('low' as const) : ('high' as const) }),
+        }
+      : req.thinking && req.thinking !== 'off'
+        ? { reasoning_effort: req.thinking as 'low' | 'medium' | 'high' }
+        : {}),
   };
 }
 
@@ -189,7 +233,21 @@ export class OpenAIProvider implements Provider {
   readonly capabilities = { thinking: true, streaming: true };
   private client: OpenAI | null = null;
 
-  constructor(private opts: ApiKeyOptions & { baseURL?: string } = {}) {}
+  constructor(
+    private opts: ApiKeyOptions & { baseURL?: string; dialect?: OpenAIDialectSetting } = {},
+  ) {}
+
+  estimateRequest(req: ChatRequest) {
+    const dialect = resolveOpenAIDialect(
+      this.opts.baseURL ?? process.env.OPENAI_BASE_URL,
+      this.opts.dialect,
+    );
+    const body = toOpenAIParams(req, dialect);
+    const inputTokens =
+      estimateTextTokens(JSON.stringify({ messages: body.messages, tools: body.tools })) + 32;
+    const outputTokens = body.max_tokens ?? 0;
+    return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+  }
 
   private getClient(): OpenAI {
     if (!this.client) {
@@ -202,7 +260,9 @@ export class OpenAIProvider implements Provider {
   }
 
   async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
-    const stream = await this.getClient().chat.completions.create(toOpenAIParams(req), { signal });
+    const client = this.getClient();
+    const dialect = resolveOpenAIDialect(client.baseURL, this.opts.dialect);
+    const stream = await client.chat.completions.create(toOpenAIParams(req, dialect), { signal });
     yield { type: 'message_start' };
     const translator = new OpenAIStreamTranslator();
     for await (const chunk of stream) {

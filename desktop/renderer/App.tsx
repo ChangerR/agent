@@ -10,9 +10,10 @@ import type {
   Interaction,
 } from '../shared/protocol.js';
 import { getBridge } from './bridge.js';
+import { SettingsPanel } from './SettingsPanel.js';
 const bridge = getBridge();
 const empty: DesktopState = { version: 1, revision: -1, connecting: false, projects: [] };
-type Theme = 'light' | 'dark' | 'blue';
+type Theme = 'system' | 'light' | 'dark' | 'blue';
 const labels: Record<string, string> = {
   default: '内置',
   global: '全局',
@@ -190,9 +191,12 @@ export default function App() {
     [tab, setTab] = useState<'diff' | 'files' | 'logs'>('diff');
   const [theme, setTheme] = useState<Theme>(() => {
     try {
-      return (localStorage.getItem('agentlab-theme') as Theme) || 'light';
+      const saved = localStorage.getItem('agentlab-theme');
+      return ['system', 'light', 'dark', 'blue'].includes(saved ?? '')
+        ? (saved as Theme)
+        : 'system';
     } catch {
-      return 'light';
+      return 'system';
     }
   });
   const [prompt, setPrompt] = useState(''),
@@ -200,16 +204,36 @@ export default function App() {
     [files, setFiles] = useState<string[]>([]),
     [inspector, setInspector] = useState(false),
     [sidebar, setSidebar] = useState(true);
+  const settingsDirtyRef = useRef(false);
+  const dirtyChanged = (dirty: boolean) => {
+    settingsDirtyRef.current = dirty;
+    void bridge.settingsDirty(dirty).catch(() => {});
+  };
+  const allowLeave = () => {
+    if (settingsDirtyRef.current && !window.confirm('设置有未保存更改，放弃后继续？')) return false;
+    dirtyChanged(false);
+    return true;
+  };
+  const navigate = (next: typeof view) => {
+    if (next === view || allowLeave()) setView(next);
+  };
   const scroll = useRef<HTMLDivElement>(null),
     follow = useRef(true);
   const runtime = state.runtime,
     busy = state.connecting || !!runtime?.busy;
   const disabled = busy || pending;
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      document.documentElement.dataset.theme =
+        theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
+    };
+    apply();
+    media.addEventListener('change', apply);
     try {
       localStorage.setItem('agentlab-theme', theme);
     } catch {}
+    return () => media.removeEventListener('change', apply);
   }, [theme]);
   useEffect(() => {
     let active = true;
@@ -275,11 +299,13 @@ export default function App() {
   };
   const openFile = (path: string) => inspect('read', path);
   const choose = () => {
+    if (!allowLeave()) return;
     void perform(async () => {
       await bridge.pickProject();
     });
   };
   const openProject = (id: string) => {
+    if (!allowLeave()) return;
     if (runtime?.cwd === id && runtime.phase !== '进程中断') {
       setView('chat');
       return;
@@ -292,11 +318,20 @@ export default function App() {
   useEffect(() => {
     if (runtime?.generation) setView('chat');
   }, [runtime?.generation]);
-  const startDemo = () =>
+  const startDemo = () => {
+    if (!allowLeave()) return;
     void perform(async () => {
       await bridge.startDemo();
       setView('chat');
     });
+  };
+  const newSession = () => {
+    if (!allowLeave()) return;
+    void perform(async () => {
+      await bridge.newSession();
+      setView('chat');
+    });
+  };
   const submit = () => {
     const text = prompt.trim();
     if (!text || !runtime || disabled) return;
@@ -309,12 +344,33 @@ export default function App() {
   const setting = (field: 'model' | 'mode' | 'think', value: string) =>
     void perform(() => action({ type: 'setting', field, value }));
   const changeTheme = (value: string) => setTheme(value as Theme);
+  useEffect(() => {
+    const off = bridge.onNavigate((target) => {
+      if (target === 'settings') navigate('settings');
+      else if (target === 'open-project') choose();
+      else if (!disabled && runtime) newSession();
+    });
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (settingsDirtyRef.current) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => {
+      off();
+      window.removeEventListener('beforeunload', beforeUnload);
+    };
+  });
+  useEffect(() => {
+    document.documentElement.dataset.platform = state.platform ?? 'browser';
+  }, [state.platform]);
   const allError = error || state.error || runtime?.error;
   return (
     <div
       className={
         'app ' +
-        (!inspector || view === 'projects' ? 'inspector-closed ' : '') +
+        (!inspector || view !== 'chat' ? 'inspector-closed ' : '') +
         (!sidebar ? 'sidebar-closed' : '')
       }
     >
@@ -333,19 +389,12 @@ export default function App() {
               <Icon name="sidebar" />
             </button>
           </div>
-          <button
-            className="nav-new"
-            disabled={disabled || !runtime}
-            onClick={() => {
-              setView('chat');
-              void perform(() => bridge.newSession());
-            }}
-          >
+          <button className="nav-new" disabled={disabled || !runtime} onClick={newSession}>
             <Icon name="plus" /> 新建会话
           </button>
           <button
             className={'nav-home ' + (view === 'projects' ? 'active' : '')}
-            onClick={() => setView('projects')}
+            onClick={() => navigate('projects')}
           >
             <Icon name="grid" /> 所有项目 <span>{state.projects.length}</span>
           </button>
@@ -385,26 +434,20 @@ export default function App() {
                 {runtime?.cwd === project.path && (
                   <div className="project-children">
                     <div className="project-shortcuts">
-                      <button
-                        disabled={disabled}
-                        onClick={() => {
-                          setView('chat');
-                          void perform(() => bridge.newSession());
-                        }}
-                      >
+                      <button disabled={disabled} onClick={newSession}>
                         <Icon name="plus" size={13} /> 新建会话
                       </button>
                       <button
                         aria-label={'设置项目 ' + project.name}
                         title="项目设置"
-                        onClick={() => setView('settings')}
+                        onClick={() => navigate('settings')}
                       >
                         <Icon name="settings" size={14} />
                       </button>
                     </div>
                     <div className="session-list" aria-label={project.name + ' 的会话'}>
                       {runtime && !runtime.sessions.some((s) => s.id === runtime.sessionId) && (
-                        <button className="active" onClick={() => setView('chat')}>
+                        <button className="active" onClick={() => navigate('chat')}>
                           <span>新会话</span>
                           <span className="session-meta">{runtime.phase}</span>
                         </button>
@@ -415,6 +458,7 @@ export default function App() {
                           className={s.id === runtime.sessionId ? 'active' : ''}
                           disabled={disabled}
                           onClick={() => {
+                            if (!allowLeave()) return;
                             setView('chat');
                             if (s.id !== runtime.sessionId)
                               void perform(() => action({ type: 'resume', id: s.id }));
@@ -448,6 +492,10 @@ export default function App() {
             )}
           </nav>
           <div className="sidebar-bottom">
+            <button aria-label="打开应用设置" onClick={() => navigate('settings')}>
+              <Icon name="settings" /> 设置{' '}
+              <kbd>{state.platform === 'darwin' ? '⌘,' : 'Ctrl+,'}</kbd>
+            </button>
             <label className="theme-control">
               <span>
                 <Icon name="moon" /> 外观
@@ -457,6 +505,7 @@ export default function App() {
                 value={theme}
                 onChange={(e) => changeTheme(e.target.value)}
               >
+                <option value="system">跟随系统</option>
                 <option value="light">黑白灰</option>
                 <option value="dark">深色石墨</option>
                 <option value="blue">冷灰蓝</option>
@@ -500,7 +549,7 @@ export default function App() {
               {view === 'projects'
                 ? '项目'
                 : view === 'settings'
-                  ? '项目设置'
+                  ? '设置'
                   : (runtime?.title ?? 'AgentLab Desktop')}
             </h1>
           </div>
@@ -508,7 +557,7 @@ export default function App() {
             <span className="tag" role="status">
               {state.connecting ? '正在打开项目' : (runtime?.phase ?? '就绪')}
             </span>
-            {view !== 'projects' && (
+            {view === 'chat' && (
               <button
                 aria-label="收起或显示检查栏"
                 title="收起或显示检查栏"
@@ -588,122 +637,14 @@ export default function App() {
             )}
           </section>
         ) : view === 'settings' ? (
-          <section className="settings">
-            <span className="tag">默认作用范围：当前项目</span>
-            <h2>项目设置</h2>
-            <section>
-              <h3>模型与连接</h3>
-              <div className="setting-row">
-                <div>
-                  Provider<p>从当前项目配置装配</p>
-                </div>
-                <code>{runtime?.provider ?? '尚未打开项目'}</code>
-              </div>
-              <div className="setting-row">
-                <div>
-                  模型 ID
-                  <p>
-                    来源：{labels[runtime?.sources.model ?? 'default']} · Enter 提交并保存项目默认
-                  </p>
-                </div>
-                <input
-                  aria-label="模型 ID"
-                  list="models"
-                  value={model}
-                  disabled={disabled || !runtime}
-                  onChange={(e) => setModel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') setting('model', model);
-                    if (e.key === 'Escape') setModel(runtime?.model ?? '');
-                  }}
-                  onBlur={() => setModel(runtime?.model ?? '')}
-                />
-              </div>
-              <div className="info">
-                凭据使用进程环境或项目 .env；JSON 的 apiKeyEnv 是变量名。更改 provider、端点、key
-                或插件后，请退出并重新启动应用。模型切换仅作用于当前 provider。
-              </div>
-            </section>
-            <section>
-              <h3>默认行为</h3>
-              <div className="setting-row">
-                <div>
-                  权限模式
-                  <p>
-                    来源：{labels[runtime?.sources.mode ?? 'default']} ·
-                    选择后自动保存；不处理已有审批
-                  </p>
-                </div>
-                <select
-                  aria-label="项目权限模式"
-                  disabled={disabled || !runtime}
-                  value={runtime?.mode ?? 'ask'}
-                  onChange={(e) => setting('mode', e.target.value)}
-                >
-                  <option value="ask">ask · 默认策略</option>
-                  <option value="auto">auto · 自动策略</option>
-                  <option value="yolo">yolo · 宽松策略</option>
-                </select>
-              </div>
-              <div className="setting-row">
-                <div>
-                  思考等级
-                  <p>
-                    来源：{labels[runtime?.sources.thinking ?? 'default']} · 具体支持由 provider
-                    决定
-                  </p>
-                </div>
-                <select
-                  aria-label="项目思考等级"
-                  disabled={disabled || !runtime}
-                  value={runtime?.thinking ?? 'off'}
-                  onChange={(e) => setting('think', e.target.value)}
-                >
-                  {['off', 'low', 'medium', 'high'].map((t) => (
-                    <option key={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="setting-row">
-                <div>
-                  外观<p>桌面外观偏好，独立于 agent 项目配置</p>
-                </div>
-                <select
-                  aria-label="界面主题"
-                  value={theme}
-                  onChange={(e) => changeTheme(e.target.value)}
-                >
-                  <option value="light">黑白灰</option>
-                  <option value="dark">深色石墨</option>
-                  <option value="blue">冷灰蓝</option>
-                </select>
-              </div>
-            </section>
-            <section>
-              <h3>已加载能力</h3>
-              <p className="small">
-                {runtime?.tools.map((t) => t.name).join(' · ') ??
-                  '打开项目后查看工具、插件和命令。'}
-              </p>
-              <div className="plugin-list">
-                {runtime?.plugins.map((p) => (
-                  <div key={p.id}>
-                    <code>{p.id}</code>
-                    <span>{p.version}</span>
-                  </div>
-                ))}
-              </div>
-              <details>
-                <summary>已注册命令（可在聊天输入 /命令）</summary>
-                <pre>
-                  {runtime?.commands.map((c) => '/' + c.id + ' · ' + c.description).join('\n')}
-                </pre>
-              </details>
-            </section>
-            <button className="outline" onClick={() => setView('chat')}>
-              返回会话
-            </button>
-          </section>
+          <SettingsPanel
+            key={runtime?.generation ?? 'preferences'}
+            runtime={runtime}
+            request={action}
+            dirtyChanged={dirtyChanged}
+            theme={theme}
+            changeTheme={changeTheme}
+          />
         ) : (
           <>
             <div
@@ -917,7 +858,7 @@ export default function App() {
           </>
         )}
       </main>
-      {inspector && view !== 'projects' && (
+      {inspector && view === 'chat' && (
         <aside className="inspector">
           <nav className="tabs" aria-label="检查面板">
             {[

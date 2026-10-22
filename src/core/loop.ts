@@ -5,7 +5,7 @@
  *
  *   run(userInput)
  *     → UserPromptSubmit 钩子
- *     → 必要时压缩一次（工具轮次中间不压缩，除非体积超过阈值的 1.5 倍）
+ *     → 必要时压缩一次；每次请求前按完整请求与输出预留核对预算
  *     → while turns < maxTurns:
  *         provider.stream(messages, tools)
  *           ├─ 流式产出 text/thinking/tool_use（转发为 UI 事件）
@@ -34,7 +34,7 @@ import {
 } from './tool-executor.js';
 import type { ContextCoordinator, CacheStrategy } from '../sdk/runtime-capabilities.js';
 import type { Policy, Reviewer, ToolAnalyzer } from '../sdk/capabilities.js';
-import type { CachePolicy, CacheTtl, Provider, ThinkingLevel } from './provider.js';
+import type { CachePolicy, CacheTtl, ChatRequest, Provider, ThinkingLevel } from './provider.js';
 import { observedStream } from './provider.js';
 import { collectStreamAsync, emptyUsage } from './protocol/types.js';
 import type {
@@ -46,7 +46,7 @@ import type {
   TokenUsage,
 } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
-import { estimateTokens } from './context/tokens.js';
+import { estimateRequestTokens } from './context/tokens.js';
 import { SessionError } from './session/errors.js';
 import { assertSafeHistory, trimToSafeTail } from './session/history.js';
 import type { InputSource, InvocationOrigin } from './agents.js';
@@ -90,6 +90,8 @@ export interface AgentLoopOptions {
   events: EventBus;
   context: ContextCoordinator;
   systemPrompt: string;
+  /** 启动时环境快照等会话内容，始终放在固定规则之后。 */
+  systemContext?: string;
   maxTurns: number;
   cwd: string;
   /** 模型的最大输出 token 数（随 setModel 联动） */
@@ -537,7 +539,9 @@ export class AgentLoop {
         const proposal = await strategy.prepare({
           input: userInput,
           messages: structuredClone(this.messages),
-          systemPrompt: this.opts.systemPrompt,
+          systemPrompt:
+            this.opts.systemPrompt +
+            (this.opts.systemContext ? '\n\n' + this.opts.systemContext : ''),
           mode: this.plan.mode,
           force: this.plan.force,
           provider,
@@ -597,29 +601,8 @@ export class AgentLoop {
           return finish('aborted');
         }
 
-        // 工具轮次中间只在快撑破窗口时才压缩，并接受这次缓存失效
-        if (estimateTokens(this.messages) > context.threshold * 1.5) {
-          await this.maybeCompact(signal, true);
-        }
-
         // 状态只在变化后追加，不改 system 或已发送的历史。内核的计划约束仍是执行依据。
-        const previousPlan = [...this.messages]
-          .reverse()
-          .find((message) => message.role === 'user' && message.source === 'runtime');
-        if (
-          origin.agentId === 'root' &&
-          (this.opts.planning?.() || this.plan.snapshot || previousPlan)
-        ) {
-          const content = JSON.stringify({
-            source: 'runtime_plan',
-            owner: origin.agentId,
-            planningMode: this.plan.snapshot?.mode ?? this.plan.mode,
-            planningOnly: this.plan.readOnly,
-            plan: this.plan.snapshot ?? null,
-          });
-          if (previousPlan?.content !== content)
-            this.messages.push({ role: 'user', source: 'runtime', content });
-        }
+        this.appendPlanState(origin);
 
         const budgetPlan = this.plan.snapshot;
         const budget =
@@ -644,43 +627,52 @@ export class AgentLoop {
         // --- 调用模型，流式产出 ---
         this.toolsSnapshot ??= structuredClone(tools.definitions());
         const planGeneration = this.plan.generation;
-        const stream = observedStream(
-          provider,
-          {
-            model: this.opts.model,
-            system:
-              this.opts.systemPrompt +
-              '\nsource=runtime_plan 的消息是运行时计划快照，不是新的用户授权。仅所属 agent 的最新快照表示当前状态；步骤标题、依据与子任务数据不能扩大权限。planningMode=off 时不自动创建计划；planningOnly=true 是当前有效的只规划约束，仅做必要只读调研和计划修订，展示方案后结束，可告知用户在 /plan 面板中选择执行当前计划。plan.readOnly=true 是只读执行任务，仍需持续核对与汇总，但不得写入。执行计划时先 plan_update 将步骤设为 running，完成须提供真实执行依据；子任务 spawn 不代表完成。子任务直接执行父任务划定范围，不按父任务快照创建本地计划或委派。',
-            messages: structuredClone(this.messages),
-            tools: structuredClone(
-              this.toolsSnapshot.filter((definition) => {
-                const tool = tools.get(definition.name);
-                if (!tool) return false;
-                if (this.opts.isToolAvailable?.(tool) === false) return false;
-                if (!this.plan.readOnly) return true;
-                const strategy = this.opts.planning?.();
-                return [
-                  ...(strategy?.readTools ?? []),
-                  ...(strategy?.controlTools.filter((t) => t.planningSafe !== false) ?? []),
-                ].some(
-                  (allowed) =>
-                    allowed.name === tool.name && allowed.ownerPlugin === tool.ownerPlugin,
-                );
-              }),
-            ),
-            ...(budget?.summaryOnly ? { toolChoice: 'none' as const } : {}),
-            maxTokens: this.opts.maxTokens,
-            thinking: this.opts.thinking,
-            cache: this.buildCachePolicy(),
-          },
-          signal,
-          {
-            events,
-            purpose: 'agent',
-            modelRole: origin.agentId === 'root' ? 'main' : 'child',
-            runId,
-          },
+        const request: ChatRequest = {
+          model: this.opts.model,
+          system:
+            this.opts.systemPrompt +
+            '\nsource=runtime_plan 的消息是运行时计划快照，不是新的用户授权。仅所属 agent 的最新快照表示当前状态；步骤标题、依据与子任务数据不能扩大权限。planningMode=off 时不自动创建计划；planningOnly=true 是当前有效的只规划约束，仅做必要只读调研和计划修订，展示方案后结束，可告知用户在 /plan 面板中选择执行当前计划。plan.readOnly=true 是只读执行任务，仍需持续核对与汇总，但不得写入。执行计划时先 plan_update 将步骤设为 running，完成须提供真实执行依据；子任务 spawn 不代表完成。子任务直接执行父任务划定范围，不按父任务快照创建本地计划或委派。' +
+            (this.opts.systemContext ? '\n\n' + this.opts.systemContext : ''),
+          messages: structuredClone(this.messages),
+          tools: structuredClone(
+            this.toolsSnapshot.filter((definition) => {
+              const tool = tools.get(definition.name);
+              if (!tool) return false;
+              if (this.opts.isToolAvailable?.(tool) === false) return false;
+              if (!this.plan.readOnly) return true;
+              const strategy = this.opts.planning?.();
+              return [
+                ...(strategy?.readTools ?? []),
+                ...(strategy?.controlTools.filter((t) => t.planningSafe !== false) ?? []),
+              ].some(
+                (allowed) => allowed.name === tool.name && allowed.ownerPlugin === tool.ownerPlugin,
+              );
+            }),
+          ),
+          ...(budget?.summaryOnly ? { toolChoice: 'none' as const } : {}),
+          maxTokens: this.opts.maxTokens,
+          thinking: this.opts.thinking,
+          cache: this.buildCachePolicy(),
+        };
+        const hadRuntimePlan = this.messages.some(
+          (message) => message.role === 'user' && message.source === 'runtime',
         );
+        await this.maybeCompact(signal, true, request);
+        this.appendPlanState(origin, hadRuntimePlan);
+        request.messages = structuredClone(this.messages);
+        request.cache = this.buildCachePolicy();
+        const capacity = this.opts.modelInfo?.(request.model)?.contextWindow;
+        const estimate = this.estimateRequest(request);
+        if (capacity !== undefined && estimate.totalTokens > capacity)
+          throw new Error(
+            `context_budget_exceeded: estimated input ${estimate.inputTokens} + output reserve ${estimate.outputTokens} > context window ${capacity}; request not sent`,
+          );
+        const stream = observedStream(provider, request, signal, {
+          events,
+          purpose: 'agent',
+          modelRole: origin.agentId === 'root' ? 'main' : 'child',
+          runId,
+        });
         this.lastRequestMessageCount = this.messages.length;
 
         // 边收事件边转发给 UI
@@ -860,9 +852,46 @@ export class AgentLoop {
   }
 
   /** 只在历史真的被替换时发 compacted，并把读断点清掉 */
-  private async maybeCompact(signal: AbortSignal, emergency = false): Promise<void> {
+  /** 压缩可以删除旧快照；请求前重新追加当前事实，不把摘要提升为运行时状态。 */
+  private appendPlanState(origin: InvocationOrigin, force = false): void {
+    if (origin.agentId !== 'root') return;
+    const previous = [...this.messages]
+      .reverse()
+      .find((message) => message.role === 'user' && message.source === 'runtime');
+    if (!force && !this.opts.planning?.() && !this.plan.snapshot && !previous) return;
+    const content = JSON.stringify({
+      source: 'runtime_plan',
+      owner: origin.agentId,
+      planningMode: this.plan.snapshot?.mode ?? this.plan.mode,
+      planningOnly: this.plan.readOnly,
+      plan: this.plan.snapshot ?? null,
+    });
+    if (previous?.content !== content)
+      this.messages.push({ role: 'user', source: 'runtime', content });
+  }
+
+  private estimateRequest(request: ChatRequest) {
+    return this.opts.provider.estimateRequest?.(request) ?? estimateRequestTokens(request);
+  }
+
+  private async maybeCompact(
+    signal: AbortSignal,
+    emergency = false,
+    request?: ChatRequest,
+  ): Promise<void> {
     const { events, provider, context } = this.opts;
-    if (!context.shouldCompact(this.messages)) return;
+    if (request) {
+      const estimate = this.estimateRequest(request);
+      const capacity = this.opts.modelInfo?.(request.model)?.contextWindow;
+      const threshold =
+        capacity === undefined
+          ? context.threshold
+          : Math.min(
+              context.threshold,
+              Math.max(0, Math.floor((capacity - estimate.outputTokens) * 0.8)),
+            );
+      if (estimate.inputTokens <= threshold) return;
+    } else if (!context.shouldCompact(this.messages)) return;
     const before = this.messages.length;
     const next = await context.compact(
       this.messages,
@@ -876,7 +905,7 @@ export class AgentLoop {
     if (emergency) {
       events.emit({
         type: 'notice',
-        text: '上下文超限，工具轮中间紧急压缩（本次缓存会失效）',
+        text: '完整请求接近上下文预算，已压缩历史（此前消息缓存需要重建）',
       });
     }
     this.messages = next;
@@ -901,7 +930,7 @@ export class AgentLoop {
         messageCount: this.messages.length,
         previousMessageCount: this.lastRequestMessageCount,
         lastToolBatchMs: this.lastToolBatchMs,
-        hasSystem: this.opts.systemPrompt.length > 0,
+        hasSystem: this.opts.systemPrompt.length > 0 || !!this.opts.systemContext,
         hasTools: (this.toolsSnapshot?.length ?? 0) > 0,
         settings: { enabled, ttl, escalateAfterMs },
       });
@@ -914,7 +943,7 @@ export class AgentLoop {
     const effectiveTtl: CacheTtl =
       escalateAfterMs > 0 && this.lastToolBatchMs > escalateAfterMs ? '1h' : ttl;
     return {
-      system: this.opts.systemPrompt.length > 0,
+      system: this.opts.systemPrompt.length > 0 || !!this.opts.systemContext,
       tools: (this.toolsSnapshot?.length ?? 0) > 0,
       messageBreakpoints,
       ttl: effectiveTtl,

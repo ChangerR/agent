@@ -26,6 +26,8 @@ export function getBridge(): DesktopBridge {
       events.onmessage = (e) => listener(JSON.parse(e.data));
       return () => events.close();
     },
+    onNavigate: () => () => {},
+    settingsDirty: () => Promise.resolve(),
     pickProject: () => call('unavailable'),
     openProject: (id) => call('open-project', { id }),
     startDemo: () => call('demo'),

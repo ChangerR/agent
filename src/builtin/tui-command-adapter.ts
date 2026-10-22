@@ -1,5 +1,6 @@
 /** 默认产品的可选终端交互。只由 CLI 加载；核心与 headless 不导入终端组件。 */
 import type { TuiAdapter, BuiltinTuiContext, TuiCommandHandler } from '../cli/tui-plugins.js';
+import { totalInputTokens } from '../cli/usage.js';
 import { createPermissionSettings } from './policy/tui.js';
 
 function formatUpdated(iso: string): string {
@@ -59,7 +60,7 @@ export function createTuiAdapter(context: BuiltinTuiContext): TuiAdapter {
                   description:
                     id === 'model'
                       ? `${info ? `context ${info.contextWindow.toLocaleString()} · output ${info.maxOutputTokens.toLocaleString()}` : '未知规格'}\n选择即保存本项目，下一次模型请求生效；需与当前 provider / endpoint 兼容。`
-                      : `${choice.id === 'off' ? '不请求额外推理参数，实际行为由模型决定。' : '请求相应推理等级，模型需支持。'}选择即保存本项目；下一次模型请求生效。`,
+                      : `${choice.id === 'off' ? '按 provider 能力关闭推理；通用兼容接口保持其默认行为。' : '请求相应推理等级，模型需支持。'}选择即保存本项目；下一次模型请求生效。`,
                 };
               });
               showPicker(
@@ -115,9 +116,12 @@ export function createTuiAdapter(context: BuiltinTuiContext): TuiAdapter {
     },
     stats: () => {
       const usage = context.usage();
-      const denom = usage.cacheReadTokens + usage.inputTokens;
+      const cache = context.cacheSummary?.() ?? {
+        rate: '?',
+        details: '当前前端未提供原始缓存分桶。',
+      };
       say(
-        `tokens: ${fmtTokens(usage.inputTokens)} 输入 / ${fmtTokens(usage.outputTokens)} 输出\ncache: ${fmtTokens(usage.cacheReadTokens)} 读 / ${fmtTokens(usage.cacheWriteTokens)} 写 · 命中率 ${denom ? `${Math.round((usage.cacheReadTokens / denom) * 100)}%` : '-'}\n会话日志: ${agent.logPath}`,
+        `tokens: ${fmtTokens(totalInputTokens(usage))} 总输入 / ${fmtTokens(usage.outputTokens)} 输出\ncache: ${fmtTokens(usage.cacheReadTokens)} 读 / ${fmtTokens(usage.cacheWriteTokens)} 写 · 未缓存 ${fmtTokens(usage.inputTokens)} · 命中率 ${cache.rate}\n${cache.details}\n会话日志: ${agent.logPath}`,
       );
     },
     queue: (arg) => {

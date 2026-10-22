@@ -18,6 +18,12 @@
   "mcpConfig": "./mcp.json",
   "pluginEntries": [],
   "pluginConfig": {
+    "agentlab.provider-openai": {
+      "dialect": "auto"
+    },
+    "agentlab.mcp": {
+      "maxInlineChars": 24000
+    },
     "agentlab.subagents": {
       "maxRunning": 2,
       "maxDepth": 1,

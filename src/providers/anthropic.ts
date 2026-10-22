@@ -6,6 +6,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
+import { estimateTextTokens } from '../core/context/tokens.js';
 import type { CacheTtl, ChatRequest, Provider } from '../core/provider.js';
 import type { Message, StopReason, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
 
@@ -306,6 +307,23 @@ export class AnthropicProvider implements Provider {
   private cacheDisabled = false;
 
   constructor(private opts: ApiKeyOptions & { baseURL?: string; cacheControl?: boolean } = {}) {}
+
+  estimateRequest(req: ChatRequest) {
+    const { body } = buildAnthropicBody(req);
+    const inputTokens =
+      estimateTextTokens(
+        JSON.stringify({
+          system: body.system,
+          tools: body.tools,
+          messages: body.messages,
+        }),
+      ) + 32;
+    return {
+      inputTokens,
+      outputTokens: body.max_tokens,
+      totalTokens: inputTokens + body.max_tokens,
+    };
+  }
 
   /** 惰性初始化：缺 API key 只在真正调用时才报错，不影响装配与测试 */
   private getClient(): Anthropic {

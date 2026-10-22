@@ -8,6 +8,15 @@ const bridge: DesktopBridge = {
     ipcRenderer.on('agentlab:state', handler);
     return () => ipcRenderer.removeListener('agentlab:state', handler);
   },
+  onNavigate(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, action: string) => {
+      if (['settings', 'new-session', 'open-project'].includes(action))
+        listener(action as import('../shared/protocol.js').DesktopNavigation);
+    };
+    ipcRenderer.on('agentlab:navigate', handler);
+    return () => ipcRenderer.removeListener('agentlab:navigate', handler);
+  },
+  settingsDirty: (dirty) => ipcRenderer.invoke('agentlab:settings-dirty', dirty),
   pickProject: () => ipcRenderer.invoke('agentlab:pick-project'),
   openProject: (id) => ipcRenderer.invoke('agentlab:open-project', id),
   startDemo: () => ipcRenderer.invoke('agentlab:demo'),

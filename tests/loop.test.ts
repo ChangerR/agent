@@ -533,7 +533,7 @@ describe('AgentLoop', () => {
     expect(loop.getMessages()[1]).toMatchObject({ role: 'assistant' });
   });
 
-  it('同一次 run 里，体积超过阈值但未到 1.5 倍时不在工具轮次中间压缩', async () => {
+  it('工具轮超过完整请求阈值时提前压缩，不再等待消息达到 1.5 倍', async () => {
     await writeFile(join(tmp, 'x'), 'data');
     let probeTurns = 0;
     let tokensWhenLong = 0;
@@ -557,12 +557,14 @@ describe('AgentLoop', () => {
 
     let turns = 0;
     const events = new EventBus();
-    const { loop } = makeLoop({
+    const { loop, provider } = makeLoop({
       events,
       compactThreshold: tokensWhenLong - 1,
       maxTurns: 8,
       script: [
-        () => {
+        (request) => {
+          if (request.system.includes('压缩器'))
+            return textResponse('已读取并核对 x，继续当前任务。');
           turns++;
           return turns <= 4
             ? toolUseResponse([{ id: `t${turns}`, name: 'read_file', input: { path: 'x' } }])
@@ -573,9 +575,8 @@ describe('AgentLoop', () => {
     let compacted = 0;
     events.on('compacted', () => compacted++);
     await loop.run('stay raw');
-    expect(compacted).toBe(0);
-    expect(JSON.stringify(loop.getMessages()[0]?.content)).not.toContain('早期对话摘要');
-    expect(estimateTokens(loop.getMessages())).toBeGreaterThan(tokensWhenLong - 1);
-    expect(estimateTokens(loop.getMessages())).toBeLessThanOrEqual((tokensWhenLong - 1) * 1.5);
+    expect(compacted).toBeGreaterThan(0);
+    expect(provider.requests.some((request) => request.system.includes('压缩器'))).toBe(true);
+    expect(JSON.stringify(loop.getMessages()[0]?.content)).toContain('早期对话摘要');
   });
 });
