@@ -60,8 +60,10 @@ node desktop/scripts/ui-cache-smoke.mjs
 
 ## 最终验证与交付
 
-组合后的根工程 / desktop 类型检查、96 个测试文件全部通过（1754 passed / 2 平台相关 skipped），包括 MCP 活跃租约与文件身份回归。desktop:build、sidecar smoke 和两套 Node / Playwright UI 验收通过。未在 macOS 实机验证。
+组合后的根工程 / desktop 类型检查、96 个测试文件全部通过（1755 passed / 2 平台相关 skipped），包括 MCP 活跃租约与文件身份回归。desktop:build、sidecar smoke 和两套 Node / Playwright UI 验收通过。未在 macOS 实机验证。
 
 接入代码独立 commit：d2b4403；PR diff 基于 integration/app-cache-base，只展示接线、schema 投影、元数据和回归，不重复显示整个 App / 缓存功能。依赖 #45 / #47 / #48 按用户授权进入默认分支后，可将接入 commit 重放到最新默认分支并调整 PR base；本任务没有合并或将 #48 标记 Ready。
 
 [结构化验证](evidence/app-cache-integration/validation.json) · [缓存稀疏覆盖截图](evidence/app-cache-integration/cache-sparse-overrides.png) · [摘要角色配置截图](evidence/app-cache-integration/summary-role-settings.png)。截图为独立 Linux 云端 Chromium，不能替代 macOS AppKit / 原生菜单 / Retina 验收。
+
+补充边界 commit 4748122：插件入口数组按 entry 身份保留未知元数据，重排不串接到其他插件。最终完整回归 96 文件 / 1755 passed / 2 skipped，打包输入验证与 sidecar smoke 再次通过。可重放的接入代码为 d2b4403 + 4748122；完整已解决依赖冲突的树在本 PR 分支。

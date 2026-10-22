@@ -5,7 +5,7 @@
   "typecheck": "passed (root and desktop)",
   "full_tests": {
     "files": 96,
-    "passed": 1754,
+    "passed": 1755,
     "skipped": 2,
     "failed": 0
   },
@@ -17,5 +17,8 @@
   "native_macos": false,
   "paid_model_calls": 0,
   "user_computer_used": false,
-  "remote_prs_merged": false
+  "remote_prs_merged": false,
+  "integration_code_commits": ["d2b4403", "4748122"],
+  "plugin_entry_metadata": "reordering preserves unknown fields by entry identity",
+  "packaging_validation": "linux/x64 --validate passed"
 }
