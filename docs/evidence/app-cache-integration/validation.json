@@ -1,0 +1,21 @@
+{
+  "app_head": "743878cb048519272de181cd7c7635819dacb0ab",
+  "cache_head": "80b50c16c19964d5850fd59cbb42e0f6cab3d766",
+  "integration_code_commit": "d2b4403",
+  "typecheck": "passed (root and desktop)",
+  "full_tests": {
+    "files": 96,
+    "passed": 1754,
+    "skipped": 2,
+    "failed": 0
+  },
+  "desktop_build": "passed",
+  "sidecar_smoke": "passed",
+  "node_ui_smoke": "both passed",
+  "sparse_cache_inheritance": "global enabled=false/ttl=5m retained; project only staticTtl=1h persisted",
+  "role_runtime": "App save / runtime restart / actual FakeProvider planner & summary requests and judge status verified",
+  "native_macos": false,
+  "paid_model_calls": 0,
+  "user_computer_used": false,
+  "remote_prs_merged": false
+}

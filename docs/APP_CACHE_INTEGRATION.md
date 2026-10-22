@@ -2,8 +2,8 @@
 
 ## 依赖与状态
 
-- App 独立 PR：#47，基于 #45，最初 head 为 7c554f9；后续 review / Node 验收修正也需包含。
-- 缓存实际运行时：6f73abc8d0001de09fafd9a0f339312c4c88f798，包含 a0562c0 schema 与后续运行时、cache 稀疏继承修复。
+- App 独立 PR：#47，基于 #45，已包含 head 743878cb048519272de181cd7c7635819dacb0ab 的 review / Node / 即时保存修正。
+- 缓存实际运行时：PR #48 的最终 head 80b50c16c19964d5850fd59cbb42e0f6cab3d766，包含 schema、完整运行时、稀疏继承和 MCP 活跃项目租约保护。
 - 隔离分支：integration/macos-cache-settings。本分支本地合并上述来源，未修改两个原分支，未合并远端 PR。
 - 额外接入修正独立提交，可在依赖重排后 cherry-pick；最终树已包含接线，用户无需手动填写 schema 或 ownedFields。
 
@@ -57,3 +57,11 @@ node desktop/scripts/ui-cache-smoke.mjs
 ```
 
 缓存分支若继续改变运行时，应以最终 head 重跑本文件的测试；不把只读 schema 快照误报为已接入。
+
+## 最终验证与交付
+
+组合后的根工程 / desktop 类型检查、96 个测试文件全部通过（1754 passed / 2 平台相关 skipped），包括 MCP 活跃租约与文件身份回归。desktop:build、sidecar smoke 和两套 Node / Playwright UI 验收通过。未在 macOS 实机验证。
+
+接入代码独立 commit：d2b4403；PR diff 基于 integration/app-cache-base，只展示接线、schema 投影、元数据和回归，不重复显示整个 App / 缓存功能。依赖 #45 / #47 / #48 按用户授权进入默认分支后，可将接入 commit 重放到最新默认分支并调整 PR base；本任务没有合并或将 #48 标记 Ready。
+
+[结构化验证](evidence/app-cache-integration/validation.json) · [缓存稀疏覆盖截图](evidence/app-cache-integration/cache-sparse-overrides.png) · [摘要角色配置截图](evidence/app-cache-integration/summary-role-settings.png)。截图为独立 Linux 云端 Chromium，不能替代 macOS AppKit / 原生菜单 / Retina 验收。
