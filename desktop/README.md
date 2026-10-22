@@ -4,9 +4,9 @@
 
 ## 运行
 
-在项目根目录双击 **启动 AgentLab.cmd** 即可打开已打包的桌面应用。脚本按自身位置定位程序，无需切换目录；应用已打开时会聚焦原窗口。
+原 Windows 首版可在项目根目录双击 **启动 AgentLab.cmd** 打开已打包的桌面应用。脚本按自身位置定位程序，无需切换目录；应用已打开时会聚焦原窗口。
 
-已打包的应用位于 `desktop/release/AgentLab Desktop-win32-x64/`，双击其中的 **AgentLab Desktop.exe**。请完整保留同目录文件；应用已包含 Node 运行时，无需另装 Node 来启动它。
+原 Windows 应用目录为 `desktop/release/AgentLab Desktop-win32-x64/`，双击其中的 **AgentLab Desktop.exe**。请完整保留同目录文件；应用已包含 Node 运行时，无需另装 Node 来启动它。本次云端交付为源码和验证证据，没有发布新的安装包。
 
 从源码启动：
 
@@ -17,16 +17,17 @@ node node_modules/electron/install.js
 pnpm desktop
 ```
 
-源码构建要求 Node.js 22.19.0+，并需要该 Node 分发的 LICENSE。当前开发机 v22.23.2 的官方许可已保存在 assets/node-LICENSE.txt，构建时随运行时一起分发。使用其他版本时，请使用包含 LICENSE 的完整官方 Node 分发。
+源码构建要求 Node.js 22.19.0+，并需要该 Node 分发的 LICENSE。仓库 assets/node-LICENSE.txt 对应原 Windows v22.23.2；其他版本请使用完整官方 Node 分发，或设置 AGENTLAB_NODE_LICENSE 指向同版本官方 LICENSE。构建会把许可证随运行时一起分发。
 
 ```powershell
 pnpm desktop:build     # 构建 React、Electron 与独立 agent 进程
 pnpm desktop:smoke     # 验证构建产物的原生模块、真实审批写入与保存
-pnpm desktop:package   # 生成当前 Windows x64 应用目录
+pnpm desktop:package   # 生成当前机器平台与架构的应用目录
+pnpm desktop:package --validate # 仅校验打包输入，不生成应用包
 pnpm desktop:preview   # 浏览器中的隔离离线工作台，监听 127.0.0.1:4175
 ```
 
-浏览器预览使用两个新建的临时项目、隔离 HOME 和固定假凭据，只允许 FakeProvider，可验证项目切换与会话恢复。真实项目的原生目录选择在 Windows 应用中使用。预览前先运行 desktop:build。
+浏览器预览使用两个新建的临时项目、隔离 HOME 和固定假凭据，只允许 FakeProvider，可验证项目切换与会话恢复。真实项目的原生目录选择由 Electron 提供。预览前先运行 desktop:build。macOS 原生菜单、AppKit、Retina 与 .app 启动仍需独立 Mac 验收。
 
 ## 使用自己的 agent
 

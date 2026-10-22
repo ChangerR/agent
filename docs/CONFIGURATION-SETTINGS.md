@@ -1,6 +1,6 @@
 # 分层配置设置与桌面适配盘点
 
-本文的“当前字段”指独立 App PR #47；与最终缓存 PR #48 的组合已由 PR #49 实际接入和验证，完整状态见 [App / Cache 集成](APP_CACHE_INTEGRATION.md)。不需要用户手动补配置接线。
+本文的“当前字段”指面向 master 的收尾分支 feature/app-macos-settings-to-master，包含 #47 App 增强和 #49 的实际缓存设置接入。#48 已进入 master，#49 进入缓存分支；收尾 PR 尚未合并。完整状态见 [App / Cache 集成](APP_CACHE_INTEGRATION.md)，不需要用户手动补配置接线。
 
 ## 基线与交付边界
 
@@ -10,7 +10,7 @@
 
 已有 Electron + React + 独立 Node worker 的桌面工作台最初来源于
 [PR #45](https://github.com/ChangerR/agent/pull/45)，提交 `d2536c7`。
-初始 feature 基于该 App 开发并纳入 master@cb64528。现在 #45 已进入 master；#47 虽已合并，但进入的是旧 App 分支而非 master，因此本轮由 #49 对 #48 的真实叠加继续交付未落地的设置增强。#48 仅合入最新 master 解决冲突；本任务未合并任何远端 PR。
+初始 feature 基于该 App 开发并纳入 master@cb64528。现在 #45 和 #48 已进入 master@9fbffd6；#47 与 #49 合入的是依赖分支，故从实际集成 tip bed0728 建立独立收尾分支，普通 merge 最新 master 后面向 master 交付。没有修改已合并 PR 或合并任何远端 PR。
 本次交付 Electron/React 设置页面、受控 worker 接口和 macOS 代码适配。
 云端仅为 Linux，未执行 macOS 原生窗口 / 菜单 / Retina / 未签名包验收。
 没有替换框架、连接用户电脑或调用真实模型。
@@ -21,22 +21,24 @@
 同时接入 Electron 设置页和原有 `/settings` 通用编辑器。表中“重启”指退出 App / CLI 进程后重新启动；
 创建新会话不承诺重新装配 provider 或插件。
 
-| 入口                           | 已支持字段                                                                                                | 作用域 / 生效时间                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| 主任务与模型连接（启动默认值） | provider、model、baseURL、apiKeyEnv、thinking、judgeModel                                                 | 用户 / 项目；重启                                   |
-| 上下文与缓存预算               | maxTurns、compactThreshold、cache.enabled / ttl / escalateAfterMs                                         | 用户 / 项目；重启                                   |
-| 权限与审批默认值               | permissionMode、permissions.allow / ask / deny                                                            | 用户 / 项目；重启；不处理已有审批                   |
-| 配置文件与插件装配             | modelsFile、mcpConfig、pluginEntries、disabledPlugins                                                     | 用户 / 项目；重启；这里只编辑引用路径               |
-| OpenAI 兼容适配器参数          | dialect                                                                                                   | 用户 / 项目；重启                                   |
-| 严格审批模型参数               | provider、model、timeoutMs、maxRequestBytes、maxResponseBytes、maxOutputTokens、prefixCache.enabled / ttl | 用户 / 项目；重启                                   |
-| MCP 结果参数                   | maxInlineChars                                                                                            | 用户 / 项目；重启                                   |
-| 子任务参数                     | maxRunning、maxDepth、maxTurns、timeoutMs、maxInbox、maxOutputChars、previewChars、maxAgents、maxRuns     | 用户 / 项目；重启                                   |
-| 规划参数                       | mode（auto / only / off）                                                                                 | 用户 / 项目；重启                                   |
-| 本地工具参数                   | disabled                                                                                                  | 用户 / 项目；重启                                   |
-| 日志参数                       | includeBodies                                                                                             | 用户 / 项目；重启；保留原默认值，不自动开启正文日志 |
-| 既有插件实现选择               | capabilities                                                                                              | 复用原有受控入口                                    |
-| 既有目录写入授权               | writeRoots                                                                                                | 只用策略插件的项目级专用入口，仍执行真实路径验证    |
-| 既有会话控制                   | /sessions、/save、/new、/model、/think、/mode                                                             | 保留原会话管理和即时应用语义                        |
+| 入口                           | 已支持字段                                                                                                          | 作用域 / 生效时间                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 主任务与模型连接（启动默认值） | provider、model、baseURL、apiKeyEnv、thinking、judgeModel                                                           | 用户 / 项目；重启                                   |
+| 上下文与缓存预算               | maxTurns、compactThreshold、cache.enabled / ttl / staticTtl / ttlStrategy / escalateAfterMs                         | 用户 / 项目；重启                                   |
+| 权限与审批默认值               | permissionMode、permissions.allow / ask / deny                                                                      | 用户 / 项目；重启；不处理已有审批                   |
+| 配置文件与插件装配             | modelsFile、mcpConfig、pluginEntries、disabledPlugins                                                               | 用户 / 项目；重启；这里只编辑引用路径               |
+| OpenAI / Anthropic 适配器参数  | models 能力映射；OpenAI 另有 dialect                                                                                | 用户 / 项目；重启                                   |
+| 严格审批模型参数               | provider、model、thinking、timeoutMs、maxRequestBytes、maxResponseBytes、maxOutputTokens、prefixCache.enabled / ttl | 用户 / 项目；重启                                   |
+| MCP 结果参数                   | maxInlineChars、maxAgeDays、maxStoredBytes、deduplicate、maxSearchChars                                             | 用户 / 项目；重启                                   |
+| 子任务参数                     | maxRunning、maxDepth、maxTurns、timeoutMs、maxInbox、maxOutputChars、previewChars、maxAgents、maxRuns               | 用户 / 项目；重启                                   |
+| 规划参数                       | mode、provider、model、thinking、maxOutputTokens、maxRequestBytes                                                   | 用户 / 项目；启动默认值重启，已有 mode 命令即时     |
+| 摘要模型与预算                 | provider、model、thinking、strategy、maxOutputTokens、maxRequestBytes                                               | 用户 / 项目；重启                                   |
+| 其他运行配置                   | replayToolArguments                                                                                                 | 用户 / 项目；重启                                   |
+| 本地工具参数                   | disabled                                                                                                            | 用户 / 项目；重启                                   |
+| 日志参数                       | includeBodies                                                                                                       | 用户 / 项目；重启；保留原默认值，不自动开启正文日志 |
+| 既有插件实现选择               | capabilities                                                                                                        | 复用原有受控入口                                    |
+| 既有目录写入授权               | writeRoots                                                                                                          | 只用策略插件的项目级专用入口，仍执行真实路径验证    |
+| 既有会话控制                   | /sessions、/save、/new、/model、/think、/mode                                                                       | 保留原会话管理和即时应用语义                        |
 
 `models.json` 中各模型的 contextWindow / maxOutputTokens 仍通过文件维护；
 本入口可以修改 modelsFile 引用，不会把模型规格臆造为新的顶层字段。
@@ -45,7 +47,7 @@ MCP 编辑器仅接受固定目录中的 mcp.json，不接受 renderer 提供的
 凭据需在 CLI 文件维护；不发明 env:NAME 的 MCP 运行时解析行为。
 编辑固定文件不会更改 mcpConfig；页面显示当前实际文件，使用自定义文件的项目
 需自行在“配置文件与插件装配”中选择对应引用。MCP 连接状态另有只读入口。
-当前 schema 没有独立 planner / summary 模型或 UI 外观配置，故不增加这些字段。
+planner / summary / judge 使用实际插件 schema；UI 外观是 renderer 本地偏好，即选即持久化，不写入 agent.config.json。
 会话覆盖仍可能优先于启动默认值，保存默认值不修改已保存会话。
 
 ## 保存、校验与迁移
@@ -136,32 +138,31 @@ ui-smoke.mjs 操作真实 React 页面与构建 worker，覆盖提交 / 校验�
 
 ## 与缓存任务的协调
 
-本分支直接修改 `src/builtin/runtime-settings.ts`、`src/builtin/default-preset.ts`，
-新增 `src/builtin/configuration-settings.ts`，并扩展设置测试。未修改
-`src/core/config.ts`、provider / reviewer / MCP 的运行时 schema 或并行缓存分支。
-并行任务若修改这些 schema / ownedFields，新字段可由现有扩展点进入设置目录；
-特殊 apply 语义与新角色的说明仍需人工核对。合并时重点检查 default-preset 中
-插件收集与 runtime-settings 注册位置，避免遗漏新增插件。
+相对最新 master，本分支修改 `src/builtin/runtime-settings.ts`、`src/builtin/default-preset.ts`，
+新增 `src/builtin/configuration-settings.ts`，并扩展设置测试。缓存运行时、provider / reviewer / MCP
+的 schema 与 ownedFields 已由 #48 进入 master；本分支直接消费它们，不复制其运行时实现。
+default-preset 收集实际插件后注册 runtime-settings，并保留缓存对 MCP、摘要和规划的装配参数。
+未来 schema / ownedFields 变动仍应通过相同扩展点接入并补特殊 apply 语义验证。
 
-### 并行 a0562c0 的字段兼容状态
+### 缓存字段的最终接入状态
 
-仅只读核对了缓存分支 a0562c0；没有把尚未合并的功能复制进本分支，避免配置看似可用却没有运行时行为。
-以下“自动出现”要求该功能合并后由插件注册实际 schema / ownedFields；不是本次已上线字段。
+最初只读核对 a0562c0；现已在完整缓存 runtime 上接入并验证，收尾分支包含以下真实可操作表单。
+这些配置保存后需要重建 runtime，对 App 即退出进程重新启动；单独新建会话不承诺重新装配。
 
-| 并行新增字段                                                                                                                  | 本分支当前状态                                | 合并后的设置入口 / 生效                                     |
-| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------- |
-| replayToolArguments                                                                                                           | 当前运行 schema 未包含，不开放                | 顶层“其他运行配置”自动发现；重启                            |
-| cache.staticTtl、ttlStrategy                                                                                                  | 当前只开放 enabled / ttl / escalateAfterMs    | 现有缓存对象动态表单自动发现；重启                          |
-| planning.provider / model / thinking / maxOutputTokens / maxRequestBytes                                                      | 当前只开放 mode                               | 规划插件注册新 schema / ownedFields 后自动发现；重启        |
-| summary.provider / model / thinking / strategy / maxOutputTokens / maxRequestBytes                                            | 当前摘要插件没有可编辑 config 定义            | 摘要插件注册 config / ownedFields 后自动出现；重启          |
-| reviewer.thinking                                                                                                             | 当前 reviewer 的其余预算 / prefixCache 已开放 | reviewer 更新 schema / ownedFields 后自动出现；重启         |
-| provider.models[模型].api / thinkingLevels / rawToolArguments / prefixCompaction / outputParameter / thinkingMode / offEffort | 当前适配器只声明 dialect                      | provider 更新 schema / ownedFields 后以 JSON 对象编辑；重启 |
-| MCP maxAgeDays / maxStoredBytes / deduplicate / maxSearchChars                                                                | 当前只开放 maxInlineChars                     | MCP 更新 schema / ownedFields 后自动发现；重启              |
+| 缓存字段                                                                                                                      | 接入状态                                | 设置入口 / 生效                        |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------- |
+| replayToolArguments                                                                                                           | 已接入顶层实际 schema                   | “其他运行配置”；重启                   |
+| cache.staticTtl、ttlStrategy                                                                                                  | 已接入稀疏对象表单                      | “上下文与缓存预算”；重启               |
+| planning.provider / model / thinking / maxOutputTokens / maxRequestBytes                                                      | 已接入规划 schema / ownedFields         | “主任务规划”；重启；已有 mode 命令即时 |
+| summary.provider / model / thinking / strategy / maxOutputTokens / maxRequestBytes                                            | 已接入摘要 schema / ownedFields         | “摘要模型与预算”；重启                 |
+| reviewer.thinking                                                                                                             | 已接入审批员 schema / ownedFields       | “审批模型与预算”；重启                 |
+| provider.models[模型].api / thinkingLevels / rawToolArguments / prefixCompaction / outputParameter / thinkingMode / offEffort | 已接入 Record / Union schema 和字段投影 | OpenAI / Anthropic 模型能力 JSON；重启 |
+| MCP maxAgeDays / maxStoredBytes / deduplicate / maxSearchChars                                                                | 已接入 MCP schema / ownedFields         | “MCP 结果预算”；重启                   |
 
 表单只序列化所选原始层：例如只勾选 staticTtl，就只提交该键，不回填 enabled / ttl，
 不主动开启 prefix 摘要、deduplicate 或 replay。已有未知字段（包括并行分支写入的字段）
-在未被本 schema 拥有前保持原值且不展示。缓存任务的稀疏 cache 合并修复应由该任务落入
-loadConfigWithSources；本分支不复制其 loader。两者组合时需回归：全局 enabled=false / ttl=5m，
-项目只改 staticTtl 后，enabled 仍为 false、ttl 仍为 5m，且打开设置不改变任意文件。
+在未被本 schema 拥有前保持原值且不展示。master 中的 loadConfigWithSources 已包含稀疏 cache
+继承修复；本分支不复制其 loader。集成回归验证全局 enabled=false / ttl=5m、项目只改 staticTtl
+后，enabled 仍为 false、ttl 仍为 5m，且打开设置不改变任意文件。
 
 设置交互区分：外观以及“当前会话”的模型 / 权限模式 / 思考选择即保存，继续调用原后端命令；模型与思考在下一请求采用，模式不处理已有审批。连接组合、缓存费用选项、权限规则和其他结构化启动默认值显式提交并重启；其草稿放弃提醒不等于额外的工具授权。验收工具统一为 Node / Playwright。
