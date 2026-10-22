@@ -38,11 +38,17 @@ export async function privateDirectory(path: string): Promise<void> {
   if (!samePath(await realpath(path), path)) throw new Error('unsafe_result_directory');
 }
 async function safeOpen(path: string): Promise<FileHandle> {
-  const file = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  const stat = await file.stat();
-  if (!stat.isFile() || stat.nlink !== 1) {
-    await file.close();
+  const entry = await lstat(path);
+  if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1)
     throw new Error('unsafe_result_file');
+  const file = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.nlink !== 1 || stat.ino !== entry.ino || stat.dev !== entry.dev)
+      throw new Error('unsafe_result_file');
+  } catch (error) {
+    await file.close();
+    throw error;
   }
   return file;
 }
@@ -172,6 +178,7 @@ export class ResultFiles {
   private readonly paths;
   private readonly leaseName = `${process.pid}-${randomUUID()}.json`;
   private pins = new Set<string>();
+  private active = false;
   constructor(cwd: string) {
     this.paths = resolveAgentPaths(cwd);
     this.directory = join(
@@ -221,8 +228,9 @@ export class ResultFiles {
       await unlink(path);
     }
   }
-  private async pin(id: string) {
-    this.pins.add(id);
+  private async pin(id?: string) {
+    this.active = true;
+    if (id) this.pins.add(id);
     const directory = join(this.directory, '.leases');
     await privateDirectory(directory);
     await atomicJson(join(directory, this.leaseName), { pid: process.pid, ids: [...this.pins] });
@@ -351,6 +359,7 @@ export class ResultFiles {
     }
     return this.locked(signal, async () => {
       const protectedIds = new Set(this.pins);
+      let activeRuntime = this.active;
       const result = { removed: 0, bytes: 0, protectedBytes: 0, overCapacity: false };
       try {
         const sessions = this.paths.sessionsDir;
@@ -381,13 +390,14 @@ export class ResultFiles {
           for (const name of leaseNames) {
             const lease = await readJson(join(leases, name));
             if (!Array.isArray(lease.ids)) throw new Error('invalid_result_lease');
-            if (alive(lease.pid))
+            if (alive(lease.pid)) {
+              activeRuntime = true;
               for (const id of lease.ids) {
                 if (typeof id !== 'string' || !RESULT_ID.test(id))
                   throw new Error('invalid_result_lease');
                 protectedIds.add(id);
               }
-            else await unlink(join(leases, name));
+            } else await unlink(join(leases, name));
           }
         }
       } catch {
@@ -402,7 +412,7 @@ export class ResultFiles {
           const index = await this.index(file, id);
           const bytes = index.bytes + Buffer.byteLength(JSON.stringify(index));
           result.bytes += bytes;
-          if (protectedIds.has(id)) result.protectedBytes += bytes;
+          if (activeRuntime || protectedIds.has(id)) result.protectedBytes += bytes;
           else candidates.push({ id, bytes, accessedAt: index.accessedAt });
         } finally {
           await file.close();
@@ -439,6 +449,7 @@ export class ResultFiles {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
         this.pins.clear();
+        this.active = false;
         return;
       }
       throw e;
@@ -448,6 +459,11 @@ export class ResultFiles {
       if (e.code !== 'ENOENT') throw e;
     });
     this.pins.clear();
+    this.active = false;
+  }
+  /** 活跃历史可能尚未落盘。项目活动期整体保护，避免跨进程保存/恢复窗口误删。 */
+  async activate(signal: AbortSignal): Promise<void> {
+    await this.locked(signal, () => this.pin());
   }
   async hasResults(): Promise<boolean> {
     try {

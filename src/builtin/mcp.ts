@@ -42,6 +42,7 @@ export function builtinMcpPlugin(configPath: string, cwd?: string) {
       }
       // 本地结果恢复不依赖远端 server 当前是否在线。
       if (manager.serverNames().length > 0 || (cwd && (await manager.hasResults(cwd)))) {
+        if (cwd) await manager.activate(cwd);
         ctx.provide.tool('mcp_read_result', manager.resultReader());
         ctx.provide.tool('mcp_search_result', manager.resultSearcher());
       }
