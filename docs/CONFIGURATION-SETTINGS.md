@@ -108,8 +108,8 @@ pnpm desktop:build
 pnpm desktop:smoke
 pnpm desktop:package --validate
 pnpm desktop:preview
-# 另一个终端，需要 Python Playwright + Chromium：
-python3 desktop/scripts/ui-smoke.py
+# 另一个终端，需要 Node Playwright + Chromium：
+pnpm desktop:ui-smoke
 pnpm exec vitest run tests/configuration-settings.test.ts tests/runtime-settings-tui-autosave.test.ts
 git diff --check
 ```
@@ -119,7 +119,7 @@ AGENTLAB_NODE_LICENSE 指向同版本官方分发的 LICENSE。云端 Node v24.1
 使用官方 nodejs/node v24.19.0 LICENSE，放在临时目录，不提交二进制或安装包。
 
 所有测试使用隔离 HOME、临时项目和固定假凭据。TUI 按键测试与 App UI 测试分别报告；
-ui-smoke.py 操作真实 React 页面与构建 worker，覆盖提交 / 校验失败 / 作用域 / 未保存
+ui-smoke.mjs 操作真实 React 页面与构建 worker，覆盖提交 / 校验失败 / 作用域 / 未保存
 导航 / 草稿重置 / 系统暗色 / 窄屏高 DPI。它不能验证 Electron 菜单或 AppKit。
 
 独立 macOS 环境的剩余验收清单：
@@ -162,3 +162,5 @@ ui-smoke.py 操作真实 React 页面与构建 worker，覆盖提交 / 校验失
 在未被本 schema 拥有前保持原值且不展示。缓存任务的稀疏 cache 合并修复应由该任务落入
 loadConfigWithSources；本分支不复制其 loader。两者组合时需回归：全局 enabled=false / ttl=5m，
 项目只改 staticTtl 后，enabled 仍为 false、ttl 仍为 5m，且打开设置不改变任意文件。
+
+设置交互区分：外观以及“当前会话”的模型 / 权限模式 / 思考选择即保存，继续调用原后端命令；模型与思考在下一请求采用，模式不处理已有审批。连接组合、缓存费用选项、权限规则和其他结构化启动默认值显式提交并重启；其草稿放弃提醒不等于额外的工具授权。验收工具统一为 Node / Playwright。

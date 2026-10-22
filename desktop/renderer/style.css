@@ -1547,3 +1547,19 @@ textarea:focus-visible {
   border-radius: 6px;
   padding: 8px 10px;
 }
+.live-settings {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 20px;
+  padding: 10px;
+  min-width: 0;
+}
+.live-settings label {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+}
+.live-settings select {
+  width: 100%;
+  min-width: 0;
+}

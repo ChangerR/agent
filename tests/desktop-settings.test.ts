@@ -43,6 +43,17 @@ afterEach(async () => {
 });
 
 describe('App 设置协议 / worker 与真实 runtime', () => {
+  it('简单选择项应答前完成项目持久化并应用，不需要第二次提交', async () => {
+    await send({ type: 'setting', field: 'think', value: 'low' });
+    expect(latest().busy).toBe(false);
+    expect(latest().thinking).toBe('low');
+    expect(JSON.parse(await readFile(file(), 'utf8')).thinking).toBe('low');
+    await readSettings();
+    expect(latest().settingsEditor!.value).toMatchObject({ thinking: 'low' });
+    await send({ type: 'setting', field: 'mode', value: 'auto' });
+    expect(latest().mode).toBe('auto');
+    expect(JSON.parse(await readFile(file(), 'utf8')).permissionMode).toBe('auto');
+  });
   it('只读打开不写默认；保存用户层不复制项目层、当前运行值不被启动默认覆盖', async () => {
     await readSettings();
     expect(latest().settingsEditor!.value).toEqual({});
@@ -69,6 +80,10 @@ describe('App 设置协议 / worker 与真实 runtime', () => {
     const old = latest().settingsEditor!.id;
     await commit({ apiKeyEnv: 'private-value-not-a-variable' });
     expect(latest().settingsEditor!.error).toContain('验证或保存失败');
+    const revision = latest().settingsEditor!.feedbackRevision!;
+    await commit({ apiKeyEnv: 'private-value-not-a-variable' });
+    expect(latest().settingsEditor!.error).toContain('验证或保存失败');
+    expect(latest().settingsEditor!.feedbackRevision).toBe(revision + 1);
     expect(JSON.stringify(latest())).not.toContain('private-value-not-a-variable');
     await writeFile(file(), JSON.stringify({ model: 'external', future: true }));
     await commit({ model: 'new' }, old);

@@ -477,6 +477,7 @@ export class DesktopController {
             throw new Error('设置草稿已过期，请重新打开。');
           view.error = undefined;
           view.saved = false;
+          view.feedbackRevision = (view.feedbackRevision ?? 0) + 1;
           const signal = controller.signal;
           try {
             const draft = await editor.section.draft(JSON.parse(action.json), signal, editor.scope);
@@ -581,6 +582,8 @@ export class DesktopController {
     // 先建立宿主的在途记录，再运行；应答只确认入队，终态由完整快照通知。
     this.active = Promise.resolve().then(operation);
     void this.active.catch(() => {});
+    // 简单选择项的应答表示持久化 / 应用已结算，前端随后可安全刷新配置层。
+    if (action.type === 'setting') await this.active;
   }
   dispose(): Promise<void> {
     this.disposal ??= this.finishDispose();
