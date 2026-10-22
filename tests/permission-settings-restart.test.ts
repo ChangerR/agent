@@ -184,7 +184,7 @@ describe('权限模式自动保存后跨进程重启', () => {
     expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({ provider: 'fake' });
   });
 
-  it('全局 auto 被项目 ask 覆盖，项目恢复继承后立即与重启一致', async () => {
+  it('全局 auto 被项目 ask 覆盖，当前与重启都采用项目值', async () => {
     json(projectPath, { permissionMode: 'ask' });
     const projectBefore = readFileSync(projectPath, 'utf8');
     const h = await editor();
@@ -195,6 +195,21 @@ describe('权限模式自动保存后跨进程重启', () => {
     expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore);
     expect(h.agent.permission.mode).toBe('ask');
     expect(await runCli()).toMatchObject({ data: { mode: 'ask' } });
+    expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({
+      provider: 'fake',
+      permissionMode: 'auto',
+    });
+  });
+
+  // 每例只启动一个有独立 10 秒上限的 CLI；不把两个子进程叠在默认 15 秒用例预算内。
+  it('项目恢复继承后立即与重启都采用全局 auto', async () => {
+    json(projectPath, { permissionMode: 'ask' });
+    const h = await editor();
+    h.settings.open();
+    h.pick('global');
+    h.pick('mode');
+    h.pick('auto');
+    expect(h.agent.permission.mode).toBe('ask');
     h.pick('back');
     h.pick('mode');
     h.pick('inherit');
