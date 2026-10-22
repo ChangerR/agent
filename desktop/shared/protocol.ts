@@ -11,6 +11,31 @@ export const actionSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('stop'), ...binding }).strict(),
+  z.object({ type: z.literal('session-save'), ...binding }).strict(),
+  z
+    .object({
+      type: z.literal('session-delete'),
+      ...binding,
+      id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('settings-read'),
+      ...binding,
+      sectionId: z.string().min(1).max(200),
+      scope: z.enum(['project', 'global']),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('settings-commit'),
+      ...binding,
+      editorId: z.string().uuid(),
+      json: z.string().max(64 * 1024),
+    })
+    .strict(),
+  z.object({ type: z.literal('settings-close'), ...binding }).strict(),
   z
     .object({
       type: z.literal('approve'),
@@ -101,6 +126,15 @@ export interface RuntimeSnapshot {
   provider: string;
   sources: { model: string; mode: string; thinking: string };
   models: string[];
+  providers: string[];
+  providerOptions?: string[];
+  providerLabels?: Record<string, string>;
+  modelDetails: Array<{
+    id: string;
+    displayName?: string;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+  }>;
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -112,8 +146,31 @@ export interface RuntimeSnapshot {
   plugins: Array<{ id: string; version: string }>;
   tools: Array<{ name: string; risk: string }>;
   commands: Array<{ id: string; description: string }>;
+  settings: SettingsDescriptor[];
+  settingsEditor?: SettingsEditor;
   inspection: { kind: 'files' | 'read' | 'diff'; path?: string; content: string; error?: boolean };
 }
+export interface SettingsDescriptor {
+  id: string;
+  title: string;
+  description?: string;
+  schema: Record<string, unknown>;
+  applyMode: 'immediate' | 'nextRequest' | 'idleBoundary' | 'newSession';
+  scopes: Array<{ scope: 'project' | 'global'; path: string }>;
+  editable: boolean;
+}
+export interface SettingsEditor {
+  id: string;
+  sectionId: string;
+  scope: 'project' | 'global';
+  value: unknown;
+  effectiveValue?: unknown;
+  effectiveError?: string;
+  error?: string;
+  saved?: boolean;
+  feedbackRevision?: number;
+}
+export type DesktopNavigation = 'settings' | 'new-session' | 'open-project';
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -122,17 +179,23 @@ export interface ProjectSummary {
   lastSessionId?: string;
 }
 export interface DesktopState {
+  theme?: 'system' | 'light' | 'dark' | 'blue';
   version: typeof PROTOCOL_VERSION;
   revision: number;
   connecting: boolean;
   projects: ProjectSummary[];
   runtime?: RuntimeSnapshot;
   error?: string;
+  platform?: string;
 }
 export interface DesktopBridge {
+  setTheme?(theme: 'system' | 'light' | 'dark' | 'blue'): Promise<void>;
   snapshot(): Promise<DesktopState>;
   onState(listener: (state: DesktopState) => void): () => void;
+  onNavigate(listener: (action: DesktopNavigation) => void): () => void;
+  settingsDirty(dirty: boolean): Promise<void>;
   pickProject(): Promise<void>;
+  pickDirectory(): Promise<string | undefined>;
   openProject(id: string): Promise<void>;
   startDemo(): Promise<void>;
   newSession(): Promise<void>;

@@ -1,0 +1,71 @@
+
+ RUN  v2.1.9 /workspace/agent-cli-baseline
+
+ ❯ tests/cli-pty.test.ts (1 test | 1 failed) 15544ms
+   × Linux pnpm dev 真 PTY：单选自动保存、取消、重启、shell/搜索零审批及失败恢复 15542ms
+     → CLI 未就绪
+PTY 输出末尾:
+[43m[33m[[39m[49m[43m[30mWARN[39m[49m[43m[33m][39m[49m Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install
+[K[0J[2m$ node --import tsx src/cli/index.ts[22m
+
+ ❯ tests/planning-pty.test.ts (2 tests | 1 failed) 33889ms
+   × pnpm dev 真终端 {"rows":40,"cols":140}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复 22226ms
+     → 重启未就绪
+PTY 输出末尾:
+[43m[33m[[39m[49m[43m[30mWARN[39m[49m[43m[33m][39m[49m Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install
+[K[0J[2m$ node --import tsx src/cli/index.ts[22m
+
+   ✓ pnpm dev 真终端 {"rows":14,"cols":40}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复 11661ms
+ ✓ tests/bash-readonly-pty.test.ts (1 test) 15863ms
+   ✓ 原样 pnpm dev、默认规划与 auto：原命令零审批，受控 reviewer 写入及拒绝生效 15854ms
+ ✓ tests/permission-settings-restart.test.ts (8 tests) 8766ms
+   ✓ 权限模式自动保存后跨进程重启 > /mode auto 保存到项目，新进程为 auto，全局不变 1986ms
+   ✓ 权限模式自动保存后跨进程重启 > headless yolo 直接保存并应用，无二次确认 1076ms
+   ✓ 权限模式自动保存后跨进程重启 > 本项目直接选 auto 后立即生效，子目录重启仍为 auto，其他项目保持 ask 2725ms
+   ✓ 权限模式自动保存后跨进程重启 > 全局 auto 被项目 ask 覆盖，项目恢复继承后立即与重启一致 2870ms
+ ✓ tests/powershell-permission-pty.test.ts (1 test) 7082ms
+   ✓ 原样 pnpm dev：PowerShell 摘要、敏感/未知人工、真实 reviewer ask 与普通读取 7079ms
+ ✓ tests/subagents-pty.test.ts (1 test) 4425ms
+   ✓ Linux 真 PTY：两个后台 child、父输入、实时列表、补充取消、设置单选落盘 4424ms
+
+ Test Files  2 failed | 4 passed (6)
+      Tests  2 failed | 12 passed (14)
+   Start at  07:04:00
+   Duration  51.86s (transform 2.03s, setup 250ms, collect 3.06s, tests 85.57s, environment 1ms, prepare 967ms)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/cli-pty.test.ts > Linux pnpm dev 真 PTY：单选自动保存、取消、重启、shell/搜索零审批及失败恢复
+Error: CLI 未就绪
+PTY 输出末尾:
+[43m[33m[[39m[49m[43m[30mWARN[39m[49m[43m[33m][39m[49m Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install
+[K[0J[2m$ node --import tsx src/cli/index.ts[22m
+
+ ❯ Object.wait tests/helpers/pty.ts:104:17
+    102|             await delay(20);
+    103|           }
+    104|           throw new Error(`${description}\nPTY 输出末尾:\n${output.sli…
+       |                 ^
+    105|         },
+    106|         async close() {
+ ❯ tests/cli-pty.test.ts:112:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/planning-pty.test.ts > pnpm dev 真终端 {"rows":40,"cols":140}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复
+Error: 重启未就绪
+PTY 输出末尾:
+[43m[33m[[39m[49m[43m[30mWARN[39m[49m[43m[33m][39m[49m Your node_modules are out of sync with your lockfile. The workspace structure has changed since last install
+[K[0J[2m$ node --import tsx src/cli/index.ts[22m
+
+ ❯ Object.wait tests/helpers/pty.ts:104:17
+    102|             await delay(20);
+    103|           }
+    104|           throw new Error(`${description}\nPTY 输出末尾:\n${output.sli…
+       |                 ^
+    105|         },
+    106|         async close() {
+ ❯ tests/planning-pty.test.ts:208:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+

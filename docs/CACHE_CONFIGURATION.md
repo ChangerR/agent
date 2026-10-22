@@ -1,6 +1,6 @@
 # 缓存与模型调用配置
 
-这些配置沿用内置默认 → 全局 `~/.agent/config.json` → 项目 `agent.config.json` → SDK 会话覆盖。
+这些配置沿用内置默认 → 全局 `~/.agentlab/config.json` → 项目 `agent.config.json` → SDK 会话覆盖。
 插件字段存放在 `pluginConfig[插件ID]`。设置编辑器只保存用户在该层明确填写的值；删除字段表示继承，不能把有效默认值写回该层。
 插件声明 `applyMode: newSession` 的字段在重新装配 runtime（重启或重新调用 `createAgent`）后生效；单独 `/new`、`/resume` 不重新加载插件。
 规划 `mode` 仍支持现有即时命令与设置流程，其余新增角色配置需重新装配。

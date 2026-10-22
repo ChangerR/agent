@@ -1,17 +1,23 @@
 import { packager } from '@electron/packager';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-await import('./build.mjs');
+import { readFile, access } from 'node:fs/promises';
+import { packagingOptions } from './packaging.mjs';
+import { buildDesktop } from './build.mjs';
+import { assertDistributionRuntime } from './node-runtime.mjs';
+if (process.argv.slice(2).some((arg) => arg !== '--validate'))
+  throw new Error('仅支持本机平台 / 架构打包；可传 --validate 只验证。');
+await buildDesktop({ mode: 'distribution' });
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const result = await packager({
-  dir: resolve(root, 'desktop/dist'),
-  out: resolve(root, 'desktop/release'),
-  name: 'AgentLab Desktop',
-  executableName: 'AgentLab Desktop',
-  platform: process.platform,
-  arch: process.arch,
-  asar: false,
-  prune: false,
-  overwrite: true,
-});
-console.log('桌面应用目录：' + result.join(', '));
+const runtime = JSON.parse(await readFile(resolve(root, 'desktop/dist/node/runtime.json'), 'utf8'));
+const options = packagingOptions(root, process.platform, process.arch, runtime);
+await assertDistributionRuntime(resolve(root, 'desktop/dist'), runtime);
+await access(resolve(root, 'desktop/dist/renderer/index.html'));
+if (process.argv.includes('--validate'))
+  console.log(
+    '打包输入验证通过：' + process.platform + '/' + process.arch + '（未签名、未公证、未发布）',
+  );
+else {
+  const result = await packager(options);
+  console.log('桌面应用目录：' + result.join(', '));
+}

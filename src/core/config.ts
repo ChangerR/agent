@@ -1,5 +1,5 @@
 /**
- * 配置系统：`agent.config.json`（项目级）+ `~/.agent/config.json`（全局级）。
+ * 配置系统：`agent.config.json`（项目级）+ `~/.agentlab/config.json`（全局级）。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
@@ -13,6 +13,8 @@ export type PermissionMode = z.infer<typeof PermissionModeSchema>;
 
 /** 单个模型的规格：上下文窗口与最大输出 token 数 */
 export const ModelInfoSchema = z.object({
+  /** 可选展示名；路由仍使用模型 ID，不改变请求与能力匹配。 */
+  displayName: z.string().min(1).optional(),
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive().default(8192),
 });

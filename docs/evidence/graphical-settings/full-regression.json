@@ -1,0 +1,17 @@
+{
+  "platform": "linux",
+  "node": "v24.19.0",
+  "command": "pnpm test --maxWorkers=2 --minWorkers=1",
+  "files": {
+    "passed": 99,
+    "failed": 0
+  },
+  "tests": {
+    "passed": 1772,
+    "failed": 0,
+    "skipped": 2,
+    "total": 1774
+  },
+  "skippedReason": "既有 Windows 专用路径大小写恢复、PowerShell 实际运行测试（Linux）",
+  "durationSeconds": 110.31
+}

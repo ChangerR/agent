@@ -1,0 +1,16 @@
+{
+  "result": "passed",
+  "environment": "Node Playwright + Linux Chromium DPR 2 + isolated FakeProvider worker",
+  "checks": [
+    "简单选项即选即保存",
+    "React 设置保存",
+    "未保存导航拦截",
+    "校验失败反馈",
+    "用户/项目隔离",
+    "安全重置草稿",
+    "系统暗色",
+    "900px 高DPI 布局"
+  ],
+  "native_macos": false,
+  "screenshots": ["settings-light.png", "mac-layout-simulation-dark.png"]
+}

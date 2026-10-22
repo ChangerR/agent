@@ -1,0 +1,49 @@
+{
+  "platform": "linux",
+  "node": "v24.19.0",
+  "nativeMac": false,
+  "fullRegression": {
+    "files": 99,
+    "passed": 1772,
+    "skipped": 2,
+    "failed": 0
+  },
+  "electronE2E": {
+    "passed": 17,
+    "realEntry": "run.mjs",
+    "realPreloadWorkerAndDisk": true,
+    "requests": "local scripted provider only"
+  },
+  "registeredSchema": {
+    "sections": 20,
+    "nodes": 167
+  },
+  "actualFormControls": {
+    "sections": 21,
+    "nodes": 166
+  },
+  "checks": {
+    "types": "passed",
+    "cliBuild": "passed",
+    "desktopDevelopmentBuild": "passed",
+    "browserSettings": "passed",
+    "browserCache": "passed",
+    "distributionInputs": "passed linux/x64; official Node v24.19.0 LICENSE; no package/signing/notarization/publication",
+    "nodeSidecar": "passed native grammars, approval, real write, session, stale approval rejection and stats"
+  },
+  "remaining": [
+    "macOS AppKit/traffic lights/Cmd/native picker/Dock/Retina/.app 未实测",
+    "领域写入仅受管根；未知/未加载插件参数不推断；损坏 JSON 无图形修复入口"
+  ],
+  "bootstrapNote": "一次重启界面就绪断言失败；清理本任务预览残留并在 Window 事件后等待真实 renderer DOM 导航，未放宽按钮断言；最终17场景含4次启动通过，不声称精确定位该历史单次原因。",
+  "focusedLayout": {
+    "scenarios": 3,
+    "result": "passed",
+    "window": [
+      900,
+      700
+    ],
+    "contentViewport": "CDP 720x560 then 125% zoom; actual CSS 576x448",
+    "saveBarFullyWithinCssViewport": true
+  }
+}

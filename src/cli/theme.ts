@@ -1,4 +1,4 @@
-/** 统一语义色：参考 pi 的 dark/light 主题角色，颜色针对 AgentLab 简化。
+/** 统一语义色：参考 pi 的 dark/light 主题角色，颜色针对 agentlab 简化。
  * 布局来源与 MIT 署名见 docs/TUI-DESIGN.md、THIRD_PARTY_NOTICES.md。
  */
 import chalk from 'chalk';

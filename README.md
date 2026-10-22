@@ -1,4 +1,4 @@
-# AgentLab
+# agentlab
 
 ## 插件架构与确定性策略
 
@@ -108,7 +108,7 @@ MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范�
 
 排查“填了 key 仍不生效”时按顺序检查：
 
-1. 文件名确实是项目根的 `.env`，不是 `.env.example`、`.env.txt`、`.env.local` 或 `~/.agent/.env`。从项目子目录启动时仍加载规范化项目根的 `.env`，不加载子目录中的同名文件。
+1. 文件名确实是项目根的 `.env`，不是 `.env.example`、`.env.txt`、`.env.local` 或 `~/.agentlab/.env`。从项目子目录启动时仍加载规范化项目根的 `.env`，不加载子目录中的同名文件。
 2. JSON 的 `apiKeyEnv` 与 `.env` 左侧变量名完全一致。省略 `apiKeyEnv` 时，`anthropic` 默认用 `ANTHROPIC_API_KEY`，`openai` 默认用 `OPENAI_API_KEY`。仅设置 `DEEPSEEK_API_KEY` 而没有对应 `apiKeyEnv` 不会被自动识别；key 也不会自动选择 provider/model。
 3. 已有进程环境变量优先于 `.env`，包括空字符串。若 shell 中已 export 同名变量，更新或取消那个变量，再重新启动。项目 JSON 中显式 `baseURL` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`；未配置时才使用环境变量或 SDK 默认端点。
 4. 全局配置可能仍有其他厂商的 `apiKeyEnv`、`baseURL` 或 `model`。字段逐项继承，改 provider 不会清除其他字段；切换服务时请一起核对这四项，并确认模型 ID 与端点匹配。
@@ -136,11 +136,11 @@ MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范�
 
 ## 配置目录与作用域
 
-- 全局默认：`~/.agent/config.json`；项目只保留需要覆盖的 `<项目根>/agent.config.json`。首次运行 `pnpm dev` / CLI 会创建用户配置与本项目的 sessions / logs 状态目录；配置只写静态内置默认（默认 ask），不复制项目权限、环境变量或密钥，已有文件原样保留。`--help`、参数错误和 SDK 只读配置加载不创建文件。
+- 全局默认：`~/.agentlab/config.json`；项目只保留需要覆盖的 `<项目根>/agent.config.json`。首次运行 `pnpm dev` / CLI 会创建用户配置与本项目的 sessions / logs 状态目录；配置只写静态内置默认（默认 ask），不复制项目权限、环境变量或密钥，已有文件原样保留。`--help`、参数错误和 SDK 只读配置加载不创建文件。
 - 向上寻找最近的项目边界：`agent.config.json`、`.git`（含 worktree 的文件形式）或 `package.json`。内层项目不会被外层 Git 仓库吞并；不会越过用户目录、系统临时目录或文件系统根来推断项目（直接在这些目录启动除外）；没有标记则使用启动目录。路径会解析符号链接，同一项目从子目录启动仍共用配置和会话，工具执行目录统一为该项目根。
-- 用户运行状态：`~/.agent/state/projects/<规范化项目路径的 SHA-256>/sessions/` 和 `logs/`。不同项目即使会话 ID 相同也互不相通；移动项目得到新的身份。启动不会迁移或导入旧目录。
+- 用户运行状态：`~/.agentlab/state/projects/<规范化项目路径的 SHA-256>/sessions/` 和 `logs/`。不同项目即使会话 ID 相同也互不相通；移动项目得到新的身份。启动不会迁移或导入旧目录。
 - 优先级：内置默认 → 全局 → 项目 → 程序调用时的会话覆盖。全局与项目权限列表拼接；SDK 显式传入会话 `permissions` 时替换该合并列表。插件参数和能力选择逐字段合并；普通数组替换。省略某层字段表示继承，不能靠保存合并结果把其他层授权复制过来。
-- `modelsFile`、`mcpConfig`、`pluginEntries` 的相对路径按声明它们的配置文件目录解析，绝对路径保持。默认模型/MCP 文件为 `~/.agent/models.json`、`~/.agent/mcp.json`。项目使用本地文件时显式配置 `"modelsFile": "./models.json"`、`"mcpConfig": "./mcp.json"`。
+- `modelsFile`、`mcpConfig`、`pluginEntries` 的相对路径按声明它们的配置文件目录解析，绝对路径保持。默认模型/MCP 文件为 `~/.agentlab/models.json`、`~/.agentlab/mcp.json`。项目使用本地文件时显式配置 `"modelsFile": "./models.json"`、`"mcpConfig": "./mcp.json"`。
 
 `/settings` 默认编辑本项目，界面显示实际配置文件。选择模式后自动保存并立即用于后续权限检查；没有独立 Save 页面或二次确认。也可以直接输入 `/mode auto`，当前模式和项目启动默认一起改变，退出重启后仍保留。已经弹出的工具审批仍需处理，deny、危险检测等执行保护不会因此移除。
 
@@ -166,7 +166,7 @@ API key 仍通过 `apiKeyEnv` 指定环境变量（或 provider 默认变量）�
 
 ## MCP
 
-默认读取 `~/.agent/mcp.json`。若使用项目 MCP，在项目配置中写 `"mcpConfig": "./mcp.json"`，并在项目根目录创建 `mcp.json`（参考 [examples/mcp-server.ts](examples/mcp-server.ts)）：
+默认读取 `~/.agentlab/mcp.json`。若使用项目 MCP，在项目配置中写 `"mcpConfig": "./mcp.json"`，并在项目根目录创建 `mcp.json`（参考 [examples/mcp-server.ts](examples/mcp-server.ts)）：
 
 ```json
 {
@@ -180,7 +180,7 @@ MCP stdio 子进程工作目录为实际 MCP 配置文件所在目录；相对�
 
 ## Skill
 
-在 `.agent/skills/<name>/SKILL.md` 创建：
+在 `.agentlab/skills/<name>/SKILL.md` 创建：
 
 ```markdown
 ---
@@ -232,7 +232,7 @@ try {
 }
 ```
 
-`reason` 区分正常结束、轮数上限、输出截断、中断和错误；正常结束不等于任务评测通过。每个会话的 `~/.agent/state/projects/<项目 ID>/logs/*.jsonl` 默认记录请求元数据和用量，`model_request` / `model_usage` 用 `requestId` 关联，`purpose` 区分主模型（`agent`）、压缩（`compact`）与审批（`judge`）。累计用量包含辅助调用，便于比较运行成本。仅显式启用 `pluginConfig["agentlab.telemetry-jsonl"].includeBodies` 才记录对话正文和工具参数。
+`reason` 区分正常结束、轮数上限、输出截断、中断和错误；正常结束不等于任务评测通过。每个会话的 `~/.agentlab/state/projects/<项目 ID>/logs/*.jsonl` 默认记录请求元数据和用量，`model_request` / `model_usage` 用 `requestId` 关联，`purpose` 区分主模型（`agent`）、压缩（`compact`）与审批（`judge`）。累计用量包含辅助调用，便于比较运行成本。仅显式启用 `pluginConfig["agentlab.telemetry-jsonl"].includeBodies` 才记录对话正文和工具参数。
 
 ## 开发
 

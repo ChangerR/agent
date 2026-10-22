@@ -162,7 +162,7 @@ export function startTui(
 ): { stop: () => void } | undefined {
   if (!options.terminal && !process.stdin.isTTY) {
     // 非 TTY 环境（管道/CI）：打印装配信息后退出，便于 smoke 测试
-    console.log('AgentLab（非 TTY 环境，仅展示装配信息）');
+    console.log('agentlab（非 TTY 环境，仅展示装配信息）');
     console.log(
       `providers: ${agent.providers
         .list()
@@ -223,7 +223,7 @@ export function startTui(
   const unsubscribe: Array<() => void> = [];
   const transcript = new Container();
   const header = new Text(
-    ui.accent(chalk.bold('AgentLab')) +
+    ui.accent(chalk.bold('agentlab')) +
       ui.dim('  coding agent') +
       '\n' +
       ui.muted('/model 切换模型 · /settings 设置 · /help 帮助'),

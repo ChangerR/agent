@@ -85,7 +85,7 @@ describe('统一项目身份和状态目录', () => {
     expect(paths.cwd).toBe(child);
     expect(paths.projectId).toMatch(/^[a-f0-9]{64}$/);
     expect(paths.sessionsDir).toBe(
-      join(home, '.agent', 'state', 'projects', paths.projectId, 'sessions'),
+      join(home, '.agentlab', 'state', 'projects', paths.projectId, 'sessions'),
     );
     expect(paths.logsDir).toBe(join(paths.projectStateDir, 'logs'));
     expect(resolveAgentPaths(project).projectId).toBe(paths.projectId);
@@ -140,9 +140,11 @@ describe('统一项目身份和状态目录', () => {
     vi.stubEnv('HOME', nextHome);
     vi.stubEnv('USERPROFILE', nextHome);
     json(getGlobalConfigPath(), { model: 'second' });
-    expect(getGlobalConfigPath()).toBe(join(nextHome, '.agent', 'config.json'));
+    expect(getGlobalConfigPath()).toBe(join(nextHome, '.agentlab', 'config.json'));
     expect(loadConfig(project).model).toBe('second');
-    expect(resolveAgentPaths(project).sessionsDir.startsWith(join(nextHome, '.agent'))).toBe(true);
+    expect(resolveAgentPaths(project).sessionsDir.startsWith(join(nextHome, '.agentlab'))).toBe(
+      true,
+    );
   });
 });
 
@@ -152,11 +154,11 @@ describe('配置层来源与相对路径', () => {
     const old = join(project, '.agentlab', 'sessions', 'old.json');
     json(old, { keep: true });
     const loaded = loadConfigWithSources(project);
-    expect(loaded.config.modelsFile).toBe(join(home, '.agent', 'models.json'));
-    expect(loaded.config.mcpConfig).toBe(join(home, '.agent', 'mcp.json'));
+    expect(loaded.config.modelsFile).toBe(join(home, '.agentlab', 'models.json'));
+    expect(loaded.config.mcpConfig).toBe(join(home, '.agentlab', 'mcp.json'));
     expect(loaded.sources.modelsFile).toMatchObject({
       scope: 'default',
-      directory: join(home, '.agent'),
+      directory: join(home, '.agentlab'),
     });
     expect(existsSync(loaded.paths.globalConfigPath)).toBe(false);
     expect(existsSync(loaded.paths.projectConfigPath)).toBe(false);
@@ -187,7 +189,7 @@ describe('配置层来源与相对路径', () => {
     expect(loaded.config).toMatchObject({
       model: 'project-model',
       modelsFile: absolute,
-      mcpConfig: join(home, '.agent', 'servers', 'global.json'),
+      mcpConfig: join(home, '.agentlab', 'servers', 'global.json'),
       pluginEntries: [{ entry: join(project, 'local.mjs'), enabled: false }],
       permissions: { allow: ['read_file', 'glob'], ask: [], deny: ['bash(rm *)'] },
       capabilities: { reviewer: false },
@@ -253,11 +255,11 @@ describe('runtime 使用统一路径', () => {
       modelsFile: './catalog.json',
       pluginEntries: ['./global-plugin.mjs'],
     });
-    json(join(home, '.agent', 'catalog.json'), {
+    json(join(home, '.agentlab', 'catalog.json'), {
       'fixture-model': { contextWindow: 10000, maxOutputTokens: 500 },
     });
     writeFileSync(
-      join(home, '.agent', 'global-plugin.mjs'),
+      join(home, '.agentlab', 'global-plugin.mjs'),
       'export default { manifest: { id: "test.global-path", version: "1.0.0", apiVersion: 1 }, setup() {} };',
     );
     const first = await runtime(child);

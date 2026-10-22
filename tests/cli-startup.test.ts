@@ -24,7 +24,7 @@ function fixture() {
   const project = join(root, 'project');
   mkdirSync(home);
   mkdirSync(project);
-  const config = join(home, '.agent', 'config.json');
+  const config = join(home, '.agentlab', 'config.json');
   const run = (...args: string[]) =>
     execFileSync(
       process.execPath,
@@ -104,7 +104,7 @@ it('help 和无效参数不初始化，已有无效用户配置不会被覆盖',
   expect(existsSync(f.config)).toBe(false);
   expect(() => f.run('--invalid-option')).toThrow();
   expect(existsSync(f.config)).toBe(false);
-  mkdirSync(join(f.home, '.agent'));
+  mkdirSync(join(f.home, '.agentlab'));
   writeFileSync(f.config, '{ invalid');
   expect(() => f.run('--sessions')).toThrow();
   expect(readFileSync(f.config, 'utf8')).toBe('{ invalid');
@@ -120,7 +120,7 @@ it('SDK 配置读取保持只读；并发 CLI 首启不会覆盖或留下临时�
     process.env.HOME = f.home;
     process.env.USERPROFILE = f.home;
     expect(loadConfigWithSources(f.project).config.permissionMode).toBe('ask');
-    expect(existsSync(join(f.home, '.agent'))).toBe(false);
+    expect(existsSync(join(f.home, '.agentlab'))).toBe(false);
   } finally {
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
@@ -157,7 +157,7 @@ it('SDK 配置读取保持只读；并发 CLI 首启不会覆盖或留下临时�
     ),
   );
   expect(JSON.parse(readFileSync(f.config, 'utf8'))).toEqual(AgentConfigSchema.parse({}));
-  expect(readdirSync(join(f.home, '.agent')).sort()).toEqual(['config.json', 'state']);
+  expect(readdirSync(join(f.home, '.agentlab')).sort()).toEqual(['config.json', 'state']);
 });
 
 it('命令行 resume 不再接受历史迁移参数', () => {

@@ -1,0 +1,86 @@
+{
+  "date_utc": "2026-10-22",
+  "environment": "independent cloud Linux x64; Node v24.19.0",
+  "master_baseline": "9fbffd634adb8b228b0f5fe9c147343fd914e24c",
+  "actual_integrated_tip": "bed0728c3f29a540430da40d014b7600712bc1d4",
+  "master_merge_commit": "f8727d36064c9b904e8a5d83fb8bd000f132b770",
+  "code_head": "6b51980243836c9a2e3258fd5c16016360347e49",
+  "pull_request": "https://github.com/ChangerR/agent/pull/50",
+  "base": "master",
+  "draft": true,
+  "maintainer_can_modify": false,
+  "production_source_diff_from_integrated_tip": ["src/builtin/planning/index.ts"],
+  "source_change_explanation": "Only two adjacent planning imports reordered to match master; no executable behavior change.",
+  "cache_core_or_policy_or_planning_diff_from_master": [],
+  "local_merge_conflicts": [],
+  "source_conflict_markers": [],
+  "checks": {
+    "typecheck": "root and desktop passed again after the test-only split at code_head",
+    "cli_build": "passed",
+    "desktop_build": "passed",
+    "sidecar_smoke": "passed",
+    "packaging_input": "linux/x64 passed using same-version official Node LICENSE",
+    "darwin_declarations": "passed; mismatched platform/arch and unsupported Node rejected",
+    "node_playwright": "both fresh suites passed"
+  },
+  "current_full_runs": [
+    {
+      "stage": "before test split",
+      "workers": 2,
+      "passed": 1754,
+      "failed": 1,
+      "skipped": 2,
+      "failures": ["permission-settings-restart: combined override/inherit case exceeded 15s"]
+    },
+    {
+      "stage": "before test split",
+      "workers": 1,
+      "passed": 1754,
+      "failed": 1,
+      "skipped": 2,
+      "failures": ["permission-settings-restart: combined override/inherit case exceeded 15s"]
+    },
+    {
+      "stage": "after test split",
+      "workers": 2,
+      "passed": 1754,
+      "failed": 2,
+      "skipped": 2,
+      "failures": [
+        "bash-readonly-pty: pnpm dev startup wait expired",
+        "permission-settings-restart: CLI subprocess startup failed at its timeout"
+      ],
+      "all_green": false
+    }
+  ],
+  "test_change": "Split global override and project inheritance into independent cases; preserve all assertions and existing 15s test/10s subprocess limits.",
+  "focused_recheck": {
+    "files": 5,
+    "passed": 32,
+    "failed": 0,
+    "includes": [
+      "configuration-settings",
+      "desktop-settings",
+      "desktop-cache-integration",
+      "permission-settings-restart",
+      "bash-readonly-pty"
+    ]
+  },
+  "prior_validation_reused": {
+    "code_head": "41e5c2a44b73549955b95381f3391c31a4c762a7",
+    "files": 96,
+    "passed": 1755,
+    "skipped": 2,
+    "evidence": "../conflict-reconciliation/validation.json",
+    "note": "Production source differs only by adjacent planning import order; the new split adds one test."
+  },
+  "remaining_validation": "Current full checkout run is not all green: CLI/PTY startup failures passed in focused rerun; native macOS still requires independent Mac.",
+  "native_macos_tested": false,
+  "user_computer_used": false,
+  "paid_model_calls": 0,
+  "real_credentials_read": false,
+  "force_push": false,
+  "closed_or_merged_prs_modified": false,
+  "remote_prs_merged": false,
+  "external_packages_published": false
+}

@@ -1,0 +1,673 @@
+{
+  "source": "actual Electron controls",
+  "sections": 21,
+  "nodes": 166,
+  "fields": [
+    {
+      "path": "policy-deterministic-config.writeRoots",
+      "type": "array"
+    },
+    {
+      "path": "policy-deterministic-config.writeRoots[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-connection.provider",
+      "type": "string"
+    },
+    {
+      "path": "configuration-connection.model",
+      "type": "string"
+    },
+    {
+      "path": "configuration-connection.baseURL",
+      "type": "string"
+    },
+    {
+      "path": "configuration-connection.apiKeyEnv",
+      "type": "string"
+    },
+    {
+      "path": "configuration-connection.thinking",
+      "type": "string"
+    },
+    {
+      "path": "configuration-connection.judgeModel",
+      "type": "string"
+    },
+    {
+      "path": "configuration-budgets.maxTurns",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-budgets.compactThreshold",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-budgets.cache",
+      "type": "object"
+    },
+    {
+      "path": "configuration-budgets.cache.enabled",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-budgets.cache.ttl",
+      "type": "string"
+    },
+    {
+      "path": "configuration-budgets.cache.staticTtl",
+      "type": "string"
+    },
+    {
+      "path": "configuration-budgets.cache.ttlStrategy",
+      "type": "string"
+    },
+    {
+      "path": "configuration-budgets.cache.escalateAfterMs",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-permissions.permissionMode",
+      "type": "string"
+    },
+    {
+      "path": "configuration-permissions.permissions",
+      "type": "object"
+    },
+    {
+      "path": "configuration-permissions.permissions.allow",
+      "type": "array"
+    },
+    {
+      "path": "configuration-permissions.permissions.allow[]",
+      "type": "rule"
+    },
+    {
+      "path": "configuration-permissions.permissions.ask",
+      "type": "array"
+    },
+    {
+      "path": "configuration-permissions.permissions.ask[]",
+      "type": "rule"
+    },
+    {
+      "path": "configuration-permissions.permissions.deny",
+      "type": "array"
+    },
+    {
+      "path": "configuration-permissions.permissions.deny[]",
+      "type": "rule"
+    },
+    {
+      "path": "configuration-files.modelsFile",
+      "type": "string"
+    },
+    {
+      "path": "configuration-files.mcpConfig",
+      "type": "string"
+    },
+    {
+      "path": "configuration-files.pluginEntries",
+      "type": "array"
+    },
+    {
+      "path": "configuration-files.pluginEntries[].entry",
+      "type": "plugin module"
+    },
+    {
+      "path": "configuration-files.pluginEntries[].enabled",
+      "type": "plugin toggle"
+    },
+    {
+      "path": "configuration-files.disabledPlugins",
+      "type": "array"
+    },
+    {
+      "path": "configuration-files.disabledPlugins[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-additional.replayToolArguments",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.api",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.thinkingLevels",
+      "type": "array"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.thinkingLevels[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.rawToolArguments",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.prefixCompaction",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.outputParameter",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.thinkingMode",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-anthropic.models.*.offEffort",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.dialect",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.api",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.thinkingLevels",
+      "type": "array"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.thinkingLevels[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.rawToolArguments",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.prefixCompaction",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.outputParameter",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.thinkingMode",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-openai.models.*.offEffort",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.*",
+      "type": "union"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0]",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].type",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].displayName",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].enabled",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].baseURL",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].apiKeyEnv",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.api",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.thinkingLevels",
+      "type": "array"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.thinkingLevels[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.rawToolArguments",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.prefixCompaction",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.outputParameter",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.thinkingMode",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].models.*.offEffort",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [0].dialect",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1]",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].type",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].displayName",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].enabled",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].baseURL",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].apiKeyEnv",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.api",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.thinkingLevels",
+      "type": "array"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.thinkingLevels[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.rawToolArguments",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.prefixCompaction",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.outputParameter",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.thinkingMode",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [1].models.*.offEffort",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [2]",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [2].type",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [2].displayName",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.provider-connections.connections.* [2].enabled",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.local-tools.disabled",
+      "type": "array"
+    },
+    {
+      "path": "configuration-agentlab.local-tools.disabled[]",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.mcp.maxInlineChars",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.mcp.maxAgeDays",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.mcp.maxStoredBytes",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.mcp.deduplicate",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.mcp.maxSearchChars",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.provider",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.model",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.thinking",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.timeoutMs",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.maxRequestBytes",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.maxResponseBytes",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.maxOutputTokens",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.prefixCache",
+      "type": "object"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.prefixCache.enabled",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.reviewer-model.prefixCache.ttl",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.compaction-summary.provider",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.compaction-summary.model",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.compaction-summary.thinking",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.compaction-summary.strategy",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.compaction-summary.maxOutputTokens",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.compaction-summary.maxRequestBytes",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.telemetry-jsonl.includeBodies",
+      "type": "boolean"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxRunning",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxDepth",
+      "type": "number"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxTurns",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.timeoutMs",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxInbox",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxOutputChars",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.previewChars",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxAgents",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.subagents.maxRuns",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.planning.mode",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.planning.provider",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.planning.model",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.planning.thinking",
+      "type": "string"
+    },
+    {
+      "path": "configuration-agentlab.planning.maxOutputTokens",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-agentlab.planning.maxRequestBytes",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-acceptance.provider.count",
+      "type": "typed"
+    },
+    {
+      "path": "configuration-acceptance.provider.rows",
+      "type": "typed"
+    },
+    {
+      "path": "configuration-model-catalog.catalog",
+      "type": "object"
+    },
+    {
+      "path": "configuration-model-catalog.catalog.*",
+      "type": "object"
+    },
+    {
+      "path": "configuration-model-catalog.catalog.*.displayName",
+      "type": "string"
+    },
+    {
+      "path": "configuration-model-catalog.catalog.*.contextWindow",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-model-catalog.catalog.*.maxOutputTokens",
+      "type": "integer"
+    },
+    {
+      "path": "configuration-project-environment.variables",
+      "type": "object"
+    },
+    {
+      "path": "configuration-project-environment.variables.*",
+      "type": "secret"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers",
+      "type": "object"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.*",
+      "type": "union"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [0]",
+      "type": "object"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [0].command",
+      "type": "string"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [0].args",
+      "type": "array"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [0].args[]",
+      "type": "secret"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [0].env",
+      "type": "object"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [0].env.*",
+      "type": "secret"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [1]",
+      "type": "object"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [1].url",
+      "type": "secret"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [1].headers",
+      "type": "object"
+    },
+    {
+      "path": "configuration-mcp-servers.mcpServers.* [1].headers.*",
+      "type": "secret"
+    },
+    {
+      "path": "capability-selection.policy",
+      "type": "union"
+    },
+    {
+      "path": "capability-selection.policy [0]",
+      "type": "string"
+    },
+    {
+      "path": "capability-selection.reviewer",
+      "type": "union"
+    },
+    {
+      "path": "capability-selection.reviewer [0]",
+      "type": "string"
+    },
+    {
+      "path": "capability-selection.reviewer [1]",
+      "type": "boolean"
+    },
+    {
+      "path": "capability-selection.compactor",
+      "type": "union"
+    },
+    {
+      "path": "capability-selection.compactor [0]",
+      "type": "string"
+    },
+    {
+      "path": "capability-selection.cacheStrategy",
+      "type": "union"
+    },
+    {
+      "path": "capability-selection.cacheStrategy [0]",
+      "type": "string"
+    },
+    {
+      "path": "capability-selection.cacheStrategy [1]",
+      "type": "boolean"
+    },
+    {
+      "path": "capability-selection.modelCatalog",
+      "type": "union"
+    },
+    {
+      "path": "capability-selection.modelCatalog [0]",
+      "type": "string"
+    },
+    {
+      "path": "capability-selection.sessionStore",
+      "type": "union"
+    },
+    {
+      "path": "capability-selection.sessionStore [0]",
+      "type": "string"
+    }
+  ],
+  "saved": false,
+  "explanation": "本场景只检查所有真实字段/分支控件并放弃草稿；持久化/生效由其他逐场景验收覆盖。"
+}

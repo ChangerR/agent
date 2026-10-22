@@ -30,6 +30,8 @@ export interface PluginConfigDefinition {
   sensitiveFields?: readonly string[];
   merge?: Readonly<Record<string, 'replace' | 'append'>>;
   applyMode?: 'newSession';
+  /** 显式设置事务的跨字段校验，不在只读打开时执行写入。 */
+  validateSettings?(value: Record<string, unknown>, scope: 'global' | 'project'): void;
 }
 export type DependencyValue<K extends CapabilityKind> = K extends 'tool'
   ? ApprovalTool

@@ -1,0 +1,1114 @@
+{
+  "date_utc": "2026-10-22",
+  "master": "9fbffd634adb8b228b0f5fe9c147343fd914e24c",
+  "app": "a3a60d7cccc170ca6b9982d43da527a0889f054e",
+  "node": "v24.19.0",
+  "platform": "linux",
+  "arch": "x64",
+  "cpu_quota": "400000 / 100000 = 4 CPU",
+  "memory_limit_bytes": 17179869184,
+  "pids_limit": "max",
+  "runtime_dependencies_equal": true,
+  "unchanged_files": [
+    {
+      "path": "tests/helpers/pty.ts",
+      "master_sha256": "70cfe026e1df8476ab886227df146474a2e9df16eb743674242e1a25fdb17428",
+      "app_sha256": "70cfe026e1df8476ab886227df146474a2e9df16eb743674242e1a25fdb17428",
+      "equal": true
+    },
+    {
+      "path": "tests/bash-readonly-pty.test.ts",
+      "master_sha256": "311442c00054c52c79cb8cf923e2e6acf5e34c2d15a982286a35b50542bcc76b",
+      "app_sha256": "311442c00054c52c79cb8cf923e2e6acf5e34c2d15a982286a35b50542bcc76b",
+      "equal": true
+    },
+    {
+      "path": "src/cli/index.ts",
+      "master_sha256": "3d9fc66095eb87feb675594696a7276c9619d67c7bf01c2d66c22079a0cdcafa",
+      "app_sha256": "3d9fc66095eb87feb675594696a7276c9619d67c7bf01c2d66c22079a0cdcafa",
+      "equal": true
+    },
+    {
+      "path": "src/builtin/policy/tui.ts",
+      "master_sha256": "d2acf9e1cca7e4912ab79d711361bf0c81cbb349121cedf7afe83a04595f4c02",
+      "app_sha256": "d2acf9e1cca7e4912ab79d711361bf0c81cbb349121cedf7afe83a04595f4c02",
+      "equal": true
+    }
+  ],
+  "pty_rounds": [
+    {
+      "round": "1-master",
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "duration_ms": 53508.22579800001,
+      "summary": ["Test Files  2 failed | 4 passed (6)", "Tests  2 failed | 12 passed (14)"],
+      "failures": [
+        "FAIL  tests/cli-pty.test.ts > Linux pnpm dev 真 PTY：单选自动保存、取消、重启、shell/搜索零审批及失败恢复",
+        "FAIL  tests/planning-pty.test.ts > pnpm dev 真终端 {\"rows\":40,\"cols\":140}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复"
+      ],
+      "resources": {
+        "cpu_seconds": 134.915985,
+        "throttled_seconds": 17.209975,
+        "throttled_periods": 97,
+        "total_periods": 535
+      },
+      "live_descendants_at_end": [],
+      "zombie_count": 12,
+      "zombie_types": ["esbuild", "ps", "MainThread"],
+      "children": [
+        {
+          "kind": "pty",
+          "pid": 65082,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 6212.697835000001,
+          "first_output_ms": 1135.0806470000002,
+          "node_command_ms": 1142.860415,
+          "prompt_ms": 4069.017942
+        },
+        {
+          "kind": "pty",
+          "pid": 65056,
+          "code": 130,
+          "signal": null,
+          "killed": false,
+          "ms": 15455.256088999999,
+          "first_output_ms": 3287.1346009999997,
+          "node_command_ms": 3306.296166
+        },
+        {
+          "kind": "pty",
+          "pid": 65170,
+          "code": 130,
+          "signal": null,
+          "killed": false,
+          "ms": 15841.934935999998,
+          "first_output_ms": 8985.814421,
+          "node_command_ms": 8998.055537999999
+        },
+        {
+          "kind": "pty",
+          "pid": 65225,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 7494.728402000001,
+          "first_output_ms": 1405.3747249999979,
+          "node_command_ms": 1411.4434999999976
+        },
+        {
+          "kind": "pty",
+          "pid": 65336,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4100.252982000002,
+          "first_output_ms": 1821.2620970000025,
+          "node_command_ms": 1834.085825000002
+        },
+        {
+          "kind": "headless",
+          "pid": 65466,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 995.9260760000002,
+          "first_output_ms": 977.3625740000002
+        },
+        {
+          "kind": "headless",
+          "pid": 65483,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 986.6172669999996,
+          "first_output_ms": 970.0955469999999
+        },
+        {
+          "kind": "pty",
+          "pid": 65239,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 15790.847578,
+          "first_output_ms": 962.2936430000009,
+          "node_command_ms": 966.3704099999995,
+          "prompt_ms": 5850.928953000001
+        },
+        {
+          "kind": "headless",
+          "pid": 65500,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1060.4228230000008,
+          "first_output_ms": 1031.8080010000003
+        },
+        {
+          "kind": "headless",
+          "pid": 65554,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1321.567465,
+          "first_output_ms": 1307.765445
+        },
+        {
+          "kind": "headless",
+          "pid": 65594,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1382.0306869999995,
+          "first_output_ms": 1341.118351
+        },
+        {
+          "kind": "headless",
+          "pid": 65616,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1486.8572240000012,
+          "first_output_ms": 1457.7733380000009
+        },
+        {
+          "kind": "headless",
+          "pid": 65634,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1352.144311,
+          "first_output_ms": 1315.506761999999
+        },
+        {
+          "kind": "pty",
+          "pid": 65529,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 7062.991829,
+          "first_output_ms": 881.643094,
+          "node_command_ms": 887.263825,
+          "prompt_ms": 3096.251568
+        },
+        {
+          "kind": "pty",
+          "pid": 65678,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4403.118879000001,
+          "first_output_ms": 884.9437929999999,
+          "node_command_ms": 898.867636,
+          "prompt_ms": 3815.2766269999997
+        }
+      ]
+    },
+    {
+      "round": "2-app",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "duration_ms": 40422.489973,
+      "summary": ["Test Files  6 passed (6)", "Tests  15 passed (15)"],
+      "failures": [],
+      "resources": {
+        "cpu_seconds": 93.491522,
+        "throttled_seconds": 0.524687,
+        "throttled_periods": 13,
+        "total_periods": 404
+      },
+      "live_descendants_at_end": [],
+      "zombie_count": 12,
+      "zombie_types": ["esbuild", "MainThread", "sh"],
+      "children": [
+        {
+          "kind": "pty",
+          "pid": 65840,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 5418.684332,
+          "first_output_ms": 1094.840501,
+          "node_command_ms": 1101.437617,
+          "prompt_ms": 4329.957553
+        },
+        {
+          "kind": "pty",
+          "pid": 65845,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 8087.599424999999,
+          "first_output_ms": 1066.950006,
+          "node_command_ms": 1072.76305,
+          "prompt_ms": 3877.64252
+        },
+        {
+          "kind": "pty",
+          "pid": 65943,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2709.733180000001,
+          "first_output_ms": 855.0100600000005,
+          "node_command_ms": 862.9140520000001,
+          "prompt_ms": 2386.5254189999996
+        },
+        {
+          "kind": "pty",
+          "pid": 65983,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4140.030492,
+          "first_output_ms": 909.3059299999986,
+          "node_command_ms": 915.3113089999988,
+          "prompt_ms": 2764.693917999999
+        },
+        {
+          "kind": "pty",
+          "pid": 65994,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4752.293871,
+          "first_output_ms": 1024.7012020000002,
+          "node_command_ms": 1030.9677390000015
+        },
+        {
+          "kind": "pty",
+          "pid": 66100,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2746.210825,
+          "first_output_ms": 735.3979529999997,
+          "node_command_ms": 738.6406040000002
+        },
+        {
+          "kind": "headless",
+          "pid": 66162,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1454.1366540000004,
+          "first_output_ms": 1432.692936
+        },
+        {
+          "kind": "headless",
+          "pid": 66214,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1065.935039,
+          "first_output_ms": 1047.8159649999998
+        },
+        {
+          "kind": "headless",
+          "pid": 66256,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1157.5584919999992,
+          "first_output_ms": 1102.2650939999994
+        },
+        {
+          "kind": "headless",
+          "pid": 66275,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1571.9461440000005,
+          "first_output_ms": 1541.9032539999998
+        },
+        {
+          "kind": "headless",
+          "pid": 66303,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1415.9679660000002,
+          "first_output_ms": 1392.5122229999997
+        },
+        {
+          "kind": "headless",
+          "pid": 66335,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1291.0171719999998,
+          "first_output_ms": 1264.8595879999993
+        },
+        {
+          "kind": "headless",
+          "pid": 66365,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1756.9456580000005,
+          "first_output_ms": 1724.082013000001
+        },
+        {
+          "kind": "pty",
+          "pid": 66196,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 13882.884837000001,
+          "first_output_ms": 883.853451,
+          "node_command_ms": 893.067855,
+          "prompt_ms": 3875.4441339999994
+        },
+        {
+          "kind": "pty",
+          "pid": 66421,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 6922.225222,
+          "first_output_ms": 987.5214460000001,
+          "node_command_ms": 993.027823,
+          "prompt_ms": 4171.469405
+        },
+        {
+          "kind": "pty",
+          "pid": 66517,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4145.537321,
+          "first_output_ms": 1434.7271099999998,
+          "node_command_ms": 1446.3160739999998,
+          "prompt_ms": 3690.381924
+        }
+      ]
+    },
+    {
+      "round": "3-app",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "duration_ms": 46725.292973,
+      "summary": ["Test Files  6 passed (6)", "Tests  15 passed (15)"],
+      "failures": [],
+      "resources": {
+        "cpu_seconds": 96.81773,
+        "throttled_seconds": 1.30803,
+        "throttled_periods": 23,
+        "total_periods": 465
+      },
+      "live_descendants_at_end": [],
+      "zombie_count": 17,
+      "zombie_types": ["esbuild", "MainThread", "sh"],
+      "children": [
+        {
+          "kind": "pty",
+          "pid": 66679,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 3862.0614219999998,
+          "first_output_ms": 695.584109,
+          "node_command_ms": 699.0553920000001,
+          "prompt_ms": 3062.605707
+        },
+        {
+          "kind": "pty",
+          "pid": 66777,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2126.535076,
+          "first_output_ms": 707.2226070000006,
+          "node_command_ms": 710.3542980000002,
+          "prompt_ms": 1896.2674660000002
+        },
+        {
+          "kind": "pty",
+          "pid": 66684,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 7371.106087,
+          "first_output_ms": 692.8490600000001,
+          "node_command_ms": 696.9610409999999,
+          "prompt_ms": 3407.00856
+        },
+        {
+          "kind": "pty",
+          "pid": 66817,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4084.91263,
+          "first_output_ms": 754.2260059999999,
+          "node_command_ms": 760.4875769999999
+        },
+        {
+          "kind": "pty",
+          "pid": 66903,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2295.3510370000004,
+          "first_output_ms": 690.5802370000001,
+          "node_command_ms": 694.4532679999993
+        },
+        {
+          "kind": "pty",
+          "pid": 66860,
+          "code": null,
+          "signal": "SIGKILL",
+          "killed": false,
+          "ms": 6742.351310999999,
+          "first_output_ms": 991.066425,
+          "node_command_ms": 995.1850299999996,
+          "prompt_ms": 2564.4465680000003
+        },
+        {
+          "kind": "headless",
+          "pid": 67017,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1288.0460319999997,
+          "first_output_ms": 1254.454882
+        },
+        {
+          "kind": "headless",
+          "pid": 67061,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1462.1548809999995,
+          "first_output_ms": 1412.42177
+        },
+        {
+          "kind": "headless",
+          "pid": 67082,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2084.3355300000003,
+          "first_output_ms": 2022.3610930000004
+        },
+        {
+          "kind": "headless",
+          "pid": 67129,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2915.7405290000006,
+          "first_output_ms": 2897.3266620000013
+        },
+        {
+          "kind": "headless",
+          "pid": 67164,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1708.296187,
+          "first_output_ms": 1672.9465299999993
+        },
+        {
+          "kind": "headless",
+          "pid": 67200,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1116.7818800000005,
+          "first_output_ms": 1079.5243770000016
+        },
+        {
+          "kind": "headless",
+          "pid": 67217,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1204.1076949999988,
+          "first_output_ms": 1183.5874700000004
+        },
+        {
+          "kind": "pty",
+          "pid": 66999,
+          "code": null,
+          "signal": "SIGKILL",
+          "killed": false,
+          "ms": 13937.755104,
+          "first_output_ms": 762.357606,
+          "node_command_ms": 767.578886,
+          "prompt_ms": 3233.301477
+        },
+        {
+          "kind": "pty",
+          "pid": 67258,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 6868.941812,
+          "first_output_ms": 720.6980840000001,
+          "node_command_ms": 723.669269,
+          "prompt_ms": 2921.1496349999998
+        },
+        {
+          "kind": "pty",
+          "pid": 67349,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 10743.178202000001,
+          "first_output_ms": 889.704743,
+          "node_command_ms": 895.7492949999998,
+          "prompt_ms": 9456.25684
+        }
+      ]
+    },
+    {
+      "round": "4-master",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "duration_ms": 44219.881789999985,
+      "summary": ["Test Files  6 passed (6)", "Tests  14 passed (14)"],
+      "failures": [],
+      "resources": {
+        "cpu_seconds": 89.271403,
+        "throttled_seconds": 1.149141,
+        "throttled_periods": 15,
+        "total_periods": 441
+      },
+      "live_descendants_at_end": [],
+      "zombie_count": 17,
+      "zombie_types": ["esbuild", "MainThread", "sh"],
+      "children": [
+        {
+          "kind": "pty",
+          "pid": 67511,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 5199.022526999999,
+          "first_output_ms": 909.5322659999997,
+          "node_command_ms": 913.9710749999999,
+          "prompt_ms": 4003.609207
+        },
+        {
+          "kind": "pty",
+          "pid": 67611,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 2463.1568209999996,
+          "first_output_ms": 737.7136130000008,
+          "node_command_ms": 743.9086469999993,
+          "prompt_ms": 2180.870355
+        },
+        {
+          "kind": "pty",
+          "pid": 67522,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 8702.418453,
+          "first_output_ms": 755.7330259999999,
+          "node_command_ms": 758.9206640000002,
+          "prompt_ms": 4666.083256
+        },
+        {
+          "kind": "pty",
+          "pid": 67653,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4432.684058999999,
+          "first_output_ms": 760.5701549999994,
+          "node_command_ms": 766.965306
+        },
+        {
+          "kind": "pty",
+          "pid": 67743,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 4316.127459999998,
+          "first_output_ms": 1483.332898999999,
+          "node_command_ms": 1486.5429889999996
+        },
+        {
+          "kind": "pty",
+          "pid": 67695,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 8143.625707000001,
+          "first_output_ms": 1450.8282359999994,
+          "node_command_ms": 1454.870562,
+          "prompt_ms": 3066.4075139999986
+        },
+        {
+          "kind": "headless",
+          "pid": 67897,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1079.9466940000002,
+          "first_output_ms": 1058.9188279999998
+        },
+        {
+          "kind": "headless",
+          "pid": 67921,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1026.4434550000005,
+          "first_output_ms": 1003.6080600000005
+        },
+        {
+          "kind": "headless",
+          "pid": 67957,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1214.937151,
+          "first_output_ms": 1189.5262199999997
+        },
+        {
+          "kind": "headless",
+          "pid": 67997,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1074.8696529999997,
+          "first_output_ms": 1060.5787069999997
+        },
+        {
+          "kind": "headless",
+          "pid": 68023,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 961.957030999999,
+          "first_output_ms": 938.9511410000005
+        },
+        {
+          "kind": "headless",
+          "pid": 68040,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1310.203626999999,
+          "first_output_ms": 1286.2668749999993
+        },
+        {
+          "kind": "pty",
+          "pid": 67818,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 10878.588223,
+          "first_output_ms": 990.425659,
+          "node_command_ms": 993.894344,
+          "prompt_ms": 3375.553986
+        },
+        {
+          "kind": "headless",
+          "pid": 68058,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 1308.0852890000006,
+          "first_output_ms": 1283.0461450000003
+        },
+        {
+          "kind": "pty",
+          "pid": 68097,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 7082.23444,
+          "first_output_ms": 766.4750590000001,
+          "node_command_ms": 770.121758,
+          "prompt_ms": 3092.3515989999996
+        },
+        {
+          "kind": "pty",
+          "pid": 68190,
+          "code": 0,
+          "signal": null,
+          "killed": false,
+          "ms": 3154.3866709999998,
+          "first_output_ms": 635.6662820000001,
+          "node_command_ms": 639.1573170000001,
+          "prompt_ms": 2582.433784
+        }
+      ]
+    }
+  ],
+  "cold_cli_controls": [
+    {
+      "concurrency": 8,
+      "phases": [
+        {
+          "phase": "serial-cold",
+          "duration_ms": 4690.395386,
+          "resources": {
+            "cpu_seconds": 6.909503,
+            "throttled_seconds": 0,
+            "throttled_periods": 0,
+            "total_periods": 47
+          },
+          "runs": [
+            {
+              "label": "master",
+              "ms": 2595.490704,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 2092.89877,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            }
+          ],
+          "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        },
+        {
+          "phase": "parallel-cold-8",
+          "duration_ms": 7954.0771780000005,
+          "resources": {
+            "cpu_seconds": 31.514268,
+            "throttled_seconds": 5.927292,
+            "throttled_periods": 77,
+            "total_periods": 79
+          },
+          "runs": [
+            {
+              "label": "master",
+              "ms": 7319.888070999999,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 6661.915872,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "master",
+              "ms": 7501.697797000001,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 7748.537389000001,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "master",
+              "ms": 7923.923,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 7753.132254,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "master",
+              "ms": 7377.20784,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 7924.959389999999,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            }
+          ],
+          "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        },
+        {
+          "phase": "serial-warm",
+          "duration_ms": 2509.84612,
+          "resources": {
+            "cpu_seconds": 3.636664,
+            "throttled_seconds": 0,
+            "throttled_periods": 0,
+            "total_periods": 25
+          },
+          "runs": [
+            {
+              "label": "master",
+              "ms": 1257.0522549999987,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 1250.8296419999988,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            }
+          ],
+          "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      ]
+    },
+    {
+      "concurrency": 12,
+      "phases": [
+        {
+          "phase": "serial-cold",
+          "duration_ms": 4343.116014,
+          "resources": {
+            "cpu_seconds": 6.372698,
+            "throttled_seconds": 0,
+            "throttled_periods": 0,
+            "total_periods": 44
+          },
+          "runs": [
+            {
+              "label": "master",
+              "ms": 2121.086518,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 2220.1637229999997,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            }
+          ],
+          "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        },
+        {
+          "phase": "parallel-cold-12",
+          "duration_ms": 10090.012274,
+          "resources": {
+            "cpu_seconds": 40.411901,
+            "throttled_seconds": 9.240345,
+            "throttled_periods": 100,
+            "total_periods": 101
+          },
+          "runs": [
+            {
+              "label": "master",
+              "ms": 10049.960677,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 10045.196423,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "master",
+              "ms": 10036.163637000001,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "app",
+              "ms": 10074.610095,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "master",
+              "ms": 10073.111168,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "app",
+              "ms": 10071.932899,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "master",
+              "ms": 10034.232951999998,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "app",
+              "ms": 10061.312910999999,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "master",
+              "ms": 10051.058646,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "app",
+              "ms": 10044.330990999999,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            },
+            {
+              "label": "master",
+              "ms": 9503.181817,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 10028.658597000001,
+              "signal": "SIGTERM",
+              "killed": true,
+              "stdout": "",
+              "stderr": "",
+              "valid": false
+            }
+          ],
+          "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        },
+        {
+          "phase": "serial-warm",
+          "duration_ms": 1941.1150019999986,
+          "resources": {
+            "cpu_seconds": 3.04742,
+            "throttled_seconds": 0,
+            "throttled_periods": 0,
+            "total_periods": 19
+          },
+          "runs": [
+            {
+              "label": "master",
+              "ms": 962.094176999999,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            },
+            {
+              "label": "app",
+              "ms": 977.3538229999976,
+              "signal": null,
+              "killed": false,
+              "stdout": "{\"type\":\"data\",\"data\":{\"mode\":\"auto\",\"sessionRules\":{\"allow\":[],\"ask\":[],\"deny\":[]}}}\n",
+              "stderr": "",
+              "valid": true
+            }
+          ],
+          "oom_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      ]
+    }
+  ],
+  "numeric_exit_code_note": "Initial cold CLI probe coalesced null error codes to 0; those numeric fields are deliberately omitted here. signal and killed are verbatim; reproducible script now preserves null.",
+  "prompt_capture_note": "Passive tail matcher is best effort; tests and raw logs are the authoritative readiness checks.",
+  "shared_resources": {
+    "fixtures": "unique mkdtemp HOME/project/.git, fixed fake provider; no user configuration",
+    "dependencies": "same installed node_modules reused read-only; pnpm warning mode prevents test network reinstall",
+    "tsx_cache": "same UID /tmp/tsx-1000; 14086 entries observed, not established as a cause and not cleared",
+    "ports": "no EADDRINUSE or binding errors; these fixtures configure no listening service"
+  },
+  "conclusion": "Existing CLI/PTY whole-process deadlines are sensitive to cloud cold-start concurrency and CPU quota. Baseline PTY failure reproduced; identical 10-second headless SIGTERM/empty-output failure reproduced on both baseline and App under bounded cold-load control. No App-specific configuration/permission regression or live-descendant leak observed.",
+  "limits": [
+    "Original failed full-run log did not capture child exit signals or simultaneous resource metrics; these experiments establish the failure class, not exact reconstruction of each historical stall.",
+    "The 12-cold-process control is intentionally stronger than the original two-worker suite; it demonstrates capacity sensitivity, not the original concurrency.",
+    "The full suite remains historically non-green; no timeouts widened, tests skipped, or product/system settings changed.",
+    "Zombie descendants reparented to cloud PID 1 exist on both trees; no live descendants at four round ends."
+  ],
+  "paid_model_calls": 0,
+  "user_computer_used": false,
+  "product_source_changed": false
+}

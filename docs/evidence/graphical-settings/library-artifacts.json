@@ -1,0 +1,30 @@
+[
+  {
+    "library_file_id": "libfile_7eabae5b924c8191b8263b5ee3483fdd",
+    "file_id": "file_0000000098a881f5b0a7e712b201d07a",
+    "file_name": "00-imagegen-design-concept.png",
+    "version": 0,
+    "kind": "imagegen design concept; not actual UI"
+  },
+  {
+    "library_file_id": "libfile_199e684c616881918bf834e63908c8b8",
+    "file_id": "file_000000006b7c81f5be985072e5918ef6",
+    "file_name": "02-model-catalog-linux-electron.png",
+    "version": 1,
+    "kind": "actual Linux Electron UI; not macOS native"
+  },
+  {
+    "library_file_id": "libfile_523c92ed76e881919c57520cdcd5a3af",
+    "file_id": "file_0000000081ac81f58829191d5fc5721b",
+    "file_name": "08-models-dark-linux-electron.png",
+    "version": 1,
+    "kind": "actual Linux Electron UI; not macOS native"
+  },
+  {
+    "library_file_id": "libfile_b026ebf2cf1c81919c1a1889d6726b8a",
+    "file_id": "file_00000000c12081f5aee877478ce79d4a",
+    "file_name": "09-narrow-zoom-linux-electron.png",
+    "version": 0,
+    "kind": "actual Linux Electron UI; not macOS native"
+  }
+]

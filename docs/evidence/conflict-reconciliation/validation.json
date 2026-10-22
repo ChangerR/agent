@@ -1,0 +1,43 @@
+{
+  "master": "15208088d3a148e0e9615fca05478b50db356c67",
+  "closed_prs_unchanged": [45, 47],
+  "app47_not_in_master": true,
+  "pr48": {
+    "old_head": "80b50c16c19964d5850fd59cbb42e0f6cab3d766",
+    "code_head": "3856ed0ad77c7835c49a0caa3119ff8925f448c8",
+    "strategy": "merge latest master; retain both PlanningError and PresetContext imports",
+    "tests": {
+      "files": 93,
+      "passed": 1732,
+      "skipped": 2,
+      "failed": 0
+    }
+  },
+  "pr49": {
+    "old_head": "84d99fcf6e402d1df5554adb651cd1034a4ce370",
+    "code_head": "a59497dccb87cb2997d19dc6be293e57df4eeb05",
+    "intended_base": "feature/cache-runtime-budget-and-reuse",
+    "strategy": "merge updated cache feature and retire artificial base; preserve App47 changes absent from master",
+    "tests": {
+      "files": 96,
+      "passed": 1755,
+      "skipped": 2,
+      "failed": 0
+    },
+    "cache_core_or_policy_diff_against_pr48": []
+  },
+  "checks": {
+    "typecheck": "both passed",
+    "cli_and_desktop_build": "both passed",
+    "sidecar_smoke": "both passed",
+    "node_playwright": "two suites passed on combined App",
+    "source_conflict_markers": []
+  },
+  "force_push": false,
+  "remote_prs_merged": false,
+  "draft_changed": false,
+  "maintainer_permissions_increased": false,
+  "native_macos_tested": false,
+  "paid_model_calls": 0,
+  "user_computer_used": false
+}

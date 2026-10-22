@@ -17,7 +17,10 @@
     "desktop:smoke": "node desktop/scripts/smoke.mjs",
     "desktop:preview": "node --import tsx desktop/scripts/preview.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "desktop:ui-smoke": "node desktop/scripts/ui-smoke.mjs",
+    "desktop:electron-smoke": "node desktop/scripts/electron-settings-smoke.mjs",
+    "desktop:settings-coverage": "node desktop/scripts/settings-coverage.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -34,6 +37,7 @@
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.10.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

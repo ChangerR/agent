@@ -1,5 +1,5 @@
 {
-  "name": "agentlab-desktop",
+  "name": "agentlab",
   "version": "0.1.0",
   "private": true,
   "main": "dist/main/index.cjs"

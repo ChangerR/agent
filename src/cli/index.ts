@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { createAgent } from '../index.js';
 import { initializeCliHome } from './initialize.js';
 
-const help = `AgentLab
+const help = `agentlab
 
 用法: agentlab [选项]
 

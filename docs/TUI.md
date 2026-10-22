@@ -33,7 +33,7 @@ JSON 一次提交，没有额外 Save。已有 run 的预算冻结。详细行�
 
 ## 参考与取舍
 
-参考成熟终端产品的渐进披露、固定输入区、区分当前值和候选、保留草稿以及操作范围透明原则，保持 AgentLab 原有事件订阅和权限引擎，不引入新的界面框架。
+参考成熟终端产品的渐进披露、固定输入区、区分当前值和候选、保留草稿以及操作范围透明原则，保持 agentlab 原有事件订阅和权限引擎，不引入新的界面框架。
 
 - [Claude Code 交互模式](https://code.claude.com/docs/en/interactive-mode)
 - [Claude Code 权限](https://code.claude.com/docs/en/permissions)

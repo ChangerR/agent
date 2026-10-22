@@ -102,7 +102,7 @@ function decode(state: FileState | undefined): Record<string, unknown> {
     // JSON / schema 错误可能包含配置值，禁止把原始错误透传给终端。
     throw new PermissionConfigError(
       'invalid',
-      '配置不是有效的 AgentLab JSON 配置，未修改文件。请先修复原文件。',
+      '配置不是有效的 agentlab JSON 配置，未修改文件。请先修复原文件。',
     );
   }
 }

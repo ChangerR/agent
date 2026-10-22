@@ -162,7 +162,9 @@ export async function createRuntime(
       supervisor?.configure(limits);
     },
   };
+  let pluginDefinitions: readonly Plugin[] = [];
   const preset = (options.preset ?? presetFactory)({
+    pluginDefinitions: () => pluginDefinitions,
     cwd,
     paths,
     configSources,
@@ -197,6 +199,7 @@ export async function createRuntime(
   const plugins = [...preset.plugins, ...(options.plugins ?? [])].filter(
     (plugin) => !config.disabledPlugins.includes(plugin.manifest.id),
   );
+  const definitions = [...preset.plugins, ...(options.plugins ?? [])];
   for (const entry of config.pluginEntries) {
     if (typeof entry !== 'string' && !entry.enabled) continue;
     const path = typeof entry === 'string' ? entry : entry.entry;
@@ -204,8 +207,10 @@ export async function createRuntime(
     const plugin = imported.default;
     if (!plugin?.manifest || typeof plugin.setup !== 'function')
       throw new Error(`Invalid SDK plugin: ${path}`);
+    definitions.push(plugin);
     if (!config.disabledPlugins.includes(plugin.manifest.id)) plugins.push(plugin);
   }
+  pluginDefinitions = definitions;
   const selections = { ...preset.selections, ...config.capabilities } as CapabilitySelections;
   const layer = (value: Record<string, unknown>) =>
     value.pluginConfig as Record<string, Record<string, unknown>> | undefined;

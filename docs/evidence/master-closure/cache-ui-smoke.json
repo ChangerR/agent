@@ -1,0 +1,13 @@
+{
+  "result": "passed",
+  "environment": "Node Playwright + Linux Chromium DPR 2 + isolated FakeProvider worker",
+  "checks": [
+    "全部新增字段可发现",
+    "cache 稀疏覆盖",
+    "planner/summary/judge 实际表单提交",
+    "双 provider 模型能力映射",
+    "MCP 存储与检索预算",
+    "保守默认不回填"
+  ],
+  "native_macos": false
+}

@@ -1,8 +1,8 @@
-# AgentLab 架构与内部原理
+# agentlab 架构与内部原理
 
 > 当前架构使用 SDK 插件宿主、唯一 ToolExecutor、确定性策略和严格模型审批员。配置与能力入口见 [PLUGINS.md](PLUGINS.md)，权限语义见 [POLICY.md](POLICY.md)。
 
-本文档逐模块讲解 AgentLab 的实现原理。AgentLab 是一个仿 Claude Code 的教学版 coding agent，设计目标是把"一个 agent 到底是怎么运转的"讲清楚。
+本文档逐模块讲解 agentlab 的实现原理。agentlab 是一个仿 Claude Code 的教学版 coding agent，设计目标是把"一个 agent 到底是怎么运转的"讲清楚。
 
 runtime 的 AgentSupervisor 管理子任务，每个 child 仍用同一个 AgentLoop 实现，拥有独立
 EventBus、上下文和会话。具体控制工具、设置与 TUI 放在 builtin/subagents；core 不导入
@@ -104,7 +104,7 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 `run()` 返回 `AgentRunResult`：`reason` 区分 `completed / max_turns / max_tokens / aborted / error`，同时提供模型轮数、累计用量和错误信息。`completed` 只代表循环正常结束，研究中的任务成功率应由外部评测器判断。没有 UI 或 `error` 事件订阅者时，模型失败也能返回 `error` 终态。
 
-每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `~/.agent/state/projects/<项目 ID>/logs/*.jsonl`。
+每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `~/.agentlab/state/projects/<项目 ID>/logs/*.jsonl`。
 
 计划等执行约束的提前拒绝同时记录 `permission_decision` 和 `tool_execution`，用 requestId/toolUseId（工具审计中的 toolCallId）关联。此类事件标明 `denialScope: invocation`，仅记录当前调用的拒绝，不额外锁定整请求；已有的用户拒绝与计划锁不会因此解除。默认脱敏日志保留 scope/reasonCode，不记录参数和原始原因。
 
@@ -154,7 +154,7 @@ MCP 调用传入当前轮次的 `AbortSignal`；连接失败会关闭已创建�
 
 渐进式披露（progressive disclosure）——Claude Code skill 系统的精髓：
 
-1. `SkillLoader` 扫描 `~/.agent/skills/*/SKILL.md` 和 `.agent/skills/*/SKILL.md`，只解析 frontmatter（name + description）
+1. `SkillLoader` 扫描 `~/.agentlab/skills/*/SKILL.md` 和 `.agentlab/skills/*/SKILL.md`，只解析 frontmatter（name + description）
 2. system prompt 里**只注入清单**，不注入全文 —— 上下文经济
 3. 模型判断需要时调用 `use_skill(name)` 工具，全文才作为 tool_result 进入上下文
 
@@ -195,7 +195,7 @@ MCP 调用传入当前轮次的 `AbortSignal`；连接失败会关闭已创建�
 
 ## 12. 会话持久化 `src/core/session/`
 
-一个会话属于规范化的项目根，落在 `~/.agent/state/projects/<项目根路径的 SHA-256>/sessions/<id>.json`。配置与状态分开；子目录和符号链接入口解析到相同项目身份，其他项目不能通过相同 id 访问该会话。不扫描或迁移旧目录。id 用本地时间加 4 位十六进制（`s-YYYYMMDD-HHmmss-xxxx`），避开 Windows 文件名里的冒号。没有 index，列表就是扫目录里的 `*.json`，坏文件进 `broken` 但不删。
+一个会话属于规范化的项目根，落在 `~/.agentlab/state/projects/<项目根路径的 SHA-256>/sessions/<id>.json`。配置与状态分开；子目录和符号链接入口解析到相同项目身份，其他项目不能通过相同 id 访问该会话。不扫描或迁移旧目录。id 用本地时间加 4 位十六进制（`s-YYYYMMDD-HHmmss-xxxx`），避开 Windows 文件名里的冒号。没有 index，列表就是扫目录里的 `*.json`，坏文件进 `broken` 但不删。
 
 当前 envelope 记录 runtime schema、provider/endpoint 身份、policy id/version 和插件状态 schema，以及压缩后的当前历史、模型、思考等级、会话级权限规则、权限模式、累计用量和统计。不放进行中的 run、`toolsSnapshot`、MCP / skill、system prompt 全文、项目配置里的权限、审计日志、半截流式块，也不放 API key。恢复后 system prompt 仍由 `buildSystemPrompt` 现装，工具列表在下一轮按当前注册表重新快照。
 

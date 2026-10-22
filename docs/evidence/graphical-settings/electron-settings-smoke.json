@@ -1,0 +1,30 @@
+{
+  "platform": "linux",
+  "electron": "44.8.0",
+  "entry": "node desktop/scripts/run.mjs",
+  "isolated": true,
+  "realWorkerAndIPC": true,
+  "modelRequests": "local scripted provider only",
+  "passed": [
+    "真实 run.mjs 开发启动（未提供 Node LICENSE 环境覆盖）",
+    "可发现的设置按钮与真实菜单入口",
+    "模型目录新增、修改、保存",
+    "Provider 列表 CRUD、适配器与模型能力嵌套控件",
+    "作用域稀疏覆盖、继承取消与缓存预算",
+    "MCP stdio、参数排序、env 和 HTTP headers 图形化配置",
+    "凭据不回传、手动替换/清除、项目环境与注释保留",
+    "辅助角色、请求预算、缓存回放与 MCP 保留策略",
+    "插件列表增删排序与无 Zod 插件的嵌套类型控件",
+    "校验失败、CAS 冲突、草稿取消与后端错误反馈",
+    "权限规则构建器、原生目录选择 IPC 与项目边界校验",
+    "全部已注册配置字段和条件分支的真实表单控件覆盖",
+    "当前模型/思考/模式选择即保存，工具审批仍逐次确认",
+    "主任务选用保存的 Provider/模型，关闭重启后真实采用并加载本地 MCP",
+    "项目会话保存、新建、恢复与删除",
+    "主题受控 IPC、保存失败反馈和原值保留",
+    "未保存关闭取消、主题持久化、缩放与窄窗口布局"
+  ],
+  "pageErrors": [],
+  "status": "passed",
+  "macNativeTested": false
+}

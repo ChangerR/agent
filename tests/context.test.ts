@@ -81,7 +81,7 @@ describe('上下文压缩边界', () => {
     );
     const request = provider.requests[0];
     expect(request?.system).toContain('压缩器');
-    expect(request?.system).not.toContain('你是 AgentLab');
+    expect(request?.system).not.toContain('你是 agentlab');
     expect(request?.tools).toEqual([]);
     expect(request?.cache).toBeUndefined();
     expect(request?.maxTokens).toBe(2048);

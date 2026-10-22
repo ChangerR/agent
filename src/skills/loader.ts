@@ -2,8 +2,8 @@
  * Skill 加载器：发现 + frontmatter 解析。
  *
  * 扫描两个位置（项目级覆盖用户级同名 skill）：
- *   ~/.agent/skills/<name>/SKILL.md
- *   <cwd>/.agent/skills/<name>/SKILL.md
+ *   ~/.agentlab/skills/<name>/SKILL.md
+ *   <cwd>/.agentlab/skills/<name>/SKILL.md
  *
  * SKILL.md 格式：
  *   ---
@@ -66,10 +66,10 @@ export class SkillLoader {
 
   load(): void {
     // 先用户级，后项目级（项目级覆盖同名）
-    for (const skill of scanDir(join(homedir(), '.agent', 'skills'))) {
+    for (const skill of scanDir(join(homedir(), '.agentlab', 'skills'))) {
       this.skills.set(skill.name, skill);
     }
-    for (const skill of scanDir(join(this.cwd, '.agent', 'skills'))) {
+    for (const skill of scanDir(join(this.cwd, '.agentlab', 'skills'))) {
       this.skills.set(skill.name, skill);
     }
   }

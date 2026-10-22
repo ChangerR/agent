@@ -46,7 +46,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   dirs.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true }));
 });
-async function mount(global?: Record<string, unknown>) {
+async function mount(global?: Record<string, unknown>, settingId = 'capability-selection') {
   let renderer!: TuiAltScreen;
   const original = TuiAltScreen.prototype.start;
   vi.spyOn(TuiAltScreen.prototype, 'start').mockImplementation(function (this: TuiAltScreen) {
@@ -57,9 +57,9 @@ async function mount(global?: Record<string, unknown>) {
   dirs.push(cwd);
   const path = join(cwd, 'agent.config.json');
   write(path, { provider: 'fake', model: 'before', future: true });
-  if (global) write(join(home, '.agent', 'config.json'), global);
+  if (global) write(join(home, '.agentlab', 'config.json'), global);
   const agent = await createAgent(cwd, { autoSaveSessions: false });
-  agent.settings.find((setting) => setting.id === 'capability-selection')!.section.order = -1;
+  agent.settings.find((setting) => setting.id === settingId)!.section.order = -1;
   const terminal = new MemoryTerminal();
   const tui = startTui(agent, { terminal, onExit: vi.fn() });
   const key = (value: string) => terminal.input?.(value);
@@ -83,6 +83,54 @@ const shown = async (ui: Awaited<ReturnType<typeof mount>>, value: string) =>
 
 // 使用真正的底部交互组件，而非只测试命令插件回调。
 describe('设置入口的一次提交', () => {
+  it('连接默认值从真实设置入口编辑；取消不写、失败有反馈、保存后重启才采用', async () => {
+    const ui = await mount(undefined, 'configuration-connection');
+    try {
+      ui.send('/settings');
+      ui.key('\r');
+      await shown(ui, '主任务与模型连接');
+      await shown(ui, '本项目');
+      await shown(ui, '切换到全局');
+      ui.key('\r');
+      await shown(ui, '输入完整 JSON');
+      const before = readFileSync(ui.path, 'utf8');
+      ui.key('\x05');
+      ui.key('\x15');
+      ui.key('{"model":"cancelled"}');
+      ui.key('\x1b');
+      expect(readFileSync(ui.path, 'utf8')).toBe(before);
+      await shown(ui, '切换到全局');
+      ui.key('\r');
+      await shown(ui, '输入完整 JSON');
+      ui.key('\x05');
+      ui.key('\x15');
+      ui.key('{"apiKeyEnv":"not a variable"}');
+      ui.key('\r');
+      await shown(ui, '设置失败');
+      expect(readFileSync(ui.path, 'utf8')).toBe(before);
+      ui.key('\x1b');
+      await shown(ui, '切换到全局');
+      ui.key('\r');
+      await shown(ui, '输入完整 JSON');
+      ui.key('\x05');
+      ui.key('\x15');
+      ui.key('{"provider":"fake","model":"after-restart"}');
+      ui.key('\r');
+      await vi.waitFor(() => expect(read(ui.path).model).toBe('after-restart'));
+      await shown(ui, '重启后生效');
+      expect(ui.agent.loop.model).toBe('before');
+      expect(ui.agent.permission.mode).toBe('ask');
+      expect(read(ui.path).future).toBe(true);
+      const restarted = await createAgent(dirname(ui.path), { autoSaveSessions: false });
+      try {
+        expect(restarted.loop.model).toBe('after-restart');
+      } finally {
+        await restarted.dispose();
+      }
+    } finally {
+      await ui.dispose();
+    }
+  });
   it('模型和思考选择即落盘，取消不写，模型菜单的旧快照不会覆盖外部修改', async () => {
     const ui = await mount();
     try {
@@ -171,7 +219,7 @@ describe('设置入口的一次提交', () => {
       ui.key('{}');
       ui.key('\r');
       await vi.waitFor(() =>
-        expect(read(join(home, '.agent', 'config.json'))).toEqual({
+        expect(read(join(home, '.agentlab', 'config.json'))).toEqual({
           capabilities: {},
           futureGlobal: true,
         }),

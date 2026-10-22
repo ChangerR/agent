@@ -13,6 +13,8 @@ export interface PresetContext {
   services: RuntimeServices;
   capabilityChoices(): Record<string, { selected: string | false; available: readonly string[] }>;
   modelInfo(model: string): { contextWindow: number; maxOutputTokens: number } | undefined;
+  /** 实际待装配的插件定义；包含外部插件，供宿主 schema 设置入口使用。 */
+  pluginDefinitions?(): readonly Plugin[];
 }
 export interface Preset {
   controlTools?: readonly {

@@ -477,7 +477,9 @@ export function createDeterministicPolicyPlugin({
           signal.throwIfAborted();
           assertScope(scope);
           base = store.read('agentlab.policy');
-          return structuredClone(base.value);
+          return structuredClone(
+            Object.hasOwn(base.value, 'writeRoots') ? { writeRoots: base.value.writeRoots } : {},
+          );
         },
         async draft(raw, signal, scope = 'project') {
           signal.throwIfAborted();

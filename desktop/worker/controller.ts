@@ -12,6 +12,24 @@ import {
 import { inspectionPlugin } from './inspection.js';
 import { demoProviderPlugin } from './demo.js';
 import { planningErrorMessage } from '../../src/builtin/planning/errors.js';
+import { settingsErrorMessage } from '../../src/runtime/config-store.js';
+import { safeSettingsValue } from '../../src/builtin/configuration-settings.js';
+import { loadConfigWithSources } from '../../src/core/config.js';
+async function effectiveSettings(
+  section: import('../../src/sdk/index.js').SettingsSection,
+  signal: AbortSignal,
+  scope: 'global' | 'project',
+) {
+  try {
+    return {
+      effectiveValue: safeSettingsValue(await section.readEffective?.(signal, scope)),
+      effectiveError: undefined,
+    };
+  } catch (error) {
+    return { effectiveValue: undefined, effectiveError: settingsErrorMessage(error) };
+  }
+}
+import type { SettingsSection } from '../../src/sdk/index.js';
 
 /** 跨进程只传纯展示快照；审批函数、凭证与模型请求保留在 worker。 */
 export class DesktopController {
@@ -41,6 +59,10 @@ export class DesktopController {
   >();
   private submissions = new Set<string>();
   private detach: Array<() => void> = [];
+  private settingsOperation = false;
+  private settingsAbort?: AbortController;
+  private settingsFinished?: Promise<void>;
+  private editor?: { id: string; section: SettingsSection; scope: 'project' | 'global' };
   constructor(
     private publish: (state: RuntimeSnapshot) => void,
     private factory: typeof createAgent = createAgent,
@@ -138,12 +160,43 @@ export class DesktopController {
         thinking: a.configSources.thinking.scope,
       },
       models: [...new Set([a.loop.model, ...a.knownModels.map((m) => m.name)])],
+      providers: a.providers.list().map((p) => p.name),
+      modelDetails: a.knownModels.map(({ name, info }) => ({ id: name, ...info })),
       usage: a.session.tokenUsage,
       sessions: [],
       brokenSessions: 0,
       plugins: a.plugins.manifests.map((p) => ({ id: p.id, version: p.version })),
       tools: a.tools.list().map((t) => ({ name: t.name, risk: t.risk })),
       commands: a.commands.list(),
+      settings: a.settings
+        .filter(
+          ({ id, section }) =>
+            id.startsWith('configuration-') ||
+            (!['planning', 'subagents', 'reviewer-model-config'].includes(id) &&
+              !!section.draft &&
+              !!section.commit &&
+              section.scopeTargets?.some((target) =>
+                ['project', 'global'].includes(target.scope),
+              )) ||
+            [
+              'capability-selection',
+              'policy-deterministic-config',
+              'config-paths',
+              'mcp',
+              'reviewer-model-status',
+            ].includes(id),
+        )
+        .map(({ id, section }) => ({
+          id,
+          title: section.title,
+          description: section.description,
+          schema: section.getSchema?.() ?? section.schema,
+          applyMode: section.applyMode,
+          scopes: (section.scopeTargets ?? []).filter(
+            (target) => target.scope !== 'session',
+          ) as Array<{ scope: 'project' | 'global'; path: string }>,
+          editable: !!section.draft && !!section.commit,
+        })),
       inspection: { kind: 'files', content: '点击刷新，通过权限执行器列出项目文件。' },
     };
     this.detach.push(a.events.on('permission_request', (event) => this.permission(event)));
@@ -394,7 +447,129 @@ export class DesktopController {
       await this.active;
       return;
     }
+    if (action.type === 'settings-close') {
+      this.editor = undefined;
+      s.settingsEditor = undefined;
+      this.emit(true);
+      return;
+    }
+    if (action.type === 'settings-read' || action.type === 'settings-commit') {
+      if (s.busy || this.settingsOperation) throw new Error('请等待当前操作结算后编辑设置。');
+      this.settingsOperation = true;
+      const controller = new AbortController();
+      this.settingsAbort = controller;
+      let finish!: () => void;
+      this.settingsFinished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      try {
+        if (action.type === 'settings-read') {
+          try {
+            const configured = loadConfigWithSources(a.cwd).config.pluginConfig[
+              'agentlab.provider-connections'
+            ]?.connections;
+            s.providerLabels = Object.fromEntries(
+              Object.entries(
+                (configured && typeof configured === 'object' ? configured : {}) as Record<
+                  string,
+                  { displayName?: string }
+                >,
+              )
+                .filter(([, v]) => typeof v.displayName === 'string')
+                .map(([id, v]) => [id, v.displayName!]),
+            );
+            s.providerOptions = [
+              ...new Set([
+                ...s.providers,
+                ...Object.entries(
+                  (configured && typeof configured === 'object' ? configured : {}) as Record<
+                    string,
+                    { enabled?: boolean }
+                  >,
+                )
+                  .filter(([, v]) => v.enabled !== false)
+                  .map(([id]) => id),
+              ]),
+            ];
+          } catch {
+            s.providerOptions = [...s.providers];
+          }
+          const metadata = s.settings.find((item) => item.id === action.sectionId);
+          const record = a.settings.find((item) => item.id === action.sectionId);
+          if (
+            !metadata ||
+            !record ||
+            (metadata.scopes.length && !metadata.scopes.some((item) => item.scope === action.scope))
+          )
+            throw new Error('不支持此设置或作用域。');
+          this.editor = undefined;
+          const id = randomUUID();
+          metadata.scopes = (record.section.scopeTargets ?? []).filter(
+            (target) => target.scope !== 'session',
+          ) as typeof metadata.scopes;
+          metadata.schema = record.section.getSchema?.() ?? record.section.schema;
+          metadata.description = record.section.description;
+          let value = await record.section.read?.(controller.signal, action.scope);
+          // 专用目录授权只投影 schema 拥有的字段；未知配置不传入 renderer。
+          if (action.sectionId === 'policy-deterministic-config')
+            value =
+              value && typeof value === 'object' && Object.hasOwn(value, 'writeRoots')
+                ? { writeRoots: (value as { writeRoots?: unknown }).writeRoots }
+                : {};
+          if (this.disposal || action.sessionId !== a.session.id)
+            throw new Error('设置读取已失效。');
+          this.editor = { id, section: record.section, scope: action.scope };
+          s.settingsEditor = {
+            id,
+            sectionId: action.sectionId,
+            scope: action.scope,
+            value: safeSettingsValue(value),
+            ...(await effectiveSettings(record.section, controller.signal, action.scope)),
+          };
+        } else {
+          const editor = this.editor,
+            view = s.settingsEditor;
+          if (
+            !editor ||
+            editor.id !== action.editorId ||
+            !view ||
+            !editor.section.draft ||
+            !editor.section.commit
+          )
+            throw new Error('设置草稿已过期，请重新打开。');
+          view.error = undefined;
+          view.saved = false;
+          view.feedbackRevision = (view.feedbackRevision ?? 0) + 1;
+          const signal = controller.signal;
+          try {
+            const draft = await editor.section.draft(JSON.parse(action.json), signal, editor.scope);
+            if (this.disposal || this.editor !== editor || action.sessionId !== a.session.id)
+              throw new Error('设置草稿已失效。');
+            await editor.section.commit(draft, signal, editor.scope);
+            let value = await editor.section.read?.(signal, editor.scope);
+            if (view.sectionId === 'policy-deterministic-config')
+              value = { writeRoots: (value as { writeRoots?: unknown })?.writeRoots ?? [] };
+            view.value = safeSettingsValue(value);
+            Object.assign(view, await effectiveSettings(editor.section, signal, editor.scope));
+            view.saved = true;
+            // 只有 read 返回的新基线可再提交；旧 token 一次性消费。
+            editor.id = view.id = randomUUID();
+          } catch (error) {
+            view.error = settingsErrorMessage(error);
+          }
+        }
+      } finally {
+        this.settingsOperation = false;
+        this.settingsAbort = undefined;
+        finish();
+        this.emit(true);
+      }
+      return;
+    }
+    if (this.settingsOperation) throw new Error('设置正在保存，请等待。');
     if (s.busy) throw new Error('当前操作尚未结算，请先停止或等待');
+    this.editor = undefined;
+    s.settingsEditor = undefined;
     if (action.type === 'submit') {
       if (this.submissions.has(action.invocationId)) throw new Error('此任务已提交，不会重复执行');
       this.submissions.add(action.invocationId);
@@ -431,6 +606,10 @@ export class DesktopController {
           s.sources[action.field === 'think' ? 'thinking' : action.field] = 'project';
         } else if (action.type === 'resume') {
           await a.session.resume(action.id);
+        } else if (action.type === 'session-save') {
+          await a.dispatchCommand('/save', { signal: controller.signal });
+        } else if (action.type === 'session-delete') {
+          await a.dispatchCommand('/sessions rm ' + action.id, { signal: controller.signal });
         } else if (action.type === 'inspect') {
           const kind = action.kind;
           if (kind === 'read' && !action.path) throw new Error('请选择文件');
@@ -470,6 +649,13 @@ export class DesktopController {
     // 先建立宿主的在途记录，再运行；应答只确认入队，终态由完整快照通知。
     this.active = Promise.resolve().then(operation);
     void this.active.catch(() => {});
+    // 简单选择项的应答表示持久化 / 应用已结算，前端随后可安全刷新配置层。
+    if (
+      action.type === 'setting' ||
+      action.type === 'session-save' ||
+      action.type === 'session-delete'
+    )
+      await this.active;
   }
   dispose(): Promise<void> {
     this.disposal ??= this.finishDispose();
@@ -479,6 +665,8 @@ export class DesktopController {
     if (this.disposed) return;
     this.agent?.loop.abort_current();
     this.operationAbort?.abort();
+    this.settingsAbort?.abort();
+    await this.settingsFinished;
     for (const [id, p] of this.approved) {
       p.remove();
       p.resolve({ allow: false, feedback: '桌面会话已关闭' });
