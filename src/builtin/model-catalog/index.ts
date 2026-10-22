@@ -14,7 +14,13 @@ export function createModelCatalog(
       ]),
     ),
   );
-  return { get: (name) => models[name], list: () => models };
+  return {
+    get: (name, route) =>
+      (route
+        ? (models[`${route}/${name}`] ?? models[`${route.split(':')[0]}/${name}`])
+        : undefined) ?? models[name],
+    list: () => models,
+  };
 }
 export function createModelCatalogPlugin(overrides: Readonly<Record<string, ModelInfo>> = {}) {
   return definePlugin({

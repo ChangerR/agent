@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /**
  * 规范化协议层（Normalized Protocol）
  *
@@ -36,6 +37,24 @@ export interface ToolUseBlock {
   id: string;
   name: string;
   input: unknown;
+  replay?: { arguments: string; inputHash: string; routeId: string; model: string };
+}
+export const toolInputHash = (input: unknown) =>
+  createHash('sha256').update(JSON.stringify(input)).digest('hex');
+export function replayArguments(block: ToolUseBlock, routeId: string, model: string): string {
+  const replay = block.replay;
+  if (
+    replay?.routeId === routeId &&
+    replay.model === model &&
+    replay.inputHash === toolInputHash(block.input)
+  ) {
+    try {
+      if (toolInputHash(JSON.parse(replay.arguments)) === replay.inputHash) return replay.arguments;
+    } catch {
+      /* 损坏的回放元数据不能影响执行参数。 */
+    }
+  }
+  return JSON.stringify(block.input);
 }
 
 export type ContentBlock = TextBlock | ThinkingBlock | RedactedThinkingBlock | ToolUseBlock;
@@ -82,10 +101,36 @@ export interface TokenUsage {
   cacheReadTokens: number;
   /** 本次写入缓存的 token。自动前缀缓存的厂商通常给 0 */
   cacheWriteTokens: number;
+  cacheWriteTokensByTtl?: Partial<Record<'5m' | '1h' | '30m' | '12h', number>>;
 }
 
 export function emptyUsage(): TokenUsage {
   return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+}
+export function cloneUsage(usage: TokenUsage): TokenUsage {
+  return {
+    ...usage,
+    ...(usage.cacheWriteTokensByTtl
+      ? { cacheWriteTokensByTtl: { ...usage.cacheWriteTokensByTtl } }
+      : {}),
+  };
+}
+export const usageCountKeys = [
+  'inputTokens',
+  'outputTokens',
+  'cacheReadTokens',
+  'cacheWriteTokens',
+] as const;
+export function addUsage(target: TokenUsage, usage: TokenUsage) {
+  for (const key of usageCountKeys) target[key] += usage[key];
+  if (usage.cacheWriteTokensByTtl) {
+    target.cacheWriteTokensByTtl ??= {};
+    for (const key of Object.keys(usage.cacheWriteTokensByTtl) as Array<
+      keyof NonNullable<TokenUsage['cacheWriteTokensByTtl']>
+    >)
+      target.cacheWriteTokensByTtl[key] =
+        (target.cacheWriteTokensByTtl[key] ?? 0) + usage.cacheWriteTokensByTtl[key]!;
+  }
 }
 
 /** 只覆盖 patch 里有定义的字段。避免后到的 usage 片段把前面的计数冲成 0 */
@@ -94,19 +139,25 @@ export function mergeUsage(target: Partial<TokenUsage>, patch: Partial<TokenUsag
   if (patch.outputTokens !== undefined) target.outputTokens = patch.outputTokens;
   if (patch.cacheReadTokens !== undefined) target.cacheReadTokens = patch.cacheReadTokens;
   if (patch.cacheWriteTokens !== undefined) target.cacheWriteTokens = patch.cacheWriteTokens;
+  if (patch.cacheWriteTokensByTtl !== undefined)
+    target.cacheWriteTokensByTtl = {
+      ...target.cacheWriteTokensByTtl,
+      ...patch.cacheWriteTokensByTtl,
+    };
 }
 
 /** 缓存输入字段必须齐全；未命中包括本次写入缓存的输入，缺失字段不按零计。 */
 export function cacheUsage(usage: Partial<TokenUsage>) {
   if (
-    usage.inputTokens === undefined ||
-    usage.cacheReadTokens === undefined ||
-    usage.cacheWriteTokens === undefined
+    !['inputTokens', 'cacheReadTokens', 'cacheWriteTokens'].every((key) => {
+      const value = usage[key as keyof TokenUsage];
+      return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    })
   )
     return undefined;
   return {
-    hitTokens: usage.cacheReadTokens,
-    missTokens: usage.inputTokens + usage.cacheWriteTokens,
+    hitTokens: usage.cacheReadTokens!,
+    missTokens: usage.inputTokens! + usage.cacheWriteTokens!,
   };
 }
 
@@ -118,7 +169,12 @@ export type StreamEvent =
   | { type: 'signature_delta'; signature: string }
   /** 打码思考块在 content_block_start 时一次到齐 */
   | { type: 'redacted_thinking'; data: string }
-  | { type: 'tool_use_start'; id: string; name: string }
+  | {
+      type: 'tool_use_start';
+      id: string;
+      name: string;
+      source?: { routeId: string; model: string };
+    }
   /** input 为 JSON 字符串片段（与 Anthropic input_json_delta 对齐） */
   | { type: 'tool_use_delta'; id: string; input: string }
   | { type: 'tool_use_stop'; id: string }
@@ -158,7 +214,10 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
   let stopReason: StopReason = 'end_turn';
   const usage = emptyUsage();
   // 工具可交错输出；每个增量与结束事件必须明确指定调用 ID。
-  const tools = new Map<string, { block: ToolUseBlock; json: string }>();
+  const tools = new Map<
+    string,
+    { block: ToolUseBlock; json: string; source?: { routeId: string; model: string } }
+  >();
 
   // 当前正在累积的 block 状态
   let current:
@@ -183,6 +242,12 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
     if (!tool) throw new Error(`Unknown streamed tool: ${id}`);
     try {
       tool.block.input = tool.json ? JSON.parse(tool.json) : {};
+      if (tool.source && tool.json.length <= 2_000_000)
+        tool.block.replay = {
+          ...tool.source,
+          arguments: tool.json || '{}',
+          inputHash: toolInputHash(tool.block.input),
+        };
     } catch {
       throw new Error(`Invalid JSON for streamed tool: ${id}`);
     }
@@ -224,7 +289,7 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
         if (tools.has(ev.id)) throw new Error(`Duplicate streamed tool: ${ev.id}`);
         const block: ToolUseBlock = { type: 'tool_use', id: ev.id, name: ev.name, input: {} };
         blocks.push(block);
-        tools.set(ev.id, { block, json: '' });
+        tools.set(ev.id, { block, json: '', source: ev.source });
         break;
       case 'tool_use_delta': {
         const tool = tools.get(ev.id);

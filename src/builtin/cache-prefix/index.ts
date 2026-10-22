@@ -14,10 +14,12 @@ export const prefixCacheStrategy: CacheStrategy = {
         .filter((n) => n >= 0 && n <= last)
         .sort((a, b) => a - b),
       ttl:
+        input.settings.ttlStrategy === 'legacy-reactive' &&
         (input.settings.escalateAfterMs ?? 0) > 0 &&
         input.lastToolBatchMs > input.settings.escalateAfterMs!
           ? '1h'
           : input.settings.ttl,
+      staticTtl: input.settings.staticTtl,
     };
   },
 };

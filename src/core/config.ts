@@ -47,15 +47,19 @@ export const AgentConfigSchema = z.object({
   judgeModel: z.string().optional(),
   /** 思考等级：off / low / medium / high（可用 /think 切换） */
   thinking: z.enum(['off', 'low', 'medium', 'high']).default('off'),
+  replayToolArguments: z.boolean().default(false),
   /**
    * enabled 控制 Anthropic 显式 cache_control；OpenAI 兼容适配器不发送该标记。
    * 此开关不能关闭 DeepSeek 等厂商的自动前缀缓存。
-   * ttl 默认 5 分钟；escalateAfterMs > 0 且上一批工具超过这个时间时，下一轮改用 1 小时。
+   * ttl 默认 5 分钟；staticTtl 可为静态前缀单独设置。默认 fixed，旧的事后升级须显式 legacy-reactive。
    */
   cache: z
     .object({
       enabled: z.boolean().default(true),
       ttl: z.enum(['5m', '1h']).default('5m'),
+      staticTtl: z.enum(['5m', '1h']).optional(),
+      /** fixed 不根据已结束的工具耗时升级；legacy-reactive 保留显式旧配置。 */
+      ttlStrategy: z.enum(['fixed', 'legacy-reactive']).default('fixed'),
       escalateAfterMs: z.number().int().nonnegative().default(0),
     })
     .default({ enabled: true, ttl: '5m', escalateAfterMs: 0 }),
@@ -75,6 +79,9 @@ export const AgentConfigSchema = z.object({
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type AgentConfigOverrides = Omit<Partial<AgentConfig>, 'cache'> & {
+  cache?: Partial<AgentConfig['cache']>;
+};
 
 const ModelsFileSchema = z.record(ModelInfoSchema);
 
@@ -101,7 +108,7 @@ export interface LoadedConfig {
   layers: {
     global: Record<string, unknown>;
     project: Record<string, unknown>;
-    session: Partial<AgentConfig>;
+    session: AgentConfigOverrides;
   };
 }
 
@@ -114,13 +121,23 @@ function readJson(path: string): Record<string, unknown> {
 }
 
 /** 项目级覆盖全局级，均覆盖默认值；路径依据声明它的配置层解析。 */
+function mergeConfigObject(...layers: unknown[]): unknown {
+  let value: unknown;
+  const object = (input: unknown): input is Record<string, unknown> =>
+    Boolean(input && typeof input === 'object' && !Array.isArray(input));
+  for (const layer of layers) {
+    if (layer !== undefined)
+      value = object(layer) ? { ...(object(value) ? value : {}), ...layer } : layer;
+  }
+  return value;
+}
 export function loadConfig(cwd: string): AgentConfig {
   return loadConfigWithSources(cwd).config;
 }
 
 export function loadConfigWithSources(
   cwd: string,
-  overrides: Partial<AgentConfig> = {},
+  overrides: AgentConfigOverrides = {},
 ): LoadedConfig {
   const paths = resolveAgentPaths(cwd);
   const globalRaw = readJson(paths.globalConfigPath);
@@ -141,6 +158,7 @@ export function loadConfigWithSources(
       ]),
     ),
     ...sessionCfg,
+    cache: mergeConfigObject(globalCfg.cache, projectCfg.cache, sessionCfg.cache),
     capabilities: {
       ...((globalCfg.capabilities as object) ?? {}),
       ...((projectCfg.capabilities as object) ?? {}),
@@ -165,7 +183,7 @@ export function loadConfigWithSources(
       );
       const source: ConfigValueSource = scopeSources[scopes.at(-1) ?? 'default'];
       const contributors =
-        ['capabilities', 'pluginConfig'].includes(key) ||
+        ['capabilities', 'pluginConfig', 'cache'].includes(key) ||
         (key === 'permissions' && !Object.hasOwn(sessionCfg, key))
           ? scopes.map((scope) => scopeSources[scope])
           : undefined;

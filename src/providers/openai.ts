@@ -14,7 +14,9 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
-import type { ChatRequest, Provider } from '../core/provider.js';
+import type { ChatRequest, Provider, ModelCapabilities } from '../core/provider.js';
+import { replayArguments } from '../core/protocol/types.js';
+import { routeIdentity, checkModelCapabilities } from './capabilities.js';
 import type { Message, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
 
 export type OpenAIDialect = 'generic' | 'deepseek';
@@ -44,6 +46,7 @@ export function resolveOpenAIDialect(
 export function toOpenAIMessages(
   messages: Message[],
   reasoningHistory = false,
+  replay?: { routeId: string; model: string },
 ): ChatCompletionMessageParam[] {
   const out: ChatCompletionMessageParam[] = [];
   for (const m of messages) {
@@ -78,7 +81,12 @@ export function toOpenAIMessages(
       .map((b) => ({
         id: b.id,
         type: 'function' as const,
-        function: { name: b.name, arguments: JSON.stringify(b.input) },
+        function: {
+          name: b.name,
+          arguments: replay
+            ? replayArguments(b, replay.routeId, replay.model)
+            : JSON.stringify(b.input),
+        },
       }));
     out.push({
       role: 'assistant',
@@ -120,15 +128,42 @@ export class OpenAIStreamTranslator {
       const u = chunk.usage as typeof chunk.usage & {
         prompt_cache_hit_tokens?: number;
         prompt_cache_miss_tokens?: number;
+        prompt_tokens_details?: {
+          cached_tokens?: number;
+          cache_write_tokens?: number;
+          cache_write_tokens_details?: { ttl_30m_tokens?: number; ttl_12h_tokens?: number };
+        };
       };
       const cacheRead =
         u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? undefined;
+      const written = u.prompt_tokens_details?.cache_write_tokens;
+      const writes = u.prompt_tokens_details?.cache_write_tokens_details;
       out.push({
         type: 'usage',
-        inputTokens: u.prompt_cache_miss_tokens ?? Math.max(0, u.prompt_tokens - (cacheRead ?? 0)),
+        inputTokens:
+          u.prompt_cache_miss_tokens ??
+          Math.max(0, u.prompt_tokens - (cacheRead ?? 0) - (written ?? 0)),
         outputTokens: u.completion_tokens,
         ...(cacheRead === undefined ? {} : { cacheReadTokens: cacheRead }),
-        cacheWriteTokens: 0,
+        ...(written !== undefined
+          ? { cacheWriteTokens: written }
+          : u.prompt_cache_hit_tokens !== undefined ||
+              u.prompt_cache_miss_tokens !== undefined ||
+              !/^gpt-(?:5\.[6-9]|6)/.test(chunk.model ?? '')
+            ? { cacheWriteTokens: 0 }
+            : {}),
+        ...(writes
+          ? {
+              cacheWriteTokensByTtl: {
+                ...(typeof writes.ttl_30m_tokens === 'number'
+                  ? { '30m': writes.ttl_30m_tokens }
+                  : {}),
+                ...(typeof writes.ttl_12h_tokens === 'number'
+                  ? { '12h': writes.ttl_12h_tokens }
+                  : {}),
+              },
+            }
+          : {}),
       });
     }
     if (!choice) return out;
@@ -198,18 +233,32 @@ export class OpenAIStreamTranslator {
 export function toOpenAIParams(
   req: ChatRequest,
   dialect: OpenAIDialect = 'generic',
+  options?: {
+    routeId: string;
+    outputParameter?: 'max_tokens' | 'max_completion_tokens';
+    offEffort?: 'none';
+  },
 ): OpenAI.ChatCompletionCreateParamsStreaming {
   return {
     model: req.model,
     messages: [
       { role: 'system', content: req.system },
-      ...toOpenAIMessages(req.messages, dialect === 'deepseek' && req.tools.length > 0),
+      ...toOpenAIMessages(
+        req.messages,
+        dialect === 'deepseek' && req.tools.length > 0,
+        req.replayToolArguments && options
+          ? { routeId: options.routeId, model: req.model }
+          : undefined,
+      ),
     ],
     tools: req.tools.length > 0 ? toOpenAITools(req.tools) : undefined,
     ...(req.toolChoice ? { tool_choice: req.toolChoice } : {}),
-    max_tokens: req.maxTokens,
+    [options?.outputParameter ?? 'max_tokens']: req.maxTokens,
     stream: true,
     stream_options: { include_usage: true },
+    ...(req.thinking === 'off' && dialect === 'generic' && options?.offEffort
+      ? { reasoning_effort: options.offEffort }
+      : {}),
     // req.cache 只服务 Anthropic 的显式断点。这里靠前缀不变触发服务端自动缓存，不写任何标记。
     ...(dialect === 'deepseek' && req.thinking !== undefined
       ? {
@@ -221,7 +270,7 @@ export function toOpenAIParams(
       : req.thinking && req.thinking !== 'off'
         ? { reasoning_effort: req.thinking as 'low' | 'medium' | 'high' }
         : {}),
-  };
+  } as unknown as OpenAI.ChatCompletionCreateParamsStreaming;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,20 +281,85 @@ export class OpenAIProvider implements Provider {
   readonly name = 'openai';
   readonly capabilities = { thinking: true, streaming: true };
   private client: OpenAI | null = null;
+  private readonly endpoint: string;
+  private readonly sdkEndpoint: string | undefined;
 
   constructor(
-    private opts: ApiKeyOptions & { baseURL?: string; dialect?: OpenAIDialectSetting } = {},
-  ) {}
+    private opts: ApiKeyOptions & {
+      baseURL?: string;
+      dialect?: OpenAIDialectSetting;
+      models?: Record<string, ModelCapabilities>;
+    } = {},
+  ) {
+    this.sdkEndpoint = opts.baseURL ?? process.env.OPENAI_BASE_URL;
+    this.endpoint = this.sdkEndpoint ?? 'https://api.openai.com/v1';
+  }
+  get routeId() {
+    return routeIdentity('openai', this.endpoint);
+  }
+  modelCapabilities(model: string): ModelCapabilities {
+    if (this.opts.models?.[model]) return this.opts.models[model];
+    const endpoint = this.endpoint;
+    const dialect = resolveOpenAIDialect(endpoint, this.opts.dialect);
+    if (dialect === 'deepseek')
+      return {
+        api: 'chat-completions',
+        thinkingLevels: ['off', 'low', 'medium', 'high'],
+        rawToolArguments: true,
+        prefixCompaction: true,
+      };
+    let hostname = '';
+    try {
+      hostname = new URL(endpoint).hostname;
+    } catch {
+      /* 端点配置检查仍由 SDK 的请求路径负责。 */
+    }
+    if (hostname === 'api.openai.com') {
+      if (/^gpt-4(?:o|\.|-)/.test(model))
+        return { api: 'chat-completions', thinkingLevels: ['off'], rawToolArguments: true };
+      if (/^(?:o[134](?:-|$)|gpt-5(?:-|$))/.test(model))
+        return {
+          api: 'chat-completions',
+          thinkingLevels: ['low', 'medium', 'high'],
+          rawToolArguments: true,
+          outputParameter: 'max_completion_tokens',
+        };
+      if (/^gpt-(?:5\.[1-9]|6)/.test(model))
+        return {
+          api: 'chat-completions',
+          thinkingLevels: ['off', 'low', 'medium', 'high'],
+          offEffort: 'none',
+          rawToolArguments: true,
+          outputParameter: 'max_completion_tokens',
+        };
+    }
+    return { api: 'chat-completions', rawToolArguments: true };
+  }
+  normalizeRequest(req: ChatRequest) {
+    const caps = this.modelCapabilities(req.model);
+    if (caps.api !== 'chat-completions' && caps.api !== 'generic')
+      throw new Error('unsupported_model_api');
+    return checkModelCapabilities(
+      caps.rawToolArguments === false ? { ...req, replayToolArguments: undefined } : req,
+      caps,
+    );
+  }
+  private params(req: ChatRequest) {
+    return toOpenAIParams(
+      this.normalizeRequest(req),
+      resolveOpenAIDialect(this.endpoint, this.opts.dialect),
+      { routeId: this.routeId, ...this.modelCapabilities(req.model) },
+    );
+  }
+  requestBytes(req: ChatRequest) {
+    return Buffer.byteLength(JSON.stringify(this.params(req)));
+  }
 
   estimateRequest(req: ChatRequest) {
-    const dialect = resolveOpenAIDialect(
-      this.opts.baseURL ?? process.env.OPENAI_BASE_URL,
-      this.opts.dialect,
-    );
-    const body = toOpenAIParams(req, dialect);
+    const body = this.params(req);
     const inputTokens =
       estimateTextTokens(JSON.stringify({ messages: body.messages, tools: body.tools })) + 32;
-    const outputTokens = body.max_tokens ?? 0;
+    const outputTokens = body.max_completion_tokens ?? body.max_tokens ?? 0;
     return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
   }
 
@@ -253,20 +367,25 @@ export class OpenAIProvider implements Provider {
     if (!this.client) {
       this.client = new OpenAI({
         apiKey: resolveApiKey(this.opts, 'OPENAI_API_KEY') ?? 'EMPTY',
-        baseURL: this.opts.baseURL ?? process.env.OPENAI_BASE_URL,
+        baseURL:
+          this.sdkEndpoint ??
+          (process.env.OPENAI_BASE_URL === undefined ? undefined : this.endpoint),
       });
     }
     return this.client;
   }
 
   async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
+    req = this.normalizeRequest(req);
     const client = this.getClient();
-    const dialect = resolveOpenAIDialect(client.baseURL, this.opts.dialect);
-    const stream = await client.chat.completions.create(toOpenAIParams(req, dialect), { signal });
+    const stream = await client.chat.completions.create(this.params(req), { signal });
     yield { type: 'message_start' };
     const translator = new OpenAIStreamTranslator();
     for await (const chunk of stream) {
-      for (const ev of translator.translate(chunk)) yield ev;
+      for (const ev of translator.translate(chunk))
+        yield ev.type === 'tool_use_start' && req.replayToolArguments
+          ? { ...ev, source: { routeId: this.routeId, model: req.model } }
+          : ev;
     }
   }
 }

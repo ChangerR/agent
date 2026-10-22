@@ -413,7 +413,14 @@ describe('可替换的上下文能力', () => {
       ttl: '5m',
       messageBreakpoints: [2, 4],
     });
-    expect(prefixCacheStrategy.build({ ...input, lastToolBatchMs: 101 })?.ttl).toBe('1h');
+    expect(prefixCacheStrategy.build({ ...input, lastToolBatchMs: 101 })?.ttl).toBe('5m');
+    expect(
+      prefixCacheStrategy.build({
+        ...input,
+        lastToolBatchMs: 101,
+        settings: { ...input.settings, ttlStrategy: 'legacy-reactive' },
+      })?.ttl,
+    ).toBe('1h');
     expect(
       prefixCacheStrategy.build({ ...input, settings: { ...input.settings, enabled: false } }),
     ).toBeUndefined();

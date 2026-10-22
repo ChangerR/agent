@@ -44,6 +44,8 @@ export interface ToolInvocationContext {
   readonly runId: string;
   readonly userRequest: string;
   readonly messages: readonly Message[];
+  readonly resultBudgetTokens?: number;
+  readonly onInputRewritten?: (toolUseId: string) => void;
   readonly depth?: number;
   readonly origin?: InvocationOrigin;
   readonly lease?: ToolLease;
@@ -278,6 +280,8 @@ export class ToolExecutor {
         return fail(`Vetoed by PreToolUse hook: ${hook.veto}`);
       }
       input = freeze(jsonInput(hook.input ?? input, tool.inputSchema));
+      if (JSON.stringify(input) !== JSON.stringify(toolUse.input))
+        context.onInputRewritten?.(toolUse.id);
       audit('validation', 'input_valid');
 
       // 同一次调用里，用户已经批准过的 ask/review 可以在仅 policyRevision 变化时复用。
@@ -641,6 +645,7 @@ export class ToolExecutor {
             signal,
             analysis,
             invocation: context.origin,
+            resultBudgetTokens: context.resultBudgetTokens,
             invokeTool: (name, childInput) =>
               this.invokeTool(name, childInput, {
                 ...context,

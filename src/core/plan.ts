@@ -87,6 +87,8 @@ export interface PlannerInput {
   provider: Provider;
   model: string;
   thinking: ThinkingLevel;
+  maxTokens?: number;
+  maxRequestBytes?: number;
   signal: AbortSignal;
   events: EventBus;
   runId: string;

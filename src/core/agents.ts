@@ -1,6 +1,7 @@
 /** 子任务的纯数据契约；不依赖具体 supervisor 或界面。 */
 import type { TokenUsage } from './protocol/types.js';
-import type { ModelRole, RequestSize } from './provider.js';
+import type { ModelRole, RequestSize, RequestMetrics } from './provider.js';
+import type { RequestEstimate } from './context/request-budget.js';
 
 export type InputSource = 'user' | 'delegation' | 'subagent' | 'tool';
 export interface InvocationOrigin {
@@ -68,6 +69,9 @@ export interface SubagentProgress {
   modelRole?: ModelRole;
   model?: string;
   provider?: string;
+  routeId?: string;
+  estimate?: RequestEstimate;
+  metrics?: RequestMetrics;
   size?: RequestSize;
   evidenceBytes?: Record<string, number>;
   usageReported?: boolean;

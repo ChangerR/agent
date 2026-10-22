@@ -3,10 +3,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadConfigWithSources, type AgentConfig } from '../core/config.js';
+import {
+  loadConfigWithSources,
+  type AgentConfig,
+  type AgentConfigOverrides,
+} from '../core/config.js';
 import { EventBus } from '../core/events.js';
 import { HookRunner } from '../core/hooks.js';
 import { AgentLoop, type AgentLoopOptions } from '../core/loop.js';
+import { withRequestBudget } from '../core/context/request-budget.js';
 import { ProviderRegistry, ToolRegistry } from '../core/registry.js';
 import { ContextManager } from '../core/context/coordinator.js';
 import { collectContext, contextText } from '../core/context/sources.js';
@@ -28,12 +33,13 @@ import { ChildEventBus } from './child-events.js';
 import { ToolScheduler } from '../core/tool-scheduler.js';
 import type { SubagentRecord } from '../core/agents.js';
 import { RequestPermissionGuard } from '../core/permission/request-scope.js';
+import { usageCountKeys } from '../core/protocol/types.js';
 export interface CreateAgentOptions {
   lifecycleTimeoutMs?: number;
   autoSaveSessions?: boolean;
   plugins?: readonly Plugin[];
   preset?: (input: PresetContext) => Preset;
-  config?: Partial<AgentConfig>;
+  config?: AgentConfigOverrides;
 }
 function unavailableController(config: AgentConfig): PermissionController {
   const unavailable = () => {
@@ -102,6 +108,23 @@ export async function createRuntime(
   let planning: import('../core/plan.js').PlanningStrategy | undefined;
   let planningMode: import('../core/plan.js').PlanningMode = 'off';
   let host: PluginHost;
+  const guardedProviders = new Map<string, import('../core/provider.js').Provider>();
+  const resolveProvider = (name = config.provider) => {
+    if (!guardedProviders.has(name)) {
+      const provider = providers.get(name);
+      guardedProviders.set(
+        name,
+        withRequestBudget(provider, (model) => {
+          const catalog = host?.selected('modelCatalog');
+          return (
+            catalog?.get(model, provider.routeId ?? provider.name) ??
+            catalog?.get(model, provider.name)
+          );
+        }),
+      );
+    }
+    return guardedProviders.get(name)!;
+  };
   const services: PresetContext['services'] = {
     loop: () => agent!.loop,
     plan: (id) => (id && id !== 'root' ? supervisor!.plan(id) : agent!.loop.plan),
@@ -146,7 +169,7 @@ export async function createRuntime(
     config: providerConfig,
     logPath,
     services,
-    provider: (name) => providers.get(name ?? config.provider),
+    provider: resolveProvider,
     capabilityChoices: () =>
       Object.fromEntries(
         (
@@ -263,7 +286,7 @@ export async function createRuntime(
         ) === true,
       planning: () => planning,
       planningMode: () => planningMode,
-      provider: providers.get(config.provider),
+      provider: resolveProvider(config.provider),
       model: config.model,
       tools,
       policy,
@@ -283,6 +306,7 @@ export async function createRuntime(
       shutdownTimeoutMs: options.lifecycleTimeoutMs,
       modelInfo,
       thinking: config.thinking,
+      replayToolArguments: config.replayToolArguments,
       cache: config.cache,
       cacheStrategy: host.selected('cacheStrategy') ?? null,
       toolIdentity: (name) => {
@@ -461,8 +485,18 @@ export async function createRuntime(
                 )
                   Object.assign(previous, structuredClone(run));
                 if (run.output.length > previous.output.length) previous.output = run.output;
-                for (const key of Object.keys(previous.usage) as Array<keyof typeof previous.usage>)
+                for (const key of usageCountKeys)
                   previous.usage[key] = Math.max(previous.usage[key], run.usage[key]);
+                if (run.usage.cacheWriteTokensByTtl) {
+                  previous.usage.cacheWriteTokensByTtl ??= {};
+                  for (const [ttl, count] of Object.entries(run.usage.cacheWriteTokensByTtl)) {
+                    const key = ttl as keyof NonNullable<typeof run.usage.cacheWriteTokensByTtl>;
+                    previous.usage.cacheWriteTokensByTtl[key] = Math.max(
+                      previous.usage.cacheWriteTokensByTtl[key] ?? 0,
+                      count,
+                    );
+                  }
+                }
               }
             }
           },

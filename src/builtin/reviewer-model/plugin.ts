@@ -4,22 +4,13 @@ import { definePlugin, type SettingsScope } from '../../sdk/index.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../../runtime/config-store.js';
 import type { PresetContext } from '../../runtime/preset.js';
 import { createModelReviewer } from './index.js';
-const schema = z.object({
-  provider: z.string().min(1).optional(),
-  model: z.string().optional(),
-  timeoutMs: z.number().int().min(1).max(300000).default(30000),
-  maxRequestBytes: z.number().int().min(1).max(1048576).default(32768),
-  maxResponseBytes: z.number().int().min(1).max(65536).default(65536),
-  maxOutputTokens: z.number().int().min(1).max(8192).default(8192),
-  prefixCache: z
-    .object({ enabled: z.boolean().default(false), ttl: z.enum(['5m', '1h']).default('5m') })
-    .default({ enabled: false, ttl: '5m' }),
-});
+import { ReviewerConfigSchema as schema } from './config.js';
 const configDefinition = {
   schema,
   ownedFields: [
     'provider',
     'model',
+    'thinking',
     'timeoutMs',
     'maxRequestBytes',
     'maxResponseBytes',
@@ -48,6 +39,7 @@ export function modelReviewerPlugin(input: PresetContext) {
         maxRequestBytes: value.maxRequestBytes,
         maxResponseBytes: value.maxResponseBytes,
         maxOutputTokens: value.maxOutputTokens,
+        thinking: value.thinking,
         prefixCache: value.prefixCache,
       });
       ctx.provide.reviewer('model', reviewer);

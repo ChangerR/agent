@@ -13,7 +13,8 @@
   "cache": {
     "enabled": true,
     "ttl": "5m",
-    "escalateAfterMs": 0
+    "escalateAfterMs": 0,
+    "ttlStrategy": "fixed"
   },
   "mcpConfig": "./mcp.json",
   "pluginEntries": [],
@@ -22,7 +23,11 @@
       "dialect": "auto"
     },
     "agentlab.mcp": {
-      "maxInlineChars": 24000
+      "maxInlineChars": 24000,
+      "maxAgeDays": 30,
+      "maxStoredBytes": 268435456,
+      "deduplicate": false,
+      "maxSearchChars": 1000000
     },
     "agentlab.subagents": {
       "maxRunning": 2,
@@ -37,6 +42,10 @@
     },
     "agentlab.planning": {
       "mode": "auto"
+    },
+    "agentlab.compaction-summary": {
+      "strategy": "isolated"
     }
-  }
+  },
+  "replayToolArguments": false
 }

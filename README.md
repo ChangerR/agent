@@ -92,11 +92,11 @@ DeepSeek 官方 HTTPS 端点会自动使用专用协议映射：`/think off` 显
 
 固定规则、项目规范和确定排序后的工具/schema 位于前部，启动时的目录、日期及平台快照放在后部。已有消息和工具结果只追加；必要压缩会替换早期历史并重建缓存。每次主任务或子任务模型请求前，预算计入最终协议的 system、tools、消息和输出预留；超过阈值先尝试压缩，仍超过已知模型窗口时以 `context_budget_exceeded` 停止，保留历史，不发送该请求。输入是保守启发式估算，不能代替模型 tokenizer 或厂商 usage；未知模型请先配置正确规格。
 
-MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范围 1024–1000000，按 Unicode 码点限制含省略提示的结果正文；只在首次返回时处理，保留首尾和原错误标志。超限全文以私有文件保存到本项目的 `~/.agent/state/projects/<项目指纹>/mcp-results/`，工具结果返回不透明 `result_id`，使用 `mcp_read_result` 的 0-based `offset` 和 `limit` 分页续读。该工具同样经过权限门和子任务工具范围限制；显式 `allowedTools` 需要同时包含它。结果按项目隔离、跨进程保留，不自动清理；确认不再需要续读后可手工删除该项目结果目录。保存失败会报告原 MCP 操作已结束，不能自动重复操作。旧的直接 MCP 插件 `agentlab.mcp-client` 使用同名限额字段。
+MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范围 1024–1000000，按 Unicode 码点限制首次入历史的预览；当前请求预算可进一步收紧。全文和偏移索引私有保存于本项目 `mcp-results/`，`mcp_read_result` 局部续读，`mcp_search_result` 返回相关片段和偏移；不重做远端操作、不改写旧预览。结果工具仍经过权限门与子任务范围限制，显式 `allowedTools` 要包含实际需要的读取/检索工具。默认按 30 天与 256 MiB 软上限维护，活跃租约和已保存会话引用不会被删除，引用扫描不完整时停止清理。旧正文首次续读自动补建索引。保存失败明确提示原 MCP 操作已结束，禁止自动重复。配置与迁移见 [缓存与模型调用配置](docs/CACHE_CONFIGURATION.md)。
 
 底栏和 `/stats` 统一使用已报告的 `hit/(hit+miss)`，Anthropic 的 miss 包括本次缓存写入。`?` 表示未知，`（部分）` 表示仅统计已知请求；恢复会话不从补零的旧计数猜测完整缓存分桶。`/stats` 保留模型与角色维度，子任务独立列示。命中率不是成本节省率：不要为提高比例重复读取或保留无用历史。
 
-`cache.enabled/ttl` 仅控制 Anthropic 显式断点，不关闭 DeepSeek 自动缓存，也不向通用兼容端点发送 `cache_control`。DeepSeek 需匹配已持久化的完整前缀单元，构建需要时间且 best effort，不能假设任意公共前缀第二次立即命中或固定 64-token 粒度；OpenAI 缓存参数取决于具体模型和 API。本功能没有增加缓存预热请求。摘要器继续使用隔离的 system 和截断转写，原前缀摘要策略、原始工具参数回放及在线费用 A/B 留待独立验证。
+`cache.enabled/ttl` 仅控制 Anthropic 显式断点，不关闭 DeepSeek 自动缓存，也不向通用兼容端点发送 `cache_control`。DeepSeek 需匹配已持久化的完整前缀单元，构建需要时间且 best effort，不能假设任意公共前缀第二次立即命中或固定 64-token 粒度；OpenAI 缓存参数取决于具体模型和 API。本功能没有增加缓存预热请求。所有模型角色共用最终请求预算，token 与字节分别检查；静态 system 有独立缓存边界。MCP 结果支持 Unicode 索引续读、字面检索及引用保护的清理。原前缀摘要和原始工具参数回放已作为默认关闭的可选策略提供；在线费用与质量收益尚未实测。配置、默认值和迁移说明见 [缓存与模型调用配置](docs/CACHE_CONFIGURATION.md)。
 
 ### OpenAI 或其他 OpenAI 兼容服务
 

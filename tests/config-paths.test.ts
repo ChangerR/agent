@@ -54,6 +54,26 @@ async function runtime(cwd: string) {
 }
 
 describe('统一项目身份和状态目录', () => {
+  it('缓存配置逐字段继承全局/项目/会话，局部覆盖不重启全局缓存开关或TTL', () => {
+    const project = directory(join(fixture, 'cache-project'));
+    directory(join(project, '.git'));
+    json(getGlobalConfigPath(), { cache: { enabled: false, ttl: '1h' } });
+    json(join(project, 'agent.config.json'), { cache: { staticTtl: '1h' } });
+    const loaded = loadConfigWithSources(project, { cache: { ttl: '5m' } });
+    expect(loaded.config.cache).toMatchObject({
+      enabled: false,
+      ttl: '5m',
+      staticTtl: '1h',
+      ttlStrategy: 'fixed',
+    });
+    expect(loaded.sources.cache.contributors?.map((value) => value.scope)).toEqual([
+      'global',
+      'project',
+      'session',
+    ]);
+    json(join(project, 'agent.config.json'), { cache: 'invalid' });
+    expect(() => loadConfig(project)).toThrow();
+  });
   it.each(['directory', 'file'])('从任意子目录找到 Git 根（.git %s）', (kind) => {
     const project = directory(join(fixture, 'project'));
     const child = directory(join(project, 'src', 'nested'));

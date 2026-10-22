@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import type { Compactor, ContextCoordinator } from '../../sdk/runtime-capabilities.js';
 import type { Message } from '../protocol/types.js';
-import type { Provider } from '../provider.js';
+import type { Provider, ChatRequest } from '../provider.js';
 import { EventBus } from '../events.js';
 import { assertSafeHistory } from '../session/history.js';
 import { MessageSchema } from '../session/schema.js';
@@ -44,6 +44,7 @@ export class ContextManager implements ContextCoordinator {
     model = '',
     events?: EventBus,
     runId?: string,
+    request?: ChatRequest,
   ): Promise<Message[]> {
     checkAbort(signal);
     const before = JSON.stringify(messages);
@@ -70,7 +71,14 @@ export class ContextManager implements ContextCoordinator {
       proposal = await bounded(
         (child) => {
           original = Promise.resolve(
-            this.options.compactor.compact(snapshot, provider, child, model, scopedEvents),
+            this.options.compactor.compact(
+              snapshot,
+              provider,
+              child,
+              model,
+              scopedEvents,
+              request ? structuredClone(request) : undefined,
+            ),
           );
           events?.track(original);
           void original
