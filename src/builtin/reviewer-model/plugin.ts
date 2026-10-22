@@ -5,6 +5,7 @@ import { createScopedConfigStores, type ConfigSnapshot } from '../../runtime/con
 import type { PresetContext } from '../../runtime/preset.js';
 import { createModelReviewer } from './index.js';
 import { ReviewerConfigSchema as schema } from './config.js';
+import { settingsJsonSchema } from '../configuration-settings.js';
 const configDefinition = {
   schema,
   ownedFields: [
@@ -63,13 +64,19 @@ export function modelReviewerPlugin(input: PresetContext) {
         description:
           '只编辑所选层的原始配置；省略字段即删除该层覆盖并继承。provider/model 可独立指定。保存仅下次启动生效，实际加载状态见严格审批模型状态。空 model 跟随当前主模型。',
         applyMode: 'newSession',
-        schema: { type: 'object' },
+        schema: settingsJsonSchema(editSchema),
         scopeTargets: stores.scopeTargets,
         read(signal, scope = 'project') {
           signal.throwIfAborted();
           const base = stores.store(scope).read('agentlab.reviewer-model');
           bases.set(scope, base);
-          return structuredClone(base.value);
+          return structuredClone(
+            Object.fromEntries(
+              configDefinition.ownedFields
+                .filter((key) => Object.hasOwn(base.value, key))
+                .map((key) => [key, base.value[key]]),
+            ),
+          );
         },
         draft(raw, signal, scope = 'project') {
           signal.throwIfAborted();

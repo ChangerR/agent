@@ -45,7 +45,7 @@ afterEach(() => {
 describe('权限配置的安全草稿保存', () => {
   it('全局读取不创建目录；明确提交才创建0700目录/0600文件，不提升未编辑的默认值', () => {
     const { dir } = project();
-    const path = join(dir, 'home', '.agent', 'config.json');
+    const path = join(dir, 'home', '.agentlab', 'config.json');
     const snapshot = readGlobalPermissionConfig(path);
     expect(snapshot).toMatchObject({
       scope: 'global',
@@ -59,7 +59,7 @@ describe('权限配置的安全草稿保存', () => {
     const saved = savePermissionConfig(snapshot, draft);
     expect(saved.scope).toBe('global');
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ permissionMode: 'auto' });
-    expect(statSync(join(dir, 'home', '.agent')).mode & 0o777).toBe(0o700);
+    expect(statSync(join(dir, 'home', '.agentlab')).mode & 0o777).toBe(0o700);
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 

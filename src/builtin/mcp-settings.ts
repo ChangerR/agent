@@ -1,140 +1,245 @@
-/** MCP 配置只编辑固定用户 / 项目文件；凭据保留在宿主，不提供任意路径写入。 */
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+/** 固定配置文件的 MCP 图形编辑；凭据句柄只在宿主内还原，保存不启动服务器。 */
+import { isAbsolute, relative, resolve } from 'node:path';
+import { loadConfigWithSources } from '../core/config.js';
 import { resolveAgentPaths } from '../core/paths.js';
 import { McpConfigSchema } from '../mcp/config.js';
-import { PluginConfigStore, type ConfigSnapshot } from '../runtime/config-store.js';
+import {
+  PluginConfigStore,
+  createScopedConfigStores,
+  type ConfigSnapshot,
+} from '../runtime/config-store.js';
 import type { SettingsSection, SettingsScope } from '../sdk/index.js';
-import { MASKED_SETTING, safeSettingsValue } from './configuration-settings.js';
-const record = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+import { SettingsSecrets } from './settings-secrets.js';
+import { assertManagedSettingsPath, commitSettingsReference } from './settings-paths.js';
+const record = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
 const fields = ['command', 'args', 'env', 'url', 'headers'];
-const protectedNames = new Set(['__proto__', 'prototype', 'constructor']);
+const reserved = new Set(['__proto__', 'prototype', 'constructor']);
+const text = { type: 'string' };
+const secret = { type: 'string', writeOnly: true };
 export function mcpSettingsSection(cwd: string, activePath?: string): SettingsSection {
   const paths = resolveAgentPaths(cwd);
-  const stores = {
-    project: new PluginConfigStore(join(paths.projectRoot, 'mcp.json')),
-    global: new PluginConfigStore(join(paths.agentHome, 'mcp.json')),
+  const references = createScopedConfigStores(cwd);
+  const target = (scope: 'project' | 'global') => {
+    const root = scope === 'project' ? paths.projectRoot : paths.agentHome;
+    const configured = loadConfigWithSources(cwd).layers[scope].mcpConfig;
+    return resolve(root, typeof configured === 'string' ? configured : 'mcp.json');
   };
-  const bases = new Map<SettingsScope, ConfigSnapshot>();
+  const bases = new Map<
+    SettingsScope,
+    {
+      base: ConfigSnapshot;
+      reference: ConfigSnapshot;
+      secrets: SettingsSecrets;
+      entries: Map<string, Record<string, unknown>>;
+    }
+  >();
   const drafts = new WeakMap<
     object,
-    { base: ConfigSnapshot; scope: 'project' | 'global'; value: unknown }
+    { scope: 'project' | 'global'; base: ConfigSnapshot; reference: ConfigSnapshot; value: unknown }
   >();
   const store = (scope: SettingsScope) => {
     if (scope !== 'project' && scope !== 'global') throw new Error('不支持此作用域。');
-    return stores[scope];
-  };
-  const project = (value: unknown) =>
-    Object.fromEntries(
-      Object.entries(record(value) ? value : {}).map(([name, server]) => [
-        name,
-        Object.fromEntries(
-          fields
-            .filter((field) => record(server) && Object.hasOwn(server, field))
-            .map((field) => [
-              field,
-              ['args', 'env', 'headers'].includes(field)
-                ? MASKED_SETTING
-                : safeSettingsValue((server as Record<string, unknown>)[field], field),
-            ]),
-        ),
-      ]),
+    const selected = new PluginConfigStore(target(scope));
+    const r = relative(
+      scope === 'project' ? paths.projectRoot : paths.agentHome,
+      selected.path,
     );
+    if (
+      isAbsolute(r) ||
+      r === '..' ||
+      r.startsWith('..' + (process.platform === 'win32' ? '\\' : '/'))
+    )
+      throw new Error(
+        '此 MCP 文件在受管目录之外；请在图形路径设置选择项目或用户配置目录中的位置后重启。',
+      );
+    assertManagedSettingsPath(
+      scope === 'project' ? paths.projectRoot : paths.agentHome,
+      selected.path,
+    );
+    return selected;
+  };
   return {
     title: 'MCP 服务器配置',
     order: 30,
     applyMode: 'newSession',
-    description: `编辑固定用户 / 项目目录中的 mcp.json；不会自动切换 mcpConfig。当前运行文件：${activePath ?? '未声明'}。保存后重启连接。args / env / headers 已掩码；现有值可保留或删除，新增凭据请在 CLI 文件中维护。此页不会启动服务器。`,
+    description: `管理服务器、stdio / HTTP、参数、环境变量与请求头。明确提交此页同时将所选层 mcpConfig 指向此文件；不会启动服务器，退出 App 后重启连接。当前运行引用：${activePath ?? '默认 mcp.json'}。`,
     schema: {
       type: 'object',
       properties: {
         mcpServers: {
           type: 'object',
-          description: '服务器名称到 command/args 或 url 的 JSON 映射',
+          additionalProperties: {
+            anyOf: [
+              {
+                type: 'object',
+                title: '本地进程 stdio',
+                required: ['command'],
+                properties: {
+                  command: text,
+                  args: { type: 'array', items: secret },
+                  env: { type: 'object', additionalProperties: secret },
+                },
+              },
+              {
+                type: 'object',
+                title: '远程 HTTP（SDK 自动协商）',
+                required: ['url'],
+                properties: {
+                  url: { ...secret, title: '服务器 URL' },
+                  headers: { type: 'object', additionalProperties: secret },
+                },
+              },
+            ],
+          },
         },
       },
     },
-    scopeTargets: (['project', 'global'] as const).map((scope) => ({
-      scope,
-      path: stores[scope].path,
-    })),
+    get scopeTargets() { return (['project', 'global'] as const).map((scope) => ({scope,path:target(scope)})); },
     read(signal, scope = 'project') {
       signal.throwIfAborted();
-      const base = store(scope).readFields(['mcpServers']);
-      bases.set(scope, base);
-      return Object.hasOwn(base.value, 'mcpServers')
-        ? { mcpServers: project(base.value.mcpServers) }
-        : {};
+      const base = store(scope).readFields(['mcpServers']),
+        secrets = new SettingsSecrets(),
+        entries = new Map<string, Record<string, unknown>>();
+      const servers = Object.fromEntries(
+        Object.entries(record(base.value.mcpServers) ? base.value.mcpServers : {}).map(
+          ([name, item]) => {
+            if (!record(item)) throw new Error('服务器配置必须为对象。');
+            const identity = secrets.keep(name).$secret;
+            entries.set(identity, item);
+            const result: Record<string, unknown> = { $entry: identity };
+            for (const field of fields)
+              if (Object.hasOwn(item, field)) {
+                const value = item[field];
+                result[field] =
+                  field === 'env' || field === 'headers'
+                    ? Object.fromEntries(
+                        Object.entries(record(value) ? value : {}).map(([k, v]) => [
+                          k,
+                          secrets.keep(v),
+                        ]),
+                      )
+                    : field === 'args' && Array.isArray(value)
+                      ? value.map((v) => secrets.keep(v))
+                      : field === 'url'
+                        ? secrets.keep(value)
+                        : value;
+              }
+            return [name, result];
+          },
+        ),
+      );
+      bases.set(scope, {
+        base,
+        reference: references.store(scope).readFields(['mcpConfig']),
+        secrets,
+        entries,
+      });
+      return Object.hasOwn(base.value, 'mcpServers') ? { mcpServers: servers } : {};
     },
     draft(raw, signal, scope = 'project') {
       signal.throwIfAborted();
       store(scope);
-      const base = bases.get(scope);
-      if (!base || !record(raw) || Object.keys(raw).some((key) => key !== 'mcpServers'))
+      const state = bases.get(scope);
+      if (
+        !state ||
+        !record(raw) ||
+        Object.keys(raw).some((k) => k !== 'mcpServers') ||
+        (raw.mcpServers !== undefined && !record(raw.mcpServers))
+      )
         throw new Error('无效 MCP 草稿。');
-      const configured = raw.mcpServers;
-      if (configured !== undefined && !record(configured))
-        throw new Error('服务器配置必须为对象。');
-      const previous = record(base.value.mcpServers) ? base.value.mcpServers : {};
-      const servers = Object.fromEntries(
-        Object.entries(configured ?? {}).map(([name, server]) => {
+      const result = Object.fromEntries(
+        Object.entries((raw.mcpServers ?? {}) as Record<string, unknown>).map(([name, item]) => {
           if (
-            protectedNames.has(name) ||
-            !record(server) ||
-            Object.keys(server).some((key) => !fields.includes(key))
+            !name.trim() ||
+            /[\u0000-\u001f]/.test(name) ||
+            reserved.has(name) ||
+            !record(item) ||
+            Object.keys(item).some((k) => !fields.includes(k) && k !== '$entry')
           )
-            throw new Error('无效服务器字段。');
-          const old = record(previous[name]) ? previous[name] : {};
+            throw new Error('无效服务器名称或字段。');
+          if (
+            item.$entry !== undefined &&
+            (typeof item.$entry !== 'string' || !state.entries.has(item.$entry))
+          )
+            throw new Error('服务器草稿已失效。');
+          const old =
+            typeof item.$entry === 'string'
+              ? state.entries.get(item.$entry)!
+              : ((
+                  state.base.value.mcpServers as Record<string, Record<string, unknown>> | undefined
+                )?.[name] ?? {});
           const next = { ...old };
           for (const field of fields) {
-            const value = server[field];
-            if (value === MASKED_SETTING) {
-              if (!Object.hasOwn(old, field)) throw new Error('无效掩码。');
-              continue;
-            }
-            if (value === undefined) {
+            if (!Object.hasOwn(item, field)) {
               delete next[field];
               continue;
             }
-            if (field === 'env' || field === 'headers')
-              throw new Error('请在 CLI 文件中维护 MCP 凭据。');
-            if (field === 'url') {
-              const url = new URL(String(value));
-              if (
-                !['http:', 'https:'].includes(url.protocol) ||
-                url.username ||
-                url.password ||
-                url.search ||
-                url.hash
-              )
-                throw new Error('MCP URL 不允许嵌入凭据。');
-            }
-            if (
-              field === 'command' &&
-              (typeof value !== 'string' || !value.trim() || /[\u0000-\u001f]/.test(value))
-            )
-              throw new Error('无效 MCP 程序路径。');
-            next[field] = value;
+            next[field] = state.secrets.restore(item[field]);
           }
+          if (Object.hasOwn(next, 'command') === Object.hasOwn(next, 'url'))
+            throw new Error('每个服务器必须选择一种传输。');
+          if (
+            typeof next.command === 'string' &&
+            (!next.command.trim() || /[\u0000-\u001f]/.test(next.command))
+          )
+            throw new Error('无效程序路径。');
+          if (next.url !== undefined) {
+            const url = new URL(String(next.url));
+            if (!['http:', 'https:'].includes(url.protocol))
+              throw new Error('只支持 HTTP(S) MCP URL。');
+          }
+          if (record(next.env))
+            for (const [key, value] of Object.entries(next.env))
+              if (
+                !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
+                reserved.has(key) ||
+                typeof value !== 'string' ||
+                value.includes('\0')
+              )
+                throw new Error('无效环境变量。');
+          if (record(next.headers))
+            for (const [key, value] of Object.entries(next.headers))
+              if (
+                !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key) ||
+                typeof value !== 'string' ||
+                /[\r\n\0]/.test(value)
+              )
+                throw new Error('无效请求头。');
           return [name, next];
         }),
       );
-      const value = configured === undefined ? undefined : servers;
+      const value = raw.mcpServers === undefined ? undefined : result;
       McpConfigSchema.parse(value === undefined ? {} : { mcpServers: value });
-      const draft = Object.freeze({ id: randomUUID() });
+      const draft = Object.freeze({});
       drafts.set(draft, {
-        base,
         scope: scope as 'project' | 'global',
-        value: structuredClone(value),
+        base: state.base,
+        reference: state.reference,
+        value,
       });
       return draft;
     },
     commit(draft, signal, scope = 'project') {
       signal.throwIfAborted();
       const saved = record(draft) ? drafts.get(draft) : undefined;
-      if (!saved || saved.scope !== scope) throw new Error('MCP 草稿已过期或作用域不匹配。');
-      bases.set(scope, store(scope).commitFields(saved.base, { mcpServers: saved.value }));
+      if (!saved || saved.scope !== scope) throw new Error('MCP 草稿已失效。');
+      const targetStore = store(scope),
+        active =
+          scope === 'project'
+            ? loadConfigWithSources(cwd).config.mcpConfig
+            : target(scope as 'global');
+      commitSettingsReference(
+        references.store(scope),
+        saved.reference,
+        'mcpConfig',
+        targetStore.path,
+        active !== targetStore.path,
+        () => targetStore.commitFields(saved.base, { mcpServers: saved.value }),
+        (written) => {
+          targetStore.commitFields(written, { mcpServers: saved.base.value.mcpServers });
+        },
+      );
       drafts.delete(draft as object);
     },
   };

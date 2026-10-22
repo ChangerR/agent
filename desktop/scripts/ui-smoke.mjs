@@ -32,6 +32,7 @@ try {
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
   await page.getByRole('button', { name: '主任务与模型连接（启动默认值）', exact: true }).click();
+  await page.locator('.settings-quick').filter({hasText:'外观与当前会话'}).locator(':scope > summary').click();
   await page.getByRole('combobox', { name: '设置当前思考等级', exact: true }).selectOption('low');
   await expect(page.getByRole('combobox', { name: '设置当前思考等级', exact: true })).toHaveValue(
     'low',
@@ -51,7 +52,7 @@ try {
   await expect(modelOverride).toBeVisible();
   await modelOverride.check();
   const model = 'cloud-ui-' + randomUUID().slice(0, 8);
-  await page.getByRole('textbox', { name: '模型 ID', exact: true }).fill(model);
+  await page.getByLabel('模型 ID', { exact: true }).fill(model);
   await expect(page.getByText('未保存', { exact: true })).toBeVisible();
   let unexpectedDialogs = 0;
   const reselectDialog = (dialog) => {
@@ -68,7 +69,7 @@ try {
   await expect(page.getByRole('region', { name: '应用设置', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '提交此节', exact: true }).click();
   await expect(page.getByText('已保存', { exact: true })).toBeVisible();
-  await expect(page.getByRole('textbox', { name: '模型 ID', exact: true })).toHaveValue(model);
+  await expect(page.getByLabel('模型 ID', { exact: true })).toHaveValue(model);
   await page.getByRole('checkbox', { name: '覆盖 Endpoint URL', exact: true }).check();
   await page
     .getByRole('textbox', { name: 'Endpoint URL', exact: true })
@@ -86,7 +87,7 @@ try {
   await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
   await expect(modelOverride).toBeChecked();
   await page.screenshot({ path: join(out, 'settings-light.png'), fullPage: true });
-  await page.getByRole('combobox', { name: '设置界面主题', exact: true }).selectOption('dark');
+  await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: '上下文与缓存预算', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: '覆盖 最大轮数', exact: true })).toBeVisible();
@@ -98,7 +99,7 @@ try {
   ).not.toBeChecked();
   await expect(page.getByText('未保存', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '放弃更改', exact: true }).click();
-  await page.getByRole('combobox', { name: '设置界面主题', exact: true }).selectOption('system');
+  await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('system');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.setViewportSize({ width: 900, height: 650 });

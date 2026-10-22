@@ -28,9 +28,9 @@ describe('SkillLoader', () => {
 
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), 'agentlab-skill-'));
-    await mkdir(join(tmp, '.agent', 'skills', 'deploy'), { recursive: true });
+    await mkdir(join(tmp, '.agentlab', 'skills', 'deploy'), { recursive: true });
     await writeFile(
-      join(tmp, '.agent', 'skills', 'deploy', 'SKILL.md'),
+      join(tmp, '.agentlab', 'skills', 'deploy', 'SKILL.md'),
       '---\nname: deploy\ndescription: 部署应用\n---\n\n步骤：1. build 2. upload',
     );
   });

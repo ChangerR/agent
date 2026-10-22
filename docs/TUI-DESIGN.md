@@ -1,11 +1,11 @@
-# AgentLab 的 pi 风格终端界面
+# agentlab 的 pi 风格终端界面
 
 ## 参考版本与边界
 
 参考仓库：https://github.com/earendil-works/pi（原 `badlogic/pi-mono` 地址重定向至此）。
 核验时间：2026-10-08；源码 SHA：`ce950d78f424dcaf9f5d6a03ce80ab141130eb1d`；
 该源码的 coding-agent 版本：1.1.0。
-AgentLab 保持现有 `@earendil-works/pi-tui` 1.0.2 依赖；没有引入 pi 的 agent engine、账户、凭据或配置。
+agentlab 保持现有 `@earendil-works/pi-tui` 1.0.2 依赖；没有引入 pi 的 agent engine、账户、凭据或配置。
 
 固定源码参考：
 
@@ -15,7 +15,7 @@ AgentLab 保持现有 `@earendil-works/pi-tui` 1.0.2 依赖；没有引入 pi �
 - [编辑器](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/modes/interactive/components/custom-editor.ts)：运行状态嵌入上分隔线；继续使用 pi-tui Editor 的光标、粘贴、历史、补全实现。
 - [页脚](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/modes/interactive/components/footer.ts)与 [dark 主题](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/modes/interactive/theme/dark.json)：编辑器下显示目录/模式/思考等级及 token/cache/model；使用统一 muted/accent/success/error 角色。
 
-这些是布局和语义色的适配，不声称是 pi 的像素级克隆。AgentLab 没有可可靠获取的 cost/context% 数据，因此不虚构对应数字。主题简化成可审计的本地颜色表，保留 MIT 署名见 `THIRD_PARTY_NOTICES.md`。
+这些是布局和语义色的适配，不声称是 pi 的像素级克隆。agentlab 没有可可靠获取的 cost/context% 数据，因此不虚构对应数字。主题简化成可审计的本地颜色表，保留 MIT 署名见 `THIRD_PARTY_NOTICES.md`。
 
 ## 交互与视觉约定
 

@@ -48,9 +48,13 @@ export class ConfigConflictError extends Error {
   }
 }
 const records = new WeakMap<ConfigSnapshot, State>();
+export class SettingsPartialSaveError extends Error {}
 const fieldSelections = new WeakMap<ConfigSnapshot, readonly string[]>();
+const documents = new WeakSet<ConfigSnapshot>();
 /** 不把 JSON 片段、插件抛出的原文或凭据带入 UI。 */
 export function settingsErrorMessage(error: unknown): string {
+  if (error instanceof SettingsPartialSaveError)
+    return '领域配置已写入，但引用更新及回滚未完成；请重新读取两个配置状态，勿直接重复提交。';
   if (error instanceof ConfigConflictError)
     return '配置已变化或另一个设置正在保存，请重新打开设置。';
   if (error instanceof SyntaxError) return '配置不是合法 JSON，请修正后重试。';
@@ -148,6 +152,25 @@ export class PluginConfigStore {
   }
   readFields(fields: readonly string[]): ConfigSnapshot {
     return snapshot(this.path, read(this.path), fields);
+  }
+  assertUnchanged(base: ConfigSnapshot): void {
+    const original = records.get(base);
+    if (base.path !== this.path || !original) throw new Error('无效配置快照。');
+    unchanged(this.path, original);
+  }
+  /** 固定领域文件的整份快照；仅供宿主注册的 schema 编辑器使用，不接受 renderer 路径。 */
+  readDocument(): ConfigSnapshot {
+    const state = read(this.path);
+    const base = snapshot(this.path, state, Object.keys(state.raw));
+    documents.add(base);
+    return base;
+  }
+  commitDocument(base: ConfigSnapshot, value: Record<string, unknown>): ConfigSnapshot {
+    if (base.path !== this.path || !documents.has(base) || !isRecord(value))
+      throw new Error('无效领域配置快照。');
+    const result = this.write(base, structuredClone(value), Object.keys(value));
+    documents.add(result);
+    return result;
   }
   /** 仅修改快照声明的顶层字段；其他字段与命名空间保持原样。 */
   commitFields(base: ConfigSnapshot, patch: Record<string, unknown>): ConfigSnapshot {

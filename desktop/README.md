@@ -1,12 +1,12 @@
-# AgentLab Desktop
+# agentlab
 
 以项目为入口的本地 Agent 工作台。现有 Electron/React 框架已补充 macOS 代码适配；macOS 原生验收仍需独立 Mac。前端使用 React，Electron 提供窗口与目录选择，独立 Node 进程装配现有 createAgent()；core 和原有 CLI 保持解耦。
 
 ## 运行
 
-原 Windows 首版可在项目根目录双击 **启动 AgentLab.cmd** 打开已打包的桌面应用。脚本按自身位置定位程序，无需切换目录；应用已打开时会聚焦原窗口。
+构建 Windows 应用后可在项目根目录双击 **启动 agentlab.cmd** 打开已打包的桌面应用。脚本按自身位置定位程序，无需切换目录；应用已打开时会聚焦原窗口。
 
-原 Windows 应用目录为 `desktop/release/AgentLab Desktop-win32-x64/`，双击其中的 **AgentLab Desktop.exe**。请完整保留同目录文件；应用已包含 Node 运行时，无需另装 Node 来启动它。本次云端交付为源码和验证证据，没有发布新的安装包。
+当前打包命名对应的 Windows 应用目录为 `desktop/release/agentlab-win32-x64/`，双击其中的 **agentlab.exe**。请完整保留同目录文件；应用已包含 Node 运行时，无需另装 Node 来启动它。本次云端交付为源码和验证证据，没有发布新的安装包。
 
 从源码启动：
 
@@ -91,25 +91,21 @@ worker 发送带单调 seq 的完整展示快照；main 包装为单调 revision
 
 ## 验证
 
-新增 tests/desktop.test.ts、tests/desktop-inspection.test.ts、tests/desktop-projects.test.ts、tests/desktop-markdown.test.ts 共 16 项已通过，包括真实批准后写入、取消失效、跨会话拒绝、去重/重入、设置保留未知字段、命令取消、会话恢复、关闭幂等、保存失败、Git 子工具授权、跨项目会话/模型隔离，以及 GFM 表格/任务列表、代码缩进和不执行原始 HTML。
-
-desktop:smoke 在随包 Node 上加载 tree-sitter、Bash/PowerShell grammar，并通过真实 runtime 完成审批与保存。浏览器已验证同一 worker 构建产物的发送、审批、文件刷新与读取。
-
-全量 pnpm test 为 1220 通过、44 失败、410 跳过，不能视为全量通过；详细结果见 [交付验证](VALIDATION.md)。尚未在干净的另一台 Windows 机器验证，发布前还需补充安装与系统兼容验证。
+本轮增加了真实 Electron 图形设置验收：启动实际 run.mjs、点击表单，经 preload / worker 保存，关闭重启后采用模型/Provider/MCP，并验证敏感值、作用域、审批与会话。所有请求仅使用隔离 FakeProvider；完整字段矩阵、截图、命令及结果见 [配置设置](../docs/CONFIGURATION-SETTINGS.md) 和 [本轮证据](../docs/evidence/graphical-settings)。旧 Windows/浏览器记录在 [历史验证](VALIDATION.md)，不能冒充本轮结果或 Mac 实机通过。
 
 ## macOS 与分层设置
 
-菜单 AgentLab → 设置（Cmd+,），文件 → 打开项目（Cmd+O）、新建会话（Cmd+N）。
+菜单 agentlab → 设置（Cmd+,），文件 → 打开项目（Cmd+O）、新建会话（Cmd+N）。
 原生窗口保留系统交通灯，标题栏空白可拖动；编辑 / 显示菜单提供系统快捷键与缩放。
 关闭窗口先结算 worker，Dock 可重新打开窗口，Cmd+Q 退出应用。
 
 设置默认编辑项目层，可切换用户层，显示实际文件路径与当前会话值。覆盖开关区分继承与显式值，
 每节提交一次；清除只改变草稿，未提交导航或关闭时提示放弃。连接和插件默认值需重启，
-当前会话来源、已有审批和真实工具权限继续沿用后端语义。外观可立即跟随系统暗色。
+App 重新装配并新建会话也会重建 runtime；CLI 需重启。当前会话来源、已有审批和真实工具权限继续沿用后端语义。外观可立即跟随系统暗色。
 
 macOS 源码构建须在 macOS 对应架构运行 pnpm desktop:build / desktop:smoke / desktop:package。
 --validate 仅验证输入；随包 Node / 原生模块必须与目标平台和架构一致。没有签名、公证或发布流程。
-构建使用当前 Node 的官方 LICENSE，缺少时可用 AGENTLAB_NODE_LICENSE 显式提供同版本文件。
+开发 build/run 不要求 Node LICENSE；正式分发 package 才验证同版本完整许可证，必要时使用 AGENTLAB_NODE_LICENSE 显式提供。
 Linux 浏览器预览和平台注入测试不等于原生 macOS 通过。
 
 设置交互区分：外观以及“当前会话”的模型 / 权限模式 / 思考选择即保存，继续调用原后端命令；模型与思考在下一请求采用，模式不处理已有审批。连接组合、缓存费用选项、权限规则和其他结构化启动默认值显式提交并重启；其草稿放弃提醒不等于额外的工具授权。验收工具统一为 Node / Playwright。

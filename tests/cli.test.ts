@@ -1279,20 +1279,24 @@ describe('真实 TUI 离线交互', () => {
     try {
       await writeFile(
         join(dir, 'agent.config.json'),
-        JSON.stringify({ provider: 'fake', permissionMode: 'ask' }),
+        // 本用例验 UI 人工审批，不借 FakeProvider 的审批员格式纠错来触发 ask。
+        JSON.stringify({ provider: 'fake', permissionMode: 'ask', permissions: { ask: ['read_file'] } }),
       );
       await writeFile(join(dir, 'secrets.txt'), '演示内容');
       const agent = await createAgent(dir);
+      let judgeRequests = 0;
+      agent.events.on('model_request', event => { if(event.purpose === 'judge') judgeRequests++; });
       const terminal = new MemoryTerminal();
       const exit = vi.fn();
       session = startTui(agent, { terminal, onExit: exit });
-      await vi.waitFor(() => expect(terminal.output).toContain('AgentLab'));
+      await vi.waitFor(() => expect(terminal.output).toContain('agentlab'));
       const screen = () => renderer!.getScreenLines().map(stripTerminalSequences);
       expect(screen()).toHaveLength(24);
       expect(screen().slice(-8).join('\n')).toContain('Enter 发送');
       terminal.input?.('读取 secrets.txt');
       terminal.input?.('\r');
       await vi.waitFor(() => expect(stripTerminalSequences(terminal.output)).toContain('请求权限'));
+      expect(judgeRequests).toBe(0);
       terminal.input?.('\x03');
       await vi.waitFor(() =>
         expect(stripTerminalSequences(terminal.output)).toContain('本轮已中断'),

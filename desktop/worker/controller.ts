@@ -14,6 +14,21 @@ import { demoProviderPlugin } from './demo.js';
 import { planningErrorMessage } from '../../src/builtin/planning/errors.js';
 import { settingsErrorMessage } from '../../src/runtime/config-store.js';
 import { safeSettingsValue } from '../../src/builtin/configuration-settings.js';
+import { loadConfigWithSources } from '../../src/core/config.js';
+async function effectiveSettings(
+  section: import('../../src/sdk/index.js').SettingsSection,
+  signal: AbortSignal,
+  scope: 'global' | 'project',
+) {
+  try {
+    return {
+      effectiveValue: safeSettingsValue(await section.readEffective?.(signal, scope)),
+      effectiveError: undefined,
+    };
+  } catch (error) {
+    return { effectiveValue: undefined, effectiveError: settingsErrorMessage(error) };
+  }
+}
 import type { SettingsSection } from '../../src/sdk/index.js';
 
 /** 跨进程只传纯展示快照；审批函数、凭证与模型请求保留在 worker。 */
@@ -145,6 +160,8 @@ export class DesktopController {
         thinking: a.configSources.thinking.scope,
       },
       models: [...new Set([a.loop.model, ...a.knownModels.map((m) => m.name)])],
+      providers: a.providers.list().map((p) => p.name),
+      modelDetails: a.knownModels.map(({ name, info }) => ({ id: name, ...info })),
       usage: a.session.tokenUsage,
       sessions: [],
       brokenSessions: 0,
@@ -153,8 +170,9 @@ export class DesktopController {
       commands: a.commands.list(),
       settings: a.settings
         .filter(
-          ({ id }) =>
+          ({ id, section }) =>
             id.startsWith('configuration-') ||
+            (!['planning', 'subagents', 'reviewer-model-config'].includes(id) && !!section.draft && !!section.commit && section.scopeTargets?.some(target => ['project', 'global'].includes(target.scope))) ||
             [
               'capability-selection',
               'policy-deterministic-config',
@@ -167,7 +185,7 @@ export class DesktopController {
           id,
           title: section.title,
           description: section.description,
-          schema: section.schema,
+          schema: section.getSchema?.() ?? section.schema,
           applyMode: section.applyMode,
           scopes: (section.scopeTargets ?? []).filter(
             (target) => target.scope !== 'session',
@@ -441,6 +459,36 @@ export class DesktopController {
       });
       try {
         if (action.type === 'settings-read') {
+          try {
+            const configured = loadConfigWithSources(a.cwd).config.pluginConfig[
+              'agentlab.provider-connections'
+            ]?.connections;
+            s.providerLabels = Object.fromEntries(
+              Object.entries(
+                (configured && typeof configured === 'object' ? configured : {}) as Record<
+                  string,
+                  { displayName?: string }
+                >,
+              )
+                .filter(([, v]) => typeof v.displayName === 'string')
+                .map(([id, v]) => [id, v.displayName!]),
+            );
+            s.providerOptions = [
+              ...new Set([
+                ...s.providers,
+                ...Object.entries(
+                  (configured && typeof configured === 'object' ? configured : {}) as Record<
+                    string,
+                    { enabled?: boolean }
+                  >,
+                )
+                  .filter(([, v]) => v.enabled !== false)
+                  .map(([id]) => id),
+              ]),
+            ];
+          } catch {
+            s.providerOptions = [...s.providers];
+          }
           const metadata = s.settings.find((item) => item.id === action.sectionId);
           const record = a.settings.find((item) => item.id === action.sectionId);
           if (
@@ -451,10 +499,13 @@ export class DesktopController {
             throw new Error('不支持此设置或作用域。');
           this.editor = undefined;
           const id = randomUUID();
+          metadata.scopes = (record.section.scopeTargets ?? []).filter(target => target.scope !== 'session') as typeof metadata.scopes;
+          metadata.schema = record.section.getSchema?.() ?? record.section.schema;
+          metadata.description = record.section.description;
           let value = await record.section.read?.(controller.signal, action.scope);
           // 专用目录授权只投影 schema 拥有的字段；未知配置不传入 renderer。
           if (action.sectionId === 'policy-deterministic-config')
-            value = { writeRoots: (value as { writeRoots?: unknown })?.writeRoots ?? [] };
+            value = value && typeof value === 'object' && Object.hasOwn(value,'writeRoots') ? { writeRoots: (value as { writeRoots?: unknown }).writeRoots } : {};
           if (this.disposal || action.sessionId !== a.session.id)
             throw new Error('设置读取已失效。');
           this.editor = { id, section: record.section, scope: action.scope };
@@ -463,6 +514,7 @@ export class DesktopController {
             sectionId: action.sectionId,
             scope: action.scope,
             value: safeSettingsValue(value),
+            ...(await effectiveSettings(record.section, controller.signal, action.scope)),
           };
         } else {
           const editor = this.editor,
@@ -488,6 +540,7 @@ export class DesktopController {
             if (view.sectionId === 'policy-deterministic-config')
               value = { writeRoots: (value as { writeRoots?: unknown })?.writeRoots ?? [] };
             view.value = safeSettingsValue(value);
+            Object.assign(view, await effectiveSettings(editor.section, signal, editor.scope));
             view.saved = true;
             // 只有 read 返回的新基线可再提交；旧 token 一次性消费。
             editor.id = view.id = randomUUID();
@@ -543,6 +596,10 @@ export class DesktopController {
           s.sources[action.field === 'think' ? 'thinking' : action.field] = 'project';
         } else if (action.type === 'resume') {
           await a.session.resume(action.id);
+        } else if (action.type === 'session-save') {
+          await a.dispatchCommand('/save', { signal: controller.signal });
+        } else if (action.type === 'session-delete') {
+          await a.dispatchCommand('/sessions rm ' + action.id, { signal: controller.signal });
         } else if (action.type === 'inspect') {
           const kind = action.kind;
           if (kind === 'read' && !action.path) throw new Error('请选择文件');
@@ -583,7 +640,12 @@ export class DesktopController {
     this.active = Promise.resolve().then(operation);
     void this.active.catch(() => {});
     // 简单选择项的应答表示持久化 / 应用已结算，前端随后可安全刷新配置层。
-    if (action.type === 'setting') await this.active;
+    if (
+      action.type === 'setting' ||
+      action.type === 'session-save' ||
+      action.type === 'session-delete'
+    )
+      await this.active;
   }
   dispose(): Promise<void> {
     this.disposal ??= this.finishDispose();

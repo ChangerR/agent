@@ -7,8 +7,8 @@ export function packagingOptions(root, platform, arch, runtime) {
   return {
     dir: root + '/desktop/dist',
     out: root + '/desktop/release',
-    name: 'AgentLab Desktop',
-    executableName: 'AgentLab Desktop',
+    name: 'agentlab',
+    executableName: 'agentlab',
     platform,
     arch,
     asar: false,

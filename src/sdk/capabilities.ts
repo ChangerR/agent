@@ -201,10 +201,14 @@ export interface SettingsSection {
   title: string;
   description?: string;
   schema: Record<string, unknown>;
+  /** 装配完成后可补充实际实现枚举；注册校验仍使用静态 schema。 */
+  getSchema?(): Record<string, unknown>;
   applyMode: 'immediate' | 'nextRequest' | 'idleBoundary' | 'newSession';
   /** 每层独立读取、起草和提交；切勿把合并后的运行值当作全局编辑初值。 */
   scopeTargets?: readonly SettingsScopeTarget[];
   read?(signal: AbortSignal, scope?: SettingsScope): MaybePromise<unknown>;
+  /** 可选的合成有效值，仅用于展示；不能作为编辑初值提交。 */
+  readEffective?(signal: AbortSignal, scope?: SettingsScope): MaybePromise<unknown>;
   draft?(value: unknown, signal: AbortSignal, scope?: SettingsScope): MaybePromise<unknown>;
   commit?(draft: unknown, signal: AbortSignal, scope?: SettingsScope): MaybePromise<void>;
 }

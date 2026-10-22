@@ -3,10 +3,10 @@ setlocal DisableDelayedExpansion
 chcp 65001 >nul
 cd /d "%~dp0"
 set "ELECTRON_RUN_AS_NODE="
-set "AGENTLAB_DESKTOP=%~dp0desktop\release\AgentLab Desktop-win32-x64\AgentLab Desktop.exe"
+set "AGENTLAB_DESKTOP=%~dp0desktop\release\agentlab-win32-x64\agentlab.exe"
 
 if not exist "%AGENTLAB_DESKTOP%" (
-  echo 未找到 AgentLab Desktop 应用。
+  echo 未找到 agentlab 应用。
   echo 请先在项目目录运行 pnpm desktop:package，再双击此文件。
   echo.
   pause

@@ -6,6 +6,7 @@ import { modelReviewerPlugin } from './reviewer-model/plugin.js';
 import { runtimeSettingsPlugin } from './runtime-settings.js';
 import { uiPlugin } from './ui-plugin.js';
 import { providerPlugins } from './providers.js';
+import { providerConnectionsPlugin } from './provider-connections.js';
 import { createLocalToolsPlugin } from './local-tools.js';
 import { skillsLocalPlugin } from './skills-local.js';
 import { builtinMcpPlugin } from './mcp.js';
@@ -29,6 +30,7 @@ export function defaultPreset(input: PresetContext): Preset {
   const { cwd, config, services } = input;
   const plugins: Plugin[] = [
     ...providerPlugins(config),
+    providerConnectionsPlugin(cwd, config),
     createLocalToolsPlugin(
       config.pluginEntries
         .filter((entry) => typeof entry === 'string' || entry.enabled)

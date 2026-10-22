@@ -1,4 +1,4 @@
-# AgentLab Desktop 设计提案
+# agentlab 设计提案
 
 状态：首版已实现，运行与验证说明见 [desktop/README.md](../desktop/README.md)。下文保留产品设计与后续路线；配套 [交互原型](design/desktop-prototype.html) 仍使用固定演示数据。2026-10-18。
 
@@ -12,11 +12,11 @@
 
 ## 产品定位与首版范围
 
-面向 Windows 的本地 coding agent 聊天工作台：选择项目 → 描述任务 → 观察执行 → 处理审批 → 检查改动。桌面与 TUI 共用 AgentLab runtime、配置、插件和会话存储。
+面向 Windows 的本地 coding agent 聊天工作台：选择项目 → 描述任务 → 观察执行 → 处理审批 → 检查改动。桌面与 TUI 共用 agentlab runtime、配置、插件和会话存储。
 
 首版包含项目入口、单会话聊天、工具过程、人工审批、文件预览、Git 差异与项目设置。完整代码编辑器、交互式终端、内置浏览器、自动更新、云同步与并行顶层会话留到后续。
 
-参考 Kimi Code Desktop 的本地项目、对话和结果检查工作流；界面与能力按 AgentLab 现有契约设计。[Kimi 官方快速开始](https://www.kimi.com/help/kimi-code/desktop-getting-started)。
+参考 Kimi Code Desktop 的本地项目、对话和结果检查工作流；界面与能力按 agentlab 现有契约设计。[Kimi 官方快速开始](https://www.kimi.com/help/kimi-code/desktop-getting-started)。
 
 ## 界面与视觉
 

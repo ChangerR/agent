@@ -57,7 +57,7 @@ async function mount(global?: Record<string, unknown>, settingId = 'capability-s
   dirs.push(cwd);
   const path = join(cwd, 'agent.config.json');
   write(path, { provider: 'fake', model: 'before', future: true });
-  if (global) write(join(home, '.agent', 'config.json'), global);
+  if (global) write(join(home, '.agentlab', 'config.json'), global);
   const agent = await createAgent(cwd, { autoSaveSessions: false });
   agent.settings.find((setting) => setting.id === settingId)!.section.order = -1;
   const terminal = new MemoryTerminal();
@@ -219,7 +219,7 @@ describe('设置入口的一次提交', () => {
       ui.key('{}');
       ui.key('\r');
       await vi.waitFor(() =>
-        expect(read(join(home, '.agent', 'config.json'))).toEqual({
+        expect(read(join(home, '.agentlab', 'config.json'))).toEqual({
           capabilities: {},
           futureGlobal: true,
         }),

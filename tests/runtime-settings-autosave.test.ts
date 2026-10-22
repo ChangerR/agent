@@ -89,7 +89,7 @@ describe('模型与思考设置立即保存并应用', () => {
   it('显式项目命令替换会话启动覆盖，不修改全局层', async () => {
     const cwd = project();
     const path = join(cwd, 'agent.config.json');
-    const globalPath = join(home, '.agent', 'config.json');
+    const globalPath = join(home, '.agentlab', 'config.json');
     write(path, { provider: 'fake', model: 'project-model' });
     write(globalPath, { model: 'global-model', thinking: 'low', future: true });
     const agent = await createAgent(cwd, {

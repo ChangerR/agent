@@ -1,4 +1,4 @@
-# AgentLab 插件架构
+# agentlab 插件架构
 
 默认 preset 新增 agentlab.subagents 插件，仍只注册现有 tool/command/settings/tui 能力种类。
 通用 supervisor 放 runtime，插件提供五个 agent_* 控制工具和 /agents。能力实例只由根
@@ -6,7 +6,7 @@ PluginHost 拥有和释放，child 不重新装配插件或 MCP。CLI entry 仅�
 使用相同工具与 supervisor。控制工具按 preset 的确切 owner/name 身份标识，不能靠 risk
 声明绕过工作区锁或权限。配置和生命周期详情见 [SUBAGENTS.md](SUBAGENTS.md)。
 
-AgentLab 仍是单个 npm 包。`agentlab/sdk` 提供契约；`PluginHost` 负责发现后的依赖排序、事务注册和清理；`createAgent` 选择默认 preset；内核只负责协议、状态、取消、历史和执行门。
+agentlab 仍是单个 npm 包。`agentlab/sdk` 提供契约；`PluginHost` 负责发现后的依赖排序、事务注册和清理；`createAgent` 选择默认 preset；内核只负责协议、状态、取消、历史和执行门。
 
 ## 一次调用的路径
 

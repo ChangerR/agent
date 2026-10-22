@@ -74,11 +74,11 @@ beforeEach(async () => {
   await mkdir(cwd);
   await mkdir(join(cwd, '.git'));
   await mkdir(home);
-  await mkdir(join(home, '.agent'));
+  await mkdir(join(home, '.agentlab'));
   vi.stubEnv('HOME', home);
   vi.stubEnv('USERPROFILE', home);
   await writeFile(
-    join(home, '.agent/config.json'),
+    join(home, '.agentlab/config.json'),
     JSON.stringify({ cache: { enabled: false, ttl: '5m' } }),
   );
   await writeFile(
@@ -216,7 +216,10 @@ describe('App + 缓存最终 runtime 的实际设置接入', () => {
       }),
     );
     const value = (await read('configuration-agentlab.provider-openai')).value as any;
-    expect(value).toEqual({ models: { fixture: { api: 'chat-completions' } } });
+    expect(value).toEqual({
+      models: { fixture: { api: 'chat-completions', $entry: expect.any(String) } },
+    });
+    expect(JSON.stringify(value)).not.toContain('private-fixture');
     await send({
       type: 'settings-commit',
       editorId: latest().settingsEditor!.id,

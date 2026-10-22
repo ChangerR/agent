@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AgentLab Desktop · 交互设计原型</title>
+    <title>agentlab · 交互设计原型</title>
     <style>
       :root {
         color-scheme: light;
@@ -766,12 +766,12 @@
     </div>
     <div class="shell">
       <div class="titlebar">
-        <span>AgentLab Desktop <span class="muted">/ Windows 工作台</span></span
+        <span>agentlab <span class="muted">/ Windows 工作台</span></span
         ><span class="windowmarks" aria-label="窗口控件外观示意">— □ ×</span>
       </div>
       <aside class="sidebar">
         <div class="brand">
-          <span class="logo">a</span>AgentLab<span class="small" style="font-weight: 400"
+          <span class="logo">a</span>agentlab<span class="small" style="font-weight: 400"
             >desktop</span
           >
         </div>
@@ -786,7 +786,7 @@
         <div class="label">当前项目 · 会话</div>
         <nav class="sessions" aria-label="会话列表">
           <button class="active" data-session="main">
-            为 AgentLab 设计桌面界面
+            为 agentlab 设计桌面界面
             <div class="sessionmeta">
               <span id="sessionState"><i class="dot"></i>等待确认</span><span>刚刚</span>
             </div></button
@@ -809,7 +809,7 @@
       <main class="workspace">
         <header class="heading">
           <div>
-            <h1 id="chatTitle">为 AgentLab 设计桌面界面</h1>
+            <h1 id="chatTitle">为 agentlab 设计桌面界面</h1>
             <div class="small" id="subtitle">agent / 当前项目会话</div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center">
@@ -833,7 +833,7 @@
           </article>
           <article class="message agent">
             <div class="who">
-              <span class="avatar">a</span>AgentLab
+              <span class="avatar">a</span>agentlab
               <span class="small" style="font-weight: 400">14:32</span>
             </div>
             <p>
@@ -1155,7 +1155,7 @@ export default function App() {
       bindApproval();
       function appendMessage(who, text) {
         const article = document.createElement('article');
-        article.className = 'message' + (who === 'AgentLab' ? ' agent' : '');
+        article.className = 'message' + (who === 'agentlab' ? ' agent' : '');
         const heading = document.createElement('div');
         heading.className = 'who';
         heading.textContent = who;
@@ -1196,7 +1196,7 @@ export default function App() {
         $('send').textContent = '发送 ↑';
         status('已停止');
         appendMessage(
-          'AgentLab',
+          'agentlab',
           '演示任务已停止。正式版等待底层取消和会话保存结算，再允许下一次执行。',
         );
       }
@@ -1220,7 +1220,7 @@ export default function App() {
         running = true;
         status('生成回复 · 演示');
         $('send').textContent = '停止 ■';
-        const reply = appendMessage('AgentLab', '正在整理你的任务…');
+        const reply = appendMessage('agentlab', '正在整理你的任务…');
         runTimer = setTimeout(() => {
           reply.textContent =
             '这是原型的模拟回复。我已收到任务。正式接入后，通过 createAgent() 订阅流式文本、工具执行和审批事件，任务结束后等待会话保存。';
@@ -1280,7 +1280,7 @@ export default function App() {
               .forEach((x) => x.classList.toggle('active', x === b));
             showChat();
             if (b.dataset.session === 'main') {
-              $('chatTitle').textContent = '为 AgentLab 设计桌面界面';
+              $('chatTitle').textContent = '为 agentlab 设计桌面界面';
               $('conversation').innerHTML = initialConversation;
               approvalPending = true;
               bindApproval();
@@ -1297,7 +1297,7 @@ export default function App() {
                 b.dataset.session === 'arch' ? '解释插件加载流程。' : '检查会话恢复条件。',
               );
               appendMessage(
-                'AgentLab',
+                'agentlab',
                 b.dataset.session === 'arch'
                   ? '演示历史：Plugin.setup 注册能力，PluginHost 管理依赖、事务与资源清理。core 不引用具体厂商或工具。'
                   : '演示历史：恢复前校验项目、provider/endpoint 与 schema；恢复不自动放宽权限，保存通过原子写和 revision 检查。',

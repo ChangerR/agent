@@ -39,7 +39,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
     const cwd = project();
     const child = join(cwd, 'child');
     mkdirSync(child);
-    write(join(home, '.agent', 'config.json'), { provider: 'fake' });
+    write(join(home, '.agentlab', 'config.json'), { provider: 'fake' });
     write(join(cwd, 'agent.config.json'), { model: 'do-not-display-config-value' });
     vi.stubEnv('SETTINGS_TEST_PRIVATE_VALUE', 'do-not-display-environment-value');
     const agent = await createAgent(child, { autoSaveSessions: false });
@@ -53,7 +53,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
         paths: {
           cwd: child,
           projectRoot: cwd,
-          globalConfigPath: join(home, '.agent', 'config.json'),
+          globalConfigPath: join(home, '.agentlab', 'config.json'),
           projectConfigPath: join(cwd, 'agent.config.json'),
         },
         sources: { model: { scope: 'project', directory: cwd }, provider: { scope: 'global' } },
@@ -68,7 +68,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
   it('读取或放弃草稿不创建全局目录，仅commit创建并保存指定层', () => {
     const cwd = project();
     const stores = createScopedConfigStores(cwd);
-    const globalPath = join(home, '.agent', 'config.json');
+    const globalPath = join(home, '.agentlab', 'config.json');
     const projectPath = join(cwd, 'agent.config.json');
     expect(stores.scopeTargets).toEqual([
       { scope: 'project', path: projectPath },
@@ -76,7 +76,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
     ]);
     const base = stores.store('global').read('demo');
     expect(base.value).toEqual({});
-    expect(existsSync(join(home, '.agent'))).toBe(false);
+    expect(existsSync(join(home, '.agentlab'))).toBe(false);
     expect(() => stores.store('session')).toThrow(/仅支持/);
     stores
       .store('global')
@@ -93,7 +93,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
   it('reviewer全局读取不带入项目值；各层草稿独立、跨层提交失败、省略字段恢复继承', async () => {
     const cwd = project();
     const projectPath = join(cwd, 'agent.config.json');
-    const globalPath = join(home, '.agent', 'config.json');
+    const globalPath = join(home, '.agentlab', 'config.json');
     write(globalPath, {
       provider: 'fake',
       capabilities: { reviewer: 'model' },
@@ -121,7 +121,6 @@ describe('设置的全局 / 项目原始层隔离', () => {
         provider: 'fake',
         model: 'global-model',
         timeoutMs: 11000,
-        future: { keep: true },
       });
       expect(await section.read!(signal(), 'project')).toEqual({
         model: 'project-model',
@@ -157,7 +156,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
   it('能力全局保存和删除不复制项目选择，取消和过期草稿不覆盖磁盘', async () => {
     const cwd = project();
     const projectPath = join(cwd, 'agent.config.json');
-    const globalPath = join(home, '.agent', 'config.json');
+    const globalPath = join(home, '.agentlab', 'config.json');
     write(globalPath, { provider: 'fake', future: { keep: true } });
     write(projectPath, {
       capabilities: { reviewer: 'model' },
@@ -199,7 +198,7 @@ describe('设置的全局 / 项目原始层隔离', () => {
 
   it('writeRoots设置和运行配置都拒绝全局授权', async () => {
     const cwd = project();
-    const globalPath = join(home, '.agent', 'config.json');
+    const globalPath = join(home, '.agentlab', 'config.json');
     const agent = await createAgent(cwd, { config: { provider: 'fake' }, autoSaveSessions: false });
     try {
       const section = agent.settings.find(

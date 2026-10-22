@@ -43,8 +43,8 @@ afterEach(() => {
 
 describe('schema 驱动的分层配置入口', () => {
   it('清除没有未知字段的对象覆盖会删除空对象，恢复全局保守缓存值', async () => {
-    mkdirSync(join(home, '.agent'));
-    write({ cache: { enabled: false, ttl: '1h' } }, join(home, '.agent/config.json'));
+    mkdirSync(join(home, '.agentlab'));
+    write({ cache: { enabled: false, ttl: '1h' } }, join(home, '.agentlab/config.json'));
     write({ provider: 'fake', cache: { enabled: true, ttl: '5m' }, unknown: true });
     const editor = section('budgets');
     await editor.read!(signal());
@@ -74,7 +74,7 @@ describe('schema 驱动的分层配置入口', () => {
       mcpServers: Record<string, Record<string, unknown>>;
     };
     expect(JSON.stringify(value)).not.toContain('private-');
-    expect(value.mcpServers.local.args).toBe(MASKED_SETTING);
+    expect(value.mcpServers.local.args).toEqual([{ $secret: expect.any(String) }]);
     value.mcpServers.local.command = 'node-new';
     await editor.commit!(await editor.draft!(value, signal()), signal());
     expect(read(path).mcpServers.local).toEqual({
@@ -84,12 +84,16 @@ describe('schema 驱动的分层配置入口', () => {
       unknown: 9,
     });
     expect(read(path).future).toBe(true);
-    await expect(async () =>
-      editor.draft!(
+    await editor.read!(signal());
+    await editor.commit!(
+      await editor.draft!(
         { mcpServers: { local: { command: 'node', env: { KEY: 'never-save' } } } },
         signal(),
       ),
-    ).rejects.toThrow();
+      signal(),
+    );
+    expect(read(path).mcpServers.local.env.KEY).toBe('never-save');
+    expect(JSON.stringify(await editor.read!(signal()))).not.toContain('never-save');
     await editor.read!(signal());
     const stale = await editor.draft!({}, signal());
     write({ external: true }, path);
@@ -110,12 +114,12 @@ describe('schema 驱动的分层配置入口', () => {
       await section.draft!({}, signal(), 'project');
     }
     expect(existsSync(join(cwd, 'agent.config.json'))).toBe(false);
-    expect(existsSync(join(home, '.agent'))).toBe(false);
+    expect(existsSync(join(home, '.agentlab'))).toBe(false);
   });
 
   it('用户层与项目层分开，重置只删除本层已知字段，未知嵌套字段及其他配置保留', async () => {
-    mkdirSync(join(home, '.agent'));
-    const globalPath = join(home, '.agent', 'config.json');
+    mkdirSync(join(home, '.agentlab'));
+    const globalPath = join(home, '.agentlab', 'config.json');
     write({ maxTurns: 20, cache: { ttl: '1h' } }, globalPath);
     write({
       provider: 'fake',

@@ -26,7 +26,7 @@ export function desktopMenu(
     ...(platform === 'darwin'
       ? [
           {
-            label: 'AgentLab',
+            label: 'agentlab',
             submenu: [
               { role: 'about' },
               { type: 'separator' },

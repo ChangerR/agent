@@ -43,7 +43,7 @@ try {
     page.getByRole('checkbox', { name: '覆盖 ' + label, exact: true }).check();
   const text = async (label, value) => {
     await override(label);
-    await page.getByRole('textbox', { name: label, exact: true }).fill(value);
+    await page.getByLabel(label, { exact: true }).fill(value);
   };
   const select = async (label, value) => {
     await override(label);
@@ -80,7 +80,7 @@ try {
   assert.deepEqual(await save(), { replayToolArguments: false });
   for (const title of ['主任务规划', '摘要模型与预算', '审批模型与预算']) {
     await choose(title);
-    await text('Provider', 'fake');
+    await select('Provider', 'fake');
     await text('模型 ID', 'ui-role-' + title + '-' + suffix);
     await select('思考等级', 'off');
     await number('输出 token 上限', 512);
@@ -99,10 +99,11 @@ try {
     ['Anthropic 模型能力', 'messages'],
   ]) {
     await choose(title);
-    await override('模型 API 能力映射（JSON）');
-    await page
-      .getByRole('textbox', { name: '模型 API 能力映射（JSON）', exact: true })
-      .fill(JSON.stringify({ fixture: { api, rawToolArguments: false } }));
+    await override('模型 API 能力');
+    await page.getByRole('button', { name: '新增 模型 API 能力', exact: true }).click();
+    await page.getByRole('textbox', { name: '模型 API 能力 名称 1', exact: true }).fill('fixture');
+    await select('API 类型', api);
+    await select('支持原始参数回放', 'false');
     assert.equal((await save()).models.fixture.api, api);
   }
   await choose('MCP 结果预算');

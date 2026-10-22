@@ -21,7 +21,7 @@ export interface AgentPaths {
 
 /** HOME 可以在启动/测试之间变化，不能在模块导入时缓存。 */
 export function getGlobalConfigPath(): string {
-  return join(homedir(), '.agent', 'config.json');
+  return join(homedir(), '.agentlab', 'config.json');
 }
 
 /** 尚未创建的路径按最近存在的父目录规范化，不吞掉权限等真实 I/O 错误。 */

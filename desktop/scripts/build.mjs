@@ -65,12 +65,12 @@ export async function buildDesktop({ mode = 'development' } = {}) {
     join(out, 'package.json'),
     JSON.stringify(
       {
-        name: 'agentlab-desktop',
-        productName: 'AgentLab Desktop',
+        name: 'agentlab',
+        productName: 'agentlab',
         version: '0.1.0',
         main: 'main/index.cjs',
-        description: 'AgentLab 本地 Agent 工作台',
-        author: 'AgentLab',
+        description: 'agentlab 本地 Agent 工作台',
+        author: 'agentlab',
         license: 'MIT',
       },
       null,

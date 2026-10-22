@@ -1,6 +1,7 @@
 /** 面向各前端的配置编辑器；只提交固定配置层，绝不接受调用者提供的写入路径。 */
 import { z } from 'zod';
-import { AgentConfigSchema } from '../core/config.js';
+import { randomUUID } from 'node:crypto';
+import { AgentConfigSchema, loadConfigWithSources } from '../core/config.js';
 import type { Plugin, SettingsScope, SettingsSection } from '../sdk/index.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import { validatePermissionRule } from './policy/config.js';
@@ -23,6 +24,11 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
 }
 /** 提供纯 JSON 元数据；运行时校验仍由原始 schema 执行。 */
 export function settingsJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
+  if (schema instanceof z.ZodDefault) return settingsJsonSchema(schema._def.innerType);
+  if (schema instanceof z.ZodOptional) return settingsJsonSchema(schema.unwrap());
+  if (schema instanceof z.ZodNullable)
+    return { anyOf: [settingsJsonSchema(schema.unwrap()), { type: 'null' }] };
+  if (schema instanceof z.ZodEffects) return settingsJsonSchema(schema.innerType());
   const value = unwrap(schema);
   if (value instanceof z.ZodObject)
     return {
@@ -34,6 +40,9 @@ export function settingsJsonSchema(schema: z.ZodTypeAny): Record<string, unknown
         ]),
       ),
       additionalProperties: false,
+      required: Object.entries(value.shape as Shape)
+        .filter(([, s]) => !s.isOptional())
+        .map(([key]) => key),
     };
   if (value instanceof z.ZodEnum) return { type: 'string', enum: value.options };
   if (value instanceof z.ZodLiteral) return { const: value.value, type: typeof value.value };
@@ -41,19 +50,47 @@ export function settingsJsonSchema(schema: z.ZodTypeAny): Record<string, unknown
   if (value instanceof z.ZodNumber)
     return {
       type: value.isInt ? 'integer' : 'number',
-      ...(value.minValue !== null ? { minimum: value.minValue } : {}),
+      ...(value.minValue !== null
+        ? {
+            minimum:
+              value.isInt && value._def.checks.some((c) => c.kind === 'min' && !c.inclusive)
+                ? Math.floor(value.minValue) + 1
+                : value.minValue,
+          }
+        : {}),
       ...(value.maxValue !== null ? { maximum: value.maxValue } : {}),
     };
-  if (value instanceof z.ZodString) return { type: 'string' };
+  if (value instanceof z.ZodString)
+    return {
+      type: 'string',
+      ...(value.minLength !== null ? { minLength: value.minLength } : {}),
+      ...(value.maxLength !== null ? { maxLength: value.maxLength } : {}),
+    };
   if (value instanceof z.ZodArray)
     return { type: 'array', items: settingsJsonSchema(value.element) };
   if (value instanceof z.ZodRecord)
     return { type: 'object', additionalProperties: settingsJsonSchema(value.valueSchema) };
-  if (value instanceof z.ZodUnion)
-    return { anyOf: (value.options as z.ZodTypeAny[]).map(settingsJsonSchema) };
-  return {};
+  if (value instanceof z.ZodUnion || value instanceof z.ZodDiscriminatedUnion)
+    return {
+      anyOf: (value.options as z.ZodTypeAny[]).map((s) => ({
+        ...settingsJsonSchema(s),
+        ...(s.description ? { title: s.description } : {}),
+      })),
+    };
+  return { 'x-any': true };
 }
 export function safeSettingsValue(value: unknown, key = ''): unknown {
+  if (record(value) && Object.keys(value).length === 1 && typeof value.$secret === 'string')
+    return { $secret: value.$secret };
+  if ((key === 'env' || key === 'headers') && record(value))
+    return Object.fromEntries(
+      Object.entries(value).map(([name, item]) => [
+        name,
+        record(item) && typeof item.$secret === 'string'
+          ? { $secret: item.$secret }
+          : MASKED_SETTING,
+      ]),
+    );
   if (sensitive.test(key) && key !== 'apiKeyEnv') return MASKED_SETTING;
   if (key === 'apiKeyEnv' && (typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)))
     return MASKED_SETTING;
@@ -74,42 +111,73 @@ export function safeSettingsValue(value: unknown, key = ''): unknown {
     );
   return value;
 }
-function projectKnown(value: Record<string, unknown>, shape: Shape): Record<string, unknown> {
+function projectKnown(
+  value: Record<string, unknown>,
+  shape: Shape,
+  identities?: Map<string, unknown>,
+): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(shape)
       .filter(([key]) => Object.hasOwn(value, key))
-      .map(([key, schema]) => [key, projectSchema(value[key], schema, key)]),
+      .map(([key, schema]) => [key, projectSchema(value[key], schema, key, identities)]),
   );
 }
-function projectSchema(value: unknown, schema: z.ZodTypeAny, key = ''): unknown {
+function projectSchema(
+  value: unknown,
+  schema: z.ZodTypeAny,
+  key = '',
+  identities?: Map<string, unknown>,
+  identify = false,
+): unknown {
   const inner = unwrap(schema);
-  if (inner instanceof z.ZodObject && record(value))
-    return projectKnown(value, inner.shape as Shape);
+  if (inner instanceof z.ZodObject && record(value)) {
+    const projected = projectKnown(value, inner.shape as Shape, identities);
+    if (identify && identities) {
+      const id = randomUUID();
+      identities.set(id, value);
+      return { ...projected, $entry: id };
+    }
+    return projected;
+  }
   if (inner instanceof z.ZodRecord && record(value))
     return Object.fromEntries(
       Object.entries(value)
         .filter(([name]) => !dangerous.has(name))
-        .map(([name, item]) => [name, projectSchema(item, inner.valueSchema, name)]),
+        .map(([name, item]) => [
+          name,
+          projectSchema(item, inner.valueSchema, name, identities, true),
+        ]),
     );
   if (inner instanceof z.ZodArray && Array.isArray(value))
-    return value.map((item) => projectSchema(item, inner.element));
-  if (inner instanceof z.ZodUnion) {
+    return value.map((item) => projectSchema(item, inner.element, '', identities, true));
+  if (inner instanceof z.ZodUnion || inner instanceof z.ZodDiscriminatedUnion) {
     const selected = (inner.options as z.ZodTypeAny[]).find(
       (option) => option.safeParse(value).success,
     );
-    if (selected) return projectSchema(value, selected, key);
+    if (selected) return projectSchema(value, selected, key, identities, identify);
   }
   return safeSettingsValue(value, key);
 }
 /** 只删除 schema 拥有的字段；未识别的嵌套字段也必须留下。 */
-function preserveUnknown(previous: unknown, next: unknown, schema: z.ZodTypeAny): unknown {
+function preserveUnknown(
+  previous: unknown,
+  next: unknown,
+  schema: z.ZodTypeAny,
+  identities?: WeakMap<object, unknown>,
+): unknown {
+  if (record(next) && identities?.has(next)) previous = identities.get(next);
   if (next === MASKED_SETTING) return previous;
   const inner = unwrap(schema);
   if (inner instanceof z.ZodRecord && record(next))
     return Object.fromEntries(
       Object.entries(next).map(([key, item]) => [
         key,
-        preserveUnknown(record(previous) ? previous[key] : undefined, item, inner.valueSchema),
+        preserveUnknown(
+          record(previous) ? previous[key] : undefined,
+          item,
+          inner.valueSchema,
+          identities,
+        ),
       ]),
     );
   if (inner instanceof z.ZodArray && Array.isArray(next))
@@ -120,21 +188,21 @@ function preserveUnknown(previous: unknown, next: unknown, schema: z.ZodTypeAny)
           ? previous.find((candidate) => record(candidate) && candidate.entry === item.entry)
           : previous[index]
         : undefined;
-      return preserveUnknown(old, item, inner.element);
+      return preserveUnknown(old, item, inner.element, identities);
     });
-  if (inner instanceof z.ZodUnion) {
+  if (inner instanceof z.ZodUnion || inner instanceof z.ZodDiscriminatedUnion) {
     const selected = (inner.options as z.ZodTypeAny[]).find(
       (option) => option.safeParse(next).success,
     );
-    if (selected) return preserveUnknown(previous, next, selected);
+    if (selected) return preserveUnknown(previous, next, selected, identities);
   }
   if (!(inner instanceof z.ZodObject) || !record(previous)) return restoreMasked(previous, next);
   const result = { ...previous };
   for (const [key, child] of Object.entries(inner.shape as Shape)) {
     if (record(next) && Object.hasOwn(next, key))
-      result[key] = preserveUnknown(previous[key], next[key], child);
+      result[key] = preserveUnknown(previous[key], next[key], child, identities);
     else {
-      const unknown = preserveUnknown(previous[key], undefined, child);
+      const unknown = preserveUnknown(previous[key], undefined, child, identities);
       if (record(unknown) && Object.keys(unknown).length) result[key] = unknown;
       else delete result[key];
     }
@@ -184,7 +252,7 @@ function assertKnownFields(value: unknown, schema: z.ZodTypeAny): void {
     value.forEach((item) => assertKnownFields(item, inner.element));
   } else if (inner instanceof z.ZodRecord && record(value)) {
     Object.values(value).forEach((item) => assertKnownFields(item, inner.valueSchema));
-  } else if (inner instanceof z.ZodUnion) {
+  } else if (inner instanceof z.ZodUnion || inner instanceof z.ZodDiscriminatedUnion) {
     const selected = (inner.options as z.ZodTypeAny[]).find(
       (option) => option.safeParse(value).success,
     );
@@ -213,6 +281,7 @@ export function configurationSections(
     const fields = Object.keys(shape);
     const definition = plugin?.config;
     const bases = new Map<SettingsScope, ConfigSnapshot>();
+    const entryTokens = new WeakMap<ConfigSnapshot, Map<string, unknown>>();
     const drafts = new WeakMap<
       object,
       { base: ConfigSnapshot; scope: SettingsScope; patch: Record<string, unknown> }
@@ -228,13 +297,27 @@ export function configurationSections(
         '只编辑所选层的原始覆盖值，省略字段恢复继承。Enter 一次提交；Esc 放弃未提交草稿。保存后需重启 App/CLI，已有会话与审批不改变。密钥仅使用环境变量引用，不读取 .env。',
       schema: settingsJsonSchema(z.object(shape)),
       scopeTargets: targets,
+      readEffective(signal) {
+        signal.throwIfAborted();
+        const config = loadConfigWithSources(cwd).config;
+        const raw = plugin ? (config.pluginConfig[plugin.manifest.id] ?? {}) : config;
+        const parsed = definition?.schema
+          ? definition.schema.parse({ ...definition.defaults, ...raw })
+          : raw;
+        const value = projectKnown(parsed as Record<string, unknown>, shape);
+        for (const key of definition?.sensitiveFields ?? [])
+          if (Object.hasOwn(value, key)) value[key] = MASKED_SETTING;
+        return value;
+      },
       read(signal, scope = 'project') {
         signal.throwIfAborted();
         if (!targets.some((target) => target.scope === scope)) throw new Error('不支持此作用域。');
         const store = stores.store(scope);
         const base = plugin ? store.read(plugin.manifest.id) : store.readFields(fields);
         bases.set(scope, base);
-        const value = projectKnown(base.value, shape);
+        const tokens = new Map<string, unknown>();
+        entryTokens.set(base, tokens);
+        const value = projectKnown(base.value, shape, tokens);
         for (const key of definition?.sensitiveFields ?? [])
           if (Object.hasOwn(value, key)) value[key] = MASKED_SETTING;
         return value;
@@ -246,10 +329,32 @@ export function configurationSections(
           throw new Error('请重新打开此作用域设置。');
         if (!record(value) || Object.keys(value).some((key) => !fields.includes(key)))
           throw new Error('未知配置字段。');
-        assertSafeInput(value);
-        for (const [key, item] of Object.entries(value)) assertKnownFields(item, shape[key]);
+        const identities = new WeakMap<object, unknown>(),
+          tokens = entryTokens.get(base);
+        const normalize = (item: unknown): unknown => {
+          if (Array.isArray(item)) return item.map(normalize);
+          if (record(item)) {
+            const next = Object.fromEntries(
+              Object.entries(item)
+                .filter(
+                  ([key]) =>
+                    key !== '$entry' ||
+                    typeof item.$entry !== 'string' ||
+                    !tokens?.has(item.$entry),
+                )
+                .map(([key, v]) => [key, normalize(v)]),
+            );
+            if (typeof item.$entry === 'string' && tokens?.has(item.$entry))
+              identities.set(next, tokens.get(item.$entry));
+            return next;
+          }
+          return item;
+        };
+        const input = normalize(value) as Record<string, unknown>;
+        assertSafeInput(input);
+        for (const [key, item] of Object.entries(input)) assertKnownFields(item, shape[key]);
         for (const key of definition?.sensitiveFields ?? []) {
-          const item = value[key];
+          const item = input[key];
           if (
             item !== undefined &&
             item !== MASKED_SETTING &&
@@ -258,12 +363,17 @@ export function configurationSections(
             throw new Error('敏感字段只接受环境变量引用。');
         }
         const patch = Object.fromEntries(
-          fields.map((key) => [key, preserveUnknown(base.value[key], value[key], shape[key])]),
+          fields.map((key) => [
+            key,
+            preserveUnknown(base.value[key], input[key], shape[key], identities),
+          ]),
         );
         // 校验完整有效值，但不保存 parse() 补齐的默认值。
         const present = Object.fromEntries(
           Object.entries(patch).filter(([, item]) => item !== undefined),
         );
+        if (scope === 'global' || scope === 'project')
+          definition?.validateSettings?.(present, scope);
         z.object(shape).partial().parse(present);
         const other = stores.store('global');
         const otherValue =
@@ -277,7 +387,7 @@ export function configurationSections(
         else AgentConfigSchema.parse(merged);
         for (const [key, item] of Object.entries(patch)) {
           if (item === undefined) continue;
-          if (value[key] === MASKED_SETTING) continue;
+          if (input[key] === MASKED_SETTING) continue;
           if (
             key === 'apiKeyEnv' &&
             (typeof item !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item))
@@ -328,6 +438,12 @@ export function configurationSections(
       },
     };
     const properties = section.schema.properties as Record<string, Record<string, unknown>>;
+    if (id === 'configuration-permissions') {
+      const rules = (
+        properties.permissions as { properties: Record<string, { items: Record<string, unknown> }> }
+      ).properties;
+      for (const kind of ['allow', 'ask', 'deny']) rules[kind].items['x-rule'] = true;
+    }
     for (const key of definition?.sensitiveFields ?? [])
       if (properties[key]) properties[key].writeOnly = true;
     result.push({ id, section });
@@ -362,6 +478,7 @@ export function configurationSections(
     const titles: Record<string, string> = {
       'agentlab.provider-openai': 'OpenAI 兼容协议',
       'agentlab.provider-anthropic': 'Anthropic 模型能力',
+      'agentlab.provider-connections': 'Provider 连接',
       'agentlab.local-tools': '本地工具',
       'agentlab.mcp': 'MCP 结果预算',
       'agentlab.reviewer-model': '审批模型与预算',

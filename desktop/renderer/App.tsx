@@ -173,7 +173,7 @@ function MessageRow({
     <article className={'message ' + row.kind}>
       <div className="who">
         <span className="avatar">{row.kind === 'user' ? '你' : 'a'}</span>
-        {row.kind === 'user' ? '你' : 'AgentLab'}
+        {row.kind === 'user' ? '你' : 'agentlab'}
       </div>
       {row.kind === 'user' ? (
         <div className="user-text">{row.text}</div>
@@ -380,7 +380,7 @@ export default function App() {
             <span className="logo">
               <Icon name="terminal" size={19} />
             </span>
-            <span className="brand-name">AgentLab</span>
+            <span className="brand-name">agentlab</span>
             <button
               className="icon-button sidebar-toggle"
               aria-label="收起侧栏"
@@ -550,7 +550,7 @@ export default function App() {
                 ? '项目'
                 : view === 'settings'
                   ? '设置'
-                  : (runtime?.title ?? 'AgentLab Desktop')}
+                  : (runtime?.title ?? 'agentlab')}
             </h1>
           </div>
           <div className="header-actions">
@@ -657,7 +657,7 @@ export default function App() {
             >
               {!runtime ? (
                 <div className="welcome">
-                  <span className="eyebrow">AGENTLAB / LOCAL WORKSPACE</span>
+                  <span className="eyebrow">agentlab / local workspace</span>
                   <h2>从一个具体任务开始。</h2>
                   <p>打开你的项目，让 agent 帮你阅读代码、执行任务，并检查结果。</p>
                   <div className="welcome-actions">
@@ -736,7 +736,7 @@ export default function App() {
                 <textarea
                   aria-label="输入任务"
                   placeholder={
-                    runtime ? '向 AgentLab 提问，或描述一个任务…' : '先打开一个本地项目…'
+                    runtime ? '向 agentlab 提问，或描述一个任务…' : '先打开一个本地项目…'
                   }
                   value={prompt}
                   disabled={!runtime || state.connecting}

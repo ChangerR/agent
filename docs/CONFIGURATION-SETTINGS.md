@@ -1,107 +1,82 @@
-# 分层配置设置与桌面适配盘点
+# agentlab 图形设置与 macOS 适配
 
-本文的“当前字段”指面向 master 的收尾分支 feature/app-macos-settings-to-master，包含 #47 App 增强和 #49 的实际缓存设置接入。#48 已进入 master，#49 进入缓存分支；收尾 PR 尚未合并。完整状态见 [App / Cache 集成](APP_CACHE_INTEGRATION.md)，不需要用户手动补配置接线。
+当前工作基于现有 Electron + React + 独立 Node worker App，没有替换框架。面向 master 的 PR 为 [#50](https://github.com/ChangerR/agent/pull/50)；它消费 master 已合并的缓存 schema，不复制缓存实现。功能和截图均来自独立 Linux 云端，不连接用户电脑、不发送真实模型请求、不签名/公证/发布安装包。
 
-## 基线与交付边界
+## 从哪里进入
 
-最初从默认分支 `master` 的 `cb64528` 独立开发。当前 PR 链和本轮冲突整理见 [App / Cache 集成](APP_CACHE_INTEGRATION.md)。
-该提交只有 TypeScript / Node.js 的 TUI，`package.json` 没有桌面脚本，
-也没有 Electron、React 或 macOS 打包配置。
+侧栏底部的“设置”、项目旁的设置按钮及原生菜单均打开真正设置页。macOS 菜单为 agentlab → 设置（Cmd+,）；其他平台为文件 → 设置（Ctrl+,）。收起侧栏时工具栏仍能进入设置。分类导航支持页面名称和字段名搜索；模型、Provider 和 MCP 服务器采用列表与详情编辑，其余配置按 schema 分组，无 JSON/YAML/文件编辑器兜底。
 
-已有 Electron + React + 独立 Node worker 的桌面工作台最初来源于
-[PR #45](https://github.com/ChangerR/agent/pull/45)，提交 `d2536c7`。
-初始 feature 基于该 App 开发并纳入 master@cb64528。现在 #45 和 #48 已进入 master@9fbffd6；#47 与 #49 合入的是依赖分支，故从实际集成 tip bed0728 建立独立收尾分支，普通 merge 最新 master 后面向 master 交付。没有修改已合并 PR 或合并任何远端 PR。
-本次交付 Electron/React 设置页面、受控 worker 接口和 macOS 代码适配。
-云端仅为 Linux，未执行 macOS 原生窗口 / 菜单 / Retina / 未签名包验收。
-没有替换框架、连接用户电脑或调用真实模型。
+当前会话的模型、模式、思考和外观选择即保存。模型/思考于下一请求使用；模式用于后续权限检查，已有审批仍由用户处理。连接组合、缓存费用参数、权限规则、插件入口和凭据等结构化事务显式“提交此节”。外观保存在桌面本地偏好，CLI 配置不增加 UI 字段。
 
-## 真实 schema 的覆盖
+## 配置与产品更名（破坏性变更）
 
-新增入口都由 `AgentConfigSchema`、插件 `config.schema` 和 `ownedFields` 生成，
-同时接入 Electron 设置页和原有 `/settings` 通用编辑器。表中“重启”指退出 App / CLI 进程后重新启动；
-创建新会话不承诺重新装配 provider 或插件。
+产品显示名、窗口标题、CLI 帮助、桌面包与可执行文件统一为小写 **agentlab**；根 package 和 CLI 命令原本已是 agentlab。GitHub 仓库仍为 ChangerR/agent，没有 npm 发布或旧命令 alias。
 
-| 入口                           | 已支持字段                                                                                                          | 作用域 / 生效时间                                   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| 主任务与模型连接（启动默认值） | provider、model、baseURL、apiKeyEnv、thinking、judgeModel                                                           | 用户 / 项目；重启                                   |
-| 上下文与缓存预算               | maxTurns、compactThreshold、cache.enabled / ttl / staticTtl / ttlStrategy / escalateAfterMs                         | 用户 / 项目；重启                                   |
-| 权限与审批默认值               | permissionMode、permissions.allow / ask / deny                                                                      | 用户 / 项目；重启；不处理已有审批                   |
-| 配置文件与插件装配             | modelsFile、mcpConfig、pluginEntries、disabledPlugins                                                               | 用户 / 项目；重启；这里只编辑引用路径               |
-| OpenAI / Anthropic 适配器参数  | models 能力映射；OpenAI 另有 dialect                                                                                | 用户 / 项目；重启                                   |
-| 严格审批模型参数               | provider、model、thinking、timeoutMs、maxRequestBytes、maxResponseBytes、maxOutputTokens、prefixCache.enabled / ttl | 用户 / 项目；重启                                   |
-| MCP 结果参数                   | maxInlineChars、maxAgeDays、maxStoredBytes、deduplicate、maxSearchChars                                             | 用户 / 项目；重启                                   |
-| 子任务参数                     | maxRunning、maxDepth、maxTurns、timeoutMs、maxInbox、maxOutputChars、previewChars、maxAgents、maxRuns               | 用户 / 项目；重启                                   |
-| 规划参数                       | mode、provider、model、thinking、maxOutputTokens、maxRequestBytes                                                   | 用户 / 项目；启动默认值重启，已有 mode 命令即时     |
-| 摘要模型与预算                 | provider、model、thinking、strategy、maxOutputTokens、maxRequestBytes                                               | 用户 / 项目；重启                                   |
-| 其他运行配置                   | replayToolArguments                                                                                                 | 用户 / 项目；重启                                   |
-| 本地工具参数                   | disabled                                                                                                            | 用户 / 项目；重启                                   |
-| 日志参数                       | includeBodies                                                                                                       | 用户 / 项目；重启；保留原默认值，不自动开启正文日志 |
-| 既有插件实现选择               | capabilities                                                                                                        | 复用原有受控入口                                    |
-| 既有目录写入授权               | writeRoots                                                                                                          | 只用策略插件的项目级专用入口，仍执行真实路径验证    |
-| 既有会话控制                   | /sessions、/save、/new、/model、/think、/mode                                                                       | 保留原会话管理和即时应用语义                        |
+| 实际默认位置 | 用途 |
+| --- | --- |
+| `~/.agentlab/config.json` | 用户级静态配置 |
+| `<项目根>/agent.config.json` | 项目覆盖，保留既有格式和位置 |
+| `~/.agentlab/models.json`、`mcp.json` | 没有显式覆盖引用时的默认领域文件 |
+| `~/.agentlab/state/projects/<项目路径 SHA-256>/sessions`、`logs`、`mcp-results` | 项目隔离的会话、日志及 MCP 缓存结果 |
+| `~/.agentlab/skills`、`<项目根>/.agentlab/skills` | 用户/项目技能，项目同名项优先 |
+| `<项目根>/.env` | 唯一自动加载的环境文件；既有进程变量优先，包括空值 |
 
-`models.json` 中各模型的 contextWindow / maxOutputTokens 仍通过文件维护；
-本入口可以修改 modelsFile 引用，不会把模型规格臆造为新的顶层字段。
-MCP 编辑器仅接受固定目录中的 mcp.json，不接受 renderer 提供的文件路径。
-现有 args / env / headers 始终掩码，提交时在 worker 内恢复。新增 env / headers
-凭据需在 CLI 文件维护；不发明 env:NAME 的 MCP 运行时解析行为。
-编辑固定文件不会更改 mcpConfig；页面显示当前实际文件，使用自定义文件的项目
-需自行在“配置文件与插件装配”中选择对应引用。MCP 连接状态另有只读入口。
-planner / summary / judge 使用实际插件 schema；UI 外观是 renderer 本地偏好，即选即持久化，不写入 agent.config.json。
-会话覆盖仍可能优先于启动默认值，保存默认值不修改已保存会话。
+不读取旧 `.agent` 配置/技能，不回退、双读双写、自动迁移或删除旧数据。旧目录仍在敏感路径保护清单中，保护它不等于读取它。项目根配置没有被搬进子目录；项目运行状态仍按当前架构集中在用户目录，不另建第二套存储。桌面操作系统 userData 由新的应用名 agentlab 定位，旧桌面偏好不自动导入。环境变量本来使用 `AGENTLAB_*`，保留此标准大写前缀；厂商的 OPENAI/ANTHROPIC 变量名不变。显式配置的路径仍按其声明层解析。
 
-## 保存、校验与迁移
+用户可以在图形表单手动建立新目录中的配置。程序不会替用户读取旧凭据；新默认值依然采用保守的原有权限模式。路径和技能的“不读取旧目录”回归见 `tests/agentlab-identity.test.ts`。
 
-1. 默认编辑项目 `agent.config.json`；切换“全局”后编辑 `~/.agent/config.json`。
-   标题和路径始终说明目标层，读取的是该层原始覆盖，不是合并后的运行值。
-2. 打开或创建草稿只读，不创建目录、不回填默认值，也不加载 `.env`。
-   Enter 提交一份 JSON，Esc 放弃未提交输入，不增加独立 Save 页面。
-3. 省略字段清除此层相应已知覆盖。未知顶层、未知命名空间及未知嵌套字段保留。
-   如果一个对象仍含未知子字段，该对象会留下；CLI 的同名对象替换语义仍然适用，
-   不能承诺它已整体恢复继承。需要整体删除时，请显式审阅 CLI 文件。
-4. 保存沿用 PluginConfigStore 的文件身份检查、CAS、锁和原子替换；
-   外部编辑、符号链接、取消或旧草稿导致保存失败时不覆盖文件。
-   失败经 `settingsErrorMessage()` 转换，不回显原始 JSON 或插件异常内容。
-5. 数值、枚举、插件跨字段约束由原 schema 校验；另外拒绝非法 key 变量名、
-   带凭据 / 查询 / fragment 的新 endpoint、空模型 ID、非法权限规则及新未知字段。
-   密钥使用 apiKeyEnv 或插件声明的 env:NAME 引用；不会读取环境变量的值。
-6. 展示前只选择 schema 拥有的字段；已声明敏感字段、常见凭据字段和带凭据的 URL
-   使用掩码。未更改的掩码在宿主内恢复原值，掩码本身不落盘。
-   插件应准确声明 sensitiveFields；本功能不能推断任意文本是否包含秘密。
-7. 不需要迁移脚本。已有 CLI 文件、字段优先级、数组替换及插件合并规则保持兼容。
-   初次打开设置不会触发迁移；任何覆盖写入均来自一次明确的提交。
+## 字段与控件覆盖
 
-新增顶层 schema 字段会进入“其他运行配置”；新增内置插件 ownedFields 会自动进入
-对应插件参数组。需要特殊领域校验的设置应保留专用入口，不能仅凭类型 schema
-增加授权路径。当前默认装配收集内置插件定义；外部插件仍通过其 SettingsSection
-契约提供入口，不反射或自动授予它们写入能力。
+完整字段 → 控件 → 作用域 → 边界 → 生效矩阵由真实装配注册表生成，见 [SETTINGS-FIELD-COVERAGE.md](SETTINGS-FIELD-COVERAGE.md)。`AgentConfigSchema` 新字段自动进入“其他运行配置”；内置以及实际导入的外部插件以 schema / ownedFields 注册表单。外部只有 parse 契约的字段提供明确类型选择及递归键值/数组控件，保存仍调用其原验证器。
 
-## 已有 App 的 macOS 差距与后续验证
+| 页面 | 完整字段组 | 控件/校验 |
+| --- | --- | --- |
+| 主任务与模型连接 | provider、model、baseURL、apiKeyEnv、thinking、judgeModel | Provider 下拉、模型候选输入、Endpoint/变量名、枚举；无凭据 HTTP(S) Endpoint、变量名、非空 ID 校验 |
+| Provider 连接 | 命名连接 CRUD：type、displayName、enabled；网络连接 baseURL、apiKeyEnv、models；OpenAI dialect | 列表/详情、适配器分支、文本/下拉/嵌套模型 map；实际使用已有 OpenAI/Anthropic/Fake 适配器，不探测账户 |
+| 模型目录 | 模型 ID CRUD、displayName、contextWindow、maxOutputTokens | 列表/详情、正整数输入；显示名不改变路由 ID |
+| Provider 模型能力 | models[ID].api、thinkingLevels、rawToolArguments、prefixCompaction、outputParameter、thinkingMode、offEffort；OpenAI dialect | map 增删/改名、数组增删排序、真实 enum/bool；内置适配器和命名网络连接均可配置 |
+| 上下文与缓存 | maxTurns、compactThreshold；cache.enabled、ttl、staticTtl、ttlStrategy、escalateAfterMs | 数值、下拉、嵌套覆盖；只设置 staticTtl 不回填 enabled/ttl |
+| 其他运行配置 | replayToolArguments | 启用/关闭，默认不主动开启 |
+| 主任务规划 | mode、provider、model、thinking、maxOutputTokens、maxRequestBytes | 真实角色 schema；另保留已有即时规划方式入口 |
+| 摘要模型与预算 | provider、model、thinking、strategy、maxOutputTokens、maxRequestBytes | 真实 schema，默认 isolated，不主动开启 prefix |
+| 审批模型与预算 | provider、model、thinking、timeoutMs、maxRequestBytes、maxResponseBytes、maxOutputTokens、prefixCache.enabled/ttl | 分组数值/枚举；不缓存批准结果，不绕过执行器 |
+| MCP 服务器 | 服务器名 CRUD；stdio command、args、env；HTTP url、headers | 传输分支、程序路径、可排序参数、安全密码输入/键值 map；只允许一种传输，验证 URL/头/变量名 |
+| MCP 结果预算 | maxInlineChars、maxAgeDays、maxStoredBytes、deduplicate、maxSearchChars | 原始上下界；保持活跃结果租约、引用保护与关闭去重默认 |
+| 权限与审批默认 | permissionMode、permissions.allow/ask/deny | 模式下拉、工具/精确目标/Glob 规则构建器、增删排序；规则保存不处理已有审批 |
+| 明确写入目录授权 | writeRoots | 项目级专用数组与原生目录选择；后端验证真实路径/项目边界，选择目录本身不授予权限 |
+| 插件实现与权限策略 | capabilities 各实际注册单例实现 | 按实际候选的枚举；仅允许关闭原契约中的可选实现 |
+| 配置文件与插件装配 | modelsFile、mcpConfig、pluginEntries、disabledPlugins | 路径、插件模块/启用列表、增删排序；保存入口不导入新模块，重建 runtime 时按原插件契约装配 |
+| 本地工具 | disabled | 工具名数组；不隐式禁用工具 |
+| 辅助任务与并发 | maxRunning、maxDepth、maxTurns、timeoutMs、maxInbox、maxOutputChars、previewChars、maxAgents、maxRuns | 真正数值/literal 与跨字段边界；另保留已有下一任务生效入口 |
+| 会话日志 | includeBodies | bool；不自动开启正文日志 |
+| 连接密钥与项目环境 | 项目 `.env` 所有受支持变量 | 键值行、专用密码输入；保留注释/未更改行、变量名/原生 parseEnv 往返校验；0600 保存 |
+| 项目与会话 | 已有项目打开/原生选择；保存、新会话、恢复、删除保存记录 | 调用原后端操作；内部项目 ID/path/demo、会话内容不是可任意改写的配置参数 |
 
-保留 PR #45 的白名单 IPC、contextIsolation、sandbox、导航拦截、原生目录选择和
-唯一工具执行器。本次新增：
+命名连接是真正可选的新增配置，放在 `pluginConfig["agentlab.provider-connections"].connections`。未配置时不生成连接或改变旧路由。连接被主任务/辅助角色引用时不能删除/禁用，需先选择其他 Provider 保存。内置 Provider 由插件提供；管理自定义连接并不删除实现代码。顶层 baseURL/apiKeyEnv 仍只作用于内置 openai/anthropic，命名连接使用其详情字段。所有包装委托现有 adapter 的请求规范化、字节预算和模型能力，路由身份隔离。
 
-- hiddenInset 标题栏及交通灯定位；左上角安全区；标题栏可拖拽，按钮 / 输入 / 选择器不可拖拽。
-- 原生应用 / 文件 / 编辑 / 显示 / 窗口菜单；Cmd+, 设置、Cmd+O 原生目录选择、
-  Cmd+N 新会话、复制粘贴、撤销、全屏和缩放。
-- macOS 关闭窗口后等待 worker 保存 / 清理，保留应用；Dock 激活重新创建窗口。
-  Quit 走保存流程；有未保存设置或运行任务时保留取消选项，保存失败保留窗口。
-- macOS 字体回退、跟随系统暗色、800×600 最小原生窗口、窄屏自适应、独立滚动和焦点样式。
-- darwin bundle ID / 开发工具分类、暗色与 HighDPI 声明；只打包当前机器平台 / 架构，
-  校验随包 Node 元数据，拒绝把 Linux Node 伪装为 macOS 包。没有签名 / 公证配置。
-- React 分节表单、原始层覆盖开关、JSON 高级字段、失败反馈、未保存标记 / 导航与关闭提醒。
-  “清除此节的本层覆盖”只改变草稿，提交后才写盘；Esc / 放弃不保存。
-- 新 settings-read / settings-commit / settings-close 协议，绑定 generation、sessionId
-  与一次性 editor ID；worker 校验注册的 section 和 scope，沿用其 draft / commit。
-  保存期间的关闭和会话变化使未提交草稿失效；当前审批不能被设置操作批准。
+## 保存、继承、凭据与生命周期
 
-截图来自真实 Linux Chromium + 隔离 FakeProvider 预览：
+默认编辑项目层，可切换用户层。显示的是原始层覆盖，并可展开合成有效值；当前会话值单列，不冒充刚保存的启动默认。优先级保持默认 < 用户 < 项目 < 会话；权限规则按原逻辑合并，插件对象/数组按原契约合并。
 
-- [亮色设置页](evidence/macos-app-settings/settings-light.png)
-- [900px / DPR 2 暗色布局](evidence/macos-app-settings/mac-layout-simulation-dark.png)：
-  仅注入 renderer 的 macOS CSS 标记，不含原生交通灯 / 菜单，不能证明 macOS 实机通过。
+打开页面、切换作用域、建立草稿、取消均不创建/覆盖配置或回填默认。每字段覆盖开关取消即恢复继承；未保存标记、导航/关闭提醒、Esc/放弃和重新读取可用。清除动作只改草稿，显式提交后才写。未知顶层、未知命名空间、已知对象内未知元数据保持；map 改名/数组排序时用宿主生成的条目身份使未知元数据跟随原条目，身份不会写进配置。
 
-可复现检查：
+模型目录和 MCP 页提交同时激活所选层对应的 modelsFile/mcpConfig 引用。两份文件分别 CAS 校验；引用写入失败时只回滚自己的领域写入，回滚若也遇冲突则明确报告部分保存并要求重新读取，不宣称多文件原子事务。领域文件限制在当前项目或用户配置根，父目录符号链接逃逸被拒绝，renderer 不提供任意写入路径。显式外部引用仍可由 runtime 正常读取，但图形领域编辑需先在路径页选受管位置并重新装配。
+
+模型目录的“清空”删除该文件的自定义模型，回到内置同名规格；MCP 的“清空”删除该文件服务器；引用本身保留。若想恢复另一层引用，到“配置文件与插件装配”取消对应字段覆盖。`.env` 不存在用户级继承文件；清空其草稿并提交会移除已识别变量，保留注释/未识别行。
+
+保存继续执行文件身份、CAS、锁、原子替换、取消及 editor/generation/session/scope 绑定。后端校验错误、外部编辑和写入失败有可见反馈；失败不擅自重试写入。设置忙碌时阻止与任务/审批竞争的提交；真正工具执行仍经过唯一 ToolExecutor、deny/ask、危险检测与人工审批。
+
+既有敏感值只以宿主保管的随机句柄或掩码返回，既有原文不会返回渲染层；用户本次手动输入只暂存于表单，成功保存后换为宿主句柄。MCP args/env/headers/url、`.env` 手动新增/替换使用密码输入；保留/清除是明确动作。日志/错误/截图不包含原密钥。apiKeyEnv 是变量名，插件 sensitiveFields 按既有契约使用 env:NAME 引用；该引用不被发明为 MCP 插值规则。后端不能替任意未声明文本猜测秘密，插件作者仍须准确声明敏感字段。
+
+App 的“重新装配并新建会话”实际 dispose worker 并从磁盘重新创建 runtime，或退出重启后采用连接/预算/规则/插件/环境变化。CLI 需退出重启。普通恢复保存会话保留其原模型设置及原权限恢复边界；修改启动默认不改写旧会话。`.env` 更改不会写入当前进程环境。已有即时模型/mode/think、规划方式、子任务限制和外观仍采用原生效语义。
+
+## 视觉设计与真实验收
+
+[imagegen 概念图](evidence/graphical-settings/00-imagegen-design-concept.png) 只用于布局参考，未作为运行背景或虚构功能。实际组件使用 React/CSS：分组搜索、列表详情、继承值、敏感状态、空态、焦点和响应式亮暗主题。
+
+真实入口验收：`desktop/scripts/electron-settings-smoke.mjs` 通过 `run.mjs` 启动真实 Electron 和打包 Node worker，隔离 HOME/项目/userData，所有模型请求都给本地脚本 Provider。它点击真实设置/表单并检查 IPC 后的磁盘结果、关闭重启、模型采用、MCP 本地进程、审批和会话操作；不是 preview/mock React 测试。原生文件选择/关闭确认对话框在自动化中仅替换 OS 对话框返回值，后续 IPC/路径校验/生命周期均为实际产品逻辑。
+
+截图与逐场景报告在 [evidence/graphical-settings](evidence/graphical-settings)。Linux 的真实 Electron 界面不能证明 macOS AppKit/交通灯/Dock/Retina/菜单实机通过。之前 Chromium preview 与历史测试证据保持原样，避免把旧结果冒充本轮。
 
 ```sh
 pnpm typecheck
@@ -109,62 +84,21 @@ pnpm test --maxWorkers=2 --minWorkers=1
 pnpm build
 pnpm desktop:build
 pnpm desktop:smoke
-pnpm desktop:package --validate
-pnpm desktop:preview
-# 另一个终端，需要 Node Playwright + Chromium：
-pnpm desktop:ui-smoke
-pnpm exec vitest run tests/configuration-settings.test.ts tests/runtime-settings-tui-autosave.test.ts
+node desktop/scripts/settings-coverage.mjs
+# Linux 需要 Electron 系统依赖、Xvfb 与字体；不需要模型 key：
+xvfb-run -a node desktop/scripts/electron-settings-smoke.mjs
+# macOS 有独立合法机器时直接运行上一条 node 入口（不使用用户电脑）
 git diff --check
 ```
 
-开发启动 / 普通构建允许当前 Node 安装缺少 LICENSE，不需要重装或设置路径；
-只有正式分发入口 package.mjs 要求同版本完整许可证，并校验暂存模式及文件摘要。
-自动发现限定在解析后的 Node 安装前缀；如分发时仍找不到，才显式设置
-AGENTLAB_NODE_LICENSE 指向同版本官方分发的 LICENSE。云端 Node v24.19.0 的分发验证
-使用官方 nodejs/node v24.19.0 LICENSE，放在临时目录，不提交二进制或安装包。
+开发 build/run 不要求本机 Node 安装旁有 LICENSE，也不联网隐式下载。正式 package 入口仍要求同版本完整官方许可证及摘要，缺少时给出准确版本的路径指引；不能把开发暂存当分发包。相关真实入口回归保留。验收结果和已有 CLI/PTY 波动分别记录，不跳过或放宽超时来制造通过。
 
-所有测试使用隔离 HOME、临时项目和固定假凭据。TUI 按键测试与 App UI 测试分别报告；
-ui-smoke.mjs 操作真实 React 页面与构建 worker，覆盖提交 / 校验失败 / 作用域 / 未保存
-导航 / 草稿重置 / 系统暗色 / 窄屏高 DPI。它不能验证 Electron 菜单或 AppKit。
+## macOS 代码适配与剩余实机项
 
-独立 macOS 环境的剩余验收清单：
+保留 Electron 框架、白名单 IPC、contextIsolation/sandbox、导航拦截和 Node sidecar。macOS 使用 hiddenInset、交通灯安全区，拖拽标题栏与控件 no-drag；原生 agentlab/文件/编辑/显示/窗口菜单提供 Cmd+, / O / N、编辑、缩放、全屏。关闭窗口等待保存/清理，取消保留窗口；Dock 激活可重建，Quit 走保存路径。打包只允许当前机器平台/架构，声明 HighDPI/暗色/开发工具分类，不增加权限、签名证书或公证密钥。
 
-1. Apple Silicon / Intel 对应架构执行 install、typecheck、test、desktop:build、smoke、package。
-2. 启动未签名 .app，核对交通灯区域、拖拽、全部输入 / 下拉 / 按钮可交互和双击标题栏。
-3. 验证 Cmd+, / O / N、复制粘贴、撤销、缩放、全屏、中文输入法；原生目录选择含空格 / 中文 / 符号链接。
-4. 关闭空闲 / 运行窗口、取消退出、保存错误、Cmd+Q、Dock 重开，确认没有遗留 worker 或自动重试。
-5. Retina / 外接显示器切换、系统暗色切换、缩放 80%–150%、800×600 窗口和长表单滚动。
-6. 核对 .app 内 Node 平台 / 架构和 LICENSE。无需证书 / 公证密钥，不上传或外发安装包。
+Linux 已验代码与交互；剩余只有独立 macOS 环境才能确认：交通灯实际命中/拖拽/双击标题栏，Cmd 键和中文输入法，原生目录对话框，Dock/Cmd+Q/关闭行为，Retina/外接屏幕缩放和未签名 `.app`。不能宣称这些已在 Mac 实机通过。
 
-只能使用合法独立 Mac；禁止连接或委派到用户电脑。
+## 明确边界
 
-## 与缓存任务的协调
-
-相对最新 master，本分支修改 `src/builtin/runtime-settings.ts`、`src/builtin/default-preset.ts`，
-新增 `src/builtin/configuration-settings.ts`，并扩展设置测试。缓存运行时、provider / reviewer / MCP
-的 schema 与 ownedFields 已由 #48 进入 master；本分支直接消费它们，不复制其运行时实现。
-default-preset 收集实际插件后注册 runtime-settings，并保留缓存对 MCP、摘要和规划的装配参数。
-未来 schema / ownedFields 变动仍应通过相同扩展点接入并补特殊 apply 语义验证。
-
-### 缓存字段的最终接入状态
-
-最初只读核对 a0562c0；现已在完整缓存 runtime 上接入并验证，收尾分支包含以下真实可操作表单。
-这些配置保存后需要重建 runtime，对 App 即退出进程重新启动；单独新建会话不承诺重新装配。
-
-| 缓存字段                                                                                                                      | 接入状态                                | 设置入口 / 生效                        |
-| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------- |
-| replayToolArguments                                                                                                           | 已接入顶层实际 schema                   | “其他运行配置”；重启                   |
-| cache.staticTtl、ttlStrategy                                                                                                  | 已接入稀疏对象表单                      | “上下文与缓存预算”；重启               |
-| planning.provider / model / thinking / maxOutputTokens / maxRequestBytes                                                      | 已接入规划 schema / ownedFields         | “主任务规划”；重启；已有 mode 命令即时 |
-| summary.provider / model / thinking / strategy / maxOutputTokens / maxRequestBytes                                            | 已接入摘要 schema / ownedFields         | “摘要模型与预算”；重启                 |
-| reviewer.thinking                                                                                                             | 已接入审批员 schema / ownedFields       | “审批模型与预算”；重启                 |
-| provider.models[模型].api / thinkingLevels / rawToolArguments / prefixCompaction / outputParameter / thinkingMode / offEffort | 已接入 Record / Union schema 和字段投影 | OpenAI / Anthropic 模型能力 JSON；重启 |
-| MCP maxAgeDays / maxStoredBytes / deduplicate / maxSearchChars                                                                | 已接入 MCP schema / ownedFields         | “MCP 结果预算”；重启                   |
-
-表单只序列化所选原始层：例如只勾选 staticTtl，就只提交该键，不回填 enabled / ttl，
-不主动开启 prefix 摘要、deduplicate 或 replay。已有未知字段（包括并行分支写入的字段）
-在未被本 schema 拥有前保持原值且不展示。master 中的 loadConfigWithSources 已包含稀疏 cache
-继承修复；本分支不复制其 loader。集成回归验证全局 enabled=false / ttl=5m、项目只改 staticTtl
-后，enabled 仍为 false、ttl 仍为 5m，且打开设置不改变任意文件。
-
-设置交互区分：外观以及“当前会话”的模型 / 权限模式 / 思考选择即保存，继续调用原后端命令；模型与思考在下一请求采用，模式不处理已有审批。连接组合、缓存费用选项、权限规则和其他结构化启动默认值显式提交并重启；其草稿放弃提醒不等于额外的工具授权。验收工具统一为 Node / Playwright。
+没有加载/没有定义 schema 或 ownedFields 的未知插件参数无法被安全推断为现有受支持功能；未知值保留，不提供任意 JSON 或文件写入兜底。已实际加载的 ownedFields 有类型表单或 parse-only 类型控件。无法启动的损坏 JSON、指向受管根外的领域文件、插件代码编辑属于明确限制，不冒充已经覆盖。App 管理配置，不替用户建立账户、填写真实密钥、修改系统设置或提升审批策略。

@@ -24,7 +24,7 @@ function setup(options: { missingGlobal?: boolean; platform?: NodeJS.Platform } 
   dirs.push(cwd);
   mkdirSync(join(cwd, '.git'));
   const globalConfigPath = options.missingGlobal
-    ? join(cwd, 'home', '.agent', 'config.json')
+    ? join(cwd, 'home', '.agentlab', 'config.json')
     : join(cwd, 'global.json');
   const path = join(cwd, 'agent.config.json');
   if (!options.missingGlobal)

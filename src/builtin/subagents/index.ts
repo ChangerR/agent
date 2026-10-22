@@ -10,6 +10,7 @@ import {
 import { createScopedConfigStores, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { SUBAGENT_PLUGIN, SUBAGENT_TOOLS } from './identity.js';
 import type { SubagentRecord } from '../../core/agents.js';
+import { settingsJsonSchema } from '../configuration-settings.js';
 const integer = (max: number, value: number) => z.number().int().min(1).max(max).default(value);
 export const SubagentConfigSchema = z
   .object({
@@ -267,7 +268,7 @@ export function subagentsPlugin(services: RuntimeServices, cwd: string) {
         scopeTargets: stores.scopeTargets.filter((target) => target.scope === 'project'),
         description:
           '单次提交自动保存并应用到新任务；已有 run 的硬限制保持。/agent-limit 单选保存并发上限。',
-        schema: { type: 'object' },
+        schema: settingsJsonSchema(SubagentConfigSchema),
         read(signal) {
           signal.throwIfAborted();
           base = stores.store().read(SUBAGENT_PLUGIN);

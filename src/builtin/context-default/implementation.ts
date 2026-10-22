@@ -38,7 +38,7 @@ export function buildDefaultContext(opts: {
   const rg = findRg();
   const sections: string[] = [];
 
-  sections.push(`你是 AgentLab，运行在用户终端里的通用代理。回答问题、查资料、操作文件和命令、完成软件工程，都在职责里。需要真实环境才能确定的事用工具；能直接回答的不要调用工具。
+  sections.push(`你是 agentlab，运行在用户终端里的通用代理。回答问题、查资料、操作文件和命令、完成软件工程，都在职责里。需要真实环境才能确定的事用工具；能直接回答的不要调用工具。
 
 # 做任务
 - 先看再改。要动一个文件或解释一段实现，先用工具读当前内容，不要凭记忆假设。

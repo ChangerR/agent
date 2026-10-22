@@ -37,7 +37,7 @@ export function demoProviderPlugin() {
               name: 'write_file',
               input: {
                 path: 'demo-note.txt',
-                content: 'AgentLab Desktop 离线演示。此文件由真实 ToolExecutor 在批准后创建。\n',
+                content: 'agentlab 离线演示。此文件由真实 ToolExecutor 在批准后创建。\n',
               },
             },
           ],

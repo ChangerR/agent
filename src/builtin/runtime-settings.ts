@@ -2,6 +2,8 @@
 import { definePlugin, type SettingsScope, type Plugin } from '../sdk/index.js';
 import { configurationSections } from './configuration-settings.js';
 import { mcpSettingsSection } from './mcp-settings.js';
+import { modelSettingsSection } from './model-settings.js';
+import { environmentSettingsSection } from './environment-settings.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import type { PresetContext } from '../runtime/preset.js';
 import { resolveAgentPaths } from '../core/paths.js';
@@ -17,14 +19,24 @@ function sourceMetadata(source: ConfigValueSource): ConfigValueSource {
 }
 export function runtimeSettingsPlugin(
   input: Pick<PresetContext, 'cwd' | 'capabilityChoices'> &
-    Partial<Pick<PresetContext, 'paths' | 'configSources' | 'logPath' | 'config'>>,
+    Partial<
+      Pick<PresetContext, 'paths' | 'configSources' | 'logPath' | 'config' | 'pluginDefinitions'>
+    >,
   plugins: readonly Plugin[] = [],
 ) {
   return definePlugin({
     manifest: { id: 'agentlab.runtime-settings', version: '1.0.0', apiVersion: 1 },
     setup(ctx) {
-      for (const { id, section } of configurationSections(input.cwd, plugins))
+      for (const { id, section } of configurationSections(
+        input.cwd,
+        input.pluginDefinitions?.() ?? plugins,
+      ))
         ctx.provide.settings(id, section);
+      ctx.provide.settings('configuration-model-catalog', modelSettingsSection(input.cwd));
+      ctx.provide.settings(
+        'configuration-project-environment',
+        environmentSettingsSection(input.cwd),
+      );
       ctx.provide.settings(
         'configuration-mcp-servers',
         mcpSettingsSection(input.cwd, input.config?.mcpConfig),
@@ -46,6 +58,24 @@ export function runtimeSettingsPlugin(
         },
         applyMode: 'newSession',
         schema: { type: 'object', additionalProperties: { type: ['string', 'boolean'] } },
+        getSchema() {
+          return {
+            type: 'object',
+            properties: Object.fromEntries(
+              Object.entries(input.capabilityChoices()).map(([kind, choice]) => [
+                kind,
+                {
+                  anyOf: [
+                    { type: 'string', enum: choice.available },
+                    ...(['reviewer', 'cacheStrategy'].includes(kind)
+                      ? [{ type: 'boolean', const: false }]
+                      : []),
+                  ],
+                },
+              ]),
+            ),
+          };
+        },
         scopeTargets: stores.scopeTargets,
         read(signal, scope = 'project') {
           signal.throwIfAborted();

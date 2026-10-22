@@ -21,7 +21,7 @@ await writeFile(
 );
 await writeFile(
   join(project, 'README.md'),
-  '# AgentLab Desktop\n\n这是隔离的真实离线工作台，不连接模型。\n',
+  '# agentlab\n\n这是隔离的真实离线工作台，不连接模型。\n',
 );
 const env = {
   ...process.env,
@@ -155,6 +155,10 @@ const server = createServer(async (req, res) => {
       const data = JSON.parse(body || '{}');
       if (url.pathname === '/api/snapshot') {
         res.end(JSON.stringify(state));
+        return;
+      }
+      if (url.pathname === '/api/pick-directory') {
+        res.end(JSON.stringify({ path: project }));
         return;
       }
       if (url.pathname === '/api/demo') await start();

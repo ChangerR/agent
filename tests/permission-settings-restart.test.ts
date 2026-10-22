@@ -28,9 +28,9 @@ beforeEach(() => {
   fixture = mkdtempSync(join(tmpdir(), 'agent-permission-restart-'));
   home = join(fixture, 'home');
   project = join(fixture, 'project');
-  mkdirSync(join(home, '.agent'), { recursive: true });
+  mkdirSync(join(home, '.agentlab'), { recursive: true });
   mkdirSync(join(project, '.git'), { recursive: true });
-  globalPath = join(home, '.agent', 'config.json');
+  globalPath = join(home, '.agentlab', 'config.json');
   projectPath = join(project, 'agent.config.json');
   json(globalPath, { provider: 'fake' });
   json(projectPath, {});

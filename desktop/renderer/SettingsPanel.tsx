@@ -1,232 +1,22 @@
 import { useEffect, useState } from 'react';
 import type { RuntimeSnapshot, SettingsDescriptor } from '../shared/protocol.js';
 
-type JsonSchema = {
-  type?: string;
-  enum?: unknown[];
-  const?: unknown;
-  properties?: Record<string, JsonSchema>;
-  minimum?: number;
-  maximum?: number;
-  writeOnly?: boolean;
-};
-const names: Record<string, string> = {
-  replayToolArguments: '原始工具参数回放（默认关闭）',
-  staticTtl: '静态前缀 TTL（省略时继承会话 TTL）',
-  ttlStrategy: '缓存 TTL 策略',
-  strategy: '摘要策略（prefix 需显式开启）',
-  maxAgeDays: 'MCP 结果保留天数（0 关闭）',
-  maxStoredBytes: 'MCP 结果存储软上限（字节；0 关闭）',
-  deduplicate: 'MCP 结果去重（默认关闭）',
-  maxSearchChars: 'MCP 单次检索字符上限',
-  models: '模型 API 能力映射（JSON）',
-  provider: 'Provider',
-  model: '模型 ID',
-  baseURL: 'Endpoint URL',
-  apiKeyEnv: 'API key 环境变量名',
-  thinking: '思考等级',
-  judgeModel: '审批模型（空值跟随主模型）',
-  maxTurns: '最大轮数',
-  compactThreshold: '上下文压缩阈值（tokens）',
-  cache: '缓存',
-  enabled: '启用',
-  ttl: 'TTL',
-  escalateAfterMs: '升级到 1h 的工具耗时阈值（毫秒；0 关闭）',
-  permissionMode: '权限模式',
-  permissions: '权限规则',
-  allow: 'Allow 规则',
-  ask: 'Ask 规则',
-  deny: 'Deny 规则',
-  modelsFile: '模型规格文件',
-  mcpConfig: 'MCP 配置文件',
-  pluginEntries: '插件入口',
-  disabledPlugins: '禁用的插件',
-  timeoutMs: '超时（毫秒）',
-  maxRequestBytes: '请求字节上限',
-  maxResponseBytes: '响应字节上限',
-  maxOutputTokens: '输出 token 上限',
-  prefixCache: '审批请求前缀缓存',
-  maxInlineChars: 'MCP 结果内联字符上限',
-  maxRunning: '并行子任务上限',
-  maxDepth: '子任务深度',
-  maxInbox: '收件箱上限',
-  maxOutputChars: '子任务输出字符上限',
-  previewChars: '预览字符上限',
-  maxAgents: '子任务数量上限',
-  maxRuns: '子任务运行次数上限',
-  mode: '规划方式',
-  disabled: '禁用的工具',
-  dialect: '兼容协议',
-  includeBodies: '记录消息正文（可能包含敏感内容）',
-  writeRoots: '明确授权的写入目录',
-};
-function JsonInput({
-  value,
-  onChange,
-  label,
-}: {
-  value: unknown;
-  onChange: (value: unknown) => void;
-  label: string;
-}) {
-  const [text, setText] = useState(() => JSON.stringify(value, null, 2));
-  const [invalid, setInvalid] = useState(false);
-  useEffect(() => {
-    setText(JSON.stringify(value, null, 2));
-    setInvalid(false);
-  }, [JSON.stringify(value)]);
-  return (
-    <>
-      <textarea
-        aria-label={label}
-        aria-invalid={invalid}
-        spellCheck={false}
-        rows={5}
-        value={text}
-        onChange={(event) => {
-          const text = event.target.value;
-          setText(text);
-          try {
-            const parsed = JSON.parse(text);
-            event.currentTarget.setCustomValidity('');
-            onChange(parsed);
-            setInvalid(false);
-          } catch {
-            event.currentTarget.setCustomValidity('请输入合法 JSON');
-            setInvalid(true);
-            onChange(value);
-          }
-        }}
-      />
-      {invalid && <span role="alert">请输入合法 JSON；此字段尚未提交。</span>}
-    </>
-  );
-}
-function Field({
-  name,
-  schema,
-  value,
-  onChange,
-}: {
-  name: string;
-  schema: JsonSchema;
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  const label = names[name] ?? name;
-  if (schema.type === 'object' && schema.properties)
-    return (
-      <fieldset>
-        <legend>{label}</legend>
-        <Fields schema={schema} value={value as Record<string, unknown>} onChange={onChange} />
-      </fieldset>
-    );
-  if (schema.enum)
-    return (
-      <select
-        aria-label={label}
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {schema.enum.map((item) => (
-          <option key={String(item)}>{String(item)}</option>
-        ))}
-      </select>
-    );
-  if (schema.type === 'boolean')
-    return (
-      <select
-        aria-label={label}
-        value={String(value)}
-        onChange={(e) => onChange(e.target.value === 'true')}
-      >
-        <option value="true">启用</option>
-        <option value="false">关闭</option>
-      </select>
-    );
-  if (schema.type === 'number' || schema.type === 'integer')
-    return (
-      <input
-        aria-label={label}
-        type="number"
-        min={schema.minimum}
-        max={schema.maximum}
-        step={schema.type === 'integer' ? 1 : 'any'}
-        value={typeof value === 'number' && Number.isFinite(value) ? value : ''}
-        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-      />
-    );
-  if (schema.type === 'string')
-    return (
-      <input
-        aria-label={label}
-        type={schema.writeOnly ? 'password' : 'text'}
-        autoComplete="off"
-        spellCheck={false}
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    );
-  return <JsonInput label={label} value={value} onChange={onChange} />;
-}
-function initial(schema: JsonSchema): unknown {
-  if (schema.const !== undefined) return schema.const;
-  if (schema.enum) return schema.enum[0];
-  if (schema.type === 'boolean') return false;
-  if (schema.type === 'object') return {};
-  if (schema.type === 'array') return [];
-  if (schema.type === 'integer' || schema.type === 'number') return schema.minimum ?? 1;
-  return '';
-}
-function Fields({
-  schema,
-  value,
-  onChange,
-}: {
-  schema: JsonSchema;
-  value: Record<string, unknown>;
-  onChange: (value: unknown) => void;
-}) {
-  return (
-    <>
-      {Object.entries(schema.properties ?? {}).map(([name, child]) => {
-        const present = Object.hasOwn(value ?? {}, name),
-          label = names[name] ?? name;
-        return (
-          <div className="configuration-field" key={name}>
-            <label className="override-label">
-              <input
-                type="checkbox"
-                aria-label={'覆盖 ' + label}
-                checked={present}
-                onChange={(e) => {
-                  const next = { ...value };
-                  if (e.target.checked) next[name] = initial(child);
-                  else delete next[name];
-                  onChange(next);
-                }}
-              />
-              <span>
-                {label}
-                <small>
-                  {name} · {present ? '本层已设置' : '本层未设置 · 按 CLI 规则继承 / 默认'}
-                </small>
-              </span>
-            </label>
-            {present && (
-              <Field
-                name={name}
-                schema={child}
-                value={value[name]}
-                onChange={(item) => onChange({ ...value, [name]: item })}
-              />
-            )}
-          </div>
-        );
-      })}
-    </>
-  );
-}
+import { Field, Fields, ValueView, type FormSchema } from './SchemaForm.js';
+import { getBridge } from './bridge.js';
+
+const category = (id: string) =>
+  /connection|catalog|provider-openai|provider-anthropic|environment/.test(id)
+    ? '连接与模型'
+    : /budgets|additional|planning|summary|subagents/.test(id)
+      ? '运行与上下文'
+      : /mcp|local-tools/.test(id)
+        ? '工具与 MCP'
+        : /permissions|policy|capability/.test(id)
+          ? '权限与安全'
+          : /configuration/.test(id)
+            ? '插件与装配'
+            : '运行状态';
+
 export function SettingsPanel({
   runtime,
   request,
@@ -241,7 +31,10 @@ export function SettingsPanel({
   changeTheme: (theme: string) => void;
 }) {
   const sections = runtime?.settings ?? [];
-  const [selected, setSelected] = useState(sections[0]?.id ?? '');
+  const [selected, setSelected] = useState(
+    sections.find((s) => s.id === 'configuration-connection')?.id ?? sections[0]?.id ?? '',
+  );
+  const [search, setSearch] = useState('');
   const [scope, setScope] = useState<'project' | 'global'>('project');
   const [draft, setDraft] = useState<unknown>({});
   const [resetEpoch, setResetEpoch] = useState(0);
@@ -266,10 +59,11 @@ export function SettingsPanel({
     }
   }, [editor?.id, editor?.error, editor?.feedbackRevision]);
   useEffect(() => {
-    if (!selected && sections.length) setSelected(sections[0].id);
+    if (!selected && sections.length)
+      setSelected(sections.find((s) => s.id === 'configuration-connection')?.id ?? sections[0].id);
   }, [sections.length]);
   useEffect(() => {
-    if (!selected || !runtime) return;
+    if (!selected || !runtime || runtime.busy) return;
     let active = true;
     setError('');
     void request({ type: 'settings-read', sectionId: selected, scope }).catch((e) => {
@@ -278,7 +72,7 @@ export function SettingsPanel({
     return () => {
       active = false;
     };
-  }, [selected, scope, runtime?.generation, runtime?.sessionId]);
+  }, [selected, scope, runtime?.generation, runtime?.sessionId, runtime?.busy]);
   const abandon = () => !dirty || window.confirm('此节有未保存更改，放弃后继续？');
   const select = (item: SettingsDescriptor) => {
     if (item.id === selected) return;
@@ -321,117 +115,246 @@ export function SettingsPanel({
   };
   const timing =
     descriptor?.applyMode === 'newSession'
-      ? '重启 App / CLI 后生效；当前会话和已有审批保持。'
+      ? 'App 重新装配并新建会话或退出重启后采用；CLI 需重启。保存不改变当前会话或已有审批。'
       : descriptor?.applyMode === 'nextRequest'
         ? '下一次请求生效。'
         : '按此设置的声明应用。';
   return (
     <section className="configuration-page" aria-label="应用设置">
       <aside className="configuration-nav">
-        <h2>设置</h2>
-        <p className="small">用户默认 &lt; 项目覆盖 &lt; 会话覆盖</p>
-        {sections.map((item) => (
-          <button
-            key={item.id}
-            className={item.id === selected ? 'active' : ''}
-            onClick={() => select(item)}
-          >
-            {item.title}
-          </button>
-        ))}
-        <label>
-          界面外观
-          <select
-            aria-label="设置界面主题"
-            value={theme}
-            onChange={(e) => changeTheme(e.target.value)}
-          >
-            <option value="system">跟随系统</option>
-            <option value="light">黑白灰</option>
-            <option value="dark">深色石墨</option>
-            <option value="blue">冷灰蓝</option>
-          </select>
-        </label>
-        {runtime && (
-          <fieldset disabled={pending || runtime.busy} className="live-settings">
-            <legend>当前会话 · 选择即保存项目</legend>
-            <label>
-              模型
-              <select
-                aria-label="设置当前模型"
-                value={runtime.model}
-                onChange={(e) => void liveSetting('model', e.target.value)}
-              >
-                {runtime.models.map((model) => (
-                  <option key={model}>{model}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              权限模式
-              <select
-                aria-label="设置当前权限模式"
-                value={runtime.mode}
-                onChange={(e) => void liveSetting('mode', e.target.value)}
-              >
-                {['ask', 'auto', 'yolo'].map((mode) => (
-                  <option key={mode}>{mode}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              思考
-              <select
-                aria-label="设置当前思考等级"
-                value={runtime.thinking}
-                onChange={(e) => void liveSetting('think', e.target.value)}
-              >
-                {['off', 'low', 'medium', 'high'].map((thinking) => (
-                  <option key={thinking}>{thinking}</option>
-                ))}
-              </select>
-            </label>
-            <p className="small">
-              模型 /
-              思考于下一次请求采用；模式用于后续权限检查，已有审批仍须处理。连接与规则等结构化默认值使用右侧提交。
-            </p>
-          </fieldset>
-        )}
+        <div className="settings-nav-heading">
+          <span className="settings-eyebrow">agentlab</span>
+          <h2>设置</h2>
+          <p className="small">按项目工作，保留你的默认值。</p>
+        </div>
+        <input
+          aria-label="查找设置页面"
+          placeholder="查找设置页面"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <nav className="settings-categories" aria-label="设置分类">
+          {['连接与模型', '运行与上下文', '工具与 MCP', '权限与安全', '插件与装配', '运行状态'].map(
+            (group) => {
+              const items = sections.filter(
+                (item) =>
+                  category(item.id) === group &&
+                  (item.title + ' ' + Object.keys(item.schema.properties ?? {}).join(' '))
+                    .toLowerCase()
+                    .includes(search.toLowerCase()),
+              );
+              return items.length ? (
+                <div key={group} className="settings-category">
+                  <h3>{group}</h3>
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      className={item.id === selected ? 'active' : ''}
+                      aria-current={item.id === selected ? 'page' : undefined}
+                      onClick={() => select(item)}
+                    >
+                      {item.title}
+                    </button>
+                  ))}
+                </div>
+              ) : null;
+            },
+          )}
+          {search &&
+            !sections.some((item) =>
+              (item.title + ' ' + Object.keys(item.schema.properties ?? {}).join(' '))
+                .toLowerCase()
+                .includes(search.toLowerCase()),
+            ) && <p className="empty-settings">没有找到设置，试试模型、MCP 或 cache。</p>}
+        </nav>
+        <details className="settings-quick">
+          <summary>外观与当前会话</summary>
+          <label>
+            界面外观
+            <select
+              aria-label="设置界面主题"
+              value={theme}
+              onChange={(e) => changeTheme(e.target.value)}
+            >
+              <option value="system">跟随系统</option>
+              <option value="light">黑白灰</option>
+              <option value="dark">深色石墨</option>
+              <option value="blue">冷灰蓝</option>
+            </select>
+          </label>
+          {runtime && (
+            <fieldset disabled={pending || runtime.busy} className="live-settings">
+              <legend>当前会话 · 选择即保存项目</legend>
+              <label>
+                模型
+                <select
+                  aria-label="设置当前模型"
+                  value={runtime.model}
+                  onChange={(e) => void liveSetting('model', e.target.value)}
+                >
+                  {runtime.models.map((model) => (
+                    <option key={model} value={model}>
+                      {runtime.modelDetails?.find((m) => m.id === model)?.displayName ?? model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                权限模式
+                <select
+                  aria-label="设置当前权限模式"
+                  value={runtime.mode}
+                  onChange={(e) => void liveSetting('mode', e.target.value)}
+                >
+                  {['ask', 'auto', 'yolo'].map((mode) => (
+                    <option key={mode}>{mode}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                思考
+                <select
+                  aria-label="设置当前思考等级"
+                  value={runtime.thinking}
+                  onChange={(e) => void liveSetting('think', e.target.value)}
+                >
+                  {['off', 'low', 'medium', 'high'].map((thinking) => (
+                    <option key={thinking}>{thinking}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="small">
+                模型 /
+                思考于下一次请求采用；模式用于后续权限检查，已有审批仍须处理。连接与规则等结构化默认值使用右侧提交。
+              </p>
+            </fieldset>
+          )}
+        </details>
         {!runtime && <p>打开项目后可配置 Agent；外观立即生效。</p>}
+        {runtime && (
+          <details className="settings-quick">
+            <summary>项目与会话管理</summary>
+            <fieldset disabled={pending || runtime.busy} className="live-settings">
+              <legend>项目与会话</legend>
+              <p className="small">
+                当前项目：{runtime.projectName}。项目路径与会话 ID
+                由后端管理，不作为可任意写入的配置字段。
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (abandon()) {
+                    markDirty(false);
+                    void getBridge()
+                      .newSession()
+                      .catch((e) => setError(e.message));
+                  }
+                }}
+              >
+                重新装配并新建会话
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!abandon()) return;
+                  markDirty(false);
+                  setPending(true);
+                  void request({ type: 'session-save' })
+                    .then(() => request({ type: 'settings-read', sectionId: selected, scope }))
+                    .catch((e) => setError(e.message))
+                    .finally(() => setPending(false));
+                }}
+              >
+                保存当前会话
+              </button>
+              <p className="small">
+                已保存 {runtime.sessions.length}{' '}
+                个会话；恢复时由后端保护权限边界。当前会话的内存内容不会因删除保存记录自动清空。
+              </p>
+              {runtime.sessions.map((session) => (
+                <div key={session.id} data-session-id={session.id} className="session-setting-row">
+                  <span>{session.title}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (abandon()) {
+                        markDirty(false);
+                        void request({ type: 'resume', id: session.id }).catch((e) =>
+                          setError(e.message),
+                        );
+                      }
+                    }}
+                  >
+                    恢复
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        !abandon() ||
+                        !window.confirm(
+                          '删除这个已保存会话记录？当前内存会话可能在之后保存时重建记录。',
+                        )
+                      )
+                        return;
+                      markDirty(false);
+                      setPending(true);
+                      void request({ type: 'session-delete', id: session.id })
+                        .then(() => request({ type: 'settings-read', sectionId: selected, scope }))
+                        .catch((e) => setError(e.message))
+                        .finally(() => setPending(false));
+                    }}
+                  >
+                    删除记录
+                  </button>
+                </div>
+              ))}
+            </fieldset>
+          </details>
+        )}
       </aside>
       <div className="configuration-editor">
         {descriptor && (
           <>
-            <h2>{descriptor.title}</h2>
-            <div className="configuration-scope">
-              <label>
-                编辑作用域{' '}
-                <select
-                  aria-label="配置作用域"
-                  value={scope}
-                  disabled={pending || !descriptor.scopes.length}
-                  onChange={(e) => {
-                    if (!abandon()) return;
-                    markDirty(false);
-                    setScope(e.target.value as typeof scope);
-                  }}
-                >
-                  {(descriptor.scopes.length ? descriptor.scopes : [{ scope: 'project' }]).map(
-                    (item) => (
-                      <option key={item.scope} value={item.scope}>
-                        {item.scope === 'global' ? '用户级 · 所有项目默认' : '项目级 · 当前项目'}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
-              <span className="tag" role="status">
-                {dirty ? '未保存' : editor?.saved ? '已保存' : '原始层值'}
-              </span>
-            </div>
-            <p className="configuration-path">
-              {descriptor.scopes.find((item) => item.scope === scope)?.path ?? '只读运行状态'}
-            </p>
+            <header className="settings-page-heading">
+              <div>
+                <span className="settings-eyebrow">{category(selected)}</span>
+                <h2>{descriptor.title}</h2>
+              </div>
+              <div className="configuration-scope">
+                <label>
+                  编辑作用域{' '}
+                  <select
+                    aria-label="配置作用域"
+                    value={scope}
+                    disabled={pending || !descriptor.scopes.length}
+                    onChange={(e) => {
+                      if (!abandon()) return;
+                      markDirty(false);
+                      setScope(e.target.value as typeof scope);
+                    }}
+                  >
+                    {(descriptor.scopes.length ? descriptor.scopes : [{ scope: 'project' }]).map(
+                      (item) => (
+                        <option key={item.scope} value={item.scope}>
+                          {item.scope === 'global' ? '用户级 · 所有项目默认' : '项目级 · 当前项目'}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+                <span className="tag" role="status">
+                  {dirty ? '未保存' : editor?.saved ? '已保存' : '原始层值'}
+                </span>
+              </div>
+            </header>
+            <details className="settings-location">
+              <summary>保存位置与生效方式</summary>
+              <p className="configuration-path">
+                {descriptor.scopes.find((item) => item.scope === scope)?.path ?? '只读运行状态'}
+              </p>
+              <p className="small">{descriptor.description}</p>
+            </details>
             <p className="info">{timing}</p>
             {runtime && (
               <p className="small">
@@ -453,17 +376,63 @@ export function SettingsPanel({
             >
               重新读取
             </button>
-            <p className="small">{descriptor.description}</p>
+            {selected === 'configuration-connection' && runtime && (
+              <section className="provider-manager" aria-label="Provider 管理">
+                <h3>已注册 Provider</h3>
+                <p className="small save-help">
+                  选择 Provider 与模型，一次提交启动默认值。内置 openai / anthropic 使用下方
+                  Endpoint 和密钥变量名；命名连接的 Endpoint、密钥引用和模型 API 能力在“Provider
+                  连接”管理。 保存后重新装配采用。
+                </p>
+                <div className="provider-cards">
+                  {(runtime.providerOptions ?? runtime.providers).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={pending || runtime.busy}
+                      aria-pressed={(draft as { provider?: string })?.provider === id}
+                      onClick={() => update({ ...(draft as object), provider: id })}
+                    >
+                      <strong>{runtime.providerLabels?.[id] ?? id}</strong>
+                      <small>
+                        {id} ·{' '}
+                        {runtime.provider === id
+                          ? '当前会话使用'
+                          : runtime.providers.includes(id)
+                            ? '已加载'
+                            : '保存后待装配'}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = sections.find(
+                      (s) => s.id === 'configuration-agentlab.provider-connections',
+                    );
+                    if (target) select(target);
+                  }}
+                >
+                  添加或管理 Provider 连接
+                </button>
+              </section>
+            )}
+            {editor?.effectiveError && (
+              <p role="status" className="info">
+                其他层的有效值暂时无法合成：{editor.effectiveError}。本层值仍可审阅。
+              </p>
+            )}
             {error && (
               <div className="error-banner" role="alert">
                 {error}
               </div>
             )}
             {loading ? (
-              <p>正在读取设置…</p>
+              <p role="status">{runtime?.busy ? '任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。' : '正在读取设置…'}</p>
             ) : descriptor.editable ? (
               <form
-                key={editor.id + ':' + resetEpoch}
+                key={selected + ':' + scope + ':' + runtime?.generation + ':' + resetEpoch}
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submit();
@@ -481,12 +450,20 @@ export function SettingsPanel({
                   {descriptor.schema.properties &&
                   Object.keys(descriptor.schema.properties as object).length ? (
                     <Fields
-                      schema={descriptor.schema as JsonSchema}
+                      schema={descriptor.schema as FormSchema}
                       value={draft as Record<string, unknown>}
                       onChange={update}
+                      runtime={runtime}
+                      effective={editor.effectiveValue}
                     />
                   ) : (
-                    <JsonInput label="配置 JSON" value={draft} onChange={update} />
+                    <Field
+                      name={descriptor.title}
+                      schema={descriptor.schema as FormSchema}
+                      value={draft}
+                      onChange={update}
+                      runtime={runtime}
+                    />
                   )}
                 </fieldset>
                 <div className="configuration-actions">
@@ -522,7 +499,7 @@ export function SettingsPanel({
                 </p>
               </form>
             ) : (
-              <pre>{JSON.stringify(editor.value, null, 2)}</pre>
+              <ValueView value={editor.value} />
             )}
           </>
         )}

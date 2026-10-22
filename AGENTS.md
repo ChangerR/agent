@@ -1,4 +1,4 @@
-# AgentLab
+# agentlab
 
 仿 Claude Code 的**插件式 coding agent 教学实现**，TypeScript + Node.js（ESM）。
 目标是把"一个 agent 内部怎么运转"讲清楚：事件驱动的 loop、规范化的模型协议层、
@@ -35,10 +35,10 @@ pnpm build      # tsup → dist/
   适配器读 `OPENAI_API_KEY`。DeepSeek 可使用 `provider: "openai"`、
   `baseURL: "https://api.deepseek.com"`、`apiKeyEnv: "DEEPSEEK_API_KEY"`，
   搭配 `.env` 的 `DEEPSEEK_API_KEY`。模型 ID 按对应官方文档/账户确认，不从“Flash”等简称猜测。
-- JSON 字段优先级：内置默认 < `~/.agent/config.json` < 项目 `agent.config.json` < SDK 会话覆盖。
+- JSON 字段优先级：内置默认 < `~/.agentlab/config.json` < 项目 `agent.config.json` < SDK 会话覆盖。
   字段逐项继承；切换 provider 要同时核对 model、baseURL、apiKeyEnv，避免继承另一厂商的设置。
 - runtime 装配 provider 前，只加载规范化项目根 `.env`；不加载子目录 `.env`、`.env.local` 或
-  `~/.agent/.env`。已有进程变量优先，空字符串也会覆盖文件值。显式 JSON baseURL 优先于
+  `~/.agentlab/.env`。已有进程变量优先，空字符串也会覆盖文件值。显式 JSON baseURL 优先于
   对应 provider 的 `*_BASE_URL` 环境变量。纯 `loadConfigWithSources()` 不加载 `.env`。
 - `.env` 缺省正常；其他读取错误应明确报告路径/安全错误码，不吞掉，也不输出原始内容或 key。
   修改环境变量或 provider/key/端点配置后必须退出进程重新启动；`/model` 只切换当前 provider 的模型 ID，并自动保存项目模型默认值。

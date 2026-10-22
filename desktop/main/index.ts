@@ -176,7 +176,7 @@ async function demo() {
   try {
     await writeFile(
       join(path, 'README.md'),
-      '# AgentLab Desktop 离线演示\n\n此目录专用于 FakeProvider 演示。批准后会创建 demo-note.txt，不使用真实模型。\n',
+      '# agentlab 离线演示\n\n此目录专用于 FakeProvider 演示。批准后会创建 demo-note.txt，不使用真实模型。\n',
       { flag: 'wx' },
     );
   } catch (error) {
@@ -188,7 +188,7 @@ async function createWindow() {
   exiting = false;
   closing = false;
   window = new BrowserWindow({
-    title: 'AgentLab Desktop',
+    title: 'agentlab',
     ...platformWindowOptions(process.platform),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#212121' : '#ffffff',
     webPreferences: {
@@ -274,10 +274,20 @@ app
     register('agentlab:snapshot', async () => state);
     register('agentlab:pick-project', async () => {
       const selection = await dialog.showOpenDialog(window, {
-        title: '打开 AgentLab 项目',
+        title: '打开 agentlab 项目',
         properties: ['openDirectory'],
       });
       if (!selection.canceled && selection.filePaths[0]) await start(selection.filePaths[0]);
+    });
+    register('agentlab:pick-directory', async () => {
+      const selection = await dialog.showOpenDialog(window, {
+        title: '选择配置中的目录（保存后仍由后端验证）',
+        properties: ['openDirectory'],
+      });
+      if (selection.canceled || !selection.filePaths[0]) return undefined;
+      const path = await realpath(selection.filePaths[0]);
+      if (!(await stat(path)).isDirectory()) throw new Error('请选择目录。');
+      return path;
     });
     register('agentlab:open-project', async (payload) => {
       const project = typeof payload === 'string' ? catalog.get(payload) : undefined;
@@ -318,7 +328,7 @@ app
     });
   })
   .catch(() => {
-    dialog.showErrorBox('AgentLab Desktop', '桌面启动失败，请检查运行时文件是否完整。');
+    dialog.showErrorBox('agentlab', '桌面启动失败，请检查运行时文件是否完整。');
     app.exit(1);
   });
 app.on('window-all-closed', () => {

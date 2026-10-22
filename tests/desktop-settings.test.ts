@@ -24,7 +24,7 @@ beforeEach(async () => {
   await mkdir(cwd);
   await writeFile(join(cwd, 'README.md'), '# Settings demo');
   await mkdir(home);
-  await mkdir(join(home, '.agent'));
+  await mkdir(join(home, '.agentlab'));
   vi.stubEnv('HOME', home);
   vi.stubEnv('USERPROFILE', home);
   controller = new DesktopController(
@@ -66,7 +66,7 @@ describe('App 设置协议 / worker 与真实 runtime', () => {
     expect(latest().settingsEditor!.value).toEqual({});
     await commit({ provider: 'fake', model: 'global-model' });
     expect(latest().settingsEditor!.saved).toBe(true);
-    expect(JSON.parse(await readFile(join(home, '.agent/config.json'), 'utf8'))).toEqual({
+    expect(JSON.parse(await readFile(join(home, '.agentlab/config.json'), 'utf8'))).toEqual({
       provider: 'fake',
       model: 'global-model',
     });

@@ -18,6 +18,7 @@ const bridge: DesktopBridge = {
   },
   settingsDirty: (dirty) => ipcRenderer.invoke('agentlab:settings-dirty', dirty),
   pickProject: () => ipcRenderer.invoke('agentlab:pick-project'),
+  pickDirectory: () => ipcRenderer.invoke('agentlab:pick-directory'),
   openProject: (id) => ipcRenderer.invoke('agentlab:open-project', id),
   startDemo: () => ipcRenderer.invoke('agentlab:demo'),
   newSession: () => ipcRenderer.invoke('agentlab:new-session'),

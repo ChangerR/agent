@@ -11,6 +11,14 @@ export const actionSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('stop'), ...binding }).strict(),
+  z.object({ type: z.literal('session-save'), ...binding }).strict(),
+  z
+    .object({
+      type: z.literal('session-delete'),
+      ...binding,
+      id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('settings-read'),
@@ -118,6 +126,15 @@ export interface RuntimeSnapshot {
   provider: string;
   sources: { model: string; mode: string; thinking: string };
   models: string[];
+  providers: string[];
+  providerOptions?: string[];
+  providerLabels?: Record<string, string>;
+  modelDetails: Array<{
+    id: string;
+    displayName?: string;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+  }>;
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -147,6 +164,8 @@ export interface SettingsEditor {
   sectionId: string;
   scope: 'project' | 'global';
   value: unknown;
+  effectiveValue?: unknown;
+  effectiveError?: string;
   error?: string;
   saved?: boolean;
   feedbackRevision?: number;
@@ -174,6 +193,7 @@ export interface DesktopBridge {
   onNavigate(listener: (action: DesktopNavigation) => void): () => void;
   settingsDirty(dirty: boolean): Promise<void>;
   pickProject(): Promise<void>;
+  pickDirectory(): Promise<string | undefined>;
   openProject(id: string): Promise<void>;
   startDemo(): Promise<void>;
   newSession(): Promise<void>;
