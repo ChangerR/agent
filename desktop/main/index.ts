@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
+import { desktopMenu, platformWindowOptions } from './platform.js';
 import { delimiter, join, resolve } from 'node:path';
 import { realpath, stat, readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -19,11 +20,14 @@ let generation: string | undefined;
 let transition = false;
 let exiting = false;
 let closing = false;
+let quitting = false;
+let settingsDirty = false;
 let state: DesktopState = {
   version: PROTOCOL_VERSION,
   revision: 0,
   connecting: false,
   projects: [],
+  platform: process.platform,
 };
 const catalog = new ProjectCatalog();
 const root = app.getAppPath();
@@ -31,7 +35,10 @@ if (!app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', () => {
   if (window && !window.isDestroyed()) {
     if (window.isMinimized()) window.restore();
+    window.show();
     window.focus();
+  } else {
+    void app.whenReady().then(createWindow);
   }
 });
 const renderer = join(root, 'renderer', 'index.html');
@@ -177,34 +184,93 @@ async function demo() {
   }
   await start(path, true);
 }
+async function createWindow() {
+  exiting = false;
+  closing = false;
+  window = new BrowserWindow({
+    title: 'AgentLab Desktop',
+    ...platformWindowOptions(process.platform),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#212121' : '#ffffff',
+    webPreferences: {
+      preload: join(root, 'preload', 'index.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  window.webContents.on('will-prevent-unload', (event) => {
+    if (exiting) event.preventDefault();
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url !== pathToFileURL(renderer).href) event.preventDefault();
+  });
+  window.webContents.on('render-process-gone', () => {
+    void host?.dispose().catch(() => {
+      state.error = '界面中断后，Agent 关闭尚未确认。';
+    });
+  });
+  window.on('close', (event) => {
+    if (exiting) return;
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    void (async () => {
+      if (settingsDirty) {
+        const result = await dialog.showMessageBox(window, {
+          type: 'question',
+          buttons: ['放弃更改并关闭', '取消'],
+          defaultId: 1,
+          cancelId: 1,
+          message: '设置有未保存更改。关闭窗口会放弃草稿。',
+        });
+        if (result.response !== 0) {
+          quitting = false;
+          return;
+        }
+      }
+      if (state.runtime?.busy) {
+        const result = await dialog.showMessageBox(window, {
+          type: 'question',
+          buttons: ['停止任务并退出', '取消'],
+          defaultId: 1,
+          cancelId: 1,
+          message: '任务仍在运行。停止后等待会话保存，再退出？',
+        });
+        if (result.response !== 0) {
+          quitting = false;
+          return;
+        }
+      }
+      state.connecting = true;
+      publish();
+      try {
+        await host?.dispose();
+        await savePreferences();
+        host = undefined;
+        generation = undefined;
+        state.runtime = undefined;
+        state.connecting = false;
+        settingsDirty = false;
+        exiting = true;
+        window.close();
+      } catch {
+        quitting = false;
+        state.connecting = false;
+        state.error = '退出时保存或清理失败。窗口已保留，请检查文件权限和会话冲突后重试。';
+        publish();
+        await dialog.showMessageBox(window, { type: 'error', message: state.error });
+      }
+    })().finally(() => {
+      closing = false;
+    });
+  });
+  await window.loadFile(renderer);
+}
 app
   .whenReady()
   .then(async () => {
     await readPreferences();
-    window = new BrowserWindow({
-      title: 'AgentLab Desktop',
-      width: 1440,
-      height: 960,
-      minWidth: 1024,
-      minHeight: 700,
-      backgroundColor: '#ffffff',
-      autoHideMenuBar: true,
-      webPreferences: {
-        preload: join(root, 'preload', 'index.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    window.webContents.on('will-navigate', (event, url) => {
-      if (url !== pathToFileURL(renderer).href) event.preventDefault();
-    });
-    window.webContents.on('render-process-gone', () => {
-      void host?.dispose().catch(() => {
-        state.error = '界面中断后，Agent 关闭尚未确认。';
-      });
-    });
     register('agentlab:snapshot', async () => state);
     register('agentlab:pick-project', async () => {
       const selection = await dialog.showOpenDialog(window, {
@@ -227,49 +293,40 @@ app
       if (transition || !host) throw new Error('请先打开项目');
       await host.request(actionSchema.parse(payload));
     });
-    window.on('close', (event) => {
-      if (exiting) return;
-      event.preventDefault();
-      if (closing) return;
-      closing = true;
-      void (async () => {
-        if (state.runtime?.busy) {
-          const result = await dialog.showMessageBox(window, {
-            type: 'question',
-            buttons: ['停止任务并退出', '取消'],
-            defaultId: 1,
-            cancelId: 1,
-            message: '任务仍在运行。停止后等待会话保存，再退出？',
-          });
-          if (result.response !== 0) return;
-        }
-        state.connecting = true;
-        publish();
-        try {
-          await host?.dispose();
-          await savePreferences();
-          host = undefined;
-          exiting = true;
-          window.close();
-        } catch {
-          state.connecting = false;
-          state.error = '退出时保存或清理失败。窗口已保留，请检查文件权限和会话冲突后重试。';
-          publish();
-          await dialog.showMessageBox(window, { type: 'error', message: state.error });
-        }
-      })().finally(() => {
-        closing = false;
-      });
+    register('agentlab:settings-dirty', async (payload) => {
+      if (typeof payload !== 'boolean') throw new Error('无效状态');
+      settingsDirty = payload;
     });
-    await window.loadFile(renderer);
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(
+        desktopMenu(process.platform, (target) => {
+          if (window && !window.isDestroyed()) {
+            window.show();
+            window.webContents.send('agentlab:navigate', target);
+          }
+        }),
+      ),
+    );
+    await createWindow();
     if (process.argv.includes('--demo')) await demo();
+    app.on('activate', () => {
+      if (!window || window.isDestroyed()) void createWindow();
+      else {
+        window.show();
+        window.focus();
+      }
+    });
   })
   .catch(() => {
     dialog.showErrorBox('AgentLab Desktop', '桌面启动失败，请检查运行时文件是否完整。');
     app.exit(1);
   });
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin' || quitting) app.quit();
+  else exiting = false;
+});
 app.on('before-quit', (event) => {
+  quitting = true;
   if (!exiting && window && !window.isDestroyed()) {
     event.preventDefault();
     window.close();

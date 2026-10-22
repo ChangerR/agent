@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { AgentConfigSchema, loadConfig } from '../src/core/config.js';
 import { configurationSections, MASKED_SETTING } from '../src/builtin/configuration-settings.js';
 import { settingsErrorMessage } from '../src/runtime/config-store.js';
+import { mcpSettingsSection } from '../src/builtin/mcp-settings.js';
 
 const dirs: string[] = [];
 const directory = () => {
@@ -41,6 +42,50 @@ afterEach(() => {
 });
 
 describe('schema 驱动的分层配置入口', () => {
+  it('MCP 只写固定作用域文件，掩码保护 args/env/headers，保留未知字段与 CAS', async () => {
+    const path = join(cwd, 'mcp.json');
+    write(
+      {
+        future: true,
+        mcpServers: {
+          local: {
+            command: 'node',
+            args: ['private-arg'],
+            env: { KEY: 'private-env' },
+            unknown: 9,
+          },
+          remote: { url: 'https://example.test/mcp', headers: { Authorization: 'private-header' } },
+        },
+      },
+      path,
+    );
+    const editor = mcpSettingsSection(cwd, path);
+    const value = (await editor.read!(signal())) as {
+      mcpServers: Record<string, Record<string, unknown>>;
+    };
+    expect(JSON.stringify(value)).not.toContain('private-');
+    expect(value.mcpServers.local.args).toBe(MASKED_SETTING);
+    value.mcpServers.local.command = 'node-new';
+    await editor.commit!(await editor.draft!(value, signal()), signal());
+    expect(read(path).mcpServers.local).toEqual({
+      command: 'node-new',
+      args: ['private-arg'],
+      env: { KEY: 'private-env' },
+      unknown: 9,
+    });
+    expect(read(path).future).toBe(true);
+    await expect(async () =>
+      editor.draft!(
+        { mcpServers: { local: { command: 'node', env: { KEY: 'never-save' } } } },
+        signal(),
+      ),
+    ).rejects.toThrow();
+    await editor.read!(signal());
+    const stale = await editor.draft!({}, signal());
+    write({ external: true }, path);
+    expect(() => editor.commit!(stale, signal())).toThrow(/配置已变化/);
+    expect(read(path)).toEqual({ external: true });
+  });
   it('全部顶层字段有入口或专用编辑器，打开和取消不补默认值、不创建文件', async () => {
     const sections = configurationSections(cwd);
     const keys = sections.flatMap(({ section }) =>

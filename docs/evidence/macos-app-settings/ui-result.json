@@ -1,0 +1,15 @@
+{
+  "result": "passed",
+  "checks": [
+    "React 设置保存",
+    "未保存导航拦截",
+    "校验失败反馈",
+    "用户/项目隔离",
+    "安全重置草稿",
+    "系统暗色",
+    "900px 高DPI 布局"
+  ],
+  "native_macos": false,
+  "screenshots": ["settings-light.png", "mac-layout-simulation-dark.png"],
+  "environment": "独立 Linux 云端 Chromium，DPR 2；macOS 仅 CSS 标记模拟"
+}

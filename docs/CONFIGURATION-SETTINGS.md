@@ -8,14 +8,16 @@
 
 已有 Electron + React + 独立 Node worker 的桌面工作台在未合并的
 [PR #45](https://github.com/ChangerR/agent/pull/45)，提交 `d2536c7`。
-引入该依赖或等待其合并的选择尚待确认。因此，本次先交付可独立合入的配置入口，
-**尚未交付桌面 UI 与 macOS 适配，也没有 macOS 实机验证或截图**。
-没有新造 App、替换框架、连接用户电脑或调用真实模型。
+本 feature 已基于该 App 分支开发，并在本地纳入 master@cb64528；没有修改 #45
+或缓存任务原分支，也没有合并远端 PR。PR 以 #45 分支为 base，待其合并后调整到 master。
+本次交付 Electron/React 设置页面、受控 worker 接口和 macOS 代码适配。
+云端仅为 Linux，未执行 macOS 原生窗口 / 菜单 / Retina / 未签名包验收。
+没有替换框架、连接用户电脑或调用真实模型。
 
 ## 真实 schema 的覆盖
 
 新增入口都由 `AgentConfigSchema`、插件 `config.schema` 和 `ownedFields` 生成，
-通过原有 `/settings` 通用编辑器发现。表中“重启”指退出 App / CLI 进程后重新启动；
+同时接入 Electron 设置页和原有 `/settings` 通用编辑器。表中“重启”指退出 App / CLI 进程后重新启动；
 创建新会话不承诺重新装配 provider 或插件。
 
 | 入口                           | 已支持字段                                                                                                | 作用域 / 生效时间                                   |
@@ -37,8 +39,11 @@
 
 `models.json` 中各模型的 contextWindow / maxOutputTokens 仍通过文件维护；
 本入口可以修改 modelsFile 引用，不会把模型规格臆造为新的顶层字段。
-MCP 服务器的 command / args / env / url / headers 仍由原 MCP 文件维护，
-没有新增任意文件编辑 API。MCP 连接状态继续使用已有只读入口。
+MCP 编辑器仅接受固定目录中的 mcp.json，不接受 renderer 提供的文件路径。
+现有 args / env / headers 始终掩码，提交时在 worker 内恢复。新增 env / headers
+凭据需在 CLI 文件维护；不发明 env:NAME 的 MCP 运行时解析行为。
+编辑固定文件不会更改 mcpConfig；页面显示当前实际文件，使用自定义文件的项目
+需自行在“配置文件与插件装配”中选择对应引用。MCP 连接状态另有只读入口。
 当前 schema 没有独立 planner / summary 模型或 UI 外观配置，故不增加这些字段。
 会话覆盖仍可能优先于启动默认值，保存默认值不修改已保存会话。
 
@@ -70,18 +75,28 @@ MCP 服务器的 command / args / env / url / headers 仍由原 MCP 文件维护
 
 ## 已有 App 的 macOS 差距与后续验证
 
-PR #45 的 main 已使用白名单 IPC、contextIsolation、sandbox、导航拦截、原生目录
-选择和唯一工具执行器。它尚缺少以下适配；需先解决源代码依赖再实施：
+保留 PR #45 的白名单 IPC、contextIsolation、sandbox、导航拦截、原生目录选择和
+唯一工具执行器。本次新增：
 
-- macOS 交通灯安全区、标题栏拖拽与按钮 / 输入的可交互区域。
-- 应用菜单、Cmd+, 设置、Cmd+O 打开目录、Cmd+N 会话、编辑与缩放菜单。
-- macOS 关闭窗口 / Dock 激活 / Quit 的 worker 保存生命周期。
-- macOS 字体回退、系统暗色、窗口缩放、高 DPI、长路径与窄屏滚动。
-- 现有 packager 的 darwin bundle 声明；随包 Node 的版本、架构和许可校验。
-  不能在 Linux 构建时把 Linux Node 复制后冒充 macOS 包。
-- 完整设置页面及受控 IPC：由 worker 根据 section ID、作用域和当前会话处理
-  read / draft / commit，renderer 不提供文件路径、不直接调用磁盘。
-- 未保存提醒、安全重置、保存失败、重启提示及项目 / 会话切换期间的草稿失效。
+- hiddenInset 标题栏及交通灯定位；左上角安全区；标题栏可拖拽，按钮 / 输入 / 选择器不可拖拽。
+- 原生应用 / 文件 / 编辑 / 显示 / 窗口菜单；Cmd+, 设置、Cmd+O 原生目录选择、
+  Cmd+N 新会话、复制粘贴、撤销、全屏和缩放。
+- macOS 关闭窗口后等待 worker 保存 / 清理，保留应用；Dock 激活重新创建窗口。
+  Quit 走保存流程；有未保存设置或运行任务时保留取消选项，保存失败保留窗口。
+- macOS 字体回退、跟随系统暗色、800×600 最小原生窗口、窄屏自适应、独立滚动和焦点样式。
+- darwin bundle ID / 开发工具分类、暗色与 HighDPI 声明；只打包当前机器平台 / 架构，
+  校验随包 Node 元数据，拒绝把 Linux Node 伪装为 macOS 包。没有签名 / 公证配置。
+- React 分节表单、原始层覆盖开关、JSON 高级字段、失败反馈、未保存标记 / 导航与关闭提醒。
+  “清除此节的本层覆盖”只改变草稿，提交后才写盘；Esc / 放弃不保存。
+- 新 settings-read / settings-commit / settings-close 协议，绑定 generation、sessionId
+  与一次性 editor ID；worker 校验注册的 section 和 scope，沿用其 draft / commit。
+  保存期间的关闭和会话变化使未提交草稿失效；当前审批不能被设置操作批准。
+
+截图来自真实 Linux Chromium + 隔离 FakeProvider 预览：
+
+- [亮色设置页](evidence/macos-app-settings/settings-light.png)
+- [900px / DPR 2 暗色布局](evidence/macos-app-settings/mac-layout-simulation-dark.png)：
+  仅注入 renderer 的 macOS CSS 标记，不含原生交通灯 / 菜单，不能证明 macOS 实机通过。
 
 可复现检查：
 
@@ -89,14 +104,34 @@ PR #45 的 main 已使用白名单 IPC、contextIsolation、sandbox、导航拦�
 pnpm typecheck
 pnpm test --maxWorkers=2 --minWorkers=1
 pnpm build
+pnpm desktop:build
+pnpm desktop:smoke
+pnpm desktop:package --validate
+pnpm desktop:preview
+# 另一个终端，需要 Python Playwright + Chromium：
+python3 desktop/scripts/ui-smoke.py
 pnpm exec vitest run tests/configuration-settings.test.ts tests/runtime-settings-tui-autosave.test.ts
 git diff --check
 ```
 
-所有测试使用隔离 HOME、临时项目和固定假凭据。TUI 按键测试覆盖新入口的一次提交、
-取消、失败反馈及重启采用，不代表 Electron UI 或 AppKit / WebView 实机验收。
-后续只能在合法的独立 macOS 环境补充窗口、菜单、目录、Retina、系统暗色和未签名包
-验证；不得连接或委派到用户电脑，不使用证书 / 公证密钥，不外发安装包。
+构建使用当前 Node 及其官方 LICENSE；若安装未附许可证，可显式设置
+AGENTLAB_NODE_LICENSE 指向同版本官方分发的 LICENSE。云端 Node v24.19.0 的验证
+使用官方 nodejs/node v24.19.0 LICENSE，放在临时目录，不提交二进制或安装包。
+
+所有测试使用隔离 HOME、临时项目和固定假凭据。TUI 按键测试与 App UI 测试分别报告；
+ui-smoke.py 操作真实 React 页面与构建 worker，覆盖提交 / 校验失败 / 作用域 / 未保存
+导航 / 草稿重置 / 系统暗色 / 窄屏高 DPI。它不能验证 Electron 菜单或 AppKit。
+
+独立 macOS 环境的剩余验收清单：
+
+1. Apple Silicon / Intel 对应架构执行 install、typecheck、test、desktop:build、smoke、package。
+2. 启动未签名 .app，核对交通灯区域、拖拽、全部输入 / 下拉 / 按钮可交互和双击标题栏。
+3. 验证 Cmd+, / O / N、复制粘贴、撤销、缩放、全屏、中文输入法；原生目录选择含空格 / 中文 / 符号链接。
+4. 关闭空闲 / 运行窗口、取消退出、保存错误、Cmd+Q、Dock 重开，确认没有遗留 worker 或自动重试。
+5. Retina / 外接显示器切换、系统暗色切换、缩放 80%–150%、800×600 窗口和长表单滚动。
+6. 核对 .app 内 Node 平台 / 架构和 LICENSE。无需证书 / 公证密钥，不上传或外发安装包。
+
+只能使用合法独立 Mac；禁止连接或委派到用户电脑。
 
 ## 与缓存任务的协调
 
@@ -106,3 +141,24 @@ git diff --check
 并行任务若修改这些 schema / ownedFields，新字段可由现有扩展点进入设置目录；
 特殊 apply 语义与新角色的说明仍需人工核对。合并时重点检查 default-preset 中
 插件收集与 runtime-settings 注册位置，避免遗漏新增插件。
+
+### 并行 a0562c0 的字段兼容状态
+
+仅只读核对了缓存分支 a0562c0；没有把尚未合并的功能复制进本分支，避免配置看似可用却没有运行时行为。
+以下“自动出现”要求该功能合并后由插件注册实际 schema / ownedFields；不是本次已上线字段。
+
+| 并行新增字段                                                                                                                  | 本分支当前状态                                | 合并后的设置入口 / 生效                                     |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------- |
+| replayToolArguments                                                                                                           | 当前运行 schema 未包含，不开放                | 顶层“其他运行配置”自动发现；重启                            |
+| cache.staticTtl、ttlStrategy                                                                                                  | 当前只开放 enabled / ttl / escalateAfterMs    | 现有缓存对象动态表单自动发现；重启                          |
+| planning.provider / model / thinking / maxOutputTokens / maxRequestBytes                                                      | 当前只开放 mode                               | 规划插件注册新 schema / ownedFields 后自动发现；重启        |
+| summary.provider / model / thinking / strategy / maxOutputTokens / maxRequestBytes                                            | 当前摘要插件没有可编辑 config 定义            | 摘要插件注册 config / ownedFields 后自动出现；重启          |
+| reviewer.thinking                                                                                                             | 当前 reviewer 的其余预算 / prefixCache 已开放 | reviewer 更新 schema / ownedFields 后自动出现；重启         |
+| provider.models[模型].api / thinkingLevels / rawToolArguments / prefixCompaction / outputParameter / thinkingMode / offEffort | 当前适配器只声明 dialect                      | provider 更新 schema / ownedFields 后以 JSON 对象编辑；重启 |
+| MCP maxAgeDays / maxStoredBytes / deduplicate / maxSearchChars                                                                | 当前只开放 maxInlineChars                     | MCP 更新 schema / ownedFields 后自动发现；重启              |
+
+表单只序列化所选原始层：例如只勾选 staticTtl，就只提交该键，不回填 enabled / ttl，
+不主动开启 prefix 摘要、deduplicate 或 replay。已有未知字段（包括并行分支写入的字段）
+在未被本 schema 拥有前保持原值且不展示。缓存任务的稀疏 cache 合并修复应由该任务落入
+loadConfigWithSources；本分支不复制其 loader。两者组合时需回归：全局 enabled=false / ttl=5m，
+项目只改 staticTtl 后，enabled 仍为 false、ttl 仍为 5m，且打开设置不改变任意文件。

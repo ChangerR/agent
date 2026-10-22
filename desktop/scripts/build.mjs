@@ -60,7 +60,19 @@ const require = createRequire(join(root, 'package.json'));
 for (const name of native) await copyPackage(name, require);
 await mkdir(join(out, 'node'), { recursive: true });
 await cp(process.execPath, join(out, 'node', process.platform === 'win32' ? 'node.exe' : 'node'));
-const nodeLicense = join(dirname(process.execPath), 'LICENSE');
+const nodeLicense =
+  process.env.AGENTLAB_NODE_LICENSE ??
+  [
+    join(dirname(process.execPath), 'LICENSE'),
+    join(dirname(process.execPath), '..', 'LICENSE'),
+  ].find((path) => {
+    try {
+      return require('node:fs').statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  }) ??
+  join(dirname(process.execPath), 'LICENSE');
 try {
   await access(nodeLicense);
   await cp(nodeLicense, join(out, 'node', 'LICENSE'));
@@ -70,6 +82,10 @@ try {
   await cp(join(root, 'desktop/assets/node-LICENSE.txt'), join(out, 'node', 'LICENSE'));
 }
 await writeFile(
+  join(out, 'node/runtime.json'),
+  JSON.stringify({ platform: process.platform, arch: process.arch, nodeVersion: process.version }),
+);
+await writeFile(
   join(out, 'package.json'),
   JSON.stringify(
     {
@@ -77,7 +93,7 @@ await writeFile(
       productName: 'AgentLab Desktop',
       version: '0.1.0',
       main: 'main/index.cjs',
-      description: 'AgentLab Windows 聊天工作台',
+      description: 'AgentLab 本地 Agent 工作台',
       author: 'AgentLab',
       license: 'MIT',
     },

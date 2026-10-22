@@ -1,6 +1,6 @@
 # AgentLab Desktop
 
-以项目为入口的 Windows 本地 Agent 工作台。前端使用 React，Electron 提供窗口与目录选择，独立 Node 进程装配现有 createAgent()；core 和原有 CLI 保持解耦。
+以项目为入口的本地 Agent 工作台。现有 Electron/React 框架已补充 macOS 代码适配；macOS 原生验收仍需独立 Mac。前端使用 React，Electron 提供窗口与目录选择，独立 Node 进程装配现有 createAgent()；core 和原有 CLI 保持解耦。
 
 ## 运行
 
@@ -61,7 +61,7 @@ pnpm desktop:preview   # 浏览器中的隔离离线工作台，监听 127.0.0.1
 
 桌面偏好只保存项目目录及上次已保存会话的 ID；会话内容继续由原有 SessionManager 按项目隔离，agent 配置仍写对应项目。新建的空会话不会覆盖项目的上次已保存会话记录。上次会话恢复失败时保留原文件并显示错误。
 
-设置页只编辑本项目的模型、模式和思考；其他插件通过已注册的 /命令访问。需要特定 TUI 渲染器的交互视图尚未移植，终端界面继续可用。
+设置页现可编辑用户 / 项目两层的连接、预算、权限默认、MCP 和插件参数；即时模型 / 模式 / 思考仍在聊天输入区。完整覆盖、迁移与 macOS 验证见 [配置设置](../docs/CONFIGURATION-SETTINGS.md)。需要特定 TUI 渲染器的交互视图尚未移植，终端界面继续可用。
 
 ## 检查范围
 
@@ -93,3 +93,18 @@ worker 发送带单调 seq 的完整展示快照；main 包装为单调 revision
 desktop:smoke 在随包 Node 上加载 tree-sitter、Bash/PowerShell grammar，并通过真实 runtime 完成审批与保存。浏览器已验证同一 worker 构建产物的发送、审批、文件刷新与读取。
 
 全量 pnpm test 为 1220 通过、44 失败、410 跳过，不能视为全量通过；详细结果见 [交付验证](VALIDATION.md)。尚未在干净的另一台 Windows 机器验证，发布前还需补充安装与系统兼容验证。
+
+## macOS 与分层设置
+
+菜单 AgentLab → 设置（Cmd+,），文件 → 打开项目（Cmd+O）、新建会话（Cmd+N）。
+原生窗口保留系统交通灯，标题栏空白可拖动；编辑 / 显示菜单提供系统快捷键与缩放。
+关闭窗口先结算 worker，Dock 可重新打开窗口，Cmd+Q 退出应用。
+
+设置默认编辑项目层，可切换用户层，显示实际文件路径与当前会话值。覆盖开关区分继承与显式值，
+每节提交一次；清除只改变草稿，未提交导航或关闭时提示放弃。连接和插件默认值需重启，
+当前会话来源、已有审批和真实工具权限继续沿用后端语义。外观可立即跟随系统暗色。
+
+macOS 源码构建须在 macOS 对应架构运行 pnpm desktop:build / desktop:smoke / desktop:package。
+--validate 仅验证输入；随包 Node / 原生模块必须与目标平台和架构一致。没有签名、公证或发布流程。
+构建使用当前 Node 的官方 LICENSE，缺少时可用 AGENTLAB_NODE_LICENSE 显式提供同版本文件。
+Linux 浏览器预览和平台注入测试不等于原生 macOS 通过。

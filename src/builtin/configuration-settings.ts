@@ -49,7 +49,7 @@ export function settingsJsonSchema(schema: z.ZodTypeAny): Record<string, unknown
     return { type: 'array', items: settingsJsonSchema(value.element) };
   return {};
 }
-function safeValue(value: unknown, key = ''): unknown {
+export function safeSettingsValue(value: unknown, key = ''): unknown {
   if (sensitive.test(key) && key !== 'apiKeyEnv') return MASKED_SETTING;
   if (key === 'apiKeyEnv' && (typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)))
     return MASKED_SETTING;
@@ -61,12 +61,12 @@ function safeValue(value: unknown, key = ''): unknown {
       return MASKED_SETTING;
     }
   }
-  if (Array.isArray(value)) return value.map((item) => safeValue(item));
+  if (Array.isArray(value)) return value.map((item) => safeSettingsValue(item));
   if (record(value))
     return Object.fromEntries(
       Object.entries(value)
         .filter(([key]) => !dangerous.has(key))
-        .map(([key, item]) => [key, safeValue(item, key)]),
+        .map(([key, item]) => [key, safeSettingsValue(item, key)]),
     );
   return value;
 }
@@ -81,7 +81,7 @@ function projectKnown(value: Record<string, unknown>, shape: Shape): Record<stri
           key,
           inner instanceof z.ZodObject && record(item)
             ? projectKnown(item, inner.shape as Shape)
-            : safeValue(item, key),
+            : safeSettingsValue(item, key),
         ];
       }),
   );
@@ -289,6 +289,9 @@ export function configurationSections(
         bases.set(scope, next);
       },
     };
+    const properties = section.schema.properties as Record<string, Record<string, unknown>>;
+    for (const key of definition?.sensitiveFields ?? [])
+      if (properties[key]) properties[key].writeOnly = true;
     result.push({ id, section });
   };
   for (const [id, title, fields] of baseGroups)
@@ -318,7 +321,21 @@ export function configurationSections(
         inner instanceof z.ZodObject ? (inner.shape[key] ?? z.unknown()) : z.unknown(),
       ]),
     );
-    add(`configuration-${plugin.manifest.id}`, `插件参数 · ${plugin.manifest.id}`, shape, plugin);
+    const titles: Record<string, string> = {
+      'agentlab.provider-openai': 'OpenAI 兼容协议',
+      'agentlab.local-tools': '本地工具',
+      'agentlab.mcp': 'MCP 结果预算',
+      'agentlab.reviewer-model': '审批模型与预算',
+      'agentlab.telemetry-jsonl': '会话日志',
+      'agentlab.subagents': '辅助任务与并发',
+      'agentlab.planning': '主任务规划',
+    };
+    add(
+      `configuration-${plugin.manifest.id}`,
+      titles[plugin.manifest.id] ?? `插件参数 · ${plugin.manifest.id}`,
+      shape,
+      plugin,
+    );
   }
   return result;
 }
