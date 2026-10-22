@@ -1,71 +1,47 @@
-/** MCP 结果在首次入历史前限额；完整文本保存在项目运行状态中，按不透明 ID 分页读取。 */
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+/** 首次结果限额与项目内按需检索；已进入历史的预览始终不可变。 */
 import { z } from 'zod';
-import { canonicalPath, resolveAgentPaths } from '../core/paths.js';
 import type { Tool, ToolContext } from '../core/registry.js';
 import type { ToolResult } from '../core/protocol/types.js';
+import { resolveAgentPaths } from '../core/paths.js';
+import { ResultFiles, RESULT_ID, type MaintenanceResult } from './result-files.js';
+import { estimateTextTokens } from '../core/context/tokens.js';
 
-export const McpResultConfig = z.object({
-  maxInlineChars: z.number().int().min(1024).max(1_000_000).default(24_000),
-});
-const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-function samePath(a: string, b: string): boolean {
-  const normalize = (value: string) =>
-    process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
-  return normalize(a) === normalize(b);
-}
-
-function resultDirectory(cwd: string): string {
-  const paths = resolveAgentPaths(cwd);
-  return join(canonicalPath(paths.agentHome), 'state', 'projects', paths.projectId, 'mcp-results');
-}
-
-/** 不沿状态目录下的符号链接创建文件；结果文件另外用独占写入和 no-follow 读取。 */
-async function ensureDirectory(path: string): Promise<void> {
-  try {
-    const stat = await lstat(path);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('unsafe_result_directory');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    await ensureDirectory(dirname(path));
-    try {
-      await mkdir(path, { mode: 0o700 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-  }
-  const actual = await realpath(path);
-  if (!samePath(actual, path)) throw new Error('unsafe_result_directory');
-}
-
+import { McpResultConfig, type McpResultOptions } from './result-config.js';
+export { McpResultConfig, type McpResultOptions } from './result-config.js';
 export class McpResultStore {
   readonly maxInlineChars: number;
-
-  constructor(maxInlineChars?: number) {
-    this.maxInlineChars = McpResultConfig.parse({ maxInlineChars }).maxInlineChars;
+  private readonly config: z.output<typeof McpResultConfig>;
+  private files = new Map<string, ResultFiles>();
+  private maintenance = new Map<string, MaintenanceResult>();
+  constructor(options?: number | McpResultOptions) {
+    this.config = McpResultConfig.parse(
+      typeof options === 'number' ? { maxInlineChars: options } : (options ?? {}),
+    );
+    this.maxInlineChars = this.config.maxInlineChars;
   }
-
+  private store(cwd: string) {
+    const key = resolveAgentPaths(cwd).projectStateDir;
+    if (!this.files.has(key)) this.files.set(key, new ResultFiles(cwd));
+    return this.files.get(key)!;
+  }
+  private inlineLimit(ctx: ToolContext): number {
+    return Math.min(
+      this.maxInlineChars,
+      ctx.resultBudgetTokens === undefined
+        ? this.maxInlineChars
+        : Math.max(256, Math.floor(ctx.resultBudgetTokens / 2)),
+    );
+  }
   async retain(result: ToolResult, ctx: ToolContext): Promise<ToolResult> {
-    // UTF-16 长度是码点数的上界，小结果无需分配完整码点数组。
-    if (result.content.length <= this.maxInlineChars) return result;
+    const cap = this.inlineLimit(ctx);
+    if (result.content.length <= cap) return result;
     const points = Array.from(result.content);
-    if (points.length <= this.maxInlineChars) return result;
+    if (points.length <= cap) return result;
     ctx.signal.throwIfAborted();
-    const id = randomUUID();
+    let id: string;
     try {
-      const directory = resultDirectory(ctx.cwd);
-      await ensureDirectory(directory);
-      ctx.signal.throwIfAborted();
-      await writeFile(join(directory, `${id}.txt`), result.content, {
-        encoding: 'utf8',
-        flag: 'wx',
-        mode: 0o600,
-        signal: ctx.signal,
-      });
+      id = await this.store(ctx.cwd).save(result.content, ctx.signal, this.config.deduplicate);
+      await this.cleanup(ctx.cwd, ctx.signal).catch(() => undefined);
     } catch (error) {
       ctx.signal.throwIfAborted();
       return {
@@ -73,26 +49,50 @@ export class McpResultStore {
         isError: true,
       };
     }
-    const marker = `\n[MCP result: ${points.length} characters. Full result_id=${id}; use mcp_read_result with offset=0 and limit to read it. Preview omits the middle.]\n`;
-    const available = this.maxInlineChars - Array.from(marker).length;
+    const marker = `\n[MCP result: ${points.length} characters. Full result_id=${id}; use mcp_read_result with offset=0 and limit, or mcp_search_result to find relevant text. Preview omits the middle.]\n`;
+    const tokenCharacters =
+      ctx.resultBudgetTokens === undefined
+        ? Infinity
+        : Math.floor(Math.max(0, ctx.resultBudgetTokens - estimateTextTokens(marker)) / 2);
+    const available = Math.max(0, Math.min(cap - Array.from(marker).length, tokenCharacters));
     const head = Math.ceil(available * 0.6);
+    const tail = available - head;
     return {
       ...result,
-      content: points.slice(0, head).join('') + marker + points.slice(-(available - head)).join(''),
+      content: points.slice(0, head).join('') + marker + (tail ? points.slice(-tail).join('') : ''),
     };
   }
-
+  async cleanup(cwd: string, signal: AbortSignal, now?: number): Promise<MaintenanceResult> {
+    const value = await this.store(cwd)
+      .cleanup(this.config, signal, now)
+      .catch((error) => {
+        signal.throwIfAborted();
+        return { removed: 0, blocked: 'metadata_scan_incomplete' } as MaintenanceResult;
+      });
+    this.maintenance.set(resolveAgentPaths(cwd).projectStateDir, value);
+    return value;
+  }
+  status() {
+    return [...this.maintenance.values()].map((value) => ({ ...value }));
+  }
+  hasResults(cwd: string) {
+    return this.store(cwd).hasResults();
+  }
+  async close() {
+    await Promise.all([...this.files.values()].map((file) => file.close()));
+    this.files.clear();
+  }
   reader(): Tool {
     return {
       name: 'mcp_read_result',
       description:
-        'Read a stored MCP result by its result_id. Uses 0-based character offset and a bounded page; follow the returned continuation offset. Result IDs belong to the current project.',
+        'Read a stored MCP result in this project by result_id. offset and limit count Unicode characters. Follow continuation offset; use mcp_search_result to find relevant fragments.',
       risk: 'read',
       isConcurrencySafe: true,
       inputSchema: {
         type: 'object',
         properties: {
-          result_id: { type: 'string', pattern: ID.source },
+          result_id: { type: 'string', pattern: RESULT_ID.source },
           offset: { type: 'integer', minimum: 0 },
           limit: { type: 'integer', minimum: 1, maximum: this.maxInlineChars - 256 },
         },
@@ -106,36 +106,148 @@ export class McpResultStore {
       execute: async (input, ctx) => {
         const id = input.result_id;
         const offset = input.offset ?? 0;
-        const limit = input.limit ?? this.maxInlineChars - 256;
+        const requested = input.limit ?? this.maxInlineChars - 256;
         if (
           typeof id !== 'string' ||
-          !ID.test(id) ||
+          !RESULT_ID.test(id) ||
           !Number.isSafeInteger(offset) ||
           Number(offset) < 0 ||
-          !Number.isSafeInteger(limit) ||
-          Number(limit) < 1 ||
-          Number(limit) > this.maxInlineChars - 256
+          !Number.isSafeInteger(requested) ||
+          Number(requested) < 1 ||
+          Number(requested) > this.maxInlineChars - 256
         )
           throw new Error('invalid_mcp_result_page');
-        ctx.signal.throwIfAborted();
-        const directory = resultDirectory(ctx.cwd);
-        // 续读只接受已经存在的状态目录，不在任意 ID 读取时创建目录。
-        if (!samePath(await realpath(directory), directory))
-          throw new Error('unsafe_result_directory');
-        const file = await open(
-          join(directory, `${id}.txt`),
-          constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+        const tokenCharacters =
+          ctx.resultBudgetTokens === undefined
+            ? Infinity
+            : Math.floor(Math.max(0, ctx.resultBudgetTokens - 80) / 2);
+        const limit = Math.max(
+          1,
+          Math.min(Number(requested), this.inlineLimit(ctx) - 192, tokenCharacters),
         );
+        const file = await this.store(ctx.cwd).open(id, ctx.signal);
         try {
-          const stat = await file.stat();
-          if (!stat.isFile() || stat.nlink !== 1) throw new Error('unsafe_result_file');
-          const points = Array.from(await file.readFile({ encoding: 'utf8', signal: ctx.signal }));
-          if (Number(offset) > points.length) throw new Error('mcp_result_offset_out_of_range');
-          const end = Math.min(points.length, Number(offset) + Number(limit));
-          const content = points.slice(Number(offset), end).join('');
-          const footer = end < points.length ? `continue with offset=${end}` : 'end of result';
+          const content = await file.page(Number(offset), limit, ctx.signal);
+          const end = Number(offset) + Array.from(content).length;
           return {
-            content: `${content}\n[MCP result ${id}: ${Number(offset)}-${end} of ${points.length}; ${footer}]`,
+            content: `${content}\n[MCP result ${id}: ${offset}-${end} of ${file.index.characters}; ${end < file.index.characters ? `continue with offset=${end}` : 'end of result'}]`,
+          };
+        } finally {
+          await file.close();
+        }
+      },
+    };
+  }
+  searcher(): Tool {
+    return {
+      name: 'mcp_search_result',
+      description:
+        'Search literal, case-sensitive text in a stored MCP result in this project. Returns bounded matching fragments with character offsets. Continue from next_offset; does not repeat the remote MCP operation.',
+      risk: 'read',
+      isConcurrencySafe: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          result_id: { type: 'string', pattern: RESULT_ID.source },
+          query: { type: 'string', minLength: 1, maxLength: 512 },
+          offset: { type: 'integer', minimum: 0 },
+          max_matches: { type: 'integer', minimum: 1, maximum: 20 },
+        },
+        required: ['result_id', 'query'],
+        additionalProperties: false,
+      },
+      analyzeInput: (input) => ({
+        patternTarget: JSON.stringify(input),
+        summary: `mcp_search_result(${String(input.result_id)})`,
+      }),
+      execute: async (input, ctx) => {
+        const id = input.result_id;
+        const query = input.query;
+        const offset = input.offset ?? 0;
+        const matches = input.max_matches ?? 5;
+        if (
+          typeof id !== 'string' ||
+          !RESULT_ID.test(id) ||
+          typeof query !== 'string' ||
+          !query.length ||
+          query.length > 512 ||
+          !Number.isSafeInteger(offset) ||
+          Number(offset) < 0 ||
+          !Number.isSafeInteger(matches) ||
+          Number(matches) < 1 ||
+          Number(matches) > 20
+        )
+          throw new Error('invalid_mcp_result_search');
+        const file = await this.store(ctx.cwd).open(id, ctx.signal);
+        try {
+          if (Number(offset) > file.index.characters)
+            throw new Error('mcp_result_offset_out_of_range');
+          const found: Array<{ offset: number; text: string }> = [];
+          const stop = Math.min(file.index.characters, Number(offset) + this.config.maxSearchChars);
+          const queryLength = Array.from(query).length;
+          const cap = this.inlineLimit(ctx);
+          let position = Number(offset);
+          while (position < stop && found.length < Number(matches)) {
+            ctx.signal.throwIfAborted();
+            const span = Math.min(8192, stop - position);
+            const text = await file.page(
+              position,
+              Math.min(span + queryLength + 80, file.index.characters - position),
+              ctx.signal,
+            );
+            let start = 0;
+            let exhausted = true;
+            while (true) {
+              const at = text.indexOf(query, start);
+              if (at < 0) break;
+              const point = Array.from(text.slice(0, at)).length;
+              if (point >= span) break;
+              const points = Array.from(text);
+              let snippet = points
+                .slice(Math.max(0, point - 60), point + queryLength + 80)
+                .join('');
+              const fits = (value: string) => {
+                const json = JSON.stringify({
+                  matches: [...found, { offset: position + point, text: value }],
+                  next_offset: file.index.characters,
+                  scanned_to: file.index.characters,
+                  total_characters: file.index.characters,
+                });
+                return (
+                  Array.from(json).length <= cap &&
+                  (ctx.resultBudgetTokens === undefined ||
+                    estimateTextTokens(json) <= ctx.resultBudgetTokens)
+                );
+              };
+              if (!fits(snippet)) {
+                if (found.length) {
+                  position += point;
+                  exhausted = false;
+                  break;
+                }
+                let remaining = points.slice(point, point + queryLength + 80);
+                while (remaining.length && !fits(remaining.join('')))
+                  remaining = remaining.slice(0, Math.floor(remaining.length / 2));
+                snippet = remaining.join('');
+              }
+              found.push({ offset: position + point, text: snippet });
+              start = at + query.length;
+              if (found.length >= Number(matches)) {
+                position += point + queryLength;
+                exhausted = false;
+                break;
+              }
+            }
+            if (!exhausted) break;
+            position += span;
+          }
+          return {
+            content: JSON.stringify({
+              matches: found,
+              next_offset: position < file.index.characters ? position : null,
+              scanned_to: position,
+              total_characters: file.index.characters,
+            }),
           };
         } finally {
           await file.close();

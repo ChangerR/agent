@@ -10,6 +10,8 @@ import {
 } from '../providers/fake.js';
 import { definePlugin } from '../sdk/index.js';
 import { z } from 'zod';
+import type { ModelCapabilities } from '../core/provider.js';
+import { ProviderModelsSchema } from './provider-config.js';
 
 function demoScript(): ScriptedResponse {
   let called = false;
@@ -101,11 +103,18 @@ export function providerPlugins(config: AgentConfig) {
   return [
     definePlugin({
       manifest: { id: 'agentlab.provider-anthropic', version: '1.0.0', apiVersion: 1 },
+      config: {
+        schema: z.object({ models: ProviderModelsSchema }),
+        ownedFields: ['models'],
+        defaults: {},
+        applyMode: 'newSession',
+      },
       setup(ctx) {
         const apiKeyEnv = config.provider === 'anthropic' ? config.apiKeyEnv : undefined;
         ctx.provide.provider(
           'anthropic',
           new AnthropicProvider({
+            models: ctx.config.value.models as Record<string, ModelCapabilities>,
             apiKeyEnv,
             apiKey: process.env[apiKeyEnv ?? 'ANTHROPIC_API_KEY'],
             baseURL: config.provider === 'anthropic' ? config.baseURL : undefined,
@@ -117,8 +126,11 @@ export function providerPlugins(config: AgentConfig) {
     definePlugin({
       manifest: { id: 'agentlab.provider-openai', version: '1.0.0', apiVersion: 1 },
       config: {
-        schema: z.object({ dialect: z.enum(['auto', 'generic', 'deepseek']).default('auto') }),
-        ownedFields: ['dialect'],
+        schema: z.object({
+          dialect: z.enum(['auto', 'generic', 'deepseek']).default('auto'),
+          models: ProviderModelsSchema,
+        }),
+        ownedFields: ['dialect', 'models'],
         defaults: {},
         applyMode: 'newSession',
       },
@@ -127,6 +139,7 @@ export function providerPlugins(config: AgentConfig) {
         ctx.provide.provider(
           'openai',
           new OpenAIProvider({
+            models: ctx.config.value.models as Record<string, ModelCapabilities>,
             dialect: ctx.config.value.dialect as 'auto' | 'generic' | 'deepseek',
             apiKeyEnv,
             apiKey: process.env[apiKeyEnv ?? 'OPENAI_API_KEY'],

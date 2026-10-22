@@ -7,14 +7,14 @@
 
 ## 顶层配置
 
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `replayToolArguments` | `false` | 可选原始工具参数协议回放，来源路由/模型及解析对象不匹配时失效；钩子改写也使其失效。执行始终使用校验后的对象。 |
-| `cache.enabled` | `true` | 控制 Anthropic 显式缓存，不能关闭 DeepSeek/OpenAI 服务端自动缓存。 |
-| `cache.ttl` | `5m` | 会话消息边界的保留期，`5m` 或 `1h`。 |
-| `cache.staticTtl` | 继承 `ttl` | tools 与静态 system 的保留期；可以静态 `1h`、会话 `5m`，反向顺序会被拒绝。 |
-| `cache.ttlStrategy` | `fixed` | 默认固定保留期。`legacy-reactive` 才根据上一批工具耗时升级下一次请求。 |
-| `cache.escalateAfterMs` | `0` | 仅用于 `legacy-reactive`；事后升级不能挽回已经过期的缓存，并可能增加写入费用。 |
+| 字段                    | 默认       | 说明                                                                                                          |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `replayToolArguments`   | `false`    | 可选原始工具参数协议回放，来源路由/模型及解析对象不匹配时失效；钩子改写也使其失效。执行始终使用校验后的对象。 |
+| `cache.enabled`         | `true`     | 控制 Anthropic 显式缓存，不能关闭 DeepSeek/OpenAI 服务端自动缓存。                                            |
+| `cache.ttl`             | `5m`       | 会话消息边界的保留期，`5m` 或 `1h`。                                                                          |
+| `cache.staticTtl`       | 继承 `ttl` | tools 与静态 system 的保留期；可以静态 `1h`、会话 `5m`，反向顺序会被拒绝。                                    |
+| `cache.ttlStrategy`     | `fixed`    | 默认固定保留期。`legacy-reactive` 才根据上一批工具耗时升级下一次请求。                                        |
+| `cache.escalateAfterMs` | `0`        | 仅用于 `legacy-reactive`；事后升级不能挽回已经过期的缓存，并可能增加写入费用。                                |
 
 Anthropic system 分为静态规则和环境块，静态块末尾有独立边界；环境仍是 system 内容，不改变权限层级。
 tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界，长 TTL 在短 TTL 之前。
@@ -22,11 +22,11 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 
 ## 辅助角色
 
-| 插件 | 字段与有效默认 |
-| --- | --- |
-| `agentlab.planning` | `mode=auto`；`provider`、`model`、`thinking` 省略时继承当前主模型；`maxOutputTokens` 省略时调用使用 `4096`；`maxRequestBytes` 可选。 |
-| `agentlab.compaction-summary` | `provider`、`model` 省略时继承执行路由；`thinking` 省略时保留厂商默认；`maxOutputTokens=2048`；`maxRequestBytes` 可选；`strategy=isolated`。 |
-| `agentlab.reviewer-model` | `provider` 省略时跟随当前 provider；`model` 省略时沿用 `judgeModel`，空字符串跟随主模型；`thinking` 省略时保留厂商默认；`maxOutputTokens=8192`、`maxRequestBytes=32768`、`maxResponseBytes=65536`、`timeoutMs=30000`。 |
+| 插件                          | 字段与有效默认                                                                                                                                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentlab.planning`           | `mode=auto`；`provider`、`model`、`thinking` 省略时继承当前主模型；`maxOutputTokens` 省略时调用使用 `4096`；`maxRequestBytes` 可选。                                                                                   |
+| `agentlab.compaction-summary` | `provider`、`model` 省略时继承执行路由；`thinking` 省略时保留厂商默认；`maxOutputTokens=2048`；`maxRequestBytes` 可选；`strategy=isolated`。                                                                           |
+| `agentlab.reviewer-model`     | `provider` 省略时跟随当前 provider；`model` 省略时沿用 `judgeModel`，空字符串跟随主模型；`thinking` 省略时保留厂商默认；`maxOutputTokens=8192`、`maxRequestBytes=32768`、`maxResponseBytes=65536`、`timeoutMs=30000`。 |
 
 所有输出均受实际路由的模型上限约束。所有角色共用最终请求 token 检查，字节上限另行检查。
 容量未知时不会假装已证明请求可容纳；缺省输出预留明确设为 8192。Thinking 扩大后的输出超过模型上限时拒绝请求，不自动降低质量。
@@ -57,13 +57,13 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 
 `agentlab.mcp` 配置 schema 位于 `src/mcp/result-config.ts`：
 
-| 字段 | 默认 | 范围/行为 |
-| --- | --- | --- |
-| `maxInlineChars` | `24000` | 1024–1000000 个 Unicode 码点；当前结果预算可进一步收紧。 |
-| `maxAgeDays` | `30` | 0–36500；0 禁用按年龄清理。 |
-| `maxStoredBytes` | `268435456` | 正文与索引的逻辑字节软上限；0 禁用容量清理。 |
-| `deduplicate` | `false` | 显式开启时只在当前项目复用相同正文，不跨项目。 |
-| `maxSearchChars` | `1000000` | 每次字面检索扫描的码点上限，8192–10000000；可用 continuation 继续。 |
+| 字段             | 默认        | 范围/行为                                                           |
+| ---------------- | ----------- | ------------------------------------------------------------------- |
+| `maxInlineChars` | `24000`     | 1024–1000000 个 Unicode 码点；当前结果预算可进一步收紧。            |
+| `maxAgeDays`     | `30`        | 0–36500；0 禁用按年龄清理。                                         |
+| `maxStoredBytes` | `268435456` | 正文与索引的逻辑字节软上限；0 禁用容量清理。                        |
+| `deduplicate`    | `false`     | 显式开启时只在当前项目复用相同正文，不跨项目。                      |
+| `maxSearchChars` | `1000000`   | 每次字面检索扫描的码点上限，8192–10000000；可用 continuation 继续。 |
 
 正文仍是 `mcp-results/<UUID>.txt`，新增 `<UUID>.index.json`。旧正文第一次续读时流式建立索引；结果 ID 与历史预览不变。
 `mcp_read_result` 按 Unicode 偏移局部读盘，`mcp_search_result` 返回有界相关片段与真实偏移。检索为大小写敏感的字面量，不执行正则。
@@ -71,7 +71,14 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 
 清理保护所有当前进程活跃租约，以及项目中已保存会话引用。为保守保护未保存的活跃历史，租约会保留该 runtime 已返回的结果直到关闭。
 因此容量是软上限：被引用结果不会为了配额被删除，超限会出现在 MCP 状态中。清理只回收无引用结果，且有十分钟新文件宽限期；引用、索引或锁状态不明时停止清理。
-默认在结果入库后维护；同项目的其他存活进程也受租约保护。移动/删除文件不是缓存命中优化，请不要绕过引用检查手动清空活跃目录。
+默认在启动发现已有结果时及结果入库后维护；同项目的其他存活进程也受租约保护。没有 MCP 连接或本地结果时不额外发送结果读取/搜索工具 schema。移动/删除文件不是缓存命中优化，请不要绕过引用检查手动清空活跃目录。
+
+## 从 #46 升级
+
+旧结果文件和会话无需搬迁；首次续读补建索引，已发送历史不重写。旧会话没有原始参数元数据时仍使用对象序列化回放。
+未开启新可选策略时仍使用隔离摘要和普通参数回放。`escalateAfterMs` 现在仅在显式 `ttlStrategy=legacy-reactive` 时生效；默认采用固定 TTL。
+未知模型现在明确预留并发送 8192 输出 tokens；小窗口代理模型应在 `models.json` 声明实际规格，不能依赖未知的服务端默认。
+cache 对象改为跨配置层逐字段合并；项目覆盖一个字段不会重置全局其他字段。SDK 的 `AgentConfigOverrides.cache` 也允许局部覆盖。
 
 ## 统计与验证
 

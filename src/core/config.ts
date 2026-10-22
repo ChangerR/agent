@@ -79,6 +79,9 @@ export const AgentConfigSchema = z.object({
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type AgentConfigOverrides = Omit<Partial<AgentConfig>, 'cache'> & {
+  cache?: Partial<AgentConfig['cache']>;
+};
 
 const ModelsFileSchema = z.record(ModelInfoSchema);
 
@@ -105,7 +108,7 @@ export interface LoadedConfig {
   layers: {
     global: Record<string, unknown>;
     project: Record<string, unknown>;
-    session: Partial<AgentConfig>;
+    session: AgentConfigOverrides;
   };
 }
 
@@ -118,13 +121,23 @@ function readJson(path: string): Record<string, unknown> {
 }
 
 /** 项目级覆盖全局级，均覆盖默认值；路径依据声明它的配置层解析。 */
+function mergeConfigObject(...layers: unknown[]): unknown {
+  let value: unknown;
+  const object = (input: unknown): input is Record<string, unknown> =>
+    Boolean(input && typeof input === 'object' && !Array.isArray(input));
+  for (const layer of layers) {
+    if (layer !== undefined)
+      value = object(layer) ? { ...(object(value) ? value : {}), ...layer } : layer;
+  }
+  return value;
+}
 export function loadConfig(cwd: string): AgentConfig {
   return loadConfigWithSources(cwd).config;
 }
 
 export function loadConfigWithSources(
   cwd: string,
-  overrides: Partial<AgentConfig> = {},
+  overrides: AgentConfigOverrides = {},
 ): LoadedConfig {
   const paths = resolveAgentPaths(cwd);
   const globalRaw = readJson(paths.globalConfigPath);
@@ -145,6 +158,7 @@ export function loadConfigWithSources(
       ]),
     ),
     ...sessionCfg,
+    cache: mergeConfigObject(globalCfg.cache, projectCfg.cache, sessionCfg.cache),
     capabilities: {
       ...((globalCfg.capabilities as object) ?? {}),
       ...((projectCfg.capabilities as object) ?? {}),
@@ -169,7 +183,7 @@ export function loadConfigWithSources(
       );
       const source: ConfigValueSource = scopeSources[scopes.at(-1) ?? 'default'];
       const contributors =
-        ['capabilities', 'pluginConfig'].includes(key) ||
+        ['capabilities', 'pluginConfig', 'cache'].includes(key) ||
         (key === 'permissions' && !Object.hasOwn(sessionCfg, key))
           ? scopes.map((scope) => scopeSources[scope])
           : undefined;

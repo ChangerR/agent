@@ -35,6 +35,14 @@ const ToolUseBlockSchema = z
     id: z.string().min(1),
     name: z.string().min(1),
     input: z.unknown(),
+    replay: z
+      .object({
+        arguments: z.string().max(2000000),
+        inputHash: z.string().regex(/^[a-f0-9]{64}$/),
+        routeId: z.string().min(1),
+        model: z.string().min(1),
+      })
+      .optional(),
   })
   .passthrough();
 
@@ -88,6 +96,7 @@ export const UsageSchema = z
     outputTokens: nonnegativeInt,
     cacheReadTokens: nonnegativeInt,
     cacheWriteTokens: nonnegativeInt,
+    cacheWriteTokensByTtl: z.record(z.enum(['5m', '1h', '30m', '12h']), nonnegativeInt).optional(),
   })
   .passthrough();
 

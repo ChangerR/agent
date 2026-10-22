@@ -30,26 +30,68 @@ export class ModelUsageSummary {
   private requests = new Map<string, string>();
   private seen = new Set<string>();
   private groups = new Map<string, CacheTotals>();
+  private details = new Map<
+    string,
+    {
+      ttft: number;
+      samples: number;
+      error: number;
+      errorSamples: number;
+      writes: Record<string, number>;
+      unknownWrites: number;
+    }
+  >();
   readonly totals: CacheTotals = { hitTokens: 0, missTokens: 0, unknownRequests: 0 };
 
   request(
     event: Pick<Request, 'requestId' | 'provider' | 'modelRole' | 'purpose'> & {
+      routeId?: string;
       request: { model: string };
     },
   ): void {
     this.requests.set(
       event.requestId,
-      `${event.provider} / ${event.request.model} / ${event.modelRole ?? event.purpose}`,
+      `${event.routeId ?? event.provider} / ${event.request.model} / ${event.modelRole ?? event.purpose}`,
     );
   }
 
-  usage(event: Pick<Usage, 'requestId' | 'cache' | 'usageReported'>): void {
+  usage(
+    event: Pick<Usage, 'requestId' | 'cache' | 'usageReported'> &
+      Partial<Pick<Usage, 'metrics' | 'usage'>>,
+  ): void {
     if (this.seen.has(event.requestId)) return;
     this.seen.add(event.requestId);
     const key = this.requests.get(event.requestId) ?? '未知模型 / 未知角色';
     this.requests.delete(event.requestId);
     const group = this.groups.get(key) ?? { hitTokens: 0, missTokens: 0, unknownRequests: 0 };
     this.groups.set(key, group);
+    const detail = this.details.get(key) ?? {
+      ttft: 0,
+      samples: 0,
+      error: 0,
+      errorSamples: 0,
+      writes: {},
+      unknownWrites: 0,
+    };
+    this.details.set(key, detail);
+    if (event.metrics?.ttftMs !== undefined) {
+      detail.ttft += event.metrics.ttftMs;
+      detail.samples++;
+    }
+    if (event.metrics?.inputErrorTokens !== undefined) {
+      detail.error += event.metrics.inputErrorTokens;
+      detail.errorSamples++;
+    }
+    if (event.usage?.cacheWriteTokensByTtl) {
+      for (const [ttl, count] of Object.entries(event.usage.cacheWriteTokensByTtl))
+        detail.writes[ttl] = (detail.writes[ttl] ?? 0) + count;
+      if (
+        Object.values(event.usage.cacheWriteTokensByTtl).reduce((n, count) => n + count, 0) !==
+        event.usage.cacheWriteTokens
+      )
+        detail.unknownWrites++;
+    } else if (event.usage?.cacheWriteTokens !== 0 || !event.cache || event.usageReported === false)
+      detail.unknownWrites++;
     for (const target of [this.totals, group]) {
       if (event.cache && event.usageReported !== false) {
         target.hitTokens += event.cache.hitTokens;
@@ -62,6 +104,7 @@ export class ModelUsageSummary {
     this.requests.clear();
     this.seen.clear();
     this.groups.clear();
+    this.details.clear();
     Object.assign(this.totals, { hitTokens: 0, missTokens: 0, unknownRequests: restored ? 1 : 0 });
   }
 
@@ -71,7 +114,11 @@ export class ModelUsageSummary {
       '缺失字段或恢复前未保留的分桶为未知；“部分”表示仅统计已知请求。',
       ...[...this.groups].map(
         ([key, value]) =>
-          `${key}: ${formatCacheHitRate(value)} · hit ${value.hitTokens} · miss ${value.missTokens} · 未知 ${value.unknownRequests}`,
+          `${key}: ${formatCacheHitRate(value)} · hit ${value.hitTokens} · miss ${value.missTokens} · 未知 ${value.unknownRequests}` +
+          (() => {
+            const d = this.details.get(key)!;
+            return ` · 写入TTL ${JSON.stringify(d.writes)}${d.unknownWrites ? '（部分未知）' : ''} · TTFT ${d.samples ? Math.round(d.ttft / d.samples) + 'ms' : '未知'} · 输入估算偏差 ${d.errorSamples ? Math.round(d.error / d.errorSamples) + ' tokens' : '未知'}`;
+          })(),
       ),
     ].join('\n');
   }

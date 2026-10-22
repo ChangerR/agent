@@ -62,6 +62,7 @@ export {
   loadConfig,
   loadConfigWithSources,
   type AgentConfig,
+  type AgentConfigOverrides,
   type ModelInfo,
   type PermissionMode,
 } from './core/config.js';

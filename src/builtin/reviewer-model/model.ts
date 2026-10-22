@@ -1,9 +1,10 @@
 /** 内置模型审批员：模型只审查 policy 委托的操作，不持有规则控制器、工具执行器或批准缓存。 */
 import { randomUUID } from 'node:crypto';
+import { withRequestBudget, prepareModelRequest } from '../../core/context/request-budget.js';
 import { bounded, CapabilityTimeout } from '../../core/permission/async.js';
 import type { JudgeMetadata, JudgeReasonCode } from '../../core/permission/contracts.js';
 import type { ModelInfo } from '../../core/config.js';
-import type { CacheTtl, ChatRequest, Provider } from '../../core/provider.js';
+import type { CacheTtl, ChatRequest, Provider, ThinkingLevel } from '../../core/provider.js';
 import {
   cacheUsage,
   emptyUsage,
@@ -32,6 +33,7 @@ export interface StrictModelReviewerOptions {
   maxRequestBytes?: number;
   maxResponseBytes?: number;
   maxOutputTokens?: number;
+  thinking?: ThinkingLevel;
   /** 仅建议 provider 缓存静态 system 前缀；默认关闭，不缓存判决或可变事实。 */
   prefixCache?: { enabled: boolean; ttl?: CacheTtl };
 }
@@ -270,7 +272,8 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
       timeoutMs,
       prefixCache,
     };
-    return { provider, model, status, stream: provider.stream.bind(provider) };
+    const guarded = withRequestBudget(provider, modelInfo);
+    return { provider: guarded, model, status, stream: guarded.stream.bind(guarded) };
   };
   return {
     getStatus: () => capture().status,
@@ -343,11 +346,12 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
             Buffer.byteLength(JSON.stringify(value)),
           ]),
         );
-        const request: ChatRequest = {
+        let request: ChatRequest = {
           model,
           system: STRICT_REVIEWER_SYSTEM,
           tools: [],
           maxTokens: outputTokens,
+          ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
           messages: [
             {
               role: 'user',
@@ -358,18 +362,18 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
         };
         const size = requestSize(request);
         const bytes = size.normalizedJsonBytes;
-        const budget = known
-          ? Math.min(
-              maxRequestBytes,
-              Math.max(0, info.contextWindow - PROTOCOL_RESERVE - outputTokens),
-            )
-          : maxRequestBytes;
-        if (bytes > budget)
+        try {
+          request = prepareModelRequest(captured.provider, request, { maxRequestBytes }).request;
+        } catch {
           return fallback(
             'request_budget',
-            `完整审查请求超出预算（${bytes} > ${budget} 字节），未发送模型`,
+            '完整审查请求超出模型 token 或字节预算，未发送模型',
             'request_budget',
           );
+        }
+        const estimate = captured.provider.estimateRequest?.(request);
+        const startedAt = performance.now();
+        let ttftMs: number | undefined;
         const requestId = randomUUID();
         const reportedUsage: Partial<TokenUsage> = {};
         let usageReported = false;
@@ -386,6 +390,8 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
           size,
           evidenceBytes,
           provider: status.provider,
+          routeId: captured.provider.routeId ?? status.provider,
+          estimate,
           request: structuredClone(request),
         });
         let response: { text: string; stopReason?: StopReason };
@@ -401,6 +407,20 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
             usageReported,
             cache: cacheUsage(reportedUsage),
             usage: { ...emptyUsage(), ...reportedUsage },
+            ...(estimate
+              ? {
+                  metrics: {
+                    durationMs: performance.now() - startedAt,
+                    ttftMs,
+                    estimatedInputTokens: estimate.inputTokens,
+                    inputErrorTokens: cacheUsage(reportedUsage)
+                      ? cacheUsage(reportedUsage)!.hitTokens +
+                        cacheUsage(reportedUsage)!.missTokens -
+                        estimate.inputTokens
+                      : undefined,
+                  },
+                }
+              : {}),
           });
         try {
           response = await bounded(
@@ -419,6 +439,11 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
                     const next = await iterator.next();
                     if (next.done) break;
                     const event = validateStreamEvent(next.value, started, ended);
+                    if (
+                      ttftMs === undefined &&
+                      (event.type === 'text_delta' || event.type === 'thinking_delta')
+                    )
+                      ttftMs = performance.now() - startedAt;
                     if (event.type === 'usage') {
                       usageReported = true;
                       mergeUsage(reportedUsage, event);

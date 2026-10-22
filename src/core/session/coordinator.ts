@@ -11,7 +11,7 @@ import type { AgentLoop, SessionSnapshot } from '../loop.js';
 import type { PermissionMode } from '../config.js';
 import type { PermissionController } from '../../sdk/capabilities.js';
 import type { SessionRules } from '../permission/contracts.js';
-import { emptyUsage, type TokenUsage } from '../protocol/types.js';
+import { emptyUsage, cloneUsage, type TokenUsage } from '../protocol/types.js';
 import { SessionError } from './errors.js';
 import type { AgentSessionState } from '../agents.js';
 import { assertSafeHistory, makeTitle } from './history.js';
@@ -101,7 +101,7 @@ export class SessionManager {
     return this.idValue;
   }
   get tokenUsage(): TokenUsage {
-    return { ...this.usage };
+    return cloneUsage(this.usage);
   }
 
   get title(): string {
@@ -369,7 +369,7 @@ export class SessionManager {
     this.idValue = resolved;
     this.createdAtValue = file.createdAt;
     this.titleValue = file.title;
-    this.usage = { ...file.usage };
+    this.usage = cloneUsage(file.usage);
     this.usageIds.clear();
     this.runs = file.stats.runs;
     this.writePath = this.opts.store.path(resolve(this.opts.cwd), resolved);
@@ -381,7 +381,7 @@ export class SessionManager {
       title: file.title,
       model: this.opts.loop.model,
       thinking: this.opts.loop.thinking,
-      usage: { ...this.usage },
+      usage: cloneUsage(this.usage),
       messages: this.opts.loop.getMessages(),
     });
     return summary;
@@ -454,7 +454,7 @@ export class SessionManager {
       thinking: snapshot.thinking,
       permissionMode: this.opts.permission.mode,
       sessionRules: structuredClone(this.opts.permission.getSessionRules()),
-      usage: { ...this.usage },
+      usage: cloneUsage(this.usage),
       stats: {
         messages: snapshot.messages.length,
         estimatedTokens: estimateTokens(snapshot.messages),
@@ -578,10 +578,21 @@ export class SessionManager {
   }
 
   private addUsage(usage: TokenUsage): void {
-    this.usage.inputTokens += usage.inputTokens;
-    this.usage.outputTokens += usage.outputTokens;
-    this.usage.cacheReadTokens += usage.cacheReadTokens;
-    this.usage.cacheWriteTokens += usage.cacheWriteTokens;
+    for (const key of [
+      'inputTokens',
+      'outputTokens',
+      'cacheReadTokens',
+      'cacheWriteTokens',
+    ] as const)
+      this.usage[key] += usage[key];
+    if (usage.cacheWriteTokensByTtl) {
+      this.usage.cacheWriteTokensByTtl ??= {};
+      for (const [ttl, count] of Object.entries(usage.cacheWriteTokensByTtl)) {
+        const key = ttl as keyof NonNullable<TokenUsage['cacheWriteTokensByTtl']>;
+        this.usage.cacheWriteTokensByTtl[key] =
+          (this.usage.cacheWriteTokensByTtl[key] ?? 0) + count;
+      }
+    }
   }
 
   private toSummary(path: string, messageCount: number, updatedAt: string): SessionSummary {

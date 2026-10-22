@@ -574,6 +574,7 @@ export function startTui(
         childUsageSummary.request({
           requestId: event.requestId,
           provider: event.provider,
+          routeId: event.routeId,
           request: { model: event.model },
           purpose: event.purpose,
           modelRole: event.modelRole,
@@ -583,6 +584,8 @@ export function startTui(
           requestId: event.requestId,
           cache: event.cache,
           usageReported: event.usageReported,
+          usage: event.usage,
+          metrics: event.metrics,
         });
       const key = `${event.agentId}:${event.runId}`;
       let card = traces.get(key);
