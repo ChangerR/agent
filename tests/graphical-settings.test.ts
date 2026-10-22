@@ -361,24 +361,41 @@ it('动态 map 重命名和插件入口改名/重排仍保留属于原条目的�
 });
 
 it('图形路径提交后领域编辑立即跟随新引用，旧草稿不能回写旧文件或撤回新引用', async () => {
-  const config = join(cwd,'agent.config.json');
-  const models = modelSettingsSection(cwd), mcp = mcpSettingsSection(cwd);
+  const config = join(cwd, 'agent.config.json');
+  const models = modelSettingsSection(cwd),
+    mcp = mcpSettingsSection(cwd);
   await models.read!(signal());
   await mcp.read!(signal());
-  const oldModels = await models.draft!({catalog:{old:{contextWindow:4096}}},signal());
-  const oldMcp = await mcp.draft!({mcpServers:{old:{command:'node'}}},signal());
-  await save(config,{provider:'fake',modelsFile:'new-models.json',mcpConfig:'new-mcp.json'});
-  expect(()=>models.commit!(oldModels,signal())).toThrow();
-  expect(()=>mcp.commit!(oldMcp,signal())).toThrow();
-  await expect(readFile(join(cwd,'models.json'))).rejects.toThrow();
-  await expect(readFile(join(cwd,'mcp.json'))).rejects.toThrow();
-  const modelTarget = models.scopeTargets?.find(t=>t.scope==='project'), mcpTarget = mcp.scopeTargets?.find(t=>t.scope==='project');
-  expect(modelTarget && 'path' in modelTarget ? modelTarget.path : undefined).toBe(join(cwd,'new-models.json'));
-  expect(mcpTarget && 'path' in mcpTarget ? mcpTarget.path : undefined).toBe(join(cwd,'new-mcp.json'));
-  await models.read!(signal()); await mcp.read!(signal());
-  await models.commit!(await models.draft!({catalog:{fresh:{contextWindow:8192}}},signal()),signal());
-  await mcp.commit!(await mcp.draft!({mcpServers:{fresh:{command:'node'}}},signal()),signal());
-  expect((await json(join(cwd,'new-models.json'))).fresh.contextWindow).toBe(8192);
-  expect((await json(join(cwd,'new-mcp.json'))).mcpServers.fresh.command).toBe('node');
+  const oldModels = await models.draft!({ catalog: { old: { contextWindow: 4096 } } }, signal());
+  const oldMcp = await mcp.draft!({ mcpServers: { old: { command: 'node' } } }, signal());
+  await save(config, {
+    provider: 'fake',
+    modelsFile: 'new-models.json',
+    mcpConfig: 'new-mcp.json',
+  });
+  expect(() => models.commit!(oldModels, signal())).toThrow();
+  expect(() => mcp.commit!(oldMcp, signal())).toThrow();
+  await expect(readFile(join(cwd, 'models.json'))).rejects.toThrow();
+  await expect(readFile(join(cwd, 'mcp.json'))).rejects.toThrow();
+  const modelTarget = models.scopeTargets?.find((t) => t.scope === 'project'),
+    mcpTarget = mcp.scopeTargets?.find((t) => t.scope === 'project');
+  expect(modelTarget && 'path' in modelTarget ? modelTarget.path : undefined).toBe(
+    join(cwd, 'new-models.json'),
+  );
+  expect(mcpTarget && 'path' in mcpTarget ? mcpTarget.path : undefined).toBe(
+    join(cwd, 'new-mcp.json'),
+  );
+  await models.read!(signal());
+  await mcp.read!(signal());
+  await models.commit!(
+    await models.draft!({ catalog: { fresh: { contextWindow: 8192 } } }, signal()),
+    signal(),
+  );
+  await mcp.commit!(
+    await mcp.draft!({ mcpServers: { fresh: { command: 'node' } } }, signal()),
+    signal(),
+  );
+  expect((await json(join(cwd, 'new-models.json'))).fresh.contextWindow).toBe(8192);
+  expect((await json(join(cwd, 'new-mcp.json'))).mcpServers.fresh.command).toBe('node');
   expect((await json(config)).modelsFile).toBe('new-models.json');
 });

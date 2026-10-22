@@ -67,7 +67,9 @@ export function modelSettingsSection(cwd: string): SettingsSection {
         catalog: { type: 'object', additionalProperties: settingsJsonSchema(ModelInfoSchema) },
       },
     },
-    get scopeTargets() { return (['project', 'global'] as const).map((scope) => ({scope,path:target(scope).path})); },
+    get scopeTargets() {
+      return (['project', 'global'] as const).map((scope) => ({ scope, path: target(scope).path }));
+    },
     read(signal, scope = 'project') {
       signal.throwIfAborted();
       const base = store(scope).readDocument(),

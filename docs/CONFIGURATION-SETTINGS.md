@@ -6,20 +6,20 @@
 
 侧栏底部的“设置”、项目旁的设置按钮及原生菜单均打开真正设置页。macOS 菜单为 agentlab → 设置（Cmd+,）；其他平台为文件 → 设置（Ctrl+,）。收起侧栏时工具栏仍能进入设置。分类导航支持页面名称和字段名搜索；模型、Provider 和 MCP 服务器采用列表与详情编辑，其余配置按 schema 分组，无 JSON/YAML/文件编辑器兜底。
 
-当前会话的模型、模式、思考和外观选择即保存。模型/思考于下一请求使用；模式用于后续权限检查，已有审批仍由用户处理。连接组合、缓存费用参数、权限规则、插件入口和凭据等结构化事务显式“提交此节”。外观保存在桌面本地偏好，CLI 配置不增加 UI 字段。
+当前会话的模型、模式、思考和外观选择即保存。模型/思考于下一请求使用；模式用于后续权限检查，已有审批仍由用户处理。连接组合、缓存费用参数、权限规则、插件入口和凭据等结构化事务显式“提交此节”。外观经白名单 IPC 保存在应用自己的 desktop-preferences.json；保存失败保留原主题并反馈。浏览器预览使用自身 localStorage，CLI 配置不增加 UI 字段。
 
 ## 配置与产品更名（破坏性变更）
 
 产品显示名、窗口标题、CLI 帮助、桌面包与可执行文件统一为小写 **agentlab**；根 package 和 CLI 命令原本已是 agentlab。GitHub 仓库仍为 ChangerR/agent，没有 npm 发布或旧命令 alias。
 
-| 实际默认位置 | 用途 |
-| --- | --- |
-| `~/.agentlab/config.json` | 用户级静态配置 |
-| `<项目根>/agent.config.json` | 项目覆盖，保留既有格式和位置 |
-| `~/.agentlab/models.json`、`mcp.json` | 没有显式覆盖引用时的默认领域文件 |
-| `~/.agentlab/state/projects/<项目路径 SHA-256>/sessions`、`logs`、`mcp-results` | 项目隔离的会话、日志及 MCP 缓存结果 |
-| `~/.agentlab/skills`、`<项目根>/.agentlab/skills` | 用户/项目技能，项目同名项优先 |
-| `<项目根>/.env` | 唯一自动加载的环境文件；既有进程变量优先，包括空值 |
+| 实际默认位置                                                                    | 用途                                               |
+| ------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `~/.agentlab/config.json`                                                       | 用户级静态配置                                     |
+| `<项目根>/agent.config.json`                                                    | 项目覆盖，保留既有格式和位置                       |
+| `~/.agentlab/models.json`、`mcp.json`                                           | 没有显式覆盖引用时的默认领域文件                   |
+| `~/.agentlab/state/projects/<项目路径 SHA-256>/sessions`、`logs`、`mcp-results` | 项目隔离的会话、日志及 MCP 缓存结果                |
+| `~/.agentlab/skills`、`<项目根>/.agentlab/skills`                               | 用户/项目技能，项目同名项优先                      |
+| `<项目根>/.env`                                                                 | 唯一自动加载的环境文件；既有进程变量优先，包括空值 |
 
 不读取旧 `.agent` 配置/技能，不回退、双读双写、自动迁移或删除旧数据。旧目录仍在敏感路径保护清单中，保护它不等于读取它。项目根配置没有被搬进子目录；项目运行状态仍按当前架构集中在用户目录，不另建第二套存储。桌面操作系统 userData 由新的应用名 agentlab 定位，旧桌面偏好不自动导入。环境变量本来使用 `AGENTLAB_*`，保留此标准大写前缀；厂商的 OPENAI/ANTHROPIC 变量名不变。显式配置的路径仍按其声明层解析。
 
@@ -29,28 +29,28 @@
 
 完整字段 → 控件 → 作用域 → 边界 → 生效矩阵由真实装配注册表生成，见 [SETTINGS-FIELD-COVERAGE.md](SETTINGS-FIELD-COVERAGE.md)。`AgentConfigSchema` 新字段自动进入“其他运行配置”；内置以及实际导入的外部插件以 schema / ownedFields 注册表单。外部只有 parse 契约的字段提供明确类型选择及递归键值/数组控件，保存仍调用其原验证器。
 
-| 页面 | 完整字段组 | 控件/校验 |
-| --- | --- | --- |
-| 主任务与模型连接 | provider、model、baseURL、apiKeyEnv、thinking、judgeModel | Provider 下拉、模型候选输入、Endpoint/变量名、枚举；无凭据 HTTP(S) Endpoint、变量名、非空 ID 校验 |
-| Provider 连接 | 命名连接 CRUD：type、displayName、enabled；网络连接 baseURL、apiKeyEnv、models；OpenAI dialect | 列表/详情、适配器分支、文本/下拉/嵌套模型 map；实际使用已有 OpenAI/Anthropic/Fake 适配器，不探测账户 |
-| 模型目录 | 模型 ID CRUD、displayName、contextWindow、maxOutputTokens | 列表/详情、正整数输入；显示名不改变路由 ID |
-| Provider 模型能力 | models[ID].api、thinkingLevels、rawToolArguments、prefixCompaction、outputParameter、thinkingMode、offEffort；OpenAI dialect | map 增删/改名、数组增删排序、真实 enum/bool；内置适配器和命名网络连接均可配置 |
-| 上下文与缓存 | maxTurns、compactThreshold；cache.enabled、ttl、staticTtl、ttlStrategy、escalateAfterMs | 数值、下拉、嵌套覆盖；只设置 staticTtl 不回填 enabled/ttl |
-| 其他运行配置 | replayToolArguments | 启用/关闭，默认不主动开启 |
-| 主任务规划 | mode、provider、model、thinking、maxOutputTokens、maxRequestBytes | 真实角色 schema；另保留已有即时规划方式入口 |
-| 摘要模型与预算 | provider、model、thinking、strategy、maxOutputTokens、maxRequestBytes | 真实 schema，默认 isolated，不主动开启 prefix |
-| 审批模型与预算 | provider、model、thinking、timeoutMs、maxRequestBytes、maxResponseBytes、maxOutputTokens、prefixCache.enabled/ttl | 分组数值/枚举；不缓存批准结果，不绕过执行器 |
-| MCP 服务器 | 服务器名 CRUD；stdio command、args、env；HTTP url、headers | 传输分支、程序路径、可排序参数、安全密码输入/键值 map；只允许一种传输，验证 URL/头/变量名 |
-| MCP 结果预算 | maxInlineChars、maxAgeDays、maxStoredBytes、deduplicate、maxSearchChars | 原始上下界；保持活跃结果租约、引用保护与关闭去重默认 |
-| 权限与审批默认 | permissionMode、permissions.allow/ask/deny | 模式下拉、工具/精确目标/Glob 规则构建器、增删排序；规则保存不处理已有审批 |
-| 明确写入目录授权 | writeRoots | 项目级专用数组与原生目录选择；后端验证真实路径/项目边界，选择目录本身不授予权限 |
-| 插件实现与权限策略 | capabilities 各实际注册单例实现 | 按实际候选的枚举；仅允许关闭原契约中的可选实现 |
-| 配置文件与插件装配 | modelsFile、mcpConfig、pluginEntries、disabledPlugins | 路径、插件模块/启用列表、增删排序；保存入口不导入新模块，重建 runtime 时按原插件契约装配 |
-| 本地工具 | disabled | 工具名数组；不隐式禁用工具 |
-| 辅助任务与并发 | maxRunning、maxDepth、maxTurns、timeoutMs、maxInbox、maxOutputChars、previewChars、maxAgents、maxRuns | 真正数值/literal 与跨字段边界；另保留已有下一任务生效入口 |
-| 会话日志 | includeBodies | bool；不自动开启正文日志 |
-| 连接密钥与项目环境 | 项目 `.env` 所有受支持变量 | 键值行、专用密码输入；保留注释/未更改行、变量名/原生 parseEnv 往返校验；0600 保存 |
-| 项目与会话 | 已有项目打开/原生选择；保存、新会话、恢复、删除保存记录 | 调用原后端操作；内部项目 ID/path/demo、会话内容不是可任意改写的配置参数 |
+| 页面               | 完整字段组                                                                                                                   | 控件/校验                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 主任务与模型连接   | provider、model、baseURL、apiKeyEnv、thinking、judgeModel                                                                    | Provider 下拉、模型候选输入、Endpoint/变量名、枚举；无凭据 HTTP(S) Endpoint、变量名、非空 ID 校验    |
+| Provider 连接      | 命名连接 CRUD：type、displayName、enabled；网络连接 baseURL、apiKeyEnv、models；OpenAI dialect                               | 列表/详情、适配器分支、文本/下拉/嵌套模型 map；实际使用已有 OpenAI/Anthropic/Fake 适配器，不探测账户 |
+| 模型目录           | 模型 ID CRUD、displayName、contextWindow、maxOutputTokens                                                                    | 列表/详情、正整数输入；显示名不改变路由 ID                                                           |
+| Provider 模型能力  | models[ID].api、thinkingLevels、rawToolArguments、prefixCompaction、outputParameter、thinkingMode、offEffort；OpenAI dialect | map 增删/改名、数组增删排序、真实 enum/bool；内置适配器和命名网络连接均可配置                        |
+| 上下文与缓存       | maxTurns、compactThreshold；cache.enabled、ttl、staticTtl、ttlStrategy、escalateAfterMs                                      | 数值、下拉、嵌套覆盖；只设置 staticTtl 不回填 enabled/ttl                                            |
+| 其他运行配置       | replayToolArguments                                                                                                          | 启用/关闭，默认不主动开启                                                                            |
+| 主任务规划         | mode、provider、model、thinking、maxOutputTokens、maxRequestBytes                                                            | 真实角色 schema；另保留已有即时规划方式入口                                                          |
+| 摘要模型与预算     | provider、model、thinking、strategy、maxOutputTokens、maxRequestBytes                                                        | 真实 schema，默认 isolated，不主动开启 prefix                                                        |
+| 审批模型与预算     | provider、model、thinking、timeoutMs、maxRequestBytes、maxResponseBytes、maxOutputTokens、prefixCache.enabled/ttl            | 分组数值/枚举；不缓存批准结果，不绕过执行器                                                          |
+| MCP 服务器         | 服务器名 CRUD；stdio command、args、env；HTTP url、headers                                                                   | 传输分支、程序路径、可排序参数、安全密码输入/键值 map；只允许一种传输，验证 URL/头/变量名            |
+| MCP 结果预算       | maxInlineChars、maxAgeDays、maxStoredBytes、deduplicate、maxSearchChars                                                      | 原始上下界；保持活跃结果租约、引用保护与关闭去重默认                                                 |
+| 权限与审批默认     | permissionMode、permissions.allow/ask/deny                                                                                   | 模式下拉、工具/精确目标/Glob 规则构建器、增删排序；规则保存不处理已有审批                            |
+| 明确写入目录授权   | writeRoots                                                                                                                   | 项目级专用数组与原生目录选择；后端验证真实路径/项目边界，选择目录本身不授予权限                      |
+| 插件实现与权限策略 | capabilities 各实际注册单例实现                                                                                              | 按实际候选的枚举；仅允许关闭原契约中的可选实现                                                       |
+| 配置文件与插件装配 | modelsFile、mcpConfig、pluginEntries、disabledPlugins                                                                        | 路径、插件模块/启用列表、增删排序；保存入口不导入新模块，重建 runtime 时按原插件契约装配             |
+| 本地工具           | disabled                                                                                                                     | 工具名数组；不隐式禁用工具                                                                           |
+| 辅助任务与并发     | maxRunning、maxDepth、maxTurns、timeoutMs、maxInbox、maxOutputChars、previewChars、maxAgents、maxRuns                        | 真正数值/literal 与跨字段边界；另保留已有下一任务生效入口                                            |
+| 会话日志           | includeBodies                                                                                                                | bool；不自动开启正文日志                                                                             |
+| 连接密钥与项目环境 | 项目 `.env` 所有受支持变量                                                                                                   | 键值行、专用密码输入；保留注释/未更改行、变量名/原生 parseEnv 往返校验；0600 保存                    |
+| 项目与会话         | 已有项目打开/原生选择；保存、新会话、恢复、删除保存记录                                                                      | 调用原后端操作；内部项目 ID/path/demo、会话内容不是可任意改写的配置参数                              |
 
 命名连接是真正可选的新增配置，放在 `pluginConfig["agentlab.provider-connections"].connections`。未配置时不生成连接或改变旧路由。连接被主任务/辅助角色引用时不能删除/禁用，需先选择其他 Provider 保存。内置 Provider 由插件提供；管理自定义连接并不删除实现代码。顶层 baseURL/apiKeyEnv 仍只作用于内置 openai/anthropic，命名连接使用其详情字段。所有包装委托现有 adapter 的请求规范化、字节预算和模型能力，路由身份隔离。
 

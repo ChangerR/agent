@@ -1,6 +1,6 @@
 /** 真实 Electron → preload IPC → Node worker → 配置文件的离线验收。Linux 需 Xvfb。 */
 import { _electron, expect } from '@playwright/test';
-import { mkdtemp, mkdir, readFile, writeFile, chmod, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, chmod, access, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -163,7 +163,15 @@ async function check(name, run) {
   console.log('PASS ' + name);
 }
 async function waitForNewSession(previous) {
-  await expect.poll(async () => { const state = await snapshot(), runtime = state.runtime; return !!runtime && runtime.sessionId !== previous && runtime.phase === '就绪' && !state.connecting; }).toBe(true);
+  await expect
+    .poll(async () => {
+      const state = await snapshot(),
+        runtime = state.runtime;
+      return (
+        !!runtime && runtime.sessionId !== previous && runtime.phase === '就绪' && !state.connecting
+      );
+    })
+    .toBe(true);
 }
 async function exerciseObject(group, schema, path) {
   for (const [name, child] of Object.entries(schema.properties ?? {})) {
@@ -172,7 +180,16 @@ async function exerciseObject(group, schema, path) {
   }
 }
 async function exerciseField(host, schema, name, path) {
-  renderedFields.push({path, type: schema.writeOnly ? 'secret' : schema['x-rule'] ? 'rule' : schema.anyOf ? 'union' : schema.type ?? 'typed'});
+  renderedFields.push({
+    path,
+    type: schema.writeOnly
+      ? 'secret'
+      : schema['x-rule']
+        ? 'rule'
+        : schema.anyOf
+          ? 'union'
+          : (schema.type ?? 'typed'),
+  });
   if (schema.writeOnly) {
     await expect(host.locator(':scope > .secret-field')).toBeVisible();
     return;
@@ -181,37 +198,65 @@ async function exerciseField(host, schema, name, path) {
     await expect(host.locator(':scope > .rule-editor select')).toHaveCount(2);
     return;
   }
-  const alternatives = schema.anyOf ?? (Array.isArray(schema.type) ? schema.type.map(type=>({type})) : undefined);
+  const alternatives =
+    schema.anyOf ??
+    (Array.isArray(schema.type) ? schema.type.map((type) => ({ type })) : undefined);
   if (alternatives) {
     for (const [index, alternative] of alternatives.entries()) {
       await host.locator(':scope > .union-editor > label > select').selectOption(String(index));
-      await exerciseField(host.locator(':scope > .union-editor'), alternative, name, path+' ['+index+']');
+      await exerciseField(
+        host.locator(':scope > .union-editor'),
+        alternative,
+        name,
+        path + ' [' + index + ']',
+      );
     }
     return;
   }
   if (schema.type === 'object' && schema.properties) {
-    await exerciseObject(host.locator(':scope > fieldset'),schema,path);
+    await exerciseObject(host.locator(':scope > fieldset'), schema, path);
   } else if (schema.type === 'object') {
     const map = host.locator(':scope > .map-editor');
     await map.locator(':scope > .add-record').click();
     const key = map.locator(':scope > .record-details > .map-row > label > input');
     await key.fill('coverageItem');
-    await exerciseField(map.locator(':scope > .record-details > .map-row'),typeof schema.additionalProperties === 'object' ? schema.additionalProperties : {'x-any':true},name+' · coverageItem',path+'.*');
+    await exerciseField(
+      map.locator(':scope > .record-details > .map-row'),
+      typeof schema.additionalProperties === 'object'
+        ? schema.additionalProperties
+        : { 'x-any': true },
+      name + ' · coverageItem',
+      path + '.*',
+    );
   } else if (schema.type === 'array') {
     const array = host.locator(':scope > .array-editor');
     await array.locator(':scope > button').click();
     if (name === 'pluginEntries') {
-      await expect(array.locator('.plugin-entry input[type="text"],.plugin-entry input:not([type])')).toHaveCount(1);
+      await expect(
+        array.locator('.plugin-entry input[type="text"],.plugin-entry input:not([type])'),
+      ).toHaveCount(1);
       await expect(array.locator('.plugin-entry input[type="checkbox"]')).toHaveCount(1);
-      renderedFields.push({path:path+'[].entry',type:'plugin module'},{path:path+'[].enabled',type:'plugin toggle'});
-    } else await exerciseField(array.locator(':scope > .array-row'),schema.items ?? {'x-any':true},name+' 1',path+'[]');
+      renderedFields.push(
+        { path: path + '[].entry', type: 'plugin module' },
+        { path: path + '[].enabled', type: 'plugin toggle' },
+      );
+    } else
+      await exerciseField(
+        array.locator(':scope > .array-row'),
+        schema.items ?? { 'x-any': true },
+        name + ' 1',
+        path + '[]',
+      );
   } else if (schema.enum || schema.const !== undefined || schema.type === 'boolean') {
     await expect(host.locator(':scope > select')).toBeVisible();
-  } else if (['number','integer','string'].includes(schema.type)) {
+  } else if (['number', 'integer', 'string'].includes(schema.type)) {
     // 字符串可为 Provider 下拉或带候选列表的输入。
-    assert.ok(await host.locator(':scope > input,:scope > select').count(), 'missing primitive control '+path);
+    assert.ok(
+      await host.locator(':scope > input,:scope > select').count(),
+      'missing primitive control ' + path,
+    );
   } else if (schema.type === 'null') {
-    await expect(host.getByText('空值（null）',{exact:true})).toBeVisible();
+    await expect(host.getByText('空值（null）', { exact: true })).toBeVisible();
   } else {
     await expect(host.locator(':scope > div > label > select')).toBeVisible();
   }
@@ -246,8 +291,13 @@ try {
     assert.equal(menu.found, true);
     assert.equal(menu.accelerator, 'CmdOrCtrl+,');
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
-    await app.evaluate(({Menu})=>{ const find=items=>items.flatMap(item=>[item,...(item.submenu?find(item.submenu.items):[])]); const item=find(Menu.getApplicationMenu().items).find(item=>item.label==='设置…'); item.click(); });
-    await expect(page.getByRole('region',{name:'应用设置',exact:true})).toBeVisible();
+    await app.evaluate(({ Menu }) => {
+      const find = (items) =>
+        items.flatMap((item) => [item, ...(item.submenu ? find(item.submenu.items) : [])]);
+      const item = find(Menu.getApplicationMenu().items).find((item) => item.label === '设置…');
+      item.click();
+    });
+    await expect(page.getByRole('region', { name: '应用设置', exact: true })).toBeVisible();
     await expect(form().locator('textarea')).toHaveCount(0);
     await page.screenshot({ path: join(output, '01-settings-entry-linux-electron.png') });
   });
@@ -633,19 +683,44 @@ try {
   });
 
   await check('全部已注册配置字段和条件分支的真实表单控件覆盖', async () => {
-    const sections = (await snapshot()).runtime.settings.filter(section=>section.editable);
-    const diskBefore = await readFile(configPath,'utf8');
+    const sections = (await snapshot()).runtime.settings.filter((section) => section.editable);
+    const diskBefore = await readFile(configPath, 'utf8');
     for (const section of sections) {
       await openSection(section.id);
-      await form().getByRole('button',{name:'清除此节的本层覆盖',exact:true}).click();
-      if (section.schema.properties) await exerciseObject(form().locator(':scope > fieldset'),section.schema,section.id);
-      else await exerciseField(form().locator(':scope > fieldset'),section.schema,section.title,section.id);
+      const resetName =
+        {
+          'configuration-model-catalog': '清空此文件的自定义模型',
+          'configuration-mcp-servers': '清空此文件的服务器',
+          'configuration-project-environment': '清空项目环境变量',
+        }[section.id] ?? '清除此节的本层覆盖';
+      await form().getByRole('button', { name: resetName, exact: true }).click();
+      if (section.schema.properties)
+        await exerciseObject(form().locator(':scope > fieldset'), section.schema, section.id);
+      else
+        await exerciseField(
+          form().locator(':scope > fieldset'),
+          section.schema,
+          section.title,
+          section.id,
+        );
       await expect(form().locator('textarea')).toHaveCount(0);
-      await form().getByRole('button',{name:'放弃更改',exact:true}).click();
+      await form().getByRole('button', { name: '放弃更改', exact: true }).click();
     }
-    assert.ok(sections.length >= 20); assert.ok(renderedFields.length >= 160);
-    assert.equal(await readFile(configPath,'utf8'),diskBefore,'coverage drafts cannot write configuration');
-    await store(join(output,'ui-field-coverage.json'),{source:'actual Electron controls',sections:sections.length,nodes:renderedFields.length,fields:renderedFields,saved:false,explanation:'本场景只检查所有真实字段/分支控件并放弃草稿；持久化/生效由其他逐场景验收覆盖。'});
+    assert.ok(sections.length >= 20);
+    assert.ok(renderedFields.length >= 160);
+    assert.equal(
+      await readFile(configPath, 'utf8'),
+      diskBefore,
+      'coverage drafts cannot write configuration',
+    );
+    await store(join(output, 'ui-field-coverage.json'), {
+      source: 'actual Electron controls',
+      sections: sections.length,
+      nodes: renderedFields.length,
+      fields: renderedFields,
+      saved: false,
+      explanation: '本场景只检查所有真实字段/分支控件并放弃草稿；持久化/生效由其他逐场景验收覆盖。',
+    });
   });
 
   await check('当前模型/思考/模式选择即保存，工具审批仍逐次确认', async () => {
@@ -665,7 +740,11 @@ try {
     await expect(page.getByRole('region', { name: '工具审批', exact: true })).toBeVisible();
     await assert.rejects(access(join(project, 'approval-proof.txt')));
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await expect(editor().getByText('任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。', { exact: true })).toBeVisible();
+    await expect(
+      editor().getByText('任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。', {
+        exact: true,
+      }),
+    ).toBeVisible();
     assert.equal((await snapshot()).runtime.approvals.length, 1);
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
     await page.getByRole('button', { name: '拒绝', exact: true }).click();
@@ -675,7 +754,9 @@ try {
     // 拒绝上下文的保护不会被测试绕过；明确新建独立会话，再审批另一个文件任务。
     await page.locator('.nav-new').click();
     await waitForNewSession(deniedSession);
-    await page.getByRole('textbox', { name: '输入任务', exact: true }).fill('WRITE_FIXTURE_ALLOW 在另一文件创建新内容');
+    await page
+      .getByRole('textbox', { name: '输入任务', exact: true })
+      .fill('WRITE_FIXTURE_ALLOW 在另一文件创建新内容');
     await page.getByRole('button', { name: '发送任务', exact: true }).click();
     await expect(page.getByRole('region', { name: '工具审批', exact: true })).toBeVisible();
     await assert.rejects(access(join(project, 'approval-proof-allowed.txt')));
@@ -705,7 +786,12 @@ try {
     app = undefined;
     await launch();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
-    await expect.poll(async () => { const state = await snapshot(); return !state.connecting && state.runtime?.provider === 'offlineRenamed'; }).toBe(true);
+    await expect
+      .poll(async () => {
+        const state = await snapshot();
+        return !state.connecting && state.runtime?.provider === 'offlineRenamed';
+      })
+      .toBe(true);
     assert.match((await snapshot()).runtime.error ?? '', /provider_mismatch/);
     const previous = (await snapshot()).runtime.sessionId;
     // 自动恢复旧会话保留其模型是原契约；明确新建才装配并采用启动默认值。
@@ -775,6 +861,41 @@ try {
       .toBe(false);
   });
 
+  await check('主题受控 IPC、保存失败反馈和原值保留', async () => {
+    const prefs = join(
+      await app.evaluate(({ app }) => app.getPath('userData')),
+      'desktop-preferences.json',
+    );
+    assert.equal((await json(prefs)).theme, 'dark');
+    const invalid = await page.evaluate(async () => {
+      try {
+        await window.agentlab.setTheme('../../invalid');
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    assert.equal(invalid, true);
+    await rename(prefs, prefs + '.fixture-backup');
+    await mkdir(prefs);
+    try {
+      await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('blue');
+      await expect(
+        page.getByRole('alert').filter({ hasText: '主题偏好保存失败' }).first(),
+      ).toBeVisible();
+      assert.equal((await snapshot()).theme, 'dark');
+      assert.equal((await json(prefs + '.fixture-backup')).theme, 'dark');
+    } finally {
+      await rm(prefs, { recursive: true, force: true });
+      await rename(prefs + '.fixture-backup', prefs);
+    }
+    await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('blue');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'blue');
+    assert.equal((await json(prefs)).theme, 'blue');
+    await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  });
+
   await check('未保存关闭取消、主题持久化、缩放与窄窗口布局', async () => {
     await openSection('configuration-budgets');
     await (
@@ -797,7 +918,23 @@ try {
       win.setSize(900, 700);
       win.webContents.setZoomFactor(1.25);
     });
+    await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).scrollIntoViewIfNeeded();
+    await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).uncheck();
+    await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).check();
+    const actions = await form().locator('.configuration-actions').boundingBox(),
+      viewport = page.viewportSize();
+    assert.ok(
+      actions &&
+        actions.y >= 0 &&
+        actions.y < (viewport?.height ?? (await page.evaluate(() => innerHeight))),
+      '缩放后保存栏应固定可见',
+    );
+    assert.ok(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      '窄窗口不能横向溢出',
+    );
     await page.screenshot({ path: join(output, '09-narrow-zoom-linux-electron.png') });
+    await form().getByRole('button', { name: '放弃更改', exact: true }).click();
     await expect(
       editor().getByRole('heading', { name: '上下文与缓存预算', exact: true }),
     ).toBeVisible();
@@ -806,10 +943,12 @@ try {
       win.webContents.setZoomFactor(1);
       win.setSize(1440, 960);
     });
+    assert.equal(await page.evaluate(() => localStorage.getItem('agentlab-theme')), 'dark');
     await app.close();
     app = undefined;
     await launch();
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    assert.equal(await page.evaluate(() => localStorage.getItem('agentlab-theme')), 'dark');
     assert.equal(
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()),
       'agentlab',
@@ -832,7 +971,10 @@ try {
   console.log('真实 Electron 设置验收通过：' + passed.length + ' 场景。证据：' + output);
 } catch (error) {
   console.error(error);
-  console.error('offline fixture trace', await readFile(join(project,'provider-trace.jsonl'),'utf8').catch(()=>'(not entered)'));
+  console.error(
+    'offline fixture trace',
+    await readFile(join(project, 'provider-trace.jsonl'), 'utf8').catch(() => '(not entered)'),
+  );
   if (page && !page.isClosed()) {
     await page.screenshot({ path: join(output, 'failure-linux-electron.png') }).catch(() => {});
     const s = await snapshot().catch(() => undefined);

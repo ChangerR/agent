@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
 import { desktopMenu, platformWindowOptions } from './platform.js';
 import { delimiter, join, resolve } from 'node:path';
-import { realpath, stat, readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { realpath, stat, readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { WorkerHost } from './worker-host.js';
@@ -22,12 +22,16 @@ let exiting = false;
 let closing = false;
 let quitting = false;
 let settingsDirty = false;
+let preferencesRaw: Record<string, unknown> = {};
+let preferencesQueue: Promise<unknown> = Promise.resolve();
+let themeQueue: Promise<unknown> = Promise.resolve();
 let state: DesktopState = {
   version: PROTOCOL_VERSION,
   revision: 0,
   connecting: false,
   projects: [],
   platform: process.platform,
+  theme: 'system',
 };
 const catalog = new ProjectCatalog();
 const root = app.getAppPath();
@@ -53,21 +57,38 @@ async function readPreferences() {
   try {
     const value = JSON.parse(await readFile(preferences(), 'utf8'));
     catalog.restore(value);
+    preferencesRaw = value;
+    if (['system', 'light', 'dark', 'blue'].includes(value.theme)) state.theme = value.theme;
     state.projects = catalog.projects;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
       state.error = '桌面偏好读取失败；项目配置与会话未修改。';
   }
 }
-async function savePreferences() {
+async function savePreferences(failure = '项目已打开，但项目列表与最近会话记录保存失败。') {
   catalog.observe(state.runtime);
-  const temporary = preferences() + '.tmp';
+  const contents = JSON.stringify({
+    ...preferencesRaw,
+    projects: catalog.projects,
+    theme: state.theme,
+  });
+  const save = preferencesQueue.then(async () => {
+    const temporary = preferences() + '.' + randomUUID() + '.tmp';
+    try {
+      await mkdir(app.getPath('userData'), { recursive: true });
+      await writeFile(temporary, contents, { mode: 0o600 });
+      await rename(temporary, preferences());
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {});
+    }
+  });
+  preferencesQueue = save.catch(() => {});
   try {
-    await mkdir(app.getPath('userData'), { recursive: true });
-    await writeFile(temporary, JSON.stringify({ projects: catalog.projects }));
-    await rename(temporary, preferences());
+    await save;
+    return true;
   } catch {
-    state.error = '项目已打开，但项目列表与最近会话记录保存失败。';
+    state.error = failure;
+    return false;
   }
 }
 async function start(path: string, demo = false, fresh = false) {
@@ -190,7 +211,10 @@ async function createWindow() {
   window = new BrowserWindow({
     title: 'agentlab',
     ...platformWindowOptions(process.platform),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#212121' : '#ffffff',
+    backgroundColor:
+      state.theme === 'dark' || (state.theme === 'system' && nativeTheme.shouldUseDarkColors)
+        ? '#181b20'
+        : '#ffffff',
     webPreferences: {
       preload: join(root, 'preload', 'index.cjs'),
       contextIsolation: true,
@@ -272,6 +296,24 @@ app
   .then(async () => {
     await readPreferences();
     register('agentlab:snapshot', async () => state);
+    register('agentlab:theme', async (payload) => {
+      if (typeof payload !== 'string' || !['system', 'light', 'dark', 'blue'].includes(payload))
+        throw new Error('无效主题。');
+      const save = themeQueue.then(async () => {
+        const previous = state.theme;
+        state.theme = payload as NonNullable<DesktopState['theme']>;
+        const failure = '主题偏好保存失败，请检查应用数据目录的写入权限后重试。';
+        if (!(await savePreferences(failure))) {
+          state.theme = previous;
+          publish();
+          throw new Error(failure);
+        }
+        if (state.error === failure) state.error = undefined;
+        publish();
+      });
+      themeQueue = save.catch(() => {});
+      await save;
+    });
     register('agentlab:pick-project', async () => {
       const selection = await dialog.showOpenDialog(window, {
         title: '打开 agentlab 项目',

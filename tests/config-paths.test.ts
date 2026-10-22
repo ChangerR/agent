@@ -142,7 +142,9 @@ describe('统一项目身份和状态目录', () => {
     json(getGlobalConfigPath(), { model: 'second' });
     expect(getGlobalConfigPath()).toBe(join(nextHome, '.agentlab', 'config.json'));
     expect(loadConfig(project).model).toBe('second');
-    expect(resolveAgentPaths(project).sessionsDir.startsWith(join(nextHome, '.agentlab'))).toBe(true);
+    expect(resolveAgentPaths(project).sessionsDir.startsWith(join(nextHome, '.agentlab'))).toBe(
+      true,
+    );
   });
 });
 

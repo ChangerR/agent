@@ -215,13 +215,19 @@ export default function App() {
     return true;
   };
   const navigate = (next: typeof view) => {
-    if (next === view || allowLeave()) setView(next);
+    if (next === view || allowLeave()) {
+      setView(next);
+      if (window.innerWidth <= 650) setSidebar(false);
+    }
   };
   const scroll = useRef<HTMLDivElement>(null),
     follow = useRef(true);
   const runtime = state.runtime,
     busy = state.connecting || !!runtime?.busy;
   const disabled = busy || pending;
+  useEffect(() => {
+    if (state.theme) setTheme(state.theme);
+  }, [state.theme]);
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
@@ -343,7 +349,13 @@ export default function App() {
   };
   const setting = (field: 'model' | 'mode' | 'think', value: string) =>
     void perform(() => action({ type: 'setting', field, value }));
-  const changeTheme = (value: string) => setTheme(value as Theme);
+  const changeTheme = (value: string) => {
+    if (!['system', 'light', 'dark', 'blue'].includes(value)) return;
+    void perform(async () => {
+      await bridge.setTheme?.(value as Theme);
+      setTheme(value as Theme);
+    });
+  };
   useEffect(() => {
     const off = bridge.onNavigate((target) => {
       if (target === 'settings') navigate('settings');
@@ -756,9 +768,11 @@ export default function App() {
                       value={runtime?.model ?? ''}
                       onChange={(e) => setting('model', e.target.value)}
                     >
-                      {runtime?.models.map((m) => <option key={m}>{m}</option>) ?? (
-                        <option>未配置模型</option>
-                      )}
+                      {runtime?.models.map((m) => (
+                        <option key={m} value={m}>
+                          {runtime.modelDetails?.find((model) => model.id === m)?.displayName ?? m}
+                        </option>
+                      )) ?? <option>未配置模型</option>}
                     </select>
                     <select
                       aria-label="权限模式"

@@ -119,6 +119,22 @@ export function SettingsPanel({
       : descriptor?.applyMode === 'nextRequest'
         ? '下一次请求生效。'
         : '按此设置的声明应用。';
+  const resetLabel =
+    selected === 'configuration-model-catalog'
+      ? '清空此文件的自定义模型'
+      : selected === 'configuration-mcp-servers'
+        ? '清空此文件的服务器'
+        : selected === 'configuration-project-environment'
+          ? '清空项目环境变量'
+          : '清除此节的本层覆盖';
+  const resetHelp =
+    selected === 'configuration-model-catalog'
+      ? '清空只改草稿；提交后删除此文件的模型条目及其附加元数据，恢复内置规格，保留 modelsFile 引用。要恢复另一层文件引用，请在“配置文件与插件装配”取消 modelsFile 覆盖。'
+      : selected === 'configuration-mcp-servers'
+        ? '清空只改草稿；提交后删除此文件的服务器条目及其附加元数据，保留文件其他字段和 mcpConfig 引用。要恢复另一层引用，请在“配置文件与插件装配”取消 mcpConfig 覆盖。'
+        : selected === 'configuration-project-environment'
+          ? '清空只改草稿；提交后移除已识别变量（含凭据），保留注释与未识别行。当前进程环境不变，重新装配后采用。'
+          : '清除只修改草稿；提交后删除此节已知覆盖，保留未知字段。未勾选的字段不会被默认值回填。Esc 放弃未保存更改。';
   return (
     <section className="configuration-page" aria-label="应用设置">
       <aside className="configuration-nav">
@@ -429,7 +445,11 @@ export function SettingsPanel({
               </div>
             )}
             {loading ? (
-              <p role="status">{runtime?.busy ? '任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。' : '正在读取设置…'}</p>
+              <p role="status">
+                {runtime?.busy
+                  ? '任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。'
+                  : '正在读取设置…'}
+              </p>
             ) : descriptor.editable ? (
               <form
                 key={selected + ':' + scope + ':' + runtime?.generation + ':' + resetEpoch}
@@ -490,13 +510,10 @@ export function SettingsPanel({
                     disabled={pending || runtime?.busy}
                     onClick={() => update({})}
                   >
-                    清除此节的本层覆盖
+                    {resetLabel}
                   </button>
                 </div>
-                <p className="small">
-                  清除只修改草稿；提交后删除此节已知覆盖，保留未知字段。未勾选的字段不会被默认值回填。Esc
-                  放弃未保存更改。
-                </p>
+                <p className="small">{resetHelp}</p>
               </form>
             ) : (
               <ValueView value={editor.value} />

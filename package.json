@@ -18,9 +18,9 @@
     "desktop:preview": "node --import tsx desktop/scripts/preview.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "desktop:ui-smoke": "node desktop/scripts/ui-smoke.mjs"
-    ,"desktop:electron-smoke": "node desktop/scripts/electron-settings-smoke.mjs"
-    ,"desktop:settings-coverage": "node desktop/scripts/settings-coverage.mjs"
+    "desktop:ui-smoke": "node desktop/scripts/ui-smoke.mjs",
+    "desktop:electron-smoke": "node desktop/scripts/electron-settings-smoke.mjs",
+    "desktop:settings-coverage": "node desktop/scripts/settings-coverage.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

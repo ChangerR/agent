@@ -32,7 +32,11 @@ try {
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
   await page.getByRole('button', { name: '主任务与模型连接（启动默认值）', exact: true }).click();
-  await page.locator('.settings-quick').filter({hasText:'外观与当前会话'}).locator(':scope > summary').click();
+  await page
+    .locator('.settings-quick')
+    .filter({ hasText: '外观与当前会话' })
+    .locator(':scope > summary')
+    .click();
   await page.getByRole('combobox', { name: '设置当前思考等级', exact: true }).selectOption('low');
   await expect(page.getByRole('combobox', { name: '设置当前思考等级', exact: true })).toHaveValue(
     'low',

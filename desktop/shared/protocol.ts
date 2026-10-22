@@ -179,6 +179,7 @@ export interface ProjectSummary {
   lastSessionId?: string;
 }
 export interface DesktopState {
+  theme?: 'system' | 'light' | 'dark' | 'blue';
   version: typeof PROTOCOL_VERSION;
   revision: number;
   connecting: boolean;
@@ -188,6 +189,7 @@ export interface DesktopState {
   platform?: string;
 }
 export interface DesktopBridge {
+  setTheme?(theme: 'system' | 'light' | 'dark' | 'blue'): Promise<void>;
   snapshot(): Promise<DesktopState>;
   onState(listener: (state: DesktopState) => void): () => void;
   onNavigate(listener: (action: DesktopNavigation) => void): () => void;

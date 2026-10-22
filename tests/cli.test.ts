@@ -1280,12 +1280,18 @@ describe('真实 TUI 离线交互', () => {
       await writeFile(
         join(dir, 'agent.config.json'),
         // 本用例验 UI 人工审批，不借 FakeProvider 的审批员格式纠错来触发 ask。
-        JSON.stringify({ provider: 'fake', permissionMode: 'ask', permissions: { ask: ['read_file'] } }),
+        JSON.stringify({
+          provider: 'fake',
+          permissionMode: 'ask',
+          permissions: { ask: ['read_file'] },
+        }),
       );
       await writeFile(join(dir, 'secrets.txt'), '演示内容');
       const agent = await createAgent(dir);
       let judgeRequests = 0;
-      agent.events.on('model_request', event => { if(event.purpose === 'judge') judgeRequests++; });
+      agent.events.on('model_request', (event) => {
+        if (event.purpose === 'judge') judgeRequests++;
+      });
       const terminal = new MemoryTerminal();
       const exit = vi.fn();
       session = startTui(agent, { terminal, onExit: exit });

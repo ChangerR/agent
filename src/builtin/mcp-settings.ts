@@ -41,10 +41,7 @@ export function mcpSettingsSection(cwd: string, activePath?: string): SettingsSe
   const store = (scope: SettingsScope) => {
     if (scope !== 'project' && scope !== 'global') throw new Error('不支持此作用域。');
     const selected = new PluginConfigStore(target(scope));
-    const r = relative(
-      scope === 'project' ? paths.projectRoot : paths.agentHome,
-      selected.path,
-    );
+    const r = relative(scope === 'project' ? paths.projectRoot : paths.agentHome, selected.path);
     if (
       isAbsolute(r) ||
       r === '..' ||
@@ -95,7 +92,9 @@ export function mcpSettingsSection(cwd: string, activePath?: string): SettingsSe
         },
       },
     },
-    get scopeTargets() { return (['project', 'global'] as const).map((scope) => ({scope,path:target(scope)})); },
+    get scopeTargets() {
+      return (['project', 'global'] as const).map((scope) => ({ scope, path: target(scope) }));
+    },
     read(signal, scope = 'project') {
       signal.throwIfAborted();
       const base = store(scope).readFields(['mcpServers']),

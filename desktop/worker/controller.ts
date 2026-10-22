@@ -172,7 +172,12 @@ export class DesktopController {
         .filter(
           ({ id, section }) =>
             id.startsWith('configuration-') ||
-            (!['planning', 'subagents', 'reviewer-model-config'].includes(id) && !!section.draft && !!section.commit && section.scopeTargets?.some(target => ['project', 'global'].includes(target.scope))) ||
+            (!['planning', 'subagents', 'reviewer-model-config'].includes(id) &&
+              !!section.draft &&
+              !!section.commit &&
+              section.scopeTargets?.some((target) =>
+                ['project', 'global'].includes(target.scope),
+              )) ||
             [
               'capability-selection',
               'policy-deterministic-config',
@@ -499,13 +504,18 @@ export class DesktopController {
             throw new Error('不支持此设置或作用域。');
           this.editor = undefined;
           const id = randomUUID();
-          metadata.scopes = (record.section.scopeTargets ?? []).filter(target => target.scope !== 'session') as typeof metadata.scopes;
+          metadata.scopes = (record.section.scopeTargets ?? []).filter(
+            (target) => target.scope !== 'session',
+          ) as typeof metadata.scopes;
           metadata.schema = record.section.getSchema?.() ?? record.section.schema;
           metadata.description = record.section.description;
           let value = await record.section.read?.(controller.signal, action.scope);
           // 专用目录授权只投影 schema 拥有的字段；未知配置不传入 renderer。
           if (action.sectionId === 'policy-deterministic-config')
-            value = value && typeof value === 'object' && Object.hasOwn(value,'writeRoots') ? { writeRoots: (value as { writeRoots?: unknown }).writeRoots } : {};
+            value =
+              value && typeof value === 'object' && Object.hasOwn(value, 'writeRoots')
+                ? { writeRoots: (value as { writeRoots?: unknown }).writeRoots }
+                : {};
           if (this.disposal || action.sessionId !== a.session.id)
             throw new Error('设置读取已失效。');
           this.editor = { id, section: record.section, scope: action.scope };

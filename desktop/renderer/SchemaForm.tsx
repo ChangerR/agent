@@ -384,7 +384,11 @@ function MapInput({ schema, value, onChange, name, runtime }: Props) {
                 value={row.value}
                 runtime={runtime}
                 onChange={(v) =>
-                  change(v === undefined ? rows.filter(r => r.id !== row.id) : rows.map((r) => (r.id === row.id ? { ...r, value: v } : r)))
+                  change(
+                    v === undefined
+                      ? rows.filter((r) => r.id !== row.id)
+                      : rows.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
+                  )
                 }
               />
               <button
@@ -485,7 +489,13 @@ function ArrayInput({ schema, value, onChange, name, runtime }: Props) {
               schema={item}
               value={v}
               runtime={runtime}
-              onChange={(next) => onChange(next === undefined ? values.filter((_,i)=>i!==index) : values.map((old, i) => (i === index ? next : old)))}
+              onChange={(next) =>
+                onChange(
+                  next === undefined
+                    ? values.filter((_, i) => i !== index)
+                    : values.map((old, i) => (i === index ? next : old)),
+                )
+              }
             />
           )}
           <div className="row-actions">
@@ -795,7 +805,13 @@ export function Fields({
               </details>
             )}
             {child.description && <p className="small">{child.description}</p>}
-            {(child.minimum !== undefined || child.maximum !== undefined) && <small className="field-constraint">{child.minimum !== undefined ? `最小 ${child.minimum}` : ''}{child.minimum !== undefined && child.maximum !== undefined ? ' · ' : ''}{child.maximum !== undefined ? `最大 ${child.maximum}` : ''}</small>}
+            {(child.minimum !== undefined || child.maximum !== undefined) && (
+              <small className="field-constraint">
+                {child.minimum !== undefined ? `最小 ${child.minimum}` : ''}
+                {child.minimum !== undefined && child.maximum !== undefined ? ' · ' : ''}
+                {child.maximum !== undefined ? `最大 ${child.maximum}` : ''}
+              </small>
+            )}
           </div>
         );
       })}
