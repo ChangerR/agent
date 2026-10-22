@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { dirname } from 'node:path';
 import { definePlugin } from '../../sdk/index.js';
 import type { Telemetry, TelemetryEvent } from '../../sdk/runtime-capabilities.js';
+import { planningErrorCode } from '../planning/errors.js';
 
 export interface JsonlTelemetryOptions {
   path: string;
@@ -141,7 +142,11 @@ export function redactedEvent(event: Readonly<TelemetryEvent>): Record<string, u
         afterMessages: event.afterMessages,
       };
     case 'error':
-      return { type: event.type, errorName: event.error.name };
+      return {
+        type: event.type,
+        errorName: event.error.name,
+        ...(planningErrorCode(event.error) ? { errorCode: planningErrorCode(event.error) } : {}),
+      };
     case 'session_saved':
       return { type: event.type, id: event.id, trimmed: event.trimmed };
     case 'session_restored':
