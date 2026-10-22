@@ -5,19 +5,24 @@
   "typecheck": "passed (root and desktop)",
   "full_tests": {
     "files": 93,
-    "passed": 1720,
+    "passed": 1722,
     "skipped": 2,
     "failed": 0
   },
   "build": "passed (CLI and desktop)",
   "sidecar_smoke": "passed",
   "packaging": "linux/x64 --validate passed; darwin metadata/platform guard assertions passed",
-  "ui_smoke": "passed; actual React + isolated FakeProvider worker",
+  "ui_smoke": "passed; Node Playwright + actual React + isolated FakeProvider worker; autosave and review regressions",
   "native_macos": {
     "executed": false,
     "reason": "No independent native macOS environment available"
   },
   "paid_model_calls": 0,
   "user_computer_used": false,
-  "published_installers": false
+  "published_installers": false,
+  "review_fixes": [
+    "empty object reset restores inheritance",
+    "same-section selection preserves dirty draft",
+    "repeated validation failures retain feedback"
+  ]
 }

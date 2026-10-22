@@ -42,6 +42,16 @@ afterEach(() => {
 });
 
 describe('schema 驱动的分层配置入口', () => {
+  it('清除没有未知字段的对象覆盖会删除空对象，恢复全局保守缓存值', async () => {
+    mkdirSync(join(home, '.agent'));
+    write({ cache: { enabled: false, ttl: '1h' } }, join(home, '.agent/config.json'));
+    write({ provider: 'fake', cache: { enabled: true, ttl: '5m' }, unknown: true });
+    const editor = section('budgets');
+    await editor.read!(signal());
+    await editor.commit!(await editor.draft!({}, signal()), signal());
+    expect(read()).toEqual({ provider: 'fake', unknown: true });
+    expect(loadConfig(cwd).cache).toMatchObject({ enabled: false, ttl: '1h' });
+  });
   it('MCP 只写固定作用域文件，掩码保护 args/env/headers，保留未知字段与 CAS', async () => {
     const path = join(cwd, 'mcp.json');
     write(
