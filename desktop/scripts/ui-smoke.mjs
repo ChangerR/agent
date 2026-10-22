@@ -31,6 +31,7 @@ try {
   await page.getByRole('button', { name: '离线演示', exact: true }).click();
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
   await page.getByRole('button', { name: '主任务与模型连接（启动默认值）', exact: true }).click();
   await page
     .locator('.settings-quick')

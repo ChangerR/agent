@@ -96,6 +96,22 @@ async function start(cwd = project, fresh = false) {
     publish();
   }
 }
+const globalWorker = new WorkerHost(
+  process.execPath,
+  join(output, 'worker/index.mjs'),
+  home,
+  env,
+  () => {},
+  () => {
+    state.error = '全局设置预览进程中断';
+    publish();
+  },
+  (snapshot) => {
+    state.globalSettings = snapshot;
+    publish();
+  },
+);
+await globalWorker.request({ type: 'init-settings', generation: randomUUID() });
 const port = Number(process.env.AGENTLAB_PREVIEW_PORT ?? 4175);
 const origin = 'http://127.0.0.1:' + port;
 const server = createServer(async (req, res) => {
@@ -169,10 +185,12 @@ const server = createServer(async (req, res) => {
         const entry = typeof data.id === 'string' ? catalog.get(data.id) : undefined;
         if (!entry) throw new Error('仅允许打开列表中的隔离演示项目');
         await start(entry.path);
+      } else if (url.pathname === '/api/global-settings') {
+        await globalWorker.request({ type: 'global-settings', action: data });
       } else if (url.pathname === '/api/request') {
         if (changing || !worker) throw new Error('演示进程尚未就绪');
         await worker.request(data);
-      } else throw new Error('浏览器预览仅允许隔离演示；打开真实项目请使用 Windows 应用。');
+      } else throw new Error('浏览器预览仅允许隔离演示；打开真实项目请使用 agentlab App。');
       res.end('{}');
       return;
     }
@@ -210,5 +228,5 @@ server.listen(port, '127.0.0.1', () =>
 );
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
-    void worker?.dispose().finally(() => process.exit());
+    void Promise.all([worker?.dispose(), globalWorker.dispose()]).finally(() => process.exit());
   });

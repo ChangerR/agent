@@ -1,4 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage } from 'electron';
+import { homedir } from 'node:os';
+import { CredentialVault, CredentialSettings } from './credentials.js';
+import { loadConfigWithSources } from '../../src/core/config.js';
 import { desktopMenu, platformWindowOptions } from './platform.js';
 import { delimiter, join, resolve } from 'node:path';
 import { realpath, stat, readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
@@ -9,6 +12,7 @@ import { ProjectCatalog } from './project-catalog.js';
 import { resolveProjectRoot } from '../../src/core/paths.js';
 import {
   actionSchema,
+  globalSettingsActionSchema,
   PROTOCOL_VERSION,
   type DesktopState,
   type RuntimeSnapshot,
@@ -16,6 +20,9 @@ import {
 
 let window: BrowserWindow;
 let host: WorkerHost | undefined;
+let globalHost: WorkerHost | undefined;
+let vault: CredentialVault;
+let credentials: CredentialSettings;
 let generation: string | undefined;
 let transition = false;
 let exiting = false;
@@ -47,6 +54,27 @@ app.on('second-instance', () => {
 });
 const renderer = join(root, 'renderer', 'index.html');
 const preferences = () => join(app.getPath('userData'), 'desktop-preferences.json');
+async function startGlobalSettings() {
+  if (globalHost) return;
+  const node = join(root, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
+  globalHost = new WorkerHost(
+    node,
+    join(root, 'worker', 'index.mjs'),
+    homedir(),
+    { ...process.env },
+    () => {},
+    () => {
+      globalHost = undefined;
+      state.error = '全局设置进程中断，请重新打开 App；已保存配置保留。';
+      publish();
+    },
+    (snapshot) => {
+      state.globalSettings = snapshot;
+      publish();
+    },
+  );
+  await globalHost.request({ type: 'init-settings', generation: randomUUID() });
+}
 function publish() {
   catalog.observe(state.runtime);
   state.projects = catalog.projects;
@@ -148,7 +176,14 @@ async function start(path: string, demo = false, fresh = false) {
         publish();
       },
     );
-    await host.request({ type: 'init', cwd, demo, generation: nextGeneration });
+    const resolved = demo ? {} : vault.resolve(loadConfigWithSources(cwd).config);
+    await host.request({
+      type: 'init',
+      cwd,
+      demo,
+      generation: nextGeneration,
+      credentials: resolved,
+    });
     catalog.open(cwd, demo);
     if (lastSessionId && state.runtime) {
       const snapshot = state.runtime as RuntimeSnapshot;
@@ -206,6 +241,7 @@ async function demo() {
   await start(path, true);
 }
 async function createWindow() {
+  await startGlobalSettings();
   exiting = false;
   closing = false;
   window = new BrowserWindow({
@@ -270,6 +306,8 @@ async function createWindow() {
       publish();
       try {
         await host?.dispose();
+        await globalHost?.dispose();
+        globalHost = undefined;
         await savePreferences();
         host = undefined;
         generation = undefined;
@@ -295,6 +333,31 @@ app
   .whenReady()
   .then(async () => {
     await readPreferences();
+    vault = new CredentialVault(safeStorage);
+    credentials = new CredentialSettings(vault);
+    register('agentlab:global-settings', async (payload) => {
+      await startGlobalSettings();
+      await globalHost!.request({
+        type: 'global-settings',
+        action: globalSettingsActionSchema.parse(payload),
+      });
+    });
+    register('agentlab:credential-status', async (payload) => {
+      if (typeof payload !== 'string') throw new Error('无效 Provider。');
+      return credentials.read(payload);
+    });
+    register('agentlab:credential-save', async (payload) => {
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        Object.keys(payload).some((k) => !['token', 'key'].includes(k))
+      )
+        throw new Error('无效密钥请求。');
+      const { token, key } = payload as { token: unknown; key: unknown };
+      if (typeof token !== 'string' || (key !== null && typeof key !== 'string'))
+        throw new Error('无效密钥请求。');
+      await credentials.save(token, key);
+    });
     register('agentlab:snapshot', async () => state);
     register('agentlab:theme', async (payload) => {
       if (typeof payload !== 'string' || !['system', 'light', 'dark', 'blue'].includes(payload))

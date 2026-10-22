@@ -1,15 +1,30 @@
 import { DesktopController } from './controller.js';
+import { GlobalSettingsController } from './global-settings.js';
 import type { WorkerMessage, WorkerRequest } from '../shared/protocol.js';
 const send = (message: WorkerMessage) => {
   if (process.connected) process.send?.(message);
 };
 const controller = new DesktopController((state) => send({ type: 'state', state }));
+const settings = new GlobalSettingsController((state) =>
+  send({ type: 'global-settings-state', state }),
+);
 let startup: Promise<void> = Promise.resolve();
 process.on('message', async (raw: WorkerRequest) => {
   if (!raw || typeof raw.id !== 'string') return;
   try {
-    if (raw.action.type === 'init') {
-      startup = controller.initialize(raw.action.cwd, raw.action.demo, raw.action.generation);
+    if (raw.action.type === 'init-settings') {
+      startup = settings.initialize(raw.action.generation);
+      await startup;
+    } else if (raw.action.type === 'global-settings') {
+      await startup;
+      await settings.handle(raw.action.action);
+    } else if (raw.action.type === 'init') {
+      startup = controller.initialize(
+        raw.action.cwd,
+        raw.action.demo,
+        raw.action.generation,
+        raw.action.credentials,
+      );
       await startup;
     } else if (raw.action.type === 'dispose') {
       await startup.catch(() => {});

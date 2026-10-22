@@ -652,6 +652,19 @@ export default function App() {
           <SettingsPanel
             key={runtime?.generation ?? 'preferences'}
             runtime={runtime}
+            globalSettings={state.globalSettings}
+            globalRequest={async (payload) => {
+              if (!bridge.globalSettingsRequest || !state.globalSettings)
+                throw new Error('全局设置尚未就绪，请重新打开 App。');
+              const action =
+                payload.type === 'settings-read'
+                  ? { type: 'read', sectionId: payload.sectionId }
+                  : { type: 'commit', editorId: payload.editorId, json: payload.json };
+              await bridge.globalSettingsRequest({
+                ...action,
+                generation: state.globalSettings.generation,
+              } as import('../shared/protocol.js').GlobalSettingsAction);
+            }}
             request={action}
             dirtyChanged={dirtyChanged}
             theme={theme}

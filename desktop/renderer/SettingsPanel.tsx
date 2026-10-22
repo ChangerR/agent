@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { RuntimeSnapshot, SettingsDescriptor } from '../shared/protocol.js';
+import type { RuntimeSnapshot, SettingsDescriptor, SettingsSnapshot } from '../shared/protocol.js';
 
 import { Field, Fields, ValueView, type FormSchema } from './SchemaForm.js';
 import { getBridge } from './bridge.js';
+import { CredentialPanel } from './CredentialPanel.js';
 
 const category = (id: string) =>
   /connection|catalog|provider-openai|provider-anthropic|environment/.test(id)
@@ -19,34 +20,43 @@ const category = (id: string) =>
 
 export function SettingsPanel({
   runtime,
+  globalSettings,
+  globalRequest,
   request,
   dirtyChanged,
   theme,
   changeTheme,
 }: {
   runtime?: RuntimeSnapshot;
+  globalSettings?: SettingsSnapshot;
+  globalRequest: (payload: Record<string, unknown>) => Promise<void>;
   request: (payload: Record<string, unknown>) => Promise<void>;
   dirtyChanged: (dirty: boolean) => void;
   theme: string;
   changeTheme: (theme: string) => void;
 }) {
-  const sections = runtime?.settings ?? [];
+  const [scope, setScope] = useState<'project' | 'global'>('global');
+  const context = scope === 'global' ? globalSettings : runtime;
+  const sections = context?.settings ?? [];
+  const settingsRequest = (payload: Record<string, unknown>) =>
+    scope === 'global' ? globalRequest(payload) : request(payload);
   const [selected, setSelected] = useState(
     sections.find((s) => s.id === 'configuration-connection')?.id ?? sections[0]?.id ?? '',
   );
   const [search, setSearch] = useState('');
-  const [scope, setScope] = useState<'project' | 'global'>('project');
   const [draft, setDraft] = useState<unknown>({});
   const [resetEpoch, setResetEpoch] = useState(0);
   const [dirty, setDirty] = useState(false),
     [pending, setPending] = useState(false),
     [error, setError] = useState('');
   const descriptor = sections.find((item) => item.id === selected),
-    editor = runtime?.settingsEditor;
+    editor = context?.settingsEditor;
+  const settingsBusy = scope === 'project' && !!runtime?.busy;
   const loading = !editor || editor.sectionId !== selected || editor.scope !== scope;
+  const [credentialDirty, setCredentialDirty] = useState(false);
   const markDirty = (value: boolean) => {
     setDirty(value);
-    dirtyChanged(value);
+    dirtyChanged(value || credentialDirty);
   };
   useEffect(() => () => dirtyChanged(false), []);
   useEffect(() => {
@@ -59,21 +69,28 @@ export function SettingsPanel({
     }
   }, [editor?.id, editor?.error, editor?.feedbackRevision]);
   useEffect(() => {
-    if (!selected && sections.length)
+    if (sections.length && !sections.some((item) => item.id === selected))
       setSelected(sections.find((s) => s.id === 'configuration-connection')?.id ?? sections[0].id);
-  }, [sections.length]);
+  }, [sections.length, scope, selected, context?.generation]);
   useEffect(() => {
-    if (!selected || !runtime || runtime.busy) return;
+    if (!selected || !context || (scope === 'project' && runtime?.busy)) return;
     let active = true;
     setError('');
-    void request({ type: 'settings-read', sectionId: selected, scope }).catch((e) => {
+    void settingsRequest({ type: 'settings-read', sectionId: selected, scope }).catch((e) => {
       if (active) setError(e.message);
     });
     return () => {
       active = false;
     };
-  }, [selected, scope, runtime?.generation, runtime?.sessionId, runtime?.busy]);
-  const abandon = () => !dirty || window.confirm('此节有未保存更改，放弃后继续？');
+  }, [
+    selected,
+    scope,
+    context?.generation,
+    scope === 'project' ? runtime?.sessionId : undefined,
+    scope === 'project' ? runtime?.busy : undefined,
+  ]);
+  const abandon = () =>
+    !(dirty || credentialDirty) || window.confirm('此节有未保存更改，放弃后继续？');
   const select = (item: SettingsDescriptor) => {
     if (item.id === selected) return;
     if (!abandon()) return;
@@ -88,11 +105,15 @@ export function SettingsPanel({
     markDirty(true);
   };
   const submit = async () => {
-    if (!editor || loading || pending || runtime?.busy) return;
+    if (!editor || loading || pending || settingsBusy) return;
     setPending(true);
     setError('');
     try {
-      await request({ type: 'settings-commit', editorId: editor.id, json: JSON.stringify(draft) });
+      await settingsRequest({
+        type: 'settings-commit',
+        editorId: editor.id,
+        json: JSON.stringify(draft),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : '提交失败，请重试。');
     } finally {
@@ -106,7 +127,7 @@ export function SettingsPanel({
     setError('');
     try {
       await request({ type: 'setting', field, value });
-      if (selected) await request({ type: 'settings-read', sectionId: selected, scope });
+      if (selected) await settingsRequest({ type: 'settings-read', sectionId: selected, scope });
     } catch (e) {
       setError(e instanceof Error ? e.message : '设置未保存，请重试。');
     } finally {
@@ -115,7 +136,7 @@ export function SettingsPanel({
   };
   const timing =
     descriptor?.applyMode === 'newSession'
-      ? 'App 重新装配并新建会话或退出重启后采用；CLI 需重启。保存不改变当前会话或已有审批。'
+      ? '新打开项目、重新装配并新建会话或重启 App 后采用；CLI 需重启。保存不改变当前会话或已有审批。'
       : descriptor?.applyMode === 'nextRequest'
         ? '下一次请求生效。'
         : '按此设置的声明应用。';
@@ -141,7 +162,7 @@ export function SettingsPanel({
         <div className="settings-nav-heading">
           <span className="settings-eyebrow">agentlab</span>
           <h2>设置</h2>
-          <p className="small">按项目工作，保留你的默认值。</p>
+          <p className="small">全局默认值，所有项目共享。</p>
         </div>
         <input
           aria-label="查找设置页面"
@@ -246,7 +267,7 @@ export function SettingsPanel({
             </fieldset>
           )}
         </details>
-        {!runtime && <p>打开项目后可配置 Agent；外观立即生效。</p>}
+        {!runtime && <p className="small">无需打开项目即可完成全局设置。</p>}
         {runtime && (
           <details className="settings-quick">
             <summary>项目与会话管理</summary>
@@ -276,7 +297,9 @@ export function SettingsPanel({
                   markDirty(false);
                   setPending(true);
                   void request({ type: 'session-save' })
-                    .then(() => request({ type: 'settings-read', sectionId: selected, scope }))
+                    .then(() =>
+                      settingsRequest({ type: 'settings-read', sectionId: selected, scope }),
+                    )
                     .catch((e) => setError(e.message))
                     .finally(() => setPending(false));
                 }}
@@ -316,7 +339,9 @@ export function SettingsPanel({
                       markDirty(false);
                       setPending(true);
                       void request({ type: 'session-delete', id: session.id })
-                        .then(() => request({ type: 'settings-read', sectionId: selected, scope }))
+                        .then(() =>
+                          settingsRequest({ type: 'settings-read', sectionId: selected, scope }),
+                        )
                         .catch((e) => setError(e.message))
                         .finally(() => setPending(false));
                     }}
@@ -337,31 +362,60 @@ export function SettingsPanel({
                 <span className="settings-eyebrow">{category(selected)}</span>
                 <h2>{descriptor.title}</h2>
               </div>
-              <div className="configuration-scope">
-                <label>
-                  编辑作用域{' '}
-                  <select
-                    aria-label="配置作用域"
-                    value={scope}
-                    disabled={pending || !descriptor.scopes.length}
-                    onChange={(e) => {
-                      if (!abandon()) return;
-                      markDirty(false);
-                      setScope(e.target.value as typeof scope);
-                    }}
-                  >
-                    {(descriptor.scopes.length ? descriptor.scopes : [{ scope: 'project' }]).map(
-                      (item) => (
-                        <option key={item.scope} value={item.scope}>
-                          {item.scope === 'global' ? '用户级 · 所有项目默认' : '项目级 · 当前项目'}
+              <div className="settings-header-actions">
+                <div className="configuration-scope">
+                  <label>
+                    编辑作用域{' '}
+                    <select
+                      aria-label="配置作用域"
+                      value={scope}
+                      disabled={pending || !descriptor.scopes.length}
+                      onChange={(e) => {
+                        if (!abandon()) return;
+                        markDirty(false);
+                        setScope(e.target.value as typeof scope);
+                      }}
+                    >
+                      {[{ scope: 'global' }, { scope: 'project' }].map((item) => (
+                        <option
+                          key={item.scope}
+                          value={item.scope}
+                          disabled={
+                            item.scope === 'project' &&
+                            (!runtime ||
+                              !runtime.settings.some(
+                                (s) =>
+                                  s.id === selected && s.scopes.some((t) => t.scope === 'project'),
+                              ))
+                          }
+                        >
+                          {item.scope === 'global'
+                            ? '全局配置 · 所有项目默认'
+                            : '高级 · 仅覆盖当前项目'}
                         </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-                <span className="tag" role="status">
-                  {dirty ? '未保存' : editor?.saved ? '已保存' : '原始层值'}
-                </span>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="tag" role="status">
+                    {dirty ? '未保存' : editor?.saved ? '已保存' : '原始层值'}
+                  </span>
+                </div>{' '}
+                <button
+                  type="button"
+                  className="outline settings-reload"
+                  disabled={pending || settingsBusy}
+                  onClick={() => {
+                    if (!abandon()) return;
+                    markDirty(false);
+                    void settingsRequest({
+                      type: 'settings-read',
+                      sectionId: selected,
+                      scope,
+                    }).catch((e) => setError(e.message));
+                  }}
+                >
+                  重新读取
+                </button>
               </div>
             </header>
             <details className="settings-location">
@@ -378,45 +432,37 @@ export function SettingsPanel({
                 {runtime.thinking}。启动默认值不覆盖已恢复会话。
               </p>
             )}
-            <button
-              type="button"
-              className="outline"
-              disabled={pending || runtime?.busy}
-              onClick={() => {
-                if (!abandon()) return;
-                markDirty(false);
-                void request({ type: 'settings-read', sectionId: selected, scope }).catch((e) =>
-                  setError(e.message),
-                );
-              }}
-            >
-              重新读取
-            </button>
-            {selected === 'configuration-connection' && runtime && (
+
+            {selected === 'configuration-connection' && context && (
               <section className="provider-manager" aria-label="Provider 管理">
                 <h3>已注册 Provider</h3>
                 <p className="small save-help">
                   选择 Provider 与模型，一次提交启动默认值。内置 openai / anthropic 使用下方
-                  Endpoint 和密钥变量名；命名连接的 Endpoint、密钥引用和模型 API 能力在“Provider
-                  连接”管理。 保存后重新装配采用。
+                  Endpoint；API key
+                  在下方直接输入并加密保存。环境变量是可选高级方式。命名连接在“Provider
+                  连接”管理。保存后重新装配采用。
                 </p>
                 <div className="provider-cards">
-                  {(runtime.providerOptions ?? runtime.providers).map((id) => (
+                  {(context.providerOptions ?? context.providers).map((id) => (
                     <button
                       key={id}
                       type="button"
-                      disabled={pending || runtime.busy}
+                      disabled={pending || settingsBusy}
                       aria-pressed={(draft as { provider?: string })?.provider === id}
                       onClick={() => update({ ...(draft as object), provider: id })}
                     >
-                      <strong>{runtime.providerLabels?.[id] ?? id}</strong>
+                      <strong>{context.providerLabels?.[id] ?? id}</strong>
                       <small>
                         {id} ·{' '}
-                        {runtime.provider === id
-                          ? '当前会话使用'
-                          : runtime.providers.includes(id)
-                            ? '已加载'
-                            : '保存后待装配'}
+                        {scope === 'global'
+                          ? context.provider === id
+                            ? '全局默认'
+                            : '可用连接'
+                          : context.provider === id
+                            ? '当前会话使用'
+                            : context.providers.includes(id)
+                              ? '已加载'
+                              : '保存后待装配'}
                       </small>
                     </button>
                   ))}
@@ -434,6 +480,33 @@ export function SettingsPanel({
                 </button>
               </section>
             )}
+            {scope === 'global' &&
+              ['configuration-connection', 'configuration-agentlab.provider-connections'].includes(
+                selected,
+              ) &&
+              globalSettings && (
+                <CredentialPanel
+                  key={selected}
+                  settings={globalSettings}
+                  blocked={dirty}
+                  dirtyChanged={(v) => {
+                    setCredentialDirty(v);
+                    dirtyChanged(dirty || v);
+                  }}
+                  refresh={async () => {
+                    await globalRequest({
+                      type: 'settings-read',
+                      sectionId: selected,
+                      scope: 'global',
+                    });
+                  }}
+                />
+              )}
+            <p className="scope-explanation">
+              {scope === 'global'
+                ? '保存到用户目录，作为所有项目的默认值；不会创建项目配置或会话。'
+                : '仅覆盖当前项目；未勾选字段继承全局配置。权限规则按既有合并规则生效。'}
+            </p>
             {editor?.effectiveError && (
               <p role="status" className="info">
                 其他层的有效值暂时无法合成：{editor.effectiveError}。本层值仍可审阅。
@@ -452,7 +525,7 @@ export function SettingsPanel({
               </p>
             ) : descriptor.editable ? (
               <form
-                key={selected + ':' + scope + ':' + runtime?.generation + ':' + resetEpoch}
+                key={selected + ':' + scope + ':' + context?.generation + ':' + resetEpoch}
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submit();
@@ -465,7 +538,7 @@ export function SettingsPanel({
                   }
                 }}
               >
-                <fieldset disabled={pending || runtime?.busy}>
+                <fieldset disabled={pending || settingsBusy}>
                   <legend className="sr-only">本层覆盖</legend>
                   {descriptor.schema.properties &&
                   Object.keys(descriptor.schema.properties as object).length ? (
@@ -473,7 +546,7 @@ export function SettingsPanel({
                       schema={descriptor.schema as FormSchema}
                       value={draft as Record<string, unknown>}
                       onChange={update}
-                      runtime={runtime}
+                      runtime={context}
                       effective={editor.effectiveValue}
                     />
                   ) : (
@@ -489,7 +562,7 @@ export function SettingsPanel({
                 <div className="configuration-actions">
                   <button
                     className="primary"
-                    disabled={!dirty || pending || runtime?.busy}
+                    disabled={!dirty || pending || settingsBusy}
                     type="submit"
                   >
                     {pending ? '正在验证与保存…' : '提交此节'}
@@ -507,7 +580,7 @@ export function SettingsPanel({
                   </button>
                   <button
                     type="button"
-                    disabled={pending || runtime?.busy}
+                    disabled={pending || settingsBusy}
                     onClick={() => update({})}
                   >
                     {resetLabel}

@@ -412,9 +412,15 @@ export class AnthropicProvider implements Provider {
   private getClient(): Anthropic {
     if (!this.client) {
       this.client = new Anthropic({
-        apiKey: resolveApiKey(this.opts, 'ANTHROPIC_API_KEY'),
+        apiKey: resolveApiKey(
+          this.opts,
+          'ANTHROPIC_API_KEY',
+          this.opts.baseURL ?? process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
+        ),
         // 显式变量只发送选中的 key，避免 SDK 同时添加默认 bearer 凭据。
-        ...(this.opts.apiKeyEnv !== undefined ? { authToken: null } : {}),
+        ...(this.opts.apiKeyEnv !== undefined || this.opts.apiKeyResolver !== undefined
+          ? { authToken: null }
+          : {}),
         baseURL: this.opts.baseURL,
       });
     }

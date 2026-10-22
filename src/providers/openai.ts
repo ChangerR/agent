@@ -366,7 +366,7 @@ export class OpenAIProvider implements Provider {
   private getClient(): OpenAI {
     if (!this.client) {
       this.client = new OpenAI({
-        apiKey: resolveApiKey(this.opts, 'OPENAI_API_KEY') ?? 'EMPTY',
+        apiKey: resolveApiKey(this.opts, 'OPENAI_API_KEY', this.endpoint) ?? 'EMPTY',
         baseURL:
           this.sdkEndpoint ??
           (process.env.OPENAI_BASE_URL === undefined ? undefined : this.endpoint),

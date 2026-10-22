@@ -1,5 +1,7 @@
 # agentlab
 
+App 设置默认全局，不用先创建项目或会话；连接页可直接输入并通过系统 safeStorage 加密保存 API key。项目覆盖和环境变量引用是显式高级选项，详见 [全局图形设置](docs/CONFIGURATION-SETTINGS.md)。
+
 ## 插件架构与确定性策略
 
 默认使用 `deterministic` 策略、严格 `model` 审批员和 `ask` 模式。插件使用 `agentlab/sdk`，通过 `pluginEntries` 加载，`capabilities` 明确选择实现。

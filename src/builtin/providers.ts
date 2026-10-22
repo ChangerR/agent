@@ -12,6 +12,7 @@ import { definePlugin } from '../sdk/index.js';
 import { z } from 'zod';
 import type { ModelCapabilities } from '../core/provider.js';
 import { ProviderModelsSchema } from './provider-config.js';
+import { storedApiKey, credentialBinding } from '../providers/api-key.js';
 
 function demoScript(): ScriptedResponse {
   let called = false;
@@ -99,24 +100,48 @@ function demoScript(): ScriptedResponse {
     );
   };
 }
-export function providerPlugins(config: AgentConfig) {
+export function providerPlugins(
+  config: AgentConfig,
+  resolveCredential?: (reference: string, identity?: string) => string,
+) {
   return [
     definePlugin({
       manifest: { id: 'agentlab.provider-anthropic', version: '1.0.0', apiVersion: 1 },
       config: {
-        schema: z.object({ models: ProviderModelsSchema }),
-        ownedFields: ['models'],
+        schema: z.object({
+          models: ProviderModelsSchema,
+          apiKeyRef: z
+            .string()
+            .regex(/^cred_[a-f0-9]{32}$/)
+            .optional(),
+          apiKeyEnv: z
+            .string()
+            .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+            .optional(),
+        }),
+        ownedFields: ['models', 'apiKeyRef', 'apiKeyEnv'],
         defaults: {},
         applyMode: 'newSession',
       },
       setup(ctx) {
-        const apiKeyEnv = config.provider === 'anthropic' ? config.apiKeyEnv : undefined;
+        const apiKeyEnv =
+          (ctx.config.value.apiKeyEnv as string | undefined) ??
+          (config.provider === 'anthropic' ? config.apiKeyEnv : undefined);
+        const ref = ctx.config.value.apiKeyRef as string | undefined;
         ctx.provide.provider(
           'anthropic',
           new AnthropicProvider({
             models: ctx.config.value.models as Record<string, ModelCapabilities>,
             apiKeyEnv,
-            apiKey: process.env[apiKeyEnv ?? 'ANTHROPIC_API_KEY'],
+            apiKeyResolver: ref
+              ? (endpoint) =>
+                  storedApiKey(
+                    ref,
+                    resolveCredential,
+                    credentialBinding('anthropic', 'anthropic', endpoint),
+                  )!
+              : undefined,
+            apiKey: ref ? undefined : process.env[apiKeyEnv ?? 'ANTHROPIC_API_KEY'],
             baseURL: config.provider === 'anthropic' ? config.baseURL : undefined,
             cacheControl: config.cache.enabled,
           }),
@@ -127,22 +152,41 @@ export function providerPlugins(config: AgentConfig) {
       manifest: { id: 'agentlab.provider-openai', version: '1.0.0', apiVersion: 1 },
       config: {
         schema: z.object({
+          apiKeyRef: z
+            .string()
+            .regex(/^cred_[a-f0-9]{32}$/)
+            .optional(),
+          apiKeyEnv: z
+            .string()
+            .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+            .optional(),
           dialect: z.enum(['auto', 'generic', 'deepseek']).default('auto'),
           models: ProviderModelsSchema,
         }),
-        ownedFields: ['dialect', 'models'],
+        ownedFields: ['dialect', 'models', 'apiKeyRef', 'apiKeyEnv'],
         defaults: {},
         applyMode: 'newSession',
       },
       setup(ctx) {
-        const apiKeyEnv = config.provider === 'openai' ? config.apiKeyEnv : undefined;
+        const apiKeyEnv =
+          (ctx.config.value.apiKeyEnv as string | undefined) ??
+          (config.provider === 'openai' ? config.apiKeyEnv : undefined);
+        const ref = ctx.config.value.apiKeyRef as string | undefined;
         ctx.provide.provider(
           'openai',
           new OpenAIProvider({
             models: ctx.config.value.models as Record<string, ModelCapabilities>,
             dialect: ctx.config.value.dialect as 'auto' | 'generic' | 'deepseek',
             apiKeyEnv,
-            apiKey: process.env[apiKeyEnv ?? 'OPENAI_API_KEY'],
+            apiKeyResolver: ref
+              ? (endpoint) =>
+                  storedApiKey(
+                    ref,
+                    resolveCredential,
+                    credentialBinding('openai', 'openai', endpoint),
+                  )!
+              : undefined,
+            apiKey: ref ? undefined : process.env[apiKeyEnv ?? 'OPENAI_API_KEY'],
             baseURL: config.provider === 'openai' ? config.baseURL : undefined,
           }),
         );

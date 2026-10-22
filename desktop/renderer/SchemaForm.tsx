@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { RuntimeSnapshot } from '../shared/protocol.js';
+import type { RuntimeSnapshot, SettingsSnapshot } from '../shared/protocol.js';
 import { getBridge } from './bridge.js';
 
 export type FormSchema = {
@@ -30,7 +30,8 @@ export const labels: Record<string, string> = {
   contextWindow: '上下文窗口（tokens）',
   maxOutputTokens: '输出 token 上限',
   baseURL: 'Endpoint URL',
-  apiKeyEnv: 'API key 环境变量名',
+  apiKeyEnv: '高级：API key 环境变量名（可选）',
+  apiKeyRef: '安全存储引用（由保存 API key 管理）',
   thinking: '思考等级',
   judgeModel: '审批模型（空值跟随主模型）',
   models: '模型 API 能力',
@@ -209,7 +210,7 @@ type Props = {
   schema: FormSchema;
   value: unknown;
   onChange: (v: unknown) => void;
-  runtime?: RuntimeSnapshot;
+  runtime?: RuntimeSnapshot | SettingsSnapshot;
   effective?: unknown;
 };
 function RuleInput({ value, onChange, name, runtime }: Props) {
@@ -269,7 +270,7 @@ function RuleInput({ value, onChange, name, runtime }: Props) {
     </div>
   );
 }
-function MapInput({ schema, value, onChange, name, runtime }: Props) {
+function MapInput({ schema, value, onChange, name, runtime, effective }: Props) {
   type Row = { id: number; key: string; value: unknown };
   const from = () =>
     Object.entries(record(value) ? value : {}).map(([key, value]) => ({ id: ++rowId, key, value }));
@@ -380,6 +381,7 @@ function MapInput({ schema, value, onChange, name, runtime }: Props) {
               {invalid && <span role="alert">名称不能为空、重复或使用保留名称</span>}
               <Field
                 name={`${name} · ${row.key || index + 1}`}
+                effective={record(effective) ? effective[row.key] : undefined}
                 schema={item}
                 value={row.value}
                 runtime={runtime}
@@ -535,6 +537,12 @@ export function Field(props: Props) {
   const { name, schema, value, onChange, runtime } = props,
     label = schema.title ?? labels[name] ?? name,
     id = useId();
+  if (name === 'apiKeyRef')
+    return (
+      <span className="managed-reference">
+        {value ? '已由全局 API key 安全保存；使用上方入口替换或清除。' : '尚未保存 API key。'}
+      </span>
+    );
   if (schema['x-rule']) return <RuleInput {...props} />;
   if (schema.writeOnly || secret(value))
     return <SecretInput label={label} value={value} onChange={onChange} />;
@@ -748,12 +756,19 @@ export function Fields({
   schema: FormSchema;
   value: Record<string, unknown>;
   onChange: (v: unknown) => void;
-  runtime?: RuntimeSnapshot;
+  runtime?: RuntimeSnapshot | SettingsSnapshot;
   effective?: unknown;
 }) {
   return (
     <>
       {Object.entries(schema.properties ?? {}).map(([name, child]) => {
+        if (name === 'apiKeyRef')
+          return (
+            <div className="configuration-field managed-reference-row" data-field={name} key={name}>
+              <span>保存的 API key</span>
+              <Field name={name} schema={child} value={value[name]} onChange={() => {}} />
+            </div>
+          );
         const present = Object.hasOwn(value ?? {}, name),
           label = child.title ?? labels[name] ?? name;
         return (
@@ -784,11 +799,24 @@ export function Fields({
                 <small>{present ? '本层覆盖' : '继承 / 默认'}</small>
               </span>
             </label>
-            {present && (
+            {(present ||
+              (runtime &&
+                'revision' in runtime &&
+                record(effective) &&
+                Object.hasOwn(effective, name) &&
+                !['object', 'array'].includes(String(child.type)) &&
+                !child.anyOf)) && (
               <Field
                 name={name}
                 schema={child}
-                value={value[name]}
+                effective={record(effective) ? effective[name] : undefined}
+                value={
+                  present
+                    ? value[name]
+                    : record(effective) && Object.hasOwn(effective, name)
+                      ? effective[name]
+                      : initial(child)
+                }
                 runtime={runtime}
                 onChange={(item) => {
                   const next = { ...value };

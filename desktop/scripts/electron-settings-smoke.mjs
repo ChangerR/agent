@@ -202,6 +202,11 @@ async function waitForNewSession(previous) {
 }
 async function exerciseObject(group, schema, path) {
   for (const [name, child] of Object.entries(schema.properties ?? {})) {
+    if (name === 'apiKeyRef') {
+      await expect(groupField(group, name).locator('.managed-reference')).toBeVisible();
+      renderedFields.push({ path: path + '.' + name, type: 'managed safe-storage status' });
+      continue;
+    }
     const node = await override(group, name);
     await exerciseField(node, child, name, path + '.' + name);
   }
@@ -306,6 +311,7 @@ try {
   });
   await check('可发现的设置按钮与真实菜单入口', async () => {
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await expect(
       editor().getByRole('heading', { name: '主任务与模型连接（启动默认值）', exact: true }),
     ).toBeVisible();
@@ -767,6 +773,7 @@ try {
     await expect(page.getByRole('region', { name: '工具审批', exact: true })).toBeVisible();
     await assert.rejects(access(join(project, 'approval-proof.txt')));
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await expect(
       editor().getByText('任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。', {
         exact: true,
@@ -795,6 +802,7 @@ try {
     );
     await page.screenshot({ path: join(output, '07-conversation-linux-electron.png') });
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
   });
 
   await check('主任务选用保存的 Provider/模型，关闭重启后真实采用并加载本地 MCP', async () => {
@@ -847,6 +855,7 @@ try {
     await expect(page.getByText('[fake connection offlineRenamed]', { exact: true })).toBeVisible();
     await expect.poll(async () => (await snapshot()).runtime.busy).toBe(false);
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await openSection('configuration-model-catalog');
     await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
     await editor().evaluate((node) => {
@@ -872,6 +881,7 @@ try {
     await expect.poll(async () => (await snapshot()).runtime.busy).toBe(false);
     const secondId = (await snapshot()).runtime.sessionId;
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     sessions = page.locator('.settings-quick').filter({ hasText: '项目与会话管理' });
     await sessions.locator(':scope > summary').click();
     await sessions

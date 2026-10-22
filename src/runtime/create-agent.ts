@@ -35,6 +35,7 @@ import type { SubagentRecord } from '../core/agents.js';
 import { RequestPermissionGuard } from '../core/permission/request-scope.js';
 import { usageCountKeys } from '../core/protocol/types.js';
 export interface CreateAgentOptions {
+  resolveCredential?: (reference: string, identity?: string) => string;
   lifecycleTimeoutMs?: number;
   autoSaveSessions?: boolean;
   plugins?: readonly Plugin[];
@@ -164,6 +165,7 @@ export async function createRuntime(
   };
   let pluginDefinitions: readonly Plugin[] = [];
   const preset = (options.preset ?? presetFactory)({
+    resolveCredential: options.resolveCredential,
     pluginDefinitions: () => pluginDefinitions,
     cwd,
     paths,

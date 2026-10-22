@@ -140,10 +140,11 @@ export function loadConfig(cwd: string): AgentConfig {
 export function loadConfigWithSources(
   cwd: string,
   overrides: AgentConfigOverrides = {},
+  options: { globalOnly?: boolean } = {},
 ): LoadedConfig {
   const paths = resolveAgentPaths(cwd);
   const globalRaw = readJson(paths.globalConfigPath);
-  const projectRaw = readJson(paths.projectConfigPath);
+  const projectRaw = options.globalOnly ? {} : readJson(paths.projectConfigPath);
   const globalCfg = globalRaw;
   const projectCfg = projectRaw;
   const sessionCfg = overrides;

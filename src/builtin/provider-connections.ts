@@ -7,6 +7,7 @@ import { OpenAIProvider } from '../providers/openai.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
 import { FakeProvider, textResponse } from '../providers/fake.js';
 import { ProviderModelsSchema } from './provider-config.js';
+import { storedApiKey, credentialBinding } from '../providers/api-key.js';
 export const CONNECTIONS_PLUGIN = 'agentlab.provider-connections';
 const name = z
   .string()
@@ -16,6 +17,10 @@ const name = z
   );
 const common = { displayName: z.string().min(1).optional(), enabled: z.boolean().default(true) };
 const network = {
+  apiKeyRef: z
+    .string()
+    .regex(/^cred_[a-f0-9]{32}$/)
+    .optional(),
   baseURL: z
     .string()
     .url()
@@ -66,7 +71,12 @@ function namedProvider(id: string, base: Provider): Provider {
     stream: base.stream.bind(base),
   };
 }
-export function providerConnectionsPlugin(cwd: string, config: AgentConfig) {
+export function providerConnectionsPlugin(
+  cwd: string,
+  config: AgentConfig,
+  resolveCredential?: (reference: string, identity?: string) => string,
+  globalOnly = false,
+) {
   return definePlugin({
     manifest: { id: CONNECTIONS_PLUGIN, version: '1.0.0', apiVersion: 1 },
     config: {
@@ -75,7 +85,7 @@ export function providerConnectionsPlugin(cwd: string, config: AgentConfig) {
       defaults: {},
       applyMode: 'newSession',
       validateSettings(value, scope) {
-        const loaded = loadConfigWithSources(cwd),
+        const loaded = loadConfigWithSources(cwd, {}, { globalOnly }),
           id = CONNECTIONS_PLUGIN;
         const global = (
           loaded.layers.global.pluginConfig as Record<string, Record<string, unknown>> | undefined
@@ -111,12 +121,28 @@ export function providerConnectionsPlugin(cwd: string, config: AgentConfig) {
             ? new FakeProvider([() => textResponse('[fake connection ' + id + ']')])
             : item.type === 'openai'
               ? new OpenAIProvider({
+                  apiKeyResolver: item.apiKeyRef
+                    ? (endpoint) =>
+                        storedApiKey(
+                          item.apiKeyRef,
+                          resolveCredential,
+                          credentialBinding(id, item.type, endpoint),
+                        )!
+                    : undefined,
                   baseURL: item.baseURL,
                   apiKeyEnv: item.apiKeyEnv,
                   models: item.models,
                   dialect: item.dialect,
                 })
               : new AnthropicProvider({
+                  apiKeyResolver: item.apiKeyRef
+                    ? (endpoint) =>
+                        storedApiKey(
+                          item.apiKeyRef,
+                          resolveCredential,
+                          credentialBinding(id, item.type, endpoint),
+                        )!
+                    : undefined,
                   baseURL: item.baseURL,
                   apiKeyEnv: item.apiKeyEnv,
                   models: item.models,

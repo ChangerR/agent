@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopBridge, DesktopState } from '../shared/protocol.js';
 /** 白名单桥只返回纯 DTO，不暴露原始 IPC、文件系统或 shell。 */
 const bridge: DesktopBridge = {
+  globalSettingsRequest: (action) => ipcRenderer.invoke('agentlab:global-settings', action),
+  credentialStatus: (provider) => ipcRenderer.invoke('agentlab:credential-status', provider),
+  saveCredential: (token, key) => ipcRenderer.invoke('agentlab:credential-save', { token, key }),
   setTheme: (theme) => ipcRenderer.invoke('agentlab:theme', theme),
   snapshot: () => ipcRenderer.invoke('agentlab:snapshot'),
   onState(listener) {

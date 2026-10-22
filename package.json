@@ -20,7 +20,8 @@
     "format:check": "prettier --check .",
     "desktop:ui-smoke": "node desktop/scripts/ui-smoke.mjs",
     "desktop:electron-smoke": "node desktop/scripts/electron-settings-smoke.mjs",
-    "desktop:settings-coverage": "node desktop/scripts/settings-coverage.mjs"
+    "desktop:settings-coverage": "node desktop/scripts/settings-coverage.mjs",
+    "desktop:global-smoke": "node desktop/scripts/global-settings-smoke.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

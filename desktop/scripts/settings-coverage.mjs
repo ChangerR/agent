@@ -92,7 +92,9 @@ function walk(section, s, path) {
     section: section.id,
     title: section.title,
     path,
-    control: control(s),
+    control: /(?:^|\.)apiKeyRef$/.test(path)
+      ? '安全存储状态；专用 API key 输入 / 替换 / 清除'
+      : control(s),
     scope: section.scopes.map((s) => s.scope).join(' / '),
     effect: section.applyMode ?? '声明',
     constraints: [

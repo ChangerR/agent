@@ -2301,3 +2301,215 @@ textarea:focus-visible {
     bottom: 0;
   }
 }
+
+/* 设置统一控件度量：标签与输入同一行基线，按钮与工具栏不再依赖 float。 */
+.configuration-page {
+  --settings-control-height: 36px;
+  --settings-action-height: 78px;
+}
+.configuration-page button:not(.settings-category button),
+.configuration-page input:not([type='checkbox']),
+.configuration-page select {
+  min-height: var(--settings-control-height);
+  font-size: 12px;
+  line-height: 20px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  vertical-align: middle;
+}
+.configuration-page button:not(.settings-category button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+}
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-header-actions .settings-reload {
+  float: none;
+  border-color: var(--line);
+  white-space: nowrap;
+}
+.settings-page-heading {
+  align-items: center;
+}
+.configuration-scope {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.configuration-scope select {
+  max-width: 230px;
+}
+.configuration-field.field-scalar {
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1.3fr);
+  align-items: center;
+  gap: 8px 20px;
+}
+.field-scalar > .field-constraint {
+  grid-column: 2;
+}
+.override-label {
+  min-height: var(--settings-control-height);
+  align-items: center;
+  margin: 0;
+}
+.override-label > span {
+  line-height: 18px;
+}
+.override-label small {
+  line-height: 15px;
+  margin: 2px 0 0;
+}
+.configuration-actions {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 14px 0;
+}
+.configuration-actions > button:last-child {
+  justify-self: end;
+}
+.configuration-editor form {
+  padding-bottom: var(--settings-action-height);
+}
+.credential-panel {
+  border: 1px solid var(--line);
+  background: var(--rail);
+  border-radius: 10px;
+  padding: 20px;
+  margin: 18px 0;
+}
+.credential-panel > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.credential-panel h3 {
+  font-size: 14px;
+  margin: 0 0 4px;
+}
+.credential-panel p {
+  margin: 6px 0;
+}
+.credential-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(180px, 1.5fr);
+  gap: 16px;
+  margin: 16px 0 10px;
+}
+.credential-form > label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  font-size: 12px;
+}
+.credential-form input,
+.credential-form select {
+  width: 100%;
+  min-width: 0;
+}
+.credential-endpoint {
+  overflow-wrap: anywhere;
+}
+.credential-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.scope-explanation {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 16px 0;
+}
+.configuration-page .record-list > button {
+  display: flex;
+  justify-content: flex-start;
+}
+.configuration-page .record-workspace > legend {
+  float: none;
+  display: block;
+}
+@media (max-width: 1200px) {
+  .configuration-field.field-scalar {
+    grid-template-columns: 1fr;
+  }
+  .field-scalar > .field-constraint {
+    grid-column: 1;
+  }
+  .credential-form {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 750px) {
+  .settings-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .settings-header-actions .configuration-scope {
+    width: auto;
+    flex: 1;
+  }
+  .settings-header-actions .tag {
+    display: none;
+  }
+  .credential-panel {
+    padding: 14px;
+  }
+  .credential-panel > header {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
+@media (max-width: 550px) {
+  .configuration-page {
+    --settings-action-height: 116px;
+  }
+  .configuration-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .configuration-actions > button:last-child {
+    grid-column: 1/-1;
+    justify-self: stretch;
+  }
+}
+/* 继承来源是辅助信息，保持紧凑，不挤开字段与控件。 */
+.configuration-field > .effective-value {
+  border: 0;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+}
+.field-scalar > .effective-value,
+.field-scalar > .field-constraint {
+  grid-column: 2;
+  margin: 0;
+  padding: 0;
+}
+.managed-reference-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(160px, 1.3fr);
+  align-items: center;
+  gap: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 1200px) {
+  .field-scalar > .effective-value,
+  .field-scalar > .field-constraint {
+    grid-column: 1;
+  }
+  .managed-reference-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}

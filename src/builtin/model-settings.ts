@@ -15,14 +15,14 @@ import { assertManagedSettingsPath, commitSettingsReference } from './settings-p
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 const fields = ['displayName', 'contextWindow', 'maxOutputTokens'];
-export function modelSettingsSection(cwd: string): SettingsSection {
+export function modelSettingsSection(cwd: string, globalOnly = false): SettingsSection {
   const paths = resolveAgentPaths(cwd),
-    loaded = loadConfigWithSources(cwd);
+    loaded = loadConfigWithSources(cwd, {}, { globalOnly });
   const references = createScopedConfigStores(cwd);
   const target = (scope: SettingsScope) => {
     if (scope !== 'project' && scope !== 'global') throw new Error('不支持此作用域。');
     const root = scope === 'project' ? paths.projectRoot : paths.agentHome;
-    const raw = loadConfigWithSources(cwd).layers[scope].modelsFile;
+    const raw = loadConfigWithSources(cwd, {}, { globalOnly }).layers[scope].modelsFile;
     return { root, path: resolve(root, typeof raw === 'string' ? raw : 'models.json') };
   };
   const store = (scope: SettingsScope) => {
@@ -99,7 +99,7 @@ export function modelSettingsSection(cwd: string): SettingsSection {
     },
     readEffective(signal) {
       signal.throwIfAborted();
-      const current = loadConfigWithSources(cwd).config;
+      const current = loadConfigWithSources(cwd, {}, { globalOnly }).config;
       return { catalog: { ...MODEL_PRESETS, ...loadModelsFile(current.modelsFile) } };
     },
     draft(raw, signal, scope = 'project') {
@@ -152,7 +152,9 @@ export function modelSettingsSection(cwd: string): SettingsSection {
       if (!saved || saved.scope !== scope) throw new Error('模型草稿已失效。');
       const targetStore = store(scope),
         active =
-          scope === 'project' ? loadConfigWithSources(cwd).config.modelsFile : target(scope).path;
+          scope === 'project'
+            ? loadConfigWithSources(cwd, {}, { globalOnly }).config.modelsFile
+            : target(scope).path;
       commitSettingsReference(
         references.store(scope),
         saved.reference,
