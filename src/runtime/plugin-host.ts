@@ -64,7 +64,13 @@ export function observationSnapshot<T>(value: T): T {
     if (item === null || typeof item !== 'object') return item;
     if (item instanceof AbortSignal) return undefined;
     if (seen.has(item)) return seen.get(item);
-    if (item instanceof Error) return Object.freeze({ name: item.name, message: item.message });
+    if (item instanceof Error)
+      return Object.freeze({
+        name: item.name,
+        message: item.message,
+        // 保留可区分的错误标识；观察者仍自行决定哪些 code 可以写入脱敏输出。
+        ...('code' in item && typeof item.code === 'string' ? { code: item.code } : {}),
+      });
     const result: Record<string, unknown> | unknown[] = Array.isArray(item) ? [] : {};
     seen.set(item, result);
     for (const [key, entry] of Object.entries(item)) {

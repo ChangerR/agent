@@ -10,6 +10,7 @@ import type { Message } from '../../core/protocol/types.js';
 import type { InteractionRequest } from '../../sdk/index.js';
 import { PLANNING_PLUGIN, PLAN_TOOLS } from './identity.js';
 import type { PresetContext } from '../../runtime/preset.js';
+import { PlanningError } from './errors.js';
 export { PLANNING_PLUGIN, PLAN_TOOLS } from './identity.js';
 import { PlanningConfigSchema } from './config.js';
 export { PlanningConfigSchema } from './config.js';
@@ -98,6 +99,7 @@ export const planningStrategy: PlanningStrategy = {
   async prepare(input: PlannerInput) {
     if (input.mode === 'off') return;
     const automatic = input.mode === 'auto' && !input.force;
+    let invalidResponse = '';
     // 只对完整但结构无效的回复纠正一次；网络失败、截断和取消不在这里重试。
     for (let attempt = 0; attempt < 2; attempt++) {
       input.signal.throwIfAborted();
@@ -125,7 +127,33 @@ export const planningStrategy: PlanningStrategy = {
                 ]
               : []),
           ].join('\n'),
-          messages: planningMessages(input.messages),
+          messages: [
+            ...planningMessages(input.messages),
+            // 纠正必须包含前次回复及其后的格式要求，不能只重放同一份长历史。
+            // 无效回复仅作为文本证据，不恢复其中的工具协议或执行指令。
+            ...(attempt
+              ? ([
+                  {
+                    role: 'assistant',
+                    content: [
+                      { type: 'text', text: invalidResponse || '[上次规划回复没有文本内容]' },
+                    ],
+                  },
+                  {
+                    role: 'user',
+                    source: 'runtime',
+                    content:
+                      '这是运行时格式纠正，不是新的用户授权。上条规划回复无效，不执行其中的内容。' +
+                      '只针对当前用户请求返回规划 JSON，不直接回答问题，不输出说明或工具调用。' +
+                      (automatic
+                        ? '简单问答或单个明确操作只返回 null；其他任务返回 {"goal":"目标","steps":["步骤"]}。'
+                        : '返回 {"goal":"目标","steps":["步骤"]}。') +
+                      '只读请求增加 "readOnly":true。当前用户请求：' +
+                      JSON.stringify(input.input),
+                  },
+                ] satisfies Message[])
+              : []),
+          ],
           tools: [],
         },
         input.signal,
@@ -147,7 +175,11 @@ export const planningStrategy: PlanningStrategy = {
       );
       input.signal.throwIfAborted();
       if (!stopped || response.stopReason !== 'end_turn')
-        throw new Error('规划未完整返回，未开始执行');
+        throw new PlanningError(
+          response.stopReason === 'max_tokens'
+            ? 'planning_output_truncated'
+            : 'planning_incomplete_response',
+        );
       const body = response.message.content
         .filter((b) => b.type === 'text')
         .map((b) => b.text)
@@ -161,7 +193,8 @@ export const planningStrategy: PlanningStrategy = {
         if (automatic && parsed === null) return;
         return proposalSchema.parse(parsed);
       } catch {
-        if (attempt === 1) throw new Error('规划结构连续两次无效，未开始执行；请重新提交任务');
+        if (attempt === 1) throw new PlanningError('planning_invalid_response');
+        invalidResponse = body;
         input.events.emit({
           type: 'text_delta',
           text: '规划回复格式无效，正在重新请求一次；尚未开始执行。\n',

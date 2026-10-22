@@ -51,7 +51,6 @@ export function uiPlugin() {
       });
       for (const [id, description] of [
         ['details', '展开/收起详情或查看指定消息'],
-        ['stats', '查看 token、缓存和日志'],
         ['queue', '查看或清空排队消息'],
         ['redraw', '强制终端全屏重绘'],
         ['exit', '退出交互前端'],
