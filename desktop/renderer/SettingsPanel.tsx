@@ -264,7 +264,7 @@ export function SettingsPanel({
       }
       setError(editor.error ?? '');
     }
-  }, [editor?.id, editor?.error]);
+  }, [editor?.id, editor?.error, editor?.feedbackRevision]);
   useEffect(() => {
     if (!selected && sections.length) setSelected(sections[0].id);
   }, [sections.length]);
@@ -281,6 +281,7 @@ export function SettingsPanel({
   }, [selected, scope, runtime?.generation, runtime?.sessionId]);
   const abandon = () => !dirty || window.confirm('此节有未保存更改，放弃后继续？');
   const select = (item: SettingsDescriptor) => {
+    if (item.id === selected) return;
     if (!abandon()) return;
     markDirty(false);
     setSelected(item.id);
@@ -300,6 +301,20 @@ export function SettingsPanel({
       await request({ type: 'settings-commit', editorId: editor.id, json: JSON.stringify(draft) });
     } catch (e) {
       setError(e instanceof Error ? e.message : '提交失败，请重试。');
+    } finally {
+      setPending(false);
+    }
+  };
+  const liveSetting = async (field: 'model' | 'mode' | 'think', value: string) => {
+    if (pending || runtime?.busy || !abandon()) return;
+    markDirty(false);
+    setPending(true);
+    setError('');
+    try {
+      await request({ type: 'setting', field, value });
+      if (selected) await request({ type: 'settings-read', sectionId: selected, scope });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '设置未保存，请重试。');
     } finally {
       setPending(false);
     }
@@ -337,6 +352,51 @@ export function SettingsPanel({
             <option value="blue">冷灰蓝</option>
           </select>
         </label>
+        {runtime && (
+          <fieldset disabled={pending || runtime.busy} className="live-settings">
+            <legend>当前会话 · 选择即保存项目</legend>
+            <label>
+              模型
+              <select
+                aria-label="设置当前模型"
+                value={runtime.model}
+                onChange={(e) => void liveSetting('model', e.target.value)}
+              >
+                {runtime.models.map((model) => (
+                  <option key={model}>{model}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              权限模式
+              <select
+                aria-label="设置当前权限模式"
+                value={runtime.mode}
+                onChange={(e) => void liveSetting('mode', e.target.value)}
+              >
+                {['ask', 'auto', 'yolo'].map((mode) => (
+                  <option key={mode}>{mode}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              思考
+              <select
+                aria-label="设置当前思考等级"
+                value={runtime.thinking}
+                onChange={(e) => void liveSetting('think', e.target.value)}
+              >
+                {['off', 'low', 'medium', 'high'].map((thinking) => (
+                  <option key={thinking}>{thinking}</option>
+                ))}
+              </select>
+            </label>
+            <p className="small">
+              模型 /
+              思考于下一次请求采用；模式用于后续权限检查，已有审批仍须处理。连接与规则等结构化默认值使用右侧提交。
+            </p>
+          </fieldset>
+        )}
         {!runtime && <p>打开项目后可配置 Agent；外观立即生效。</p>}
       </aside>
       <div className="configuration-editor">

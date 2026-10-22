@@ -39,8 +39,13 @@ export class McpClientManager {
   resultStatus() {
     return this.results.status();
   }
-  maintain(cwd: string) {
-    return this.results.cleanup(cwd, new AbortController().signal);
+  async maintain(cwd: string) {
+    const result = await this.results.cleanup(cwd, new AbortController().signal);
+    if (await this.results.hasResults(cwd)) await this.results.activate(cwd);
+    return result;
+  }
+  activate(cwd: string) {
+    return this.results.activate(cwd);
   }
   hasResults(cwd: string) {
     return this.results.hasResults(cwd);
@@ -201,6 +206,7 @@ export function mcpPlugin(configPath: string, cwd?: string): Plugin {
         }
       }
       if (manager.serverNames().length > 0 || (cwd && (await manager.hasResults(cwd)))) {
+        if (cwd) await manager.activate(cwd);
         ctx.provide.tool('mcp_read_result', manager.resultReader());
         ctx.provide.tool('mcp_search_result', manager.resultSearcher());
       }

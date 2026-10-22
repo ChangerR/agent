@@ -149,6 +149,7 @@ export interface SettingsEditor {
   value: unknown;
   error?: string;
   saved?: boolean;
+  feedbackRevision?: number;
 }
 export type DesktopNavigation = 'settings' | 'new-session' | 'open-project';
 export interface ProjectSummary {

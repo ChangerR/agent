@@ -133,7 +133,7 @@ function preserveUnknown(previous: unknown, next: unknown, schema: z.ZodTypeAny)
       else delete result[key];
     }
   }
-  return result;
+  return next === undefined && Object.keys(result).length === 0 ? undefined : result;
 }
 function restoreMasked(previous: unknown, next: unknown): unknown {
   if (next === MASKED_SETTING) return previous;
