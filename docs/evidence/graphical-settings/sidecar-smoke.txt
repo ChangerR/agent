@@ -1,0 +1,4 @@
+(node:96877) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Sidecar smoke 通过：原生模块、审批前无写入、批准后真实写入、会话保存、过期审批拒绝、直接查询缓存统计。
+验证项目：/tmp/agentlab-desktop-smoke-D2H4vx/project

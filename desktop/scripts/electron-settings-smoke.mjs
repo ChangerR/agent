@@ -3,13 +3,17 @@ import { _electron, expect } from '@playwright/test';
 import { mkdtemp, mkdir, readFile, writeFile, chmod, access, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(import.meta.url);
-const output = resolve(process.argv[2] ?? join(repo, 'docs/evidence/graphical-settings'));
+const layoutOnly = process.argv.includes('--layout-only');
+const output = resolve(
+  process.argv.slice(2).find((arg) => !arg.startsWith('--')) ??
+    join(repo, 'docs/evidence/graphical-settings'),
+);
 const root = await mkdtemp(join(tmpdir(), 'agentlab 设置 '));
 const home = join(root, 'home'),
   project = join(root, 'settings-project');
@@ -116,9 +120,23 @@ async function launch() {
     timeout: 60_000,
   });
   page = await app.firstWindow();
+  console.log('window navigation', page.url().startsWith('file:') ? 'file' : page.url());
+  page.on('console', (message) => {
+    if (message.type() === 'error') console.error('renderer console', message.text());
+  });
+  page.on('requestfailed', (request) =>
+    console.error(
+      'renderer resource',
+      request.url().split('/').at(-1),
+      request.failure()?.errorText,
+    ),
+  );
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('dialog', (dialog) => {
     void (acceptConfirm ? dialog.accept() : dialog.dismiss()).catch(() => {});
+  });
+  await page.waitForURL(pathToFileURL(join(repo, 'desktop/dist/renderer/index.html')).href, {
+    waitUntil: 'domcontentloaded',
   });
   await expect(page.getByRole('button', { name: '打开应用设置', exact: true })).toBeVisible();
 }
@@ -157,6 +175,15 @@ async function save() {
   await expect(editor().getByRole('alert')).toHaveCount(0);
 }
 async function check(name, run) {
+  if (
+    layoutOnly &&
+    ![
+      '真实 run.mjs 开发启动（未提供 Node LICENSE 环境覆盖）',
+      '可发现的设置按钮与真实菜单入口',
+      '未保存关闭取消、主题持久化、缩放与窄窗口布局',
+    ].includes(name)
+  )
+    return;
   step = name;
   await run();
   passed.push(name);
@@ -897,6 +924,10 @@ try {
   });
 
   await check('未保存关闭取消、主题持久化、缩放与窄窗口布局', async () => {
+    if (layoutOnly) {
+      await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    }
     await openSection('configuration-budgets');
     await (
       await override(form().locator(':scope > fieldset'), 'maxTurns')
@@ -918,11 +949,15 @@ try {
       win.setSize(900, 700);
       win.webContents.setZoomFactor(1.25);
     });
+    // 对齐 CDP 内容视口与缩放后的 CSS 尺寸，避免只裁切原来的大视口截图。
+    await page.setViewportSize({ width: 720, height: 560 });
+    if (await page.evaluate(() => innerWidth <= 650))
+      await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
     await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).scrollIntoViewIfNeeded();
     await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).uncheck();
     await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).check();
     const actions = await form().locator('.configuration-actions').boundingBox(),
-      viewport = page.viewportSize();
+      viewport = { height: await page.evaluate(() => innerHeight) };
     assert.ok(
       actions &&
         actions.y >= 0 &&
@@ -934,6 +969,17 @@ try {
       '窄窗口不能横向溢出',
     );
     await page.screenshot({ path: join(output, '09-narrow-zoom-linux-electron.png') });
+    await store(join(output, 'layout-bounds.json'), {
+      window: await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize()),
+      css: await page.evaluate(() => ({
+        width: innerWidth,
+        height: innerHeight,
+        zoom: devicePixelRatio,
+      })),
+      saveBar: actions,
+      platform: process.platform,
+      nativeMac: false,
+    });
     await form().getByRole('button', { name: '放弃更改', exact: true }).click();
     await expect(
       editor().getByRole('heading', { name: '上下文与缓存预算', exact: true }),
@@ -943,6 +989,7 @@ try {
       win.webContents.setZoomFactor(1);
       win.setSize(1440, 960);
     });
+    await page.setViewportSize({ width: 1440, height: 960 });
     assert.equal(await page.evaluate(() => localStorage.getItem('agentlab-theme')), 'dark');
     await app.close();
     app = undefined;
@@ -956,18 +1003,21 @@ try {
   });
 
   assert.deepEqual(pageErrors, []);
-  await store(join(output, 'electron-settings-smoke.json'), {
-    platform: process.platform,
-    electron: await app.evaluate(() => process.versions.electron),
-    entry: 'node desktop/scripts/run.mjs',
-    isolated: true,
-    realWorkerAndIPC: true,
-    modelRequests: 'local scripted provider only',
-    passed,
-    pageErrors,
-    status: 'passed',
-    macNativeTested: false,
-  });
+  await store(
+    join(output, layoutOnly ? 'electron-layout-smoke.json' : 'electron-settings-smoke.json'),
+    {
+      platform: process.platform,
+      electron: await app.evaluate(() => process.versions.electron),
+      entry: 'node desktop/scripts/run.mjs',
+      isolated: true,
+      realWorkerAndIPC: true,
+      modelRequests: 'local scripted provider only',
+      passed,
+      pageErrors,
+      status: 'passed',
+      macNativeTested: false,
+    },
+  );
   console.log('真实 Electron 设置验收通过：' + passed.length + ' 场景。证据：' + output);
 } catch (error) {
   console.error(error);
@@ -987,13 +1037,16 @@ try {
       section: s?.runtime?.settingsEditor?.sectionId,
     });
   }
-  await store(join(output, 'electron-settings-smoke.json'), {
-    platform: process.platform,
-    status: 'failed',
-    failedStep: step,
-    passed,
-    pageErrors,
-  });
+  await store(
+    join(output, layoutOnly ? 'electron-layout-smoke.json' : 'electron-settings-smoke.json'),
+    {
+      platform: process.platform,
+      status: 'failed',
+      failedStep: step,
+      passed,
+      pageErrors,
+    },
+  );
   throw error;
 } finally {
   if (app) {

@@ -1,0 +1,192 @@
+$ vitest run --maxWorkers=2 --minWorkers=1
+
+ RUN  v2.1.9 /workspace/agent-app-master
+
+ ✓ tests/cli.test.ts (39 tests) 6909ms
+   ✓ TUI 审批模型运行状态 > 底栏与 stats 使用缓存写入分母，并明确缺失字段与模型角色 393ms
+   ✓ TUI 审批模型运行状态 > 会话切换中状态可读、控制拒绝；真实底栏渲染在恢复后继续显示新 child 502ms
+   ✓ TUI 审批模型运行状态 > 子列表实时刷新，父输入保持独立，进度卡片显示 child 活动 726ms
+   ✓ TUI 审批模型运行状态 > child 审批共用 FIFO，展示名称任务与一次性范围，取消后迟到点击不能批准兄弟 653ms
+   ✓ 真实 TUI 离线交互 > 审批面板具有完整边框与来源，40×12 和 24×8 保留可选动作，详情控制字符不执行 356ms
+   ✓ 真实 TUI 离线交互 > 运行时关闭选择器不打断任务，草稿与排队提示在底部保留 337ms
+   ✓ 真实 TUI 离线交互 > 对话身份、思考和工具状态清楚，Ctrl+O 展开与编号详情可看到完整内容 327ms
+   ✓ 真实 TUI 离线交互 > 显示固定底栏，审批 Ctrl+C 后可继续输入，缩窄窗口仍可渲染 334ms
+ ✓ tests/planning.test.ts (98 tests) 8210ms
+   ✓ 只读调研的预算收尾 > 在 50 轮预算内汇报，保留未完成项且不被自动续跑拉回调研 1905ms
+   ✓ 真实失败 trace 的自然浏览受控完整回放：220文件统计、样例和准确总结，无人工/模型审批 1789ms
+ ✓ tests/session.test.ts (36 tests | 1 skipped) 2527ms
+   ✓ 会话文件 > rename 遇到 EPERM 时保留旧文件并清掉临时文件；前两次失败后第三次成功 361ms
+   ✓ 删除与跨进程版本冲突 > 两个真实进程恢复相同版本同时保存，恰好一个提交，另一个报 conflict 1713ms
+ ✓ tests/tool-executor.test.ts (60 tests) 970ms
+   ✓ ToolExecutor 唯一授权门 > auto 模式记住的命令规则不调用审批员 469ms
+ ✓ tests/subagents.test.ts (31 tests) 8692ms
+   ✓ 子权限、工具协调与会话 > child 初始保存 late_commit 不重放旧任务；实际结算后显式 send 可创建新 run 并保存关联 1605ms
+   ✓ 子权限、工具协调与会话 > 恢复 root 的不响应读取超时后仍保留共享 store，到实际读取结束才 dispose 2088ms
+   ✓ 子权限、工具协调与会话 > 恢复 child 的不响应读取超时后仍保留共享 store，到实际读取结束才 dispose 2112ms
+   ✓ 子权限、工具协调与会话 > 取消真实 shell 子进程树，实际 close 后才归还工具锁和 child 容量 389ms
+ ✓ tests/deterministic-policy.test.ts (76 tests) 876ms
+ ✓ tests/search-runtime.test.ts (38 tests) 2624ms
+   ✓ 默认 auto 真实搜索链路 > 显式敏感文件、外部路径、符号链接与逃逸过滤模式均硬询问，不委托模型 401ms
+ ✓ tests/judge.test.ts (22 tests) 497ms
+ ✓ tests/bash-readonly-auto.test.ts (137 tests) 11768ms
+   ✓ Bash 普通读取与受约束替换 > 绑定单目录列举保留输出：ls -la src 2>/dev/null | head -50 335ms
+   ✓ Bash 普通读取与受约束替换 > 绑定单目录列举保留输出：cat src/*.ts | wc -l 327ms
+   ✓ Bash 普通读取与受约束替换 > 绑定单目录列举保留输出：cd . && find src -name '*.ts' -type f | wc -l && cat src/*.ts | wc -l 1006ms
+   ✓ Bash 普通读取与受约束替换 > 绑定单目录列举保留输出：cd src && ls -Ra 317ms
+   ✓ Bash 普通读取与受约束替换 > 绑定的 NUL find/xargs 与 stderr 丢弃保持输出：find src -type f -name '*.ts' -print0 | xargs -0 cat | wc -l 492ms
+   ✓ Bash 普通读取与受约束替换 > 绑定的 NUL find/xargs 与 stderr 丢弃保持输出：find src -type f -name '*.ts' -print0 | xargs --null cat 2>/dev/null | wc -l 613ms
+   ✓ Bash 普通读取与受约束替换 > 绑定的 NUL find/xargs 与 stderr 丢弃保持输出：echo count; find . -type f -name '*.ts' | wc -l; find . -type f -name '*.ts' -print0 | xargs -0 cat 2>/dev/null | wc -l 867ms
+   ✓ Bash 普通读取与受约束替换 > 绑定的 NUL find/xargs 与 stderr 丢弃保持输出：cd src && find . -type f -name '*.ts' -print0 | xargs -0 cat | wc -l 590ms
+   ✓ Bash 普通读取与受约束替换 > 原命令同形，220 个 TS 文件实际输出一致，零人工零模型 674ms
+   ✓ Bash 普通读取与受约束替换 > 原命令同形，300 个 TS 文件实际输出一致，零人工零模型 886ms
+   ✓ 递归列举与末级 glob 绑定边界 > 递归目录和 glob 内容都受 FD 上限约束 721ms
+ ✓ tests/auto-fallback.test.ts (45 tests) 1336ms
+ ✓ tests/reviewer-contract.test.ts (55 tests) 194ms
+ ✓ tests/cache-runtime.test.ts (16 tests) 201ms
+ ✓ tests/powershell-permission-chain.test.ts (103 tests | 1 skipped) 1641ms
+ ✓ tests/permission-settings.test.ts (29 tests) 88ms
+ ✓ tests/windows-remembered-write-rules.test.ts (55 tests) 461ms
+ ✓ tests/transport-prefix.test.ts (11 tests) 698ms
+ ✓ tests/loop.test.ts (22 tests) 971ms
+   ✓ AgentLoop > ask 模式记住 bash 后，第二次相同命令不再询问 610ms
+ ✓ tests/request-denial-runtime.test.ts (14 tests) 1094ms
+ ✓ tests/shell-runtime.test.ts (65 tests) 6519ms
+   ✓ 只读 shell 命令矩阵 > 常用命令、引号、条件连接与管道均执行并保持真实输出 1554ms
+   ✓ 普通 git status 仅报告已跟踪敏感文件元数据，git diff 仍直接人工询问 388ms
+ ✓ tests/windows-policy-path-guards.test.ts (51 tests) 476ms
+ ✓ tests/windows-readonly-review.test.ts (77 tests) 472ms
+ ✓ tests/auto-workflows.test.ts (12 tests) 1477ms
+   ✓ 默认 auto 项目工作流 > 枚举、搜索、专用读取、cd/pipes、find/wc、git 只读依次真实执行，零 judge/人工 304ms
+   ✓ 默认 auto 项目工作流 > 记住精确规则后同一会话复用；显式项目规则保存后重启仍生效，其他命令仍询问 355ms
+ ✓ tests/plugin-host.test.ts (34 tests) 47ms
+ ✓ tests/plugin-cli-capabilities.test.ts (9 tests) 1664ms
+   ✓ generic plugin CLI capabilities > 默认项目、可选全局；显示真实路径，取消不写，一次提交携带原scope且无需额外确认 422ms
+   ✓ generic plugin CLI capabilities > 多作用域只读设置默认本项目，仍可直接查看全局；单作用域继续直接展示详情 386ms
+ ✓ tests/plugin-context-capabilities.test.ts (20 tests) 107ms
+ ✓ tests/graphical-settings.test.ts (9 tests) 250ms
+ ✓ tests/plugin-session-capabilities.test.ts (14 tests) 91ms
+ ✓ tests/auto-readonly-scope.test.ts (46 tests) 324ms
+ ✓ tests/environment.test.ts (41 tests) 748ms
+ ✓ tests/cache-prefix-evidence.test.ts (20 tests) 47ms
+ ✓ tests/config-paths.test.ts (16 tests) 129ms
+ ✓ tests/windows-default-runtime.test.ts (7 tests) 501ms
+ ✓ tests/permission-config.test.ts (14 tests) 37ms
+ ✓ tests/desktop.test.ts (14 tests) 2042ms
+   ✓ 桌面宿主与真实 runtime 的离线边界 > 取消撤销审批，迟到批准不能写入 342ms
+ ✓ tests/settings-scopes.test.ts (8 tests) 162ms
+ ✓ tests/planning-tui.test.ts (6 tests) 9398ms
+   ✓ /plan 直接打开面板，选择即保存，Esc 不写入，旧参数明确拒绝 324ms
+   ✓ 摘要准确定位完成、阻塞和中断步骤，完整 Unicode 标题及证据可逐行浏览 7490ms
+   ✓ 计划浏览保留 root/child 审批、父草稿，新计划及恢复重置折叠：{"columns":120,"rows":40} 562ms
+   ✓ 计划浏览保留 root/child 审批、父草稿，新计划及恢复重置折叠：{"columns":40,"rows":14} 528ms
+ ✓ tests/runtime-settings-tui-autosave.test.ts (6 tests) 1844ms
+   ✓ 设置入口的一次提交 > 连接默认值从真实设置入口编辑；取消不写、失败有反馈、保存后重启才采用 524ms
+   ✓ 设置入口的一次提交 > 异步验证期间 Esc 放弃后不提交，插件错误不回显原始 JSON 或凭据 332ms
+ ✓ tests/desktop-cache-integration.test.ts (5 tests) 378ms
+ ✓ tests/configuration-settings.test.ts (8 tests) 75ms
+ ✓ tests/context.test.ts (12 tests) 26ms
+ ✓ tests/tools.test.ts (32 tests) 213ms
+ ✓ tests/cache.test.ts (9 tests) 11ms
+ ✓ tests/plan-transition.test.ts (26 tests) 33ms
+ ✓ tests/mcp-index.test.ts (11 tests) 769ms
+   ✓ 真实会话保存/恢复后，远端不在线仍可续读；历史引用阻止过期清理 305ms
+ ✓ tests/planning-pty.test.ts (2 tests) 11334ms
+   ✓ pnpm dev 真终端 {"rows":40,"cols":140}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复 5324ms
+   ✓ pnpm dev 真终端 {"rows":14,"cols":40}：摘要浏览、父子审批、父输入排队、暂停取消、设置重启与恢复 6009ms
+ ✓ tests/windows-permission-ui.test.ts (32 tests) 322ms
+ ✓ tests/desktop-settings.test.ts (9 tests) 469ms
+ ✓ tests/protocol.test.ts (12 tests) 12ms
+ ✓ tests/plugin-selection-regressions.test.ts (10 tests) 104ms
+ ✓ tests/tool-request-provenance.test.ts (5 tests) 316ms
+ ✓ tests/cli-pty.test.ts (1 test) 9473ms
+   ✓ Linux pnpm dev 真 PTY：单选自动保存、取消、重启、shell/搜索零审批及失败恢复 9472ms
+ ✓ tests/search-tools.test.ts (12 tests) 326ms
+ ✓ tests/planning-recovery.test.ts (16 tests) 36ms
+ ✓ tests/permission-settings-restart.test.ts (9 tests) 8007ms
+   ✓ 权限模式自动保存后跨进程重启 > /mode auto 保存到项目，新进程为 auto，全局不变 2362ms
+   ✓ 权限模式自动保存后跨进程重启 > headless yolo 直接保存并应用，无二次确认 1121ms
+   ✓ 权限模式自动保存后跨进程重启 > 本项目直接选 auto 后立即生效，子目录重启仍为 auto，其他项目保持 ask 2171ms
+   ✓ 权限模式自动保存后跨进程重启 > 全局 auto 被项目 ask 覆盖，当前与重启都采用项目值 1208ms
+   ✓ 权限模式自动保存后跨进程重启 > 项目恢复继承后立即与重启都采用全局 auto 1016ms
+ ✓ tests/interaction-panels.test.ts (11 tests) 59ms
+ ✓ tests/plugin-config.test.ts (10 tests) 154ms
+ ✓ tests/desktop-build-entry.test.ts (5 tests) 3510ms
+   ✓ 真实开发 / 打包入口 > 没有 LICENSE 的 Node 安装执行真实 build.mjs 仍完成开发构建 1088ms
+   ✓ 真实开发 / 打包入口 > 同样的安装执行真实 run.mjs 可到 Electron 启动阶段，无需变量或下载 1133ms
+   ✓ 真实开发 / 打包入口 > 同样的安装不能作为分发包，真实 package --validate 给出同版本指引 849ms
+ ✓ tests/bash-readonly-pty.test.ts (1 test) 10198ms
+   ✓ 原样 pnpm dev、默认规划与 auto：原命令零审批，受控 reviewer 写入及拒绝生效 10197ms
+ ✓ tests/plugin-replacement.test.ts (2 tests) 159ms
+ ✓ tests/runtime-settings-autosave.test.ts (6 tests) 165ms
+ ✓ tests/mcp-results.test.ts (3 tests) 141ms
+ ✓ tests/endpoint-session.test.ts (9 tests) 425ms
+ ✓ tests/permission.test.ts (14 tests) 19ms
+ ✓ tests/powershell-permission-pty.test.ts (1 test) 6517ms
+   ✓ 原样 pnpm dev：PowerShell 摘要、敏感/未知人工、真实 reviewer ask 与普通读取 6517ms
+ ✓ tests/plugin-aliases.test.ts (6 tests) 134ms
+ ✓ tests/subagents-pty.test.ts (1 test) 3188ms
+   ✓ Linux 真 PTY：两个后台 child、父输入、实时列表、补充取消、设置单选落盘 3187ms
+ ✓ tests/reviewer-default-transport.test.ts (4 tests) 215ms
+ ✓ tests/bootstrap.test.ts (7 tests) 286ms
+ ✓ tests/project-browse-pty.test.ts (1 test) 4197ms
+   ✓ 原样浏览提示：受限child结算、计划完成、停止请求并返回可输入TUI 4196ms
+ ✓ tests/mcp.test.ts (5 tests) 1108ms
+   ✓ MCP 桥接 > 连接 stdio server 并调用工具 509ms
+   ✓ MCP stdio 相对脚本按显式配置目录启动，不依赖父进程 cwd 535ms
+ ✓ tests/plugin-session-format.test.ts (13 tests) 226ms
+ ✓ tests/policy-runtime.test.ts (3 tests) 395ms
+Unknown option '--allow-legacy-session'
+ ✓ tests/deepseek-transport.test.ts (9 tests) 36ms
+ ✓ tests/anthropic-reviewer-protocol.test.ts (4 tests) 22ms
+Unknown option '--invalid-option'
+<anonymous_script>:1
+{ invalid
+  ^
+
+SyntaxError: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+    at JSON.parse (<anonymous>)
+    at readJson (/workspace/agent-app-master/src/core/config.ts:119:31)
+    at loadConfigWithSources (/workspace/agent-app-master/src/core/config.ts:145:21)
+    at createRuntime (/workspace/agent-app-master/src/runtime/create-agent.ts:79:18)
+    at createAgent (/workspace/agent-app-master/src/index.ts:9:10)
+    at <anonymous> (/workspace/agent-app-master/src/cli/index.ts:58:21)
+
+Node.js v24.19.0
+用法: /resume <id>
+ ✓ tests/cli-startup.test.ts (5 tests) 9295ms
+   ✓ 实际 CLI 无 key 首启初始化安全内置默认和项目状态目录；再次启动不覆盖 2540ms
+   ✓ 初始化不把项目权限、插件授权、相对路径或环境配置提升为全局默认 1044ms
+   ✓ help 和无效参数不初始化，已有无效用户配置不会被覆盖 4299ms
+   ✓ SDK 配置读取保持只读；并发 CLI 首启不会覆盖或留下临时配置 332ms
+   ✓ 命令行 resume 不再接受历史迁移参数 1072ms
+ ✓ tests/plugin-architecture.test.ts (3 tests) 2538ms
+   ✓ 插件分层与 headless 入口架构守卫 > 独立 Node 进程导入公共 headless 入口时绝不解析 pi-tui 2148ms
+ ✓ tests/loop-notification-bounds.test.ts (4 tests) 103ms
+ ✓ tests/plugins.test.ts (6 tests) 23ms
+ ✓ tests/platform.test.ts (10 tests) 15ms
+ ✓ tests/plugin-telemetry.test.ts (3 tests) 23ms
+ ✓ tests/request-budget.test.ts (6 tests) 53ms
+ ✓ tests/desktop-projects.test.ts (1 test) 414ms
+   ✓ 桌面以项目为边界 > 同一规范目录只有一个项目，返回项目记住已保存的会话，空会话不覆盖记录 413ms
+ ✓ tests/agentlab-identity.test.ts (2 tests) 120ms
+ ✓ tests/plugin-runtime-boundaries.test.ts (3 tests) 120ms
+ ✓ tests/policy-selection-settings.test.ts (3 tests) 135ms
+ ✓ tests/plugin-runtime-lifecycle.test.ts (2 tests) 276ms
+ ✓ tests/tui-visual.test.ts (5 tests) 144ms
+ ✓ tests/tool-scheduler.test.ts (5 tests) 8ms
+ ✓ tests/provider.test.ts (7 tests) 11ms
+ ✓ tests/model-info.test.ts (4 tests) 20ms
+ ✓ tests/desktop-inspection.test.ts (2 tests) 11ms
+ ✓ tests/cache-stability.test.ts (2 tests) 20ms
+ ✓ tests/reviewer-provenance.test.ts (1 test) 15ms
+ ✓ tests/usage-summary.test.ts (3 tests) 5ms
+ ✓ tests/skills.test.ts (4 tests) 55ms
+ ✓ tests/thinking.test.ts (5 tests) 8ms
+ ✓ tests/shell-contract-binding.test.ts (2 tests) 67ms
+ ✓ tests/user-state-permissions.test.ts (1 test) 17ms
+ ✓ tests/desktop-markdown.test.ts (3 tests) 62ms
+
+ Test Files  99 passed (99)
+      Tests  1772 passed | 2 skipped (1774)
+   Start at  09:32:10
+   Duration  110.31s (transform 3.95s, setup 897ms, collect 39.64s, tests 152.70s, environment 25ms, prepare 8.26s)
