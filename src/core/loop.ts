@@ -36,7 +36,7 @@ import type { ContextCoordinator, CacheStrategy } from '../sdk/runtime-capabilit
 import type { Policy, Reviewer, ToolAnalyzer } from '../sdk/capabilities.js';
 import type { CachePolicy, CacheTtl, ChatRequest, Provider, ThinkingLevel } from './provider.js';
 import { observedStream } from './provider.js';
-import { collectStreamAsync, emptyUsage } from './protocol/types.js';
+import { collectStreamAsync, emptyUsage, addUsage } from './protocol/types.js';
 import type {
   Message,
   ToolDefinition,
@@ -47,6 +47,7 @@ import type {
 } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
 import { estimateRequestTokens } from './context/tokens.js';
+import { withRequestBudget } from './context/request-budget.js';
 import { SessionError } from './session/errors.js';
 import { assertSafeHistory, trimToSafeTail } from './session/history.js';
 import type { InputSource, InvocationOrigin } from './agents.js';
@@ -98,6 +99,7 @@ export interface AgentLoopOptions {
   maxTokens?: number;
   /** 思考等级（/think 可切换） */
   thinking?: ThinkingLevel;
+  replayToolArguments?: boolean;
   /**
    * 模型规格解析器：输入模型名，返回 contextWindow/maxOutputTokens。
    * setModel 时用它自动调整压缩阈值（窗口的 80%，不超过 compactThreshold 配置值）
@@ -107,7 +109,13 @@ export interface AgentLoopOptions {
    * 提示缓存。不传时默认开启（ttl 5 分钟，不因工具耗时升级）。
    * enabled: false 时请求不带 cache 策略。
    */
-  cache?: { enabled: boolean; ttl: CacheTtl; escalateAfterMs?: number };
+  cache?: {
+    enabled: boolean;
+    ttl: CacheTtl;
+    staticTtl?: CacheTtl;
+    ttlStrategy?: 'fixed' | 'legacy-reactive';
+    escalateAfterMs?: number;
+  };
 }
 
 /** 给会话层的内存快照。trimmed 是裁掉的尾部条数，messages 已是副本。 */
@@ -184,6 +192,7 @@ export class AgentLoop {
   private readonly requestPermission: RequestPermissionGuard;
 
   constructor(private opts: AgentLoopOptions) {
+    opts.provider = withRequestBudget(opts.provider, opts.modelInfo);
     this.requestPermission =
       opts.toolExecutor?.requestPermission ??
       opts.requestPermission ??
@@ -403,7 +412,7 @@ export class AgentLoop {
 
   /** 按模型规格联动 maxTokens 与压缩阈值 */
   private applyModelInfo(model: string): void {
-    const info = this.opts.modelInfo?.(model);
+    const info = this.opts.provider.modelInfo?.(model) ?? this.opts.modelInfo?.(model);
     this.opts.maxTokens = info?.maxOutputTokens ?? this.configuredMaxTokens;
     this.opts.context.setThreshold(
       info
@@ -499,8 +508,7 @@ export class AgentLoop {
       if (usageRunId !== runId) return;
       if (seenUsage.has(requestId)) return;
       seenUsage.add(requestId);
-      for (const key of Object.keys(totalUsage) as Array<keyof TokenUsage>)
-        totalUsage[key] += usage[key];
+      addUsage(totalUsage, usage);
     });
     const finish = (reason: LoopEndReason, error?: string): AgentRunResult => {
       this.accepting = false;
@@ -651,9 +659,18 @@ export class AgentLoop {
           ),
           ...(budget?.summaryOnly ? { toolChoice: 'none' as const } : {}),
           maxTokens: this.opts.maxTokens,
+          replayToolArguments: this.opts.replayToolArguments || undefined,
           thinking: this.opts.thinking,
           cache: this.buildCachePolicy(),
         };
+        const environment = this.opts.systemContext ? '\n\n' + this.opts.systemContext : '';
+        request.systemSegments = [
+          {
+            text: environment ? request.system.slice(0, -environment.length) : request.system,
+            stable: true,
+          },
+          ...(environment ? [{ text: environment, stable: false }] : []),
+        ];
         const hadRuntimePlan = this.messages.some(
           (message) => message.role === 'user' && message.source === 'runtime',
         );
@@ -661,7 +678,9 @@ export class AgentLoop {
         this.appendPlanState(origin, hadRuntimePlan);
         request.messages = structuredClone(this.messages);
         request.cache = this.buildCachePolicy();
-        const capacity = this.opts.modelInfo?.(request.model)?.contextWindow;
+        const capacity =
+          this.opts.provider.modelInfo?.(request.model)?.contextWindow ??
+          this.opts.modelInfo?.(request.model)?.contextWindow;
         const estimate = this.estimateRequest(request);
         if (capacity !== undefined && estimate.totalTokens > capacity)
           throw new Error(
@@ -780,6 +799,23 @@ export class AgentLoop {
                 userRequest: origin.userRequest,
                 origin,
                 messages: structuredClone(this.messages),
+                onInputRewritten: (id) => {
+                  const tool = toolUses.find((item) => item.id === id);
+                  if (tool) delete tool.replay;
+                },
+                resultBudgetTokens: (() => {
+                  const capacity =
+                    this.opts.provider.modelInfo?.(request.model)?.contextWindow ??
+                    this.opts.modelInfo?.(request.model)?.contextWindow;
+                  if (!capacity) return undefined;
+                  const remaining =
+                    capacity -
+                    this.estimateRequest({ ...request, messages: this.messages }).totalTokens;
+                  return Math.max(
+                    128,
+                    Math.floor((remaining * 0.8) / Math.max(1, toolUses.length)),
+                  );
+                })(),
               });
         this.lastToolBatchMs = Date.now() - toolStarted;
         if (
@@ -882,7 +918,9 @@ export class AgentLoop {
     const { events, provider, context } = this.opts;
     if (request) {
       const estimate = this.estimateRequest(request);
-      const capacity = this.opts.modelInfo?.(request.model)?.contextWindow;
+      const capacity =
+        this.opts.provider.modelInfo?.(request.model)?.contextWindow ??
+        this.opts.modelInfo?.(request.model)?.contextWindow;
       const threshold =
         capacity === undefined
           ? context.threshold
@@ -900,6 +938,7 @@ export class AgentLoop {
       this.opts.model,
       events,
       this.activeRunId,
+      request,
     );
     if (next === this.messages) return;
     if (emergency) {
@@ -913,18 +952,20 @@ export class AgentLoop {
     events.emit({ type: 'compacted', beforeMessages: before, afterMessages: this.messages.length });
   }
 
-  private cacheSettings(): { enabled: boolean; ttl: CacheTtl; escalateAfterMs: number } {
+  private cacheSettings() {
     return {
       enabled: this.opts.cache?.enabled ?? true,
       ttl: this.opts.cache?.ttl ?? '5m',
       escalateAfterMs: this.opts.cache?.escalateAfterMs ?? 0,
+      staticTtl: this.opts.cache?.staticTtl,
+      ttlStrategy: this.opts.cache?.ttlStrategy ?? 'fixed',
     };
   }
 
   /** 工具和系统提示各一个稳定断点；消息上保留上一轮末尾（读）和本轮末尾（写） */
   private buildCachePolicy(): CachePolicy | undefined {
     if (this.opts.cacheStrategy === null) return undefined;
-    const { enabled, ttl, escalateAfterMs } = this.cacheSettings();
+    const { enabled, ttl, escalateAfterMs, staticTtl, ttlStrategy } = this.cacheSettings();
     if (this.opts.cacheStrategy)
       return this.opts.cacheStrategy.build({
         messageCount: this.messages.length,
@@ -932,7 +973,7 @@ export class AgentLoop {
         lastToolBatchMs: this.lastToolBatchMs,
         hasSystem: this.opts.systemPrompt.length > 0 || !!this.opts.systemContext,
         hasTools: (this.toolsSnapshot?.length ?? 0) > 0,
-        settings: { enabled, ttl, escalateAfterMs },
+        settings: { enabled, ttl, escalateAfterMs, staticTtl, ttlStrategy },
       });
     if (!enabled) return undefined;
     const last = this.messages.length - 1;
@@ -941,12 +982,17 @@ export class AgentLoop {
       .filter((i) => i >= 0 && i <= last)
       .sort((a, b) => a - b);
     const effectiveTtl: CacheTtl =
-      escalateAfterMs > 0 && this.lastToolBatchMs > escalateAfterMs ? '1h' : ttl;
+      ttlStrategy === 'legacy-reactive' &&
+      escalateAfterMs > 0 &&
+      this.lastToolBatchMs > escalateAfterMs
+        ? '1h'
+        : ttl;
     return {
       system: this.opts.systemPrompt.length > 0 || !!this.opts.systemContext,
       tools: (this.toolsSnapshot?.length ?? 0) > 0,
       messageBreakpoints,
       ttl: effectiveTtl,
+      staticTtl,
     };
   }
 

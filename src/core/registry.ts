@@ -69,6 +69,8 @@ export interface ToolContext {
   invocation?: InvocationOrigin;
   cwd: string;
   signal: AbortSignal;
+  /** 当前请求估计可用于单个结果的 token 余量；只是限额建议，不改变权限。 */
+  resultBudgetTokens?: number;
   /** 本次决策绑定并完成最终重验的分析；工具只能收窄其已批准目标，不扩展范围。 */
   analysis?: ToolAnalysis;
   /** 子工具经过相同授权门，并继承当前工具绑定的请求、runId 与取消信号。 */

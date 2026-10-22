@@ -180,6 +180,7 @@ describe('脱敏的角色、请求大小和缓存用量', () => {
       const req: ChatRequest = {
         model: 'fake',
         system: 'SECRET_中文',
+        maxTokens: 8192,
         messages: [{ role: 'user', content: 'SECRET_BODY' }],
         tools: [],
       };

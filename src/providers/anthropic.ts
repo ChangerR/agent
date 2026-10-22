@@ -7,7 +7,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
 import { estimateTextTokens } from '../core/context/tokens.js';
-import type { CacheTtl, ChatRequest, Provider } from '../core/provider.js';
+import type { CacheTtl, ChatRequest, Provider, ModelCapabilities } from '../core/provider.js';
+import { routeIdentity, checkModelCapabilities } from './capabilities.js';
 import type { Message, StopReason, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
 
 // SDK 根命名空间导出的类型（避免依赖 resources 子路径的具体导出名，跨版本更稳）
@@ -135,6 +136,7 @@ export function fromAnthropicEvent(
       const u = ev.message.usage as Anthropic.Usage & {
         cache_read_input_tokens?: number | null;
         cache_creation_input_tokens?: number | null;
+        cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
       };
       return [
         { type: 'message_start' },
@@ -147,6 +149,18 @@ export function fromAnthropicEvent(
             : {}),
           ...(typeof u.cache_creation_input_tokens === 'number'
             ? { cacheWriteTokens: u.cache_creation_input_tokens }
+            : {}),
+          ...(u.cache_creation
+            ? {
+                cacheWriteTokensByTtl: {
+                  ...(typeof u.cache_creation.ephemeral_5m_input_tokens === 'number'
+                    ? { '5m': u.cache_creation.ephemeral_5m_input_tokens }
+                    : {}),
+                  ...(typeof u.cache_creation.ephemeral_1h_input_tokens === 'number'
+                    ? { '1h': u.cache_creation.ephemeral_1h_input_tokens }
+                    : {}),
+                },
+              }
             : {}),
         },
       ];
@@ -198,14 +212,21 @@ export function toAnthropicParams(req: ChatRequest): Anthropic.MessageStreamPara
  */
 export function buildAnthropicBody(
   req: ChatRequest,
-  opts?: { cacheControl?: boolean },
+  opts?: { cacheControl?: boolean; capabilities?: ModelCapabilities },
 ): { body: Anthropic.MessageStreamParams; headers: Record<string, string> } {
   const allowCache = opts?.cacheControl !== false && req.cache !== undefined;
   const policy = allowCache ? req.cache : undefined;
   const ttl = policy?.ttl;
-
-  const systemOn = !!(policy?.system && req.system.length > 0);
+  // 按 tools → system → messages 排列。长 TTL 必须在短 TTL 之前。
+  const staticTtl = policy?.staticTtl ?? ttl;
+  const systemOn = !!(
+    policy?.system &&
+    req.system.length > 0 &&
+    (!req.systemSegments || req.systemSegments.some((s) => s.stable && s.text.length > 0))
+  );
   const toolsOn = !!(policy?.tools && req.tools.length > 0);
+  if ((systemOn || toolsOn) && staticTtl === '5m' && ttl === '1h')
+    throw new Error('invalid_cache_ttl_order');
   let breakpoints = [...new Set(policy?.messageBreakpoints ?? [])]
     .filter((i) => i >= 0 && i < req.messages.length)
     .sort((a, b) => a - b);
@@ -216,23 +237,53 @@ export function buildAnthropicBody(
   const thinkingBudget = thinkingOn
     ? THINKING_BUDGETS[req.thinking as 'low' | 'medium' | 'high']
     : 0;
+  const adaptive = thinkingOn && opts?.capabilities?.thinkingMode === 'adaptive';
 
   const body = {
     model: req.model,
-    system: toAnthropicSystem(req.system, systemOn, ttl),
+    system: req.systemSegments?.length
+      ? (() => {
+          if (req.systemSegments.map((s) => s.text).join('') !== req.system)
+            throw new Error('invalid_system_segments');
+          let dynamic = false;
+          for (const segment of req.systemSegments) {
+            if (!segment.stable) dynamic = true;
+            else if (dynamic) throw new Error('non_prefix_static_system');
+          }
+          const stableLast = req.systemSegments.reduce(
+            (last, s, i) => (s.stable && s.text.length > 0 ? i : last),
+            -1,
+          );
+          return req.systemSegments
+            .filter((s) => s.text.length > 0)
+            .map((s) => ({
+              type: 'text',
+              text: s.text,
+              ...(systemOn && s === req.systemSegments![stableLast]
+                ? { cache_control: cacheControlOf(staticTtl) }
+                : {}),
+            }));
+        })()
+      : toAnthropicSystem(req.system, systemOn, staticTtl),
     messages: toAnthropicMessages(req.messages, new Set(breakpoints), ttl),
-    tools: req.tools.length > 0 ? toAnthropicTools(req.tools, toolsOn, ttl) : undefined,
+    tools: req.tools.length > 0 ? toAnthropicTools(req.tools, toolsOn, staticTtl) : undefined,
     ...(req.toolChoice ? { tool_choice: { type: req.toolChoice } } : {}),
     // thinking 开启时 max_tokens 必须大于 budget_tokens
-    max_tokens: thinkingOn
-      ? Math.max(req.maxTokens ?? 8192, thinkingBudget + 4096)
-      : (req.maxTokens ?? 8192),
+    max_tokens:
+      thinkingOn && !adaptive
+        ? Math.max(req.maxTokens ?? 8192, thinkingBudget + 4096)
+        : (req.maxTokens ?? 8192),
     ...(thinkingOn
-      ? { thinking: { type: 'enabled' as const, budget_tokens: thinkingBudget } }
-      : {}),
+      ? adaptive
+        ? { thinking: { type: 'adaptive' }, output_config: { effort: req.thinking } }
+        : { thinking: { type: 'enabled' as const, budget_tokens: thinkingBudget } }
+      : req.thinking === 'off' && opts?.capabilities?.thinkingMode === 'adaptive'
+        ? { thinking: { type: 'disabled' } }
+        : {}),
   } as unknown as Anthropic.MessageStreamParams;
 
-  const wroteCache = ttl === '1h' && JSON.stringify(body).includes('"cache_control"');
+  const wroteCache =
+    (ttl === '1h' || staticTtl === '1h') && JSON.stringify(body).includes('"cache_control"');
   const headers: Record<string, string> = wroteCache
     ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' }
     : {};
@@ -243,7 +294,7 @@ function isCacheControlRejection(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   if ((err as { status?: number }).status !== 400) return false;
   const message = err instanceof Error ? err.message : '';
-  return /cache_control|unexpected|unknown field/i.test(message);
+  return /cache_control|cache[-_ ]?(?:ttl|retention)|extended-cache-ttl/i.test(message);
 }
 
 /** 请求内跟踪块类型；文本/思考结束不是工具调用结束。 */
@@ -306,10 +357,42 @@ export class AnthropicProvider implements Provider {
   /** 兼容端点拒绝 cache_control 之后，本会话不再发送 */
   private cacheDisabled = false;
 
-  constructor(private opts: ApiKeyOptions & { baseURL?: string; cacheControl?: boolean } = {}) {}
+  constructor(
+    private opts: ApiKeyOptions & {
+      baseURL?: string;
+      cacheControl?: boolean;
+      models?: Record<string, ModelCapabilities>;
+    } = {},
+  ) {}
+  get routeId() {
+    return routeIdentity('anthropic', this.opts.baseURL ?? 'https://api.anthropic.com');
+  }
+  modelCapabilities(model: string): ModelCapabilities {
+    return (
+      this.opts.models?.[model] ?? {
+        api: 'messages',
+        thinkingLevels: ['off', 'low', 'medium', 'high'],
+      }
+    );
+  }
+  normalizeRequest(req: ChatRequest) {
+    const caps = this.modelCapabilities(req.model);
+    if (caps.api !== 'messages' && caps.api !== 'generic') throw new Error('unsupported_model_api');
+    return checkModelCapabilities(req, caps);
+  }
+  requestBytes(req: ChatRequest) {
+    return Buffer.byteLength(
+      JSON.stringify(
+        buildAnthropicBody(req, {
+          capabilities: this.modelCapabilities(req.model),
+          cacheControl: this.opts.cacheControl !== false && !this.cacheDisabled,
+        }).body,
+      ),
+    );
+  }
 
   estimateRequest(req: ChatRequest) {
-    const { body } = buildAnthropicBody(req);
+    const { body } = buildAnthropicBody(req, { capabilities: this.modelCapabilities(req.model) });
     const inputTokens =
       estimateTextTokens(
         JSON.stringify({
@@ -339,8 +422,12 @@ export class AnthropicProvider implements Provider {
   }
 
   async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
+    req = this.normalizeRequest(req);
     const allowCache = this.opts.cacheControl !== false && !this.cacheDisabled;
-    const { body, headers } = buildAnthropicBody(req, { cacheControl: allowCache });
+    const { body, headers } = buildAnthropicBody(req, {
+      cacheControl: allowCache,
+      capabilities: this.modelCapabilities(req.model),
+    });
     const response = this.getClient().messages.stream(body, {
       signal,
       ...(Object.keys(headers).length > 0 ? { headers } : {}),

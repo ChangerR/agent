@@ -12,7 +12,14 @@ import type {
   ToolResult,
   ToolUseBlock,
 } from './protocol/types.js';
-import type { ChatRequest, ThinkingLevel, ModelRole, RequestSize } from './provider.js';
+import type {
+  ChatRequest,
+  ThinkingLevel,
+  ModelRole,
+  RequestSize,
+  RequestMetrics,
+} from './provider.js';
+import type { RequestEstimate } from './context/request-budget.js';
 import type { Decision } from './permission/contracts.js';
 import type { SubagentProgress } from './agents.js';
 import { bounded } from './permission/async.js';
@@ -60,6 +67,8 @@ export type AgentEvent =
       /** 各模型证据段的 JSON 字节数，不包含正文。 */
       evidenceBytes?: Record<string, number>;
       provider: string;
+      routeId?: string;
+      estimate?: RequestEstimate;
       request: ChatRequest;
       runId?: string;
       toolCallId?: string;
@@ -73,6 +82,7 @@ export type AgentEvent =
       usageReported?: boolean;
       cache?: { hitTokens: number; missTokens: number };
       usage: TokenUsage;
+      metrics?: RequestMetrics;
       runId?: string;
       toolCallId?: string;
       toolRequestId?: string;

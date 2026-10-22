@@ -2,7 +2,7 @@
 import type { ModelInfo } from '../core/config.js';
 import type { ObservedEvent } from './capabilities.js';
 import type { EventBus } from '../core/events.js';
-import type { CachePolicy, CacheTtl, Provider } from '../core/provider.js';
+import type { CachePolicy, CacheTtl, Provider, ChatRequest } from '../core/provider.js';
 import type { Message } from '../core/protocol/types.js';
 import type { Tool } from '../core/registry.js';
 import type { SessionFile, SessionListing } from '../core/session/types.js';
@@ -33,6 +33,7 @@ export interface Compactor {
     signal: AbortSignal,
     model?: string,
     events?: EventBus,
+    request?: ChatRequest,
   ): Promise<readonly Message[]>;
 }
 export interface ContextCoordinator {
@@ -46,6 +47,7 @@ export interface ContextCoordinator {
     model?: string,
     events?: EventBus,
     runId?: string,
+    request?: ChatRequest,
   ): Promise<Message[]>;
 }
 export interface CacheStrategyInput {
@@ -54,13 +56,19 @@ export interface CacheStrategyInput {
   readonly lastToolBatchMs: number;
   readonly hasSystem: boolean;
   readonly hasTools: boolean;
-  readonly settings: Readonly<{ enabled: boolean; ttl: CacheTtl; escalateAfterMs?: number }>;
+  readonly settings: Readonly<{
+    enabled: boolean;
+    ttl: CacheTtl;
+    staticTtl?: CacheTtl;
+    ttlStrategy?: 'fixed' | 'legacy-reactive';
+    escalateAfterMs?: number;
+  }>;
 }
 export interface CacheStrategy {
   build(input: CacheStrategyInput): CachePolicy | undefined;
 }
 export interface ModelCatalog {
-  get(model: string): ModelInfo | undefined;
+  get(model: string, route?: string): ModelInfo | undefined;
   list(): Readonly<Record<string, ModelInfo>>;
 }
 export interface SaveSessionOptions {

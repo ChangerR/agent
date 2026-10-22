@@ -1,7 +1,7 @@
 /** 根 runtime 拥有一个 supervisor；child 只复用能力，不拥有或关闭插件/MCP 实例。 */
 import { randomUUID } from 'node:crypto';
 import { bounded } from '../core/permission/async.js';
-import { emptyUsage, type TokenUsage } from '../core/protocol/types.js';
+import { emptyUsage, addUsage, cloneUsage, type TokenUsage } from '../core/protocol/types.js';
 import type { AgentEvent, EventBus } from '../core/events.js';
 import type {
   InvocationOrigin,
@@ -452,10 +452,9 @@ export class AgentSupervisor {
   }
   usage(): { self: TokenUsage; tree: TokenUsage } {
     const self = this.opts.rootSession.tokenUsage;
-    const tree = { ...self };
+    const tree = cloneUsage(self);
     for (const node of this.nodes.values())
-      for (const run of node.record.runs)
-        for (const key of Object.keys(tree) as Array<keyof TokenUsage>) tree[key] += run.usage[key];
+      for (const run of node.record.runs) addUsage(tree, run.usage);
     return { self, tree };
   }
   async prepareResume(signal?: AbortSignal): Promise<void> {
@@ -730,8 +729,7 @@ export class AgentSupervisor {
       const key = `${node.record.agentId}:${event.requestId}`;
       if (node.usageIds.has(key)) return;
       node.usageIds.add(key);
-      for (const key of Object.keys(run.usage) as Array<keyof TokenUsage>)
-        run.usage[key] += event.usage[key];
+      addUsage(run.usage, event.usage);
       this.emit(node, run, 'usage', {
         requestId: event.requestId,
         usage: { ...event.usage },
@@ -739,6 +737,7 @@ export class AgentSupervisor {
         modelRole: event.modelRole,
         usageReported: event.usageReported,
         cache: event.cache,
+        metrics: event.metrics,
       });
     } else if (event.type === 'permission_request') {
       run.activity = '等待审批';
@@ -781,6 +780,8 @@ export class AgentSupervisor {
               modelRole: event.modelRole,
               model: event.request.model,
               provider: event.provider,
+              routeId: event.routeId,
+              estimate: event.estimate,
               size: event.size,
               evidenceBytes: event.evidenceBytes,
             }

@@ -50,7 +50,7 @@ describe('模型规格联动', () => {
     loop.setModel('unknown');
     expect(context.threshold).toBe(120_000);
     await loop.run('hi');
-    expect(provider.requests[0].maxTokens).toBeUndefined();
+    expect(provider.requests[0].maxTokens).toBe(8192);
   });
 
   it('未知模型：阈值保持配置值', async () => {
@@ -58,7 +58,7 @@ describe('模型规格联动', () => {
     loop.setModel('some-new-model');
     expect(context.threshold).toBe(120_000);
     await loop.run('hi');
-    expect(provider.requests[0].maxTokens).toBeUndefined();
+    expect(provider.requests[0].maxTokens).toBe(8192);
   });
 
   it('已知小窗口模型：阈值压到窗口的 80%，maxTokens 用模型上限', async () => {

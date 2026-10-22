@@ -14,6 +14,7 @@ import type { ReviewContext } from '../src/core/permission/contracts.js';
 import type { ChatRequest, Provider } from '../src/core/provider.js';
 import type { StreamEvent } from '../src/core/protocol/types.js';
 import type { Tool } from '../src/core/registry.js';
+import { estimateRequestTokens } from '../src/core/context/tokens.js';
 import {
   FakeProvider,
   textResponse,
@@ -500,7 +501,7 @@ describe('模型规格与完整请求预算', () => {
     },
   );
 
-  it('完整请求恰好预算内可审核，少一个字节则询问且不会截断请求', async () => {
+  it('完整请求恰好token预算内可审核，少一个token则询问且不会截断请求', async () => {
     const fake = new FakeProvider([() => reviewResponse('allow', '当前操作审批结果')]);
     let window = 200_000;
     const judge = createModelReviewer({
@@ -514,7 +515,7 @@ describe('模型规格与完整请求预算', () => {
     const serialized = JSON.stringify(fake.requests[0]);
     const bytes = Buffer.byteLength(serialized, 'utf8');
     expect(bytes).toBeGreaterThan(serialized.length);
-    window = bytes + 1024 + 64;
+    window = estimateRequestTokens(fake.requests[0]).totalTokens;
     expect((await judge.review(operation(input), signal)).decision).toBe('allow');
     window--;
     expect(await judge.review(operation(input), signal)).toMatchObject({
@@ -522,6 +523,19 @@ describe('模型规格与完整请求预算', () => {
       judge: { reasonCode: 'request_budget' },
     });
     expect(fake.requests).toHaveLength(2);
+    const byteBounded = (maxRequestBytes: number) =>
+      createModelReviewer({
+        provider: fake,
+        model: 'known-model',
+        modelInfo: () => ({ contextWindow: 200000, maxOutputTokens: 64 }),
+        maxRequestBytes,
+      });
+    expect((await byteBounded(bytes).review(operation(input), signal)).decision).toBe('allow');
+    expect(await byteBounded(bytes - 1).review(operation(input), signal)).toMatchObject({
+      decision: 'unknown',
+      reasonCode: 'request_budget',
+    });
+    expect(fake.requests).toHaveLength(3);
   });
 
   it.each([undefined, { contextWindow: 1_000_000, maxOutputTokens: 256 }])(

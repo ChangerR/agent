@@ -13,7 +13,7 @@ import type { Plugin } from '../sdk/plugin.js';
 import type { Tool } from '../core/registry.js';
 import type { McpServerConfig } from './config.js';
 import { loadMcpConfig } from './config.js';
-import { McpResultConfig, McpResultStore } from './results.js';
+import { McpResultConfig, McpResultStore, type McpResultOptions } from './results.js';
 
 interface ConnectedServer {
   name: string;
@@ -26,12 +26,29 @@ export class McpClientManager {
   private closing?: Promise<void>;
   private readonly results: McpResultStore;
 
-  constructor(options: { maxInlineChars?: number } = {}) {
-    this.results = new McpResultStore(options.maxInlineChars);
+  constructor(options: McpResultOptions = {}) {
+    this.results = new McpResultStore(options);
   }
 
   resultReader(): Tool {
     return this.results.reader();
+  }
+  resultSearcher(): Tool {
+    return this.results.searcher();
+  }
+  resultStatus() {
+    return this.results.status();
+  }
+  async maintain(cwd: string) {
+    const result = await this.results.cleanup(cwd, new AbortController().signal);
+    if (await this.results.hasResults(cwd)) await this.results.activate(cwd);
+    return result;
+  }
+  activate(cwd: string) {
+    return this.results.activate(cwd);
+  }
+  hasResults(cwd: string) {
+    return this.results.hasResults(cwd);
   }
 
   async connect(
@@ -130,6 +147,7 @@ export class McpClientManager {
           .map((r) => r.reason);
         if (errors.length) throw new AggregateError(errors, 'MCP cleanup failed');
       } finally {
+        await this.results.close();
         this.closing = undefined;
       }
     })();
@@ -145,12 +163,18 @@ export class McpClientManager {
  * MCP 插件：读 mcp.json，连接所有 server，把工具挂进注册表。
  * 连接失败的 server 只警告不阻断（MCP 是可选能力）。
  */
-export function mcpPlugin(configPath: string): Plugin {
+export function mcpPlugin(configPath: string, cwd?: string): Plugin {
   return {
     manifest: { id: 'agentlab.mcp-client', version: '1.0.0', apiVersion: 1 },
     config: {
       schema: McpResultConfig,
-      ownedFields: ['maxInlineChars'],
+      ownedFields: [
+        'maxInlineChars',
+        'maxAgeDays',
+        'maxStoredBytes',
+        'deduplicate',
+        'maxSearchChars',
+      ],
       defaults: {},
       applyMode: 'newSession',
     },
@@ -158,6 +182,7 @@ export function mcpPlugin(configPath: string): Plugin {
       const config = loadMcpConfig(configPath);
       const manager = new McpClientManager(McpResultConfig.parse(ctx.config.value));
       ctx.onDispose(() => manager.closeAll());
+      if (cwd) await manager.maintain(cwd);
       for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
         let client: Client | undefined;
         let connected = false;
@@ -180,8 +205,11 @@ export function mcpPlugin(configPath: string): Plugin {
           );
         }
       }
-      if (manager.serverNames().length > 0)
+      if (manager.serverNames().length > 0 || (cwd && (await manager.hasResults(cwd)))) {
+        if (cwd) await manager.activate(cwd);
         ctx.provide.tool('mcp_read_result', manager.resultReader());
+        ctx.provide.tool('mcp_search_result', manager.resultSearcher());
+      }
     },
   };
 }

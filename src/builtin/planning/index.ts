@@ -9,11 +9,11 @@ import { createScopedConfigStores } from '../../runtime/config-store.js';
 import type { Message } from '../../core/protocol/types.js';
 import type { InteractionRequest } from '../../sdk/index.js';
 import { PLANNING_PLUGIN, PLAN_TOOLS } from './identity.js';
+import type { PresetContext } from '../../runtime/preset.js';
 import { PlanningError } from './errors.js';
 export { PLANNING_PLUGIN, PLAN_TOOLS } from './identity.js';
-export const PlanningConfigSchema = z.object({
-  mode: z.enum(['auto', 'only', 'off']).default('auto'),
-});
+import { PlanningConfigSchema } from './config.js';
+export { PlanningConfigSchema } from './config.js';
 const proposalSchema = z.object({
   goal: z.string().trim().min(1).max(2000),
   steps: z.array(z.string().trim().min(1).max(2000)).min(1).max(64),
@@ -26,7 +26,13 @@ function planningMessages(messages: readonly Message[]): Message[] {
       if (!message.source && typeof message.content === 'string') return { ...message };
       return { ...message, content: JSON.stringify({ planningHistory: message }) };
     }
-    const content = message.content.filter((block) => ['text', 'tool_use'].includes(block.type));
+    const content = message.content
+      .filter((block) => ['text', 'tool_use'].includes(block.type))
+      .map((block) =>
+        block.type === 'tool_use'
+          ? { type: block.type, id: block.id, name: block.name, input: block.input }
+          : block,
+      );
     return {
       role: 'assistant',
       content: [
@@ -103,7 +109,7 @@ export const planningStrategy: PlanningStrategy = {
         {
           model: input.model,
           thinking: input.thinking,
-          maxTokens: 4096,
+          maxTokens: input.maxTokens ?? 4096,
           system: [
             automatic ? '[agentlab planning:auto]' : '[agentlab planning]',
             input.systemPrompt,
@@ -151,7 +157,13 @@ export const planningStrategy: PlanningStrategy = {
           tools: [],
         },
         input.signal,
-        { events: input.events, purpose: 'agent', modelRole: 'planner', runId: input.runId },
+        {
+          events: input.events,
+          purpose: 'agent',
+          modelRole: 'planner',
+          runId: input.runId,
+          maxRequestBytes: input.maxRequestBytes,
+        },
       );
       const response = await collectStreamAsync(
         (async function* () {
@@ -191,7 +203,11 @@ export const planningStrategy: PlanningStrategy = {
     }
   },
 };
-export function planningPlugin(services: RuntimeServices, cwd: string) {
+export function planningPlugin(
+  services: RuntimeServices,
+  cwd: string,
+  routes?: Pick<PresetContext, 'provider'>,
+) {
   const stores = createScopedConfigStores(cwd);
   let commandEpoch = 0;
   return definePlugin({
@@ -199,11 +215,27 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
     config: {
       schema: PlanningConfigSchema,
       defaults: { mode: 'auto' },
-      ownedFields: ['mode'],
+      ownedFields: ['mode', 'provider', 'model', 'thinking', 'maxOutputTokens', 'maxRequestBytes'],
       applyMode: 'newSession',
     },
     setup(ctx) {
-      services.configurePlanning(planningStrategy, ctx.config.value.mode as PlanningMode);
+      const config = PlanningConfigSchema.parse(ctx.config.value);
+      if (config.provider && !routes) throw new Error('planning_provider_unavailable');
+      const configuredStrategy: PlanningStrategy = {
+        ...planningStrategy,
+        prepare: (input) =>
+          planningStrategy.prepare({
+            ...input,
+            provider: config.provider
+              ? (routes?.provider(config.provider) ?? input.provider)
+              : input.provider,
+            model: config.model ?? input.model,
+            thinking: config.thinking ?? input.thinking,
+            maxTokens: config.maxOutputTokens,
+            maxRequestBytes: config.maxRequestBytes,
+          }),
+      };
+      services.configurePlanning(configuredStrategy, config.mode);
       ctx.provide.contextSource('planning-instructions', {
         getContext: () => [
           {
@@ -370,7 +402,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
                 { ...base.value, mode: op },
                 { schema: PlanningConfigSchema, ownedFields: ['mode'] },
               );
-            services.configurePlanning(planningStrategy, op as PlanningMode);
+            services.configurePlanning(configuredStrategy, op as PlanningMode);
             return { type: 'text', text: `规划 ${op} 已保存本项目并应用` };
           }
           if (op === 'pause' || op === 'cancel') {
@@ -457,7 +489,7 @@ export function planningPlugin(services: RuntimeServices, cwd: string) {
             );
           drafts.delete(draft as object);
           commandEpoch++;
-          services.configurePlanning(planningStrategy, saved.mode);
+          services.configurePlanning(configuredStrategy, saved.mode);
         },
       });
       ctx.provide.tui('planning-ui', {
