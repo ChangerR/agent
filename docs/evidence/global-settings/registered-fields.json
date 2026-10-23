@@ -402,7 +402,7 @@
       "section": "configuration-agentlab.provider-anthropic",
       "title": "Anthropic 模型能力",
       "path": "models.*.offEffort",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -519,7 +519,7 @@
       "section": "configuration-agentlab.provider-openai",
       "title": "OpenAI 兼容协议",
       "path": "models.*.offEffort",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -573,7 +573,7 @@
       "section": "configuration-agentlab.provider-connections",
       "title": "Provider 连接",
       "path": "connections.* [OpenAI 兼容连接].type",
-      "control": "枚举下拉",
+      "control": "由上层类型选择器控制",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -708,7 +708,7 @@
       "section": "configuration-agentlab.provider-connections",
       "title": "Provider 连接",
       "path": "connections.* [OpenAI 兼容连接].models.*.offEffort",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -735,7 +735,7 @@
       "section": "configuration-agentlab.provider-connections",
       "title": "Provider 连接",
       "path": "connections.* [Anthropic 连接].type",
-      "control": "枚举下拉",
+      "control": "由上层类型选择器控制",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -870,7 +870,7 @@
       "section": "configuration-agentlab.provider-connections",
       "title": "Provider 连接",
       "path": "connections.* [Anthropic 连接].models.*.offEffort",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -888,7 +888,7 @@
       "section": "configuration-agentlab.provider-connections",
       "title": "Provider 连接",
       "path": "connections.* [离线 Fake 连接].type",
-      "control": "枚举下拉",
+      "control": "由上层类型选择器控制",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -1140,7 +1140,7 @@
       "section": "configuration-agentlab.subagents",
       "title": "辅助任务与并发",
       "path": "maxDepth",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -1473,7 +1473,7 @@
       "section": "capability-selection",
       "title": "插件实现与权限策略",
       "path": "reviewer [2]",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""
@@ -1518,7 +1518,7 @@
       "section": "capability-selection",
       "title": "插件实现与权限策略",
       "path": "cacheStrategy [2]",
-      "control": "枚举下拉",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""

@@ -1,0 +1,19 @@
+{
+  "window": [
+    900,
+    700
+  ],
+  "css": {
+    "width": 720,
+    "height": 560,
+    "zoom": 1.25
+  },
+  "saveBar": {
+    "x": 0,
+    "y": 498,
+    "width": 720,
+    "height": 62
+  },
+  "platform": "linux",
+  "nativeMac": false
+}
