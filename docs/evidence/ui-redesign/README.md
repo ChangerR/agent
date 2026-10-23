@@ -39,11 +39,11 @@
 
 ## 验证结果
 
-- 全量 Vitest：100 文件、1780 passed、2 个原有 Windows 条件 skipped、0 failed；原时限保留。本轮 CLI/PTY 全量也通过。见 [原始全量日志](vitest.log)。
+- 全量 Vitest：100 文件、1780 passed、2 个原有 Windows 条件 skipped、0 failed；原时限保留。本轮 CLI/PTY 全量也通过。见 [原始全量日志](test-output.txt)。
 - 根工程和 desktop 类型检查通过；真实 run.mjs 的开发构建/启动通过，未提供 Node LICENSE 环境绕过。
 - 真正全局 Electron 14 场景全部通过，包含真实 gnome_libsecret、两个项目四次本地授权请求、错误写入、重启解密、清除以及 basic_text 拒绝。见 [结果](electron/result.json)。
 - 真正组合 Electron 17 场景全部通过；21 个实际装配入口（包含验收插件）的 172 个图形控件节点/分支逐项操作后放弃草稿，文件保持不变。包含即时选项、真实审批拒绝/允许、稀疏覆盖、MCP、插件、会话恢复、错误处理和已展开辅助面板的窄屏/125% 回归。见 [结果](electron/electron-settings-smoke.json) 与 [实际控件清单](electron/ui-field-coverage.json)。默认 preset 的独立静态矩阵仍为 20 入口/173 节点，两种计数用途不同。
-- 两套真正 renderer + 隔离 worker 的 Chromium 交互回归通过，未使用视觉 bridge fixture：保存/校验/导航取消/继承/即时选项/重置/主题，以及 cache、三个辅助角色、双 provider 模型能力和 MCP 预算。见 [设置](browser-functional/settings.log) / [缓存](browser-functional/cache.log)。
+- 两套真正 renderer + 隔离 worker 的 Chromium 交互回归通过，未使用视觉 bridge fixture：保存/校验/导航取消/继承/即时选项/重置/主题，以及 cache、三个辅助角色、双 provider 模型能力和 MCP 预算。见 [设置](browser-functional/settings-output.txt) / [缓存](browser-functional/cache-output.txt)。
 - 浏览器像素审阅 24 状态，无横向溢出/页面错误；真正 Electron 六类页面 × 正常/窄屏/原生125% 共18个布局状态，控件命中和保存栏边界检查通过。
 
 ## 验证与复现

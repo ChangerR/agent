@@ -1,0 +1,30 @@
+{
+  "codeCommit": "f952756",
+  "baseline": "d5de823a1ed7fcf6ea946917aa35e5227cd128a0",
+  "typecheck": "passed",
+  "appBuildAndRun": "passed via real run.mjs, no LICENSE env bypass",
+  "vitest": {
+    "files": 100,
+    "passed": 1780,
+    "skipped": 2,
+    "failed": 0
+  },
+  "electron": {
+    "globalScenarios": 14,
+    "combinedScenarios": 17,
+    "layoutStates": 18,
+    "nativeZoom125Css": {
+      "width": 720,
+      "height": 560
+    },
+    "actualLibsecret": true
+  },
+  "browser": {
+    "visualStates": 24,
+    "interactiveSuites": 2,
+    "credentialFixtureOnlyForVisualAudit": true
+  },
+  "macNativeTested": false,
+  "paidRequests": 0,
+  "userComputerAccess": false
+}
