@@ -198,4 +198,3 @@ Node.js v24.19.0
       Tests  1780 passed | 2 skipped (1782)
    Start at  02:46:09
    Duration  132.08s (transform 5.77s, setup 1.19s, collect 49.20s, tests 178.15s, environment 32ms, prepare 10.76s)
-
