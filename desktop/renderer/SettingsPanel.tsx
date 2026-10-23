@@ -1,4 +1,4 @@
-import { useEffect, useState, useId } from 'react';
+import { useEffect, useState, useId, useRef } from 'react';
 import type { RuntimeSnapshot, SettingsDescriptor, SettingsSnapshot } from '../shared/protocol.js';
 
 import { Field, Fields, ValueView, type FormSchema } from './SchemaForm.js';
@@ -55,6 +55,21 @@ export function SettingsPanel({
   const [selected, setSelected] = useState(
     sections.find((s) => s.id === 'configuration-connection')?.id ?? sections[0]?.id ?? '',
   );
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // 桌面已展开的辅助面板不能在缩窄后变成遮挡正文的浮层。
+    const closeNarrowPanels = () => {
+      if (window.innerWidth <= 800)
+        navigation.current
+          ?.querySelectorAll<HTMLDetailsElement>(':scope > details[open]')
+          .forEach((panel) => {
+            panel.open = false;
+          });
+    };
+    closeNarrowPanels();
+    window.addEventListener('resize', closeNarrowPanels);
+    return () => window.removeEventListener('resize', closeNarrowPanels);
+  }, [selected, scope]);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<unknown>({});
   const [resetEpoch, setResetEpoch] = useState(0);
@@ -200,7 +215,18 @@ export function SettingsPanel({
       : undefined;
   return (
     <section className="configuration-page" aria-label="应用设置">
-      <aside className="configuration-nav">
+      <aside
+        className="configuration-nav"
+        ref={navigation}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape')
+            navigation.current
+              ?.querySelectorAll<HTMLDetailsElement>(':scope > details[open]')
+              .forEach((panel) => {
+                panel.open = false;
+              });
+        }}
+      >
         <div className="settings-nav-heading">
           <h2>设置</h2>
         </div>
@@ -611,7 +637,7 @@ export function SettingsPanel({
               <footer className="configuration-actions">
                 <div className="save-state" role="status">
                   <span className={dirty ? 'dirty-dot' : 'saved-dot'} />
-                  {dirty ? '未保存' : editor?.saved ? '已保存' : '已同步'}
+                  <span>{dirty ? '未保存' : editor?.saved ? '已保存' : '已同步'}</span>
                   <span className="save-timing">新打开项目或重新装配后采用</span>
                 </div>
                 <div className="button-group">

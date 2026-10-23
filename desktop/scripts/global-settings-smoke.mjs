@@ -185,13 +185,32 @@ await chmod(wrapper, 0o700);
 const json = async (path) => JSON.parse(await readFile(path, 'utf8'));
 const snapshot = () => page.evaluate(() => window.agentlab.snapshot());
 const editor = () => page.locator('.configuration-editor'),
-  form = () => editor().locator(':scope > form');
+  form = () => editor().locator('form');
 const field = (group, name) =>
-  group.locator(':scope > .configuration-field[data-field="' + name + '"]');
+  group.locator(
+    ':scope > .configuration-field[data-field="' +
+      name +
+      '"], :scope > .primary-model-fields > .configuration-field[data-field="' +
+      name +
+      '"], :scope > .advanced-fields > .configuration-field[data-field="' +
+      name +
+      '"]',
+  );
 const rootFields = () => form().locator(':scope > fieldset');
+async function showSidebar() {
+  const toggle = page.getByRole('button', { name: '显示侧栏', exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+}
+async function revealDetails(item) {
+  // 通过真实 summary 点击展开，保持验收与键盘/指针交互一致。
+  const parents = await item.locator('xpath=ancestor::details[not(@open)]').all();
+  for (const detail of parents.reverse()) await detail.locator(':scope > summary').click();
+}
 async function override(group, name) {
   const row = field(group, name);
-  await row.locator(':scope > label > input[type=checkbox]').check();
+  await revealDetails(row);
+  const check = row.locator(':scope > label > input[type=checkbox]');
+  if (await check.count()) await check.check();
   return row;
 }
 async function launch(extra = []) {
@@ -223,10 +242,11 @@ async function section(id) {
     context = scope === 'global' ? state.globalSettings : state.runtime;
   const item = context.settings.find((s) => s.id === id);
   assert.ok(item, 'registered section ' + id);
-  await page
+  const button = page
     .locator('.configuration-nav')
-    .getByRole('button', { name: item.title, exact: true })
-    .click();
+    .getByRole('button', { name: item.title, exact: true });
+  if (await button.isVisible()) await button.click();
+  else await page.getByRole('combobox', { name: '设置页面', exact: true }).selectOption(id);
   await expect
     .poll(async () => {
       const state = await snapshot();
@@ -239,7 +259,7 @@ async function save() {
   const scope = await page.getByRole('combobox', { name: '配置作用域', exact: true }).inputValue(),
     state = await snapshot(),
     before = (scope === 'global' ? state.globalSettings : state.runtime).settingsEditor.id;
-  await form().getByRole('button', { name: '提交此节', exact: true }).click();
+  await editor().getByRole('button', { name: '保存更改', exact: true }).click();
   await expect
     .poll(async () => {
       const s = await snapshot();
@@ -249,6 +269,7 @@ async function save() {
     .toBe(true);
 }
 async function chooseProject(path) {
+  await showSidebar();
   await app.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
   }, path);
@@ -292,7 +313,7 @@ try {
     await section('configuration-agentlab.provider-connections');
     const group = await override(rootFields(), 'connections'),
       map = group.locator(':scope > fieldset');
-    await map.locator(':scope > .add-record').click();
+    await map.locator('.add-record').first().click();
     await map.getByRole('textbox', { name: '命名连接 名称 1', exact: true }).fill('cloud');
     const row = map.locator('.map-row');
     await row.locator('.union-editor > label > select').selectOption('0');
@@ -309,10 +330,13 @@ try {
   });
   await check('UI 直接输入虚构 key，真实 gnome_libsecret 加密保存，读取和快照不泄露', async () => {
     const panel = page.getByRole('region', { name: '全局 API key', exact: true });
-    await panel
-      .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
-      .selectOption('cloud');
+    if (await panel.getByRole('combobox', { name: '密钥所属 Provider', exact: true }).count())
+      await panel
+        .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
+        .selectOption('cloud');
+    await panel.locator('.credential-security > summary').click();
     await expect(panel.getByText(/gnome_libsecret/)).toBeVisible();
+    await panel.locator('.credential-security > summary').click();
     const input = panel.getByLabel('直接输入 API key', { exact: true });
     await input.fill(fixtureKey);
     await expect(input).toHaveAttribute('type', 'password');
@@ -328,7 +352,7 @@ try {
     await section('configuration-model-catalog');
     const group = await override(rootFields(), 'catalog'),
       map = group.locator(':scope > fieldset');
-    await map.locator(':scope > .add-record').click();
+    await map.locator('.add-record').first().click();
     await map.getByRole('textbox', { name: '模型目录 名称 1', exact: true }).fill(model);
     const fields = map.locator('.map-row > fieldset');
     for (const [name, value] of [
@@ -378,7 +402,9 @@ try {
       .fill('project-only-model');
     await save();
     assert.equal((await json(join(projectB, 'agent.config.json'))).model, 'project-only-model');
-    await field(rootFields(), 'model').locator(':scope > label > input[type=checkbox]').uncheck();
+    await field(rootFields(), 'model')
+      .getByRole('button', { name: '恢复继承 model', exact: true })
+      .click();
     await save();
     assert.equal((await json(join(projectB, 'agent.config.json'))).model, undefined);
     await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
@@ -404,19 +430,20 @@ try {
     const cfg = await json(globalPath);
     cfg.maxTurns = 66;
     await writeFile(globalPath, JSON.stringify(cfg));
-    await form().getByRole('button', { name: '提交此节', exact: true }).click();
+    await editor().getByRole('button', { name: '保存更改', exact: true }).click();
     await expect(editor().getByRole('alert')).toBeVisible();
     assert.equal((await json(globalPath)).maxTurns, 66);
-    await form().getByRole('button', { name: '放弃更改', exact: true }).click();
+    await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
     await editor().getByRole('button', { name: '重新读取', exact: true }).click();
     await expect(editor().getByRole('alert')).toHaveCount(0);
   });
   await check('真实密钥写入失败提示且原 key 保留，密码输入不会进入快照', async () => {
     await section('configuration-agentlab.provider-connections');
     const panel = page.getByRole('region', { name: '全局 API key', exact: true });
-    await panel
-      .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
-      .selectOption('cloud');
+    if (await panel.getByRole('combobox', { name: '密钥所属 Provider', exact: true }).count())
+      await panel
+        .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
+        .selectOption('cloud');
     await rename(vaultPath, vaultPath + '.held');
     await mkdir(vaultPath);
     await panel
@@ -451,29 +478,18 @@ try {
         },
         { width, height, zoom },
       );
-      await page.setViewportSize({
-        width: Math.round(width / zoom),
-        height: Math.round(height / zoom),
-      });
+      // 使用真实 BrowserWindow 与 webContents 缩放；不叠加 Playwright 视口模拟。
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBeLessThanOrEqual(width);
       if (await page.evaluate(() => innerWidth <= 650)) {
         const toggle = page.getByRole('button', { name: '收起侧栏', exact: true });
         if (await toggle.count()) await toggle.click();
       }
       for (const id of sections) {
         await section(id);
-        const control = rootFields()
-          .locator(':scope > .configuration-field > label > input[type=checkbox]')
+        const input = rootFields()
+          .locator('input:not([type=hidden]):not([type=checkbox]):visible,select:visible')
           .first();
-        await control.scrollIntoViewIfNeeded();
-        const checked = await control.isChecked();
-        await control.click();
-        await expect(control).toBeChecked({ checked: !checked });
-        await control.press('Escape');
-        await expect(form().getByRole('button', { name: '提交此节', exact: true })).toBeDisabled();
-        const editable = rootFields()
-          .locator('input:not([type=checkbox]):visible, select:visible')
-          .first();
-        const target = (await editable.count()) ? editable : control;
+        const target = (await input.count()) ? input : rootFields().locator('.add-record').first();
         await target.scrollIntoViewIfNeeded();
         await target.click();
         await target.press('Escape');
@@ -532,10 +548,9 @@ try {
       w.webContents.setZoomFactor(1);
       w.setSize(1440, 960);
     });
-    await page.setViewportSize({ width: 1440, height: 960 });
-    const theme = page.getByRole('combobox', { name: '桌面主题', exact: true });
-    if (!(await theme.isVisible()))
-      await page.getByRole('button', { name: '显示侧栏', exact: true }).click();
+
+    const theme = page.locator('select[aria-label="设置界面主题"]');
+    if (!(await theme.isVisible())) await revealDetails(theme);
     await theme.selectOption('dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await section('configuration-agentlab.provider-connections');
@@ -548,12 +563,14 @@ try {
     await launch();
     await settings();
     const panel = page.getByRole('region', { name: '全局 API key', exact: true });
-    await panel
-      .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
-      .selectOption('cloud');
-    await expect(panel.getByText(/已保存，明文不会返回界面/)).toBeVisible();
+    if (await panel.getByRole('combobox', { name: '密钥所属 Provider', exact: true }).count())
+      await panel
+        .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
+        .selectOption('cloud');
+    await expect(panel.getByText('已配置', { exact: true })).toBeVisible();
     await screenshot('04-restarted-global-key-masked.png');
     for (const path of [projectA, projectB]) {
+      await showSidebar();
       await page
         .getByRole('button', {
           name: '打开项目 ' + (path === projectA ? 'project-one' : 'project-two'),
@@ -569,9 +586,10 @@ try {
     await settings();
     await section('configuration-agentlab.provider-connections');
     const panel = page.getByRole('region', { name: '全局 API key', exact: true });
-    await panel
-      .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
-      .selectOption('cloud');
+    if (await panel.getByRole('combobox', { name: '密钥所属 Provider', exact: true }).count())
+      await panel
+        .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
+        .selectOption('cloud');
     await panel.getByRole('button', { name: '清除保存的 key', exact: true }).click();
     await expect(panel.getByText('API key 已清除。', { exact: true })).toBeVisible();
     assert.equal(Object.keys(await json(vaultPath)).length, 0);
@@ -585,9 +603,10 @@ try {
     await launch();
     await settings();
     await section('configuration-agentlab.provider-connections');
-    await page
-      .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
-      .selectOption('cloud');
+    if (await page.getByRole('combobox', { name: '密钥所属 Provider', exact: true }).count())
+      await page
+        .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
+        .selectOption('cloud');
     await expect(page.getByLabel('直接输入 API key', { exact: true })).toHaveAttribute(
       'placeholder',
       '粘贴或输入 API key',
@@ -624,9 +643,10 @@ try {
     await settings();
     await section('configuration-agentlab.provider-connections');
     const panel = page.getByRole('region', { name: '全局 API key', exact: true });
-    await panel
-      .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
-      .selectOption('cloud');
+    if (await panel.getByRole('combobox', { name: '密钥所属 Provider', exact: true }).count())
+      await panel
+        .getByRole('combobox', { name: '密钥所属 Provider', exact: true })
+        .selectOption('cloud');
     await expect(panel.getByLabel('直接输入 API key', { exact: true })).toBeDisabled();
     const before = await readFile(vaultPath, 'utf8');
     const rejected = await page.evaluate(async () => {

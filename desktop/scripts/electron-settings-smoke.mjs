@@ -152,27 +152,46 @@ const currentEditor = async () => {
 };
 // 作用于当前分组的直接字段，避免同名嵌套项互相命中。
 const groupField = (group, name) =>
-  group.locator(`:scope > .configuration-field[data-field="${name}"]`);
+  group.locator(
+    `:scope > .configuration-field[data-field="${name}"], :scope > .primary-model-fields > .configuration-field[data-field="${name}"], :scope > .advanced-fields > .configuration-field[data-field="${name}"]`,
+  );
 async function openSection(id) {
   const state = await snapshot();
   const section = state.runtime?.settings.find((s) => s.id === id);
   assert.ok(section, 'missing actual registered settings: ' + id);
-  await page
+  const button = page
     .locator('.configuration-nav')
-    .getByRole('button', { name: section.title, exact: true })
-    .click();
+    .getByRole('button', { name: section.title, exact: true });
+  if (await button.isVisible()) await button.click();
+  else await page.getByRole('combobox', { name: '设置页面', exact: true }).selectOption(id);
   await expect.poll(async () => (await currentEditor())?.sectionId).toBe(id);
   await expect(editor().getByRole('heading', { name: section.title, exact: true })).toBeVisible();
   await expect(editor().getByText('正在读取设置…', { exact: true })).toHaveCount(0);
 }
+async function showSidebar() {
+  const toggle = page.getByRole('button', { name: '显示侧栏', exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+}
+async function revealDetails(item) {
+  // 通过真实 summary 点击展开，保持验收与键盘/指针交互一致。
+  const parents = await item.locator('xpath=ancestor::details[not(@open)]').all();
+  for (const detail of parents.reverse()) await detail.locator(':scope > summary').click();
+}
+async function selectTheme(value) {
+  const theme = page.locator('select[aria-label="设置界面主题"]');
+  await revealDetails(theme);
+  await theme.selectOption(value);
+}
 async function override(group, name) {
   const item = groupField(group, name);
-  await item.locator(':scope > .override-label input').check();
+  await revealDetails(item);
+  const checkbox = item.locator(':scope > .override-label input');
+  if (await checkbox.count()) await checkbox.check();
   return item;
 }
 async function save() {
   const before = (await currentEditor()).id;
-  await form().getByRole('button', { name: '提交此节', exact: true }).click();
+  await editor().getByRole('button', { name: '保存更改', exact: true }).click();
   await expect
     .poll(async () => {
       const value = await currentEditor();
@@ -210,8 +229,13 @@ async function waitForNewSession(previous) {
 async function exerciseObject(group, schema, path) {
   for (const [name, child] of Object.entries(schema.properties ?? {})) {
     if (name === 'apiKeyRef') {
-      await expect(groupField(group, name).locator('.managed-reference')).toBeVisible();
+      await expect(groupField(group, name).locator('.managed-reference')).toHaveCount(1);
       renderedFields.push({ path: path + '.' + name, type: 'managed safe-storage status' });
+      continue;
+    }
+    if (child.const !== undefined && name === 'type') {
+      await expect(group.locator('[data-field="' + name + '"]')).toHaveCount(1);
+      renderedFields.push({ path: path + '.' + name, type: 'variant selector discriminator' });
       continue;
     }
     const node = await override(group, name);
@@ -256,7 +280,7 @@ async function exerciseField(host, schema, name, path) {
     await exerciseObject(host.locator(':scope > fieldset'), schema, path);
   } else if (schema.type === 'object') {
     const map = host.locator(':scope > .map-editor');
-    await map.locator(':scope > .add-record').click();
+    await map.locator('.add-record').first().click();
     const key = map.locator(':scope > .record-details > .map-row > label > input');
     await key.fill('coverageItem');
     await exerciseField(
@@ -311,6 +335,7 @@ try {
       projects: [{ id: project, path: project, name: 'settings-project', demo: false }],
     });
     await launch();
+    await showSidebar();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
     await expect.poll(async () => (await snapshot()).runtime?.phase).toBe('就绪');
     assert.equal((await snapshot()).runtime.provider, 'acceptance');
@@ -330,6 +355,7 @@ try {
     });
     assert.equal(menu.found, true);
     assert.equal(menu.accelerator, 'CmdOrCtrl+,');
+    await showSidebar();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
     await app.evaluate(({ Menu }) => {
       const find = (items) =>
@@ -461,7 +487,7 @@ try {
       .selectOption('global');
     assert.equal((await snapshot()).runtime.settingsEditor.scope, 'project');
     acceptConfirm = true;
-    await form().getByRole('button', { name: '放弃更改', exact: true }).click();
+    await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
     assert.deepEqual((await json(configPath)).cache, { staticTtl: '1h' });
     await editor()
       .getByRole('combobox', { name: '配置作用域', exact: true })
@@ -675,14 +701,14 @@ try {
     await openSection('configuration-acceptance.provider');
     let count = await override(form().locator(':scope > fieldset'), 'count');
     await count.getByRole('spinbutton').fill('-1');
-    await form().getByRole('button', { name: '提交此节', exact: true }).click();
+    await editor().getByRole('button', { name: '保存更改', exact: true }).click();
     await expect(editor().getByRole('alert')).toBeVisible();
     assert.equal((await json(configPath)).pluginConfig['acceptance.provider'].count, 9);
     await count.getByRole('spinbutton').fill('10');
     const external = await json(configPath);
     external.externalEdit = true;
     await store(configPath, external);
-    await form().getByRole('button', { name: '提交此节', exact: true }).click();
+    await editor().getByRole('button', { name: '保存更改', exact: true }).click();
     await expect(editor().getByRole('alert')).toBeVisible();
     assert.equal((await json(configPath)).pluginConfig['acceptance.provider'].count, 9);
     assert.equal((await json(configPath)).externalEdit, true);
@@ -717,7 +743,7 @@ try {
     }, home);
     await roots.getByRole('button', { name: '选择目录', exact: true }).click();
     await expect(roots.getByRole('textbox')).toHaveValue(home);
-    await form().getByRole('button', { name: '提交此节', exact: true }).click();
+    await editor().getByRole('button', { name: '保存更改', exact: true }).click();
     await expect(editor().getByRole('alert')).toBeVisible();
     assert.equal((await json(configPath)).pluginConfig['agentlab.policy'], undefined);
     await roots.getByRole('textbox').fill('.');
@@ -737,7 +763,10 @@ try {
           'configuration-mcp-servers': '清空此文件的服务器',
           'configuration-project-environment': '清空项目环境变量',
         }[section.id] ?? '清除此节的本层覆盖';
-      await form().getByRole('button', { name: resetName, exact: true }).click();
+      const reset = editor().locator('.settings-advanced > button');
+      await revealDetails(reset);
+      await expect(reset).toHaveText(resetName);
+      await reset.click();
       if (section.schema.properties)
         await exerciseObject(form().locator(':scope > fieldset'), section.schema, section.id);
       else
@@ -748,7 +777,7 @@ try {
           section.id,
         );
       await expect(form().locator('textarea')).toHaveCount(0);
-      await form().getByRole('button', { name: '放弃更改', exact: true }).click();
+      await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
     }
     assert.ok(sections.length >= 20);
     assert.ok(renderedFields.length >= 160);
@@ -778,6 +807,7 @@ try {
     await expect.poll(async () => (await json(configPath)).thinking).toBe('low');
     await page.getByRole('combobox', { name: '设置当前权限模式', exact: true }).selectOption('ask');
     await expect.poll(async () => (await json(configPath)).permissionMode).toBe('ask');
+    await showSidebar();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
     await page.getByRole('textbox', { name: '输入任务', exact: true }).fill('WRITE_FIXTURE');
     await page.getByRole('button', { name: '发送任务', exact: true }).click();
@@ -786,11 +816,12 @@ try {
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
     await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await expect(
-      editor().getByText('任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。', {
+      editor().getByText('任务结算后可编辑项目设置，现有审批保持待处理。', {
         exact: true,
       }),
     ).toBeVisible();
     assert.equal((await snapshot()).runtime.approvals.length, 1);
+    await showSidebar();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
     await page.getByRole('button', { name: '拒绝', exact: true }).click();
     await expect.poll(async () => (await snapshot()).runtime.busy).toBe(false);
@@ -823,7 +854,7 @@ try {
     await (
       await override(group, 'model')
     )
-      .getByLabel('模型 ID', { exact: true })
+      .getByLabel('默认模型', { exact: true })
       .fill('offline-custom');
     await (await override(group, 'thinking')).getByRole('combobox').selectOption('off');
     await save();
@@ -831,6 +862,7 @@ try {
     await app.close();
     app = undefined;
     await launch();
+    await showSidebar();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
     await expect
       .poll(async () => {
@@ -868,7 +900,7 @@ try {
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
     await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await openSection('configuration-model-catalog');
-    await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
+    await selectTheme('dark');
     await editor().evaluate((node) => {
       node.scrollTop = 0;
     });
@@ -927,7 +959,7 @@ try {
     await rename(prefs, prefs + '.fixture-backup');
     await mkdir(prefs);
     try {
-      await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('blue');
+      await selectTheme('blue');
       await expect(
         page.getByRole('alert').filter({ hasText: '主题偏好保存失败' }).first(),
       ).toBeVisible();
@@ -937,16 +969,16 @@ try {
       await rm(prefs, { recursive: true, force: true });
       await rename(prefs + '.fixture-backup', prefs);
     }
-    await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('blue');
+    await selectTheme('blue');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'blue');
     assert.equal((await json(prefs)).theme, 'blue');
-    await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
+    await selectTheme('dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 
   await check('未保存关闭取消、主题持久化、缩放与窄窗口布局', async () => {
     if (layoutOnly) {
-      await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
+      await selectTheme('dark');
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     }
     await openSection('configuration-budgets');
@@ -964,20 +996,18 @@ try {
       '99',
     );
     assert.equal((await json(configPath)).maxTurns, undefined);
-    await form().getByRole('button', { name: '放弃更改', exact: true }).click();
+    await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
     await app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       win.setSize(900, 700);
       win.webContents.setZoomFactor(1.25);
     });
-    // 对齐 CDP 内容视口与缩放后的 CSS 尺寸，避免只裁切原来的大视口截图。
-    await page.setViewportSize({ width: 720, height: 560 });
-    if (await page.evaluate(() => innerWidth <= 650))
-      await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
+    // 真实 BrowserWindow 和 Chromium 缩放；原本打开的辅助面板必须收合。
+    await expect(page.locator('.configuration-nav > details[open]')).toHaveCount(0);
     await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).scrollIntoViewIfNeeded();
     await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).uncheck();
     await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).check();
-    const actions = await form().locator('.configuration-actions').boundingBox(),
+    const actions = await editor().locator('.configuration-actions').boundingBox(),
       viewport = { height: await page.evaluate(() => innerHeight) };
     assert.ok(
       actions &&
@@ -1001,7 +1031,7 @@ try {
       platform: process.platform,
       nativeMac: false,
     });
-    await form().getByRole('button', { name: '放弃更改', exact: true }).click();
+    await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
     await expect(
       editor().getByRole('heading', { name: '上下文与缓存预算', exact: true }),
     ).toBeVisible();
@@ -1010,7 +1040,6 @@ try {
       win.webContents.setZoomFactor(1);
       win.setSize(1440, 960);
     });
-    await page.setViewportSize({ width: 1440, height: 960 });
     assert.equal(await page.evaluate(() => localStorage.getItem('agentlab-theme')), 'dark');
     await app.close();
     app = undefined;

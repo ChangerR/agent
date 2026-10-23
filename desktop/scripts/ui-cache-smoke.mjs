@@ -40,8 +40,23 @@ try {
     await page.getByRole('button', { name: title, exact: true }).click();
     await expect(page.getByRole('button', { name: '重新读取', exact: true })).toBeVisible();
   };
-  const override = async (label) =>
-    page.getByRole('checkbox', { name: '覆盖 ' + label, exact: true }).check();
+  const override = async (label) => {
+    await expect
+      .poll(async () => {
+        const state = await readState();
+        const scope = await page
+          .getByRole('combobox', { name: '配置作用域', exact: true })
+          .inputValue();
+        return (
+          (scope === 'global' ? state.globalSettings : state.runtime)?.settingsEditor?.scope ===
+          scope
+        );
+      })
+      .toBe(true);
+    await expect(page.locator('.configuration-editor form')).toBeVisible();
+    const checkbox = page.getByRole('checkbox', { name: '覆盖 ' + label, exact: true });
+    if (await checkbox.count()) await checkbox.check();
+  };
   const text = async (label, value) => {
     await override(label);
     await page.getByLabel(label, { exact: true }).fill(value);
@@ -69,7 +84,7 @@ try {
     const pick = (s) => (scope === 'global' ? s.globalSettings : s.runtime).settingsEditor;
     const before = pick(await readState()).id;
     await expect(page.getByText('未保存', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '提交此节', exact: true }).click();
+    await page.getByRole('button', { name: '保存更改', exact: true }).click();
     await expect
       .poll(async () => {
         const e = pick(await readState());

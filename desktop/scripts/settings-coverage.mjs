@@ -67,34 +67,39 @@ const control = (s) =>
       ? '工具与目标规则构建器'
       : s.anyOf
         ? '类型选择 + 对应结构化控件'
-        : s.enum || s.const !== undefined
-          ? '枚举下拉'
-          : Array.isArray(s.type)
-            ? '类型选择'
-            : s.type === 'object'
-              ? s.properties
-                ? '分组字段'
-                : '键值行 / 列表详情 / 增删改名'
-              : s.type === 'array'
-                ? '列表增删排序'
-                : s.type === 'boolean'
-                  ? '启用/关闭下拉'
-                  : ['number', 'integer'].includes(s.type)
-                    ? '数值输入'
-                    : s.type === 'string'
-                      ? '文本 / 候选输入'
-                      : s.type === 'null'
-                        ? '空值选择'
-                        : '明确类型选择 + 递归控件';
+        : s.const !== undefined
+          ? '固定值选择 / 显式覆盖'
+          : s.enum
+            ? '枚举下拉'
+            : Array.isArray(s.type)
+              ? '类型选择'
+              : s.type === 'object'
+                ? s.properties
+                  ? '分组字段'
+                  : '键值行 / 列表详情 / 增删改名'
+                : s.type === 'array'
+                  ? '列表增删排序'
+                  : s.type === 'boolean'
+                    ? '启用/关闭下拉'
+                    : ['number', 'integer'].includes(s.type)
+                      ? '数值输入'
+                      : s.type === 'string'
+                        ? '文本 / 候选输入'
+                        : s.type === 'null'
+                          ? '空值选择'
+                          : '明确类型选择 + 递归控件';
 const rows = [];
 function walk(section, s, path) {
   rows.push({
     section: section.id,
     title: section.title,
     path,
-    control: /(?:^|\.)apiKeyRef$/.test(path)
-      ? '安全存储状态；专用 API key 输入 / 替换 / 清除'
-      : control(s),
+    control:
+      /\.type$/.test(path) && s.const !== undefined
+        ? '由上层类型选择器控制'
+        : /(?:^|\.)apiKeyRef$/.test(path)
+          ? '安全存储状态；专用 API key 输入 / 替换 / 清除'
+          : control(s),
     scope: section.scopes.map((s) => s.scope).join(' / '),
     effect: section.applyMode ?? '声明',
     constraints: [
@@ -126,7 +131,7 @@ try {
   const md = [
     '# 设置字段覆盖矩阵',
     '',
-    '先运行 `pnpm desktop:build`，再以 `node desktop/scripts/settings-coverage.mjs` 从真实默认 preset、构建后的 Node worker、已装配 SettingsSection 和动态 getSchema 生成；不按手写字段清单推测。`*` 是可增删/改名的 map 键，`[]` 是可增删/排序的数组项，方括号表示条件分支。嵌套字段均有独立覆盖开关，未选中不回填默认。',
+    '先运行 `pnpm desktop:build`，再以 `node desktop/scripts/settings-coverage.mjs` 从真实默认 preset、构建后的 Node worker、已装配 SettingsSection 和动态 getSchema 生成；不按手写字段清单推测。`*` 是可增删/改名的 map 键，`[]` 是可增删/排序的数组项，方括号表示条件分支。全局简单字段直接编辑并可恢复默认；项目嵌套字段使用显式覆盖，主模型字段可恢复继承。类型判别字段由上层类型选择器控制。读取不回填默认，删除本层值恢复继承。',
     '',
     '所有配置写入都由原始 schema、领域校验及受控 CAS 后端最终校验；表中的边界是表单附加提示。newSession 表示 App 明确“重新装配并新建会话”或退出重启后采用；nextRequest 为原有即时设置协议，权限仍按后端规则检查。用户/项目原始值、合成有效值与当前会话分开显示。',
     '',

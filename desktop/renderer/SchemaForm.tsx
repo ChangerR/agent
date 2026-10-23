@@ -747,6 +747,7 @@ export function Field(props: Props) {
   if (schema.type === 'boolean')
     return (
       <select
+        id={props.inputId}
         aria-label={label}
         value={String(value ?? false)}
         onChange={(e) => onChange(e.target.value === 'true')}
@@ -887,7 +888,7 @@ export function Fields({
   return (
     <>
       {Object.entries(schema.properties ?? {}).map(([name, child]) => {
-        if (child.const !== undefined)
+        if (child.const !== undefined && name === 'type')
           return (
             <span key={name} className="sr-only constant-field" data-field={name}>
               {String(child.const)}
@@ -911,6 +912,7 @@ export function Fields({
           'revision' in runtime &&
           !['object', 'array'].includes(String(child.type)) &&
           !child.anyOf &&
+          child.const === undefined &&
           !child['x-any'] &&
           !child['x-rule'] &&
           !child.writeOnly;
