@@ -1,5 +1,6 @@
 /** 真正的 Electron / Secret Service / IPC / worker / 文件验收。仅本地 HTTP 假服务。 */
 import { _electron, expect } from '@playwright/test';
+import { captureWindow } from './electron-capture.mjs';
 import {
   mkdtemp,
   mkdir,
@@ -296,7 +297,7 @@ async function screenshot(name, { top = true } = {}) {
     await editor().evaluate((e) => {
       e.scrollTop = 0;
     });
-  await page.screenshot({ path: join(output, name) });
+  await captureWindow(app, page, join(output, name));
 }
 try {
   await check('无项目首次启动即可打开完整全局设置；读取不写默认或建立会话', async () => {
@@ -710,7 +711,7 @@ try {
       2,
     ) + '\n',
   );
-  if (page) await page.screenshot({ path: join(output, 'failure.png') }).catch(() => {});
+  if (page) await captureWindow(app, page, join(output, 'failure.png')).catch(() => {});
   throw error;
 } finally {
   if (app)

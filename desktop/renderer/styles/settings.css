@@ -780,6 +780,12 @@
 .configuration-actions button {
   font-size: 12px;
 }
+@container settings (max-width:800px) {
+  .primary-model-fields {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
 @container settings (max-width:650px) {
   .field-scalar,
   .union-editor > label {
@@ -790,10 +796,6 @@
   .field-scalar > .field-constraint,
   .field-scalar > .small {
     grid-column: 1;
-  }
-  .primary-model-fields {
-    grid-template-columns: 1fr;
-    gap: 16px;
   }
   .record-workspace {
     grid-template-columns: minmax(0, 1fr);

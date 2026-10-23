@@ -1,5 +1,6 @@
 /** 真实 Electron → preload IPC → Node worker → 配置文件的离线验收。Linux 需 Xvfb。 */
 import { _electron, expect } from '@playwright/test';
+import { captureWindow } from './electron-capture.mjs';
 import { mkdtemp, mkdir, readFile, writeFile, chmod, access, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, relative } from 'node:path';
@@ -369,7 +370,7 @@ try {
     );
     await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await expect(form().locator('textarea')).toHaveCount(0);
-    await page.screenshot({ path: join(output, '01-settings-entry-linux-electron.png') });
+    await captureWindow(app, page, join(output, '01-settings-entry-linux-electron.png'));
   });
 
   // 后续场景同样操作真实控件；所有测试配置仅存在隔离的临时项目。
@@ -393,7 +394,7 @@ try {
       resolve(project, (await json(configPath)).modelsFile),
       join(project, 'models.json'),
     );
-    await page.screenshot({ path: join(output, '02-model-catalog-linux-electron.png') });
+    await captureWindow(app, page, join(output, '02-model-catalog-linux-electron.png'));
   });
 
   await check('Provider 列表 CRUD、适配器与模型能力嵌套控件', async () => {
@@ -458,7 +459,7 @@ try {
       .connections;
     assert.deepEqual(Object.keys(saved), ['offlineRenamed']);
     assert.equal(saved.offlineRenamed.displayName, '本地验收连接');
-    await page.screenshot({ path: join(output, '03-provider-connections-linux-electron.png') });
+    await captureWindow(app, page, join(output, '03-provider-connections-linux-electron.png'));
   });
 
   await check('作用域稀疏覆盖、继承取消与缓存预算', async () => {
@@ -581,7 +582,7 @@ try {
       .fill('Bearer offline-fixture');
     await save();
     assert.ok(!JSON.stringify(await snapshot()).includes('Bearer offline-fixture'));
-    await page.screenshot({ path: join(output, '04-mcp-masked-linux-electron.png') });
+    await captureWindow(app, page, join(output, '04-mcp-masked-linux-electron.png'));
     await servers
       .getByRole('button', { name: '删除 MCP 服务器 httpTemporary', exact: true })
       .click();
@@ -616,7 +617,7 @@ try {
       .click();
     await save();
     assert.ok(!(await readFile(join(project, '.env'), 'utf8')).includes('TEMP_SECRET='));
-    await page.screenshot({ path: join(output, '05-environment-masked-linux-electron.png') });
+    await captureWindow(app, page, join(output, '05-environment-masked-linux-electron.png'));
   });
 
   await check('辅助角色、请求预算、缓存回放与 MCP 保留策略', async () => {
@@ -749,7 +750,7 @@ try {
     await roots.getByRole('textbox').fill('.');
     await save();
     assert.deepEqual((await json(configPath)).pluginConfig['agentlab.policy'].writeRoots, ['.']);
-    await page.screenshot({ path: join(output, '06-policy-validation-linux-electron.png') });
+    await captureWindow(app, page, join(output, '06-policy-validation-linux-electron.png'));
   });
 
   await check('全部已注册配置字段和条件分支的真实表单控件覆盖', async () => {
@@ -842,7 +843,7 @@ try {
       await readFile(join(project, 'approval-proof-allowed.txt'), 'utf8'),
       'approved in real Electron',
     );
-    await page.screenshot({ path: join(output, '07-conversation-linux-electron.png') });
+    await captureWindow(app, page, join(output, '07-conversation-linux-electron.png'));
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
     await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
   });
@@ -904,7 +905,7 @@ try {
     await editor().evaluate((node) => {
       node.scrollTop = 0;
     });
-    await page.screenshot({ path: join(output, '08-models-dark-linux-electron.png') });
+    await captureWindow(app, page, join(output, '08-models-dark-linux-electron.png'));
   });
 
   await check('项目会话保存、新建、恢复与删除', async () => {
@@ -1019,7 +1020,7 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       '窄窗口不能横向溢出',
     );
-    await page.screenshot({ path: join(output, '09-narrow-zoom-linux-electron.png') });
+    await captureWindow(app, page, join(output, '09-narrow-zoom-linux-electron.png'));
     await store(join(output, 'layout-bounds.json'), {
       window: await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize()),
       css: await page.evaluate(() => ({
@@ -1076,7 +1077,7 @@ try {
     await readFile(join(project, 'provider-trace.jsonl'), 'utf8').catch(() => '(not entered)'),
   );
   if (page && !page.isClosed()) {
-    await page.screenshot({ path: join(output, 'failure-linux-electron.png') }).catch(() => {});
+    await captureWindow(app, page, join(output, 'failure-linux-electron.png')).catch(() => {});
     const s = await snapshot().catch(() => undefined);
     // 不记录草稿或配置值；保留定位信息。
     console.error({
