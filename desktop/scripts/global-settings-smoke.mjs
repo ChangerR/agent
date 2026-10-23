@@ -199,6 +199,8 @@ const field = (group, name) =>
   );
 const rootFields = () => form().locator(':scope > fieldset');
 async function showSidebar() {
+  const back = page.getByRole('button', { name: '返回工作区', exact: true });
+  if (await back.isVisible()) await back.click();
   const toggle = page.getByRole('button', { name: '显示侧栏', exact: true });
   if (await toggle.isVisible()) await toggle.click();
 }
@@ -274,7 +276,7 @@ async function chooseProject(path) {
   await app.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
   }, path);
-  await page.getByRole('button', { name: '添加本地项目', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: '添加本地项目', exact: true }).click();
   await expect.poll(async () => (await snapshot()).runtime?.cwd).toBe(path);
   await expect.poll(async () => (await snapshot()).runtime?.phase).toBe('就绪');
 }

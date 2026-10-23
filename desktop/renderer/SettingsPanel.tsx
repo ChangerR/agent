@@ -31,6 +31,8 @@ const category = (id: string) =>
             : '运行状态';
 
 export function SettingsPanel({
+  onBack,
+  appError,
   runtime,
   globalSettings,
   globalRequest,
@@ -39,6 +41,8 @@ export function SettingsPanel({
   theme,
   changeTheme,
 }: {
+  onBack: () => void;
+  appError?: string;
   runtime?: RuntimeSnapshot;
   globalSettings?: SettingsSnapshot;
   globalRequest: (payload: Record<string, unknown>) => Promise<void>;
@@ -213,7 +217,7 @@ export function SettingsPanel({
           } as Record<string, string>
         )[selected]
       : undefined;
-  return (
+  const content = (
     <section className="configuration-page" aria-label="应用设置">
       <aside
         className="configuration-nav"
@@ -667,5 +671,30 @@ export function SettingsPanel({
         )}
       </div>
     </section>
+  );
+  return (
+    <main className="settings-screen" aria-label="独立设置页面">
+      <header className="settings-window-bar">
+        <button
+          type="button"
+          className="settings-back"
+          aria-label="返回工作区"
+          onClick={onBack}
+          disabled={pending}
+          autoFocus
+        >
+          <span aria-hidden="true">←</span> 返回
+        </button>
+        <h1>
+          设置 <span>agentlab</span>
+        </h1>
+      </header>
+      {appError && (
+        <div className="error-banner settings-app-error" role="alert">
+          {appError}
+        </div>
+      )}
+      {content}
+    </main>
   );
 }

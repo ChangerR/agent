@@ -187,7 +187,7 @@ export default function App() {
   const [state, setState] = useState(empty),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false);
-  const [view, setView] = useState<'projects' | 'chat' | 'settings'>('projects'),
+  const [view, setView] = useState<'projects' | 'chat'>('projects'),
     [tab, setTab] = useState<'diff' | 'files' | 'logs'>('diff');
   const [theme, setTheme] = useState<Theme>(() => {
     try {
@@ -204,29 +204,48 @@ export default function App() {
     [files, setFiles] = useState<string[]>([]),
     [inspector, setInspector] = useState(false),
     [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const workspaceScroll = useRef<Array<{ element: HTMLElement; top: number; left: number }>>([]);
   const settingsDirtyRef = useRef(false);
   const dirtyChanged = (dirty: boolean) => {
     settingsDirtyRef.current = dirty;
     void bridge.settingsDirty(dirty).catch(() => {});
   };
-  const allowLeave = () => {
-    if (settingsDirtyRef.current && !window.confirm('设置有未保存更改，放弃后继续？')) return false;
+  const allowLeave = () =>
+    !settingsDirtyRef.current || window.confirm('设置有未保存更改，放弃后继续？');
+  const closeSettings = () => {
+    if (!allowLeave()) return;
     dirtyChanged(false);
-    return true;
+    setSettingsOpen(false);
+    requestAnimationFrame(() => {
+      for (const item of workspaceScroll.current) {
+        if (!item.element.isConnected) continue;
+        item.element.scrollTop = item.top;
+        item.element.scrollLeft = item.left;
+      }
+      returnFocus.current?.focus({ preventScroll: true });
+    });
   };
-  const navigate = (next: typeof view) => {
-    if (next === view || allowLeave()) {
-      setView(next);
-      if (window.innerWidth <= 650 || next === 'settings') setSidebar(false);
+  const navigate = (next: typeof view | 'settings') => {
+    if (next === 'settings') {
+      if (!settingsOpen) {
+        returnFocus.current = document.activeElement as HTMLElement | null;
+        workspaceScroll.current = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '.app .conversation, .app .inspect-body, .app .project-tree, .app .session-list, .app .projects-page',
+          ),
+        ).map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
+      }
+      setSettingsOpen(true);
+      return;
     }
+    if (!allowLeave()) return;
+    dirtyChanged(false);
+    setSettingsOpen(false);
+    setView(next);
+    if (window.innerWidth <= 650) setSidebar(false);
   };
-  useEffect(() => {
-    const resize = () => {
-      if (view === 'settings' && window.innerWidth < 1040) setSidebar(false);
-    };
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, [view]);
   const scroll = useRef<HTMLDivElement>(null),
     follow = useRef(true);
   const runtime = state.runtime,
@@ -329,7 +348,10 @@ export default function App() {
     });
   };
   useEffect(() => {
-    if (runtime?.generation) setView('chat');
+    if (runtime?.generation) {
+      setView('chat');
+      setSettingsOpen(false);
+    }
   }, [runtime?.generation]);
   const startDemo = () => {
     if (!allowLeave()) return;
@@ -385,8 +407,10 @@ export default function App() {
     document.documentElement.dataset.platform = state.platform ?? 'browser';
   }, [state.platform]);
   const allError = error || state.error || runtime?.error;
-  return (
+  const workspace = (
     <div
+      hidden={settingsOpen}
+      inert={settingsOpen}
       className={
         'app ' +
         (!inspector || view !== 'chat' ? 'inspector-closed ' : '') +
@@ -564,13 +588,7 @@ export default function App() {
                 <span>/</span>
               </span>
             )}
-            <h1>
-              {view === 'projects'
-                ? '项目'
-                : view === 'settings'
-                  ? '设置'
-                  : (runtime?.title ?? 'agentlab')}
-            </h1>
+            <h1>{view === 'projects' ? '项目' : (runtime?.title ?? 'agentlab')}</h1>
           </div>
           <div className="header-actions">
             {!sidebar && (
@@ -670,28 +688,6 @@ export default function App() {
               </div>
             )}
           </section>
-        ) : view === 'settings' ? (
-          <SettingsPanel
-            key={runtime?.generation ?? 'preferences'}
-            runtime={runtime}
-            globalSettings={state.globalSettings}
-            globalRequest={async (payload) => {
-              if (!bridge.globalSettingsRequest || !state.globalSettings)
-                throw new Error('全局设置尚未就绪，请重新打开 App。');
-              const action =
-                payload.type === 'settings-read'
-                  ? { type: 'read', sectionId: payload.sectionId }
-                  : { type: 'commit', editorId: payload.editorId, json: payload.json };
-              await bridge.globalSettingsRequest({
-                ...action,
-                generation: state.globalSettings.generation,
-              } as import('../shared/protocol.js').GlobalSettingsAction);
-            }}
-            request={action}
-            dirtyChanged={dirtyChanged}
-            theme={theme}
-            changeTheme={changeTheme}
-          />
         ) : (
           <>
             <div
@@ -1031,5 +1027,35 @@ export default function App() {
         ))}
       </datalist>
     </div>
+  );
+  return (
+    <>
+      {settingsOpen && (
+        <SettingsPanel
+          key={runtime?.generation ?? 'preferences'}
+          onBack={closeSettings}
+          appError={allError}
+          runtime={runtime}
+          globalSettings={state.globalSettings}
+          globalRequest={async (payload) => {
+            if (!bridge.globalSettingsRequest || !state.globalSettings)
+              throw new Error('全局设置尚未就绪，请重新打开 App。');
+            const action =
+              payload.type === 'settings-read'
+                ? { type: 'read', sectionId: payload.sectionId }
+                : { type: 'commit', editorId: payload.editorId, json: payload.json };
+            await bridge.globalSettingsRequest({
+              ...action,
+              generation: state.globalSettings.generation,
+            } as import('../shared/protocol.js').GlobalSettingsAction);
+          }}
+          request={action}
+          dirtyChanged={dirtyChanged}
+          theme={theme}
+          changeTheme={changeTheme}
+        />
+      )}
+      {workspace}
+    </>
   );
 }

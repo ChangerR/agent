@@ -67,10 +67,8 @@ try {
   page.off('dialog', reselectDialog);
   assert.equal(unexpectedDialogs, 0, '重选当前节不能询问或丢失草稿');
   await expect(page.getByText('未保存', { exact: true })).toBeVisible();
-  const show = page.getByRole('button', { name: '显示侧栏', exact: true });
-  if (await show.isVisible()) await show.click();
   page.once('dialog', (dialog) => void dialog.dismiss());
-  await page.getByRole('button', { name: '所有项目', exact: false }).click();
+  await page.getByRole('button', { name: '返回工作区', exact: true }).click();
   await expect(page.getByRole('region', { name: '应用设置', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '保存更改', exact: true }).click();
   await expect(page.getByText('已保存', { exact: true })).toBeVisible();

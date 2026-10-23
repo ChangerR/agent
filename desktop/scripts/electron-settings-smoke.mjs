@@ -170,6 +170,8 @@ async function openSection(id) {
   await expect(editor().getByText('正在读取设置…', { exact: true })).toHaveCount(0);
 }
 async function showSidebar() {
+  const back = page.getByRole('button', { name: '返回工作区', exact: true });
+  if (await back.isVisible()) await back.click();
   const toggle = page.getByRole('button', { name: '显示侧栏', exact: true });
   if (await toggle.isVisible()) await toggle.click();
 }

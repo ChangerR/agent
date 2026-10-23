@@ -96,11 +96,13 @@ try {
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
   await expect(page.locator('.configuration-editor form')).toBeVisible();
   // 通过真正目录 IPC 打开隔离项目，使全局/项目作用域都能实际切换。
-  await page.getByRole('button', { name: '显示侧栏', exact: true }).click();
+  await page.getByRole('button', { name: '返回工作区', exact: true }).click();
+  const show = page.getByRole('button', { name: '显示侧栏', exact: true });
+  if (await show.isVisible()) await show.click();
   await app.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
   }, project);
-  await page.getByRole('button', { name: '添加本地项目', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: '添加本地项目', exact: true }).click();
   await expect.poll(async () => (await snapshot()).runtime?.phase).toBe('就绪');
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
   for (const [name, width, height, zoom] of [
@@ -147,7 +149,9 @@ try {
       await bounds(page.getByRole('combobox', { name: '配置作用域', exact: true }), 'scope'),
     );
     for (const label of ['服务连接', '默认模型', '思考等级'])
-      rows.push(await bounds(page.getByLabel(label, { exact: true }), label));
+      rows.push(
+        await bounds(page.locator('.settings-screen').getByLabel(label, { exact: true }), label),
+      );
     const overflow = await page.evaluate(() => ({
       width: innerWidth,
       scrollWidth: document.documentElement.scrollWidth,

@@ -7,6 +7,9 @@
   overflow: hidden;
   position: relative;
 }
+.app[hidden] {
+  display: none;
+}
 .app.inspector-closed {
   grid-template-columns: 208px minmax(0, 1fr);
 }
