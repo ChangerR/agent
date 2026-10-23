@@ -29,7 +29,9 @@
     },
     "zoom125": {
       "library_file_id": "libfile_965f2cb203bc81919b7a8904c8db2ab3",
-      "version": 0
+      "version": 1,
+      "file_id": "file_000000003d2c81fd9150f9dd307b302a",
+      "note": "Full native900×700 content capture at125%, CSS720×560; supersedes cropped version0."
     }
   }
 }

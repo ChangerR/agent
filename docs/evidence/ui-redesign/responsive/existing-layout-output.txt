@@ -1,0 +1,7 @@
+window navigation file
+window navigation file
+PASS 真实 run.mjs 开发启动（未提供 Node LICENSE 环境覆盖）
+PASS 可发现的设置按钮与真实菜单入口
+window navigation file
+PASS 未保存关闭取消、主题持久化、缩放与窄窗口布局
+真实 Electron 设置验收通过：3 场景。证据：/tmp/agentlab-responsive-existing-layout

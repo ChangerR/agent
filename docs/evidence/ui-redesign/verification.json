@@ -26,5 +26,23 @@
   },
   "macNativeTested": false,
   "paidRequests": 0,
-  "userComputerAccess": false
+  "userComputerAccess": false,
+  "responsiveCorrection": {
+    "codeCommit": "7148156f6801028520b8aa216900f225d8096987",
+    "nativePng": {
+      "width": 900,
+      "height": 700
+    },
+    "cssViewport": {
+      "width": 720,
+      "height": 560,
+      "dpr": 1.25
+    },
+    "primaryColumns": 1,
+    "actualAllControlBoundsAndClicks": "passed",
+    "globalSaveAndScopeSwitch": "passed",
+    "existingLayoutScenarios": 3,
+    "typecheck": "passed",
+    "previousFullSuitesReused": "production diff is only primary model responsive CSS; screenshot helpers/tests also corrected"
+  }
 }

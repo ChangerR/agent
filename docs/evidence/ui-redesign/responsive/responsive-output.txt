@@ -1,0 +1,1 @@
+PASS native Electron desktop/narrow/125%, complete window capture, all control bounds/clicks, scope switching and global save
