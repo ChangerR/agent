@@ -203,7 +203,7 @@ export default function App() {
     [model, setModel] = useState(''),
     [files, setFiles] = useState<string[]>([]),
     [inspector, setInspector] = useState(false),
-    [sidebar, setSidebar] = useState(true);
+    [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
   const settingsDirtyRef = useRef(false);
   const dirtyChanged = (dirty: boolean) => {
     settingsDirtyRef.current = dirty;
@@ -217,9 +217,16 @@ export default function App() {
   const navigate = (next: typeof view) => {
     if (next === view || allowLeave()) {
       setView(next);
-      if (window.innerWidth <= 650) setSidebar(false);
+      if (window.innerWidth <= 650 || next === 'settings') setSidebar(false);
     }
   };
+  useEffect(() => {
+    const resize = () => {
+      if (view === 'settings' && window.innerWidth < 1040) setSidebar(false);
+    };
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [view]);
   const scroll = useRef<HTMLDivElement>(null),
     follow = useRef(true);
   const runtime = state.runtime,
@@ -550,7 +557,7 @@ export default function App() {
                 <Icon name="sidebar" />
               </button>
             )}
-            {view !== 'projects' && runtime && (
+            {view === 'chat' && runtime && (
               <span className="breadcrumb">
                 <Icon name="folder" size={14} />
                 {runtime.projectName}
@@ -566,6 +573,16 @@ export default function App() {
             </h1>
           </div>
           <div className="header-actions">
+            {!sidebar && (
+              <button
+                className="icon-button"
+                aria-label="打开应用设置"
+                title="设置"
+                onClick={() => navigate('settings')}
+              >
+                <Icon name="settings" />
+              </button>
+            )}
             <span className="tag" role="status">
               {state.connecting ? '正在打开项目' : (runtime?.phase ?? '就绪')}
             </span>
@@ -593,10 +610,15 @@ export default function App() {
                 <Icon name="terminal" size={30} />
               </span>
               <h2>从项目开始。</h2>
-              <p>每个项目拥有自己的会话、模型配置和文件工作区。</p>
-              <button className="primary" disabled={disabled} onClick={choose}>
-                <Icon name="plus" /> 添加本地项目
-              </button>
+              <p>选择一个项目继续工作，模型与连接默认使用全局设置。</p>
+              <div className="project-intro-actions">
+                <button className="primary" disabled={disabled} onClick={choose}>
+                  <Icon name="plus" /> 添加本地项目
+                </button>
+                <button className="outline" onClick={() => navigate('settings')}>
+                  设置模型
+                </button>
+              </div>
             </div>
             <div className="projects-list-heading">
               <h3>我的项目</h3>

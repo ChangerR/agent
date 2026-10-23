@@ -1,9 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useId } from 'react';
 import type { RuntimeSnapshot, SettingsDescriptor, SettingsSnapshot } from '../shared/protocol.js';
 
 import { Field, Fields, ValueView, type FormSchema } from './SchemaForm.js';
 import { getBridge } from './bridge.js';
 import { CredentialPanel } from './CredentialPanel.js';
+import { ModelDefaultsForm } from './ModelDefaultsForm.js';
+
+const pageName = (id: string, title: string) =>
+  ({
+    'configuration-connection': '模型与连接',
+    'configuration-agentlab.provider-connections': '服务连接',
+    'configuration-model-catalog': '模型目录',
+    'configuration-budgets': '上下文与缓存',
+    'configuration-permissions': '权限与审批',
+    'configuration-agentlab.provider-anthropic': 'Anthropic 模型能力',
+    'configuration-agentlab.provider-openai': 'OpenAI 模型能力',
+  })[id] ?? title;
 
 const category = (id: string) =>
   /connection|catalog|provider-openai|provider-anthropic|environment/.test(id)
@@ -156,41 +168,91 @@ export function SettingsPanel({
         : selected === 'configuration-project-environment'
           ? '清空只改草稿；提交后移除已识别变量（含凭据），保留注释与未识别行。当前进程环境不变，重新装配后采用。'
           : '清除只修改草稿；提交后删除此节已知覆盖，保留未知字段。未勾选的字段不会被默认值回填。Esc 放弃未保存更改。';
+  const formId = useId();
+  const chooseSection = (id: string) => {
+    const item = sections.find((s) => s.id === id);
+    if (item) select(item);
+  };
+  const value = (draft ?? {}) as Record<string, unknown>;
+  const credential = (providerId?: string) => (
+    <CredentialPanel
+      settings={globalSettings!}
+      providerId={providerId}
+      blocked={dirty}
+      dirtyChanged={(v) => {
+        setCredentialDirty(v);
+        dirtyChanged(dirty || v);
+      }}
+      refresh={async () => {
+        await globalRequest({ type: 'settings-read', sectionId: selected, scope: 'global' });
+      }}
+    />
+  );
+  const domain =
+    scope === 'global'
+      ? (
+          {
+            'configuration-agentlab.provider-connections': 'connections',
+            'configuration-model-catalog': 'catalog',
+            'configuration-mcp-servers': 'mcpServers',
+          } as Record<string, string>
+        )[selected]
+      : undefined;
   return (
     <section className="configuration-page" aria-label="应用设置">
       <aside className="configuration-nav">
         <div className="settings-nav-heading">
-          <span className="settings-eyebrow">agentlab</span>
           <h2>设置</h2>
-          <p className="small">全局默认值，所有项目共享。</p>
         </div>
         <input
           aria-label="查找设置页面"
-          placeholder="查找设置页面"
+          placeholder="搜索设置"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select
+          className="settings-page-select"
+          aria-label="设置页面"
+          value={selected}
+          disabled={pending}
+          onChange={(e) => chooseSection(e.target.value)}
+        >
+          {sections.map((item) => (
+            <option key={item.id} value={item.id}>
+              {pageName(item.id, item.title)}
+            </option>
+          ))}
+        </select>
         <nav className="settings-categories" aria-label="设置分类">
           {['连接与模型', '运行与上下文', '工具与 MCP', '权限与安全', '插件与装配', '运行状态'].map(
             (group) => {
               const items = sections.filter(
                 (item) =>
                   category(item.id) === group &&
-                  (item.title + ' ' + Object.keys(item.schema.properties ?? {}).join(' '))
+                  (
+                    pageName(item.id, item.title) +
+                    ' ' +
+                    item.title +
+                    ' ' +
+                    Object.keys(item.schema.properties ?? {}).join(' ')
+                  )
                     .toLowerCase()
                     .includes(search.toLowerCase()),
               );
               return items.length ? (
-                <div key={group} className="settings-category">
+                <div className="settings-category" key={group}>
                   <h3>{group}</h3>
                   {items.map((item) => (
                     <button
+                      type="button"
                       key={item.id}
+                      aria-label={item.title}
                       className={item.id === selected ? 'active' : ''}
                       aria-current={item.id === selected ? 'page' : undefined}
+                      disabled={pending}
                       onClick={() => select(item)}
                     >
-                      {item.title}
+                      {pageName(item.id, item.title)}
                     </button>
                   ))}
                 </div>
@@ -199,10 +261,8 @@ export function SettingsPanel({
           )}
           {search &&
             !sections.some((item) =>
-              (item.title + ' ' + Object.keys(item.schema.properties ?? {}).join(' '))
-                .toLowerCase()
-                .includes(search.toLowerCase()),
-            ) && <p className="empty-settings">没有找到设置，试试模型、MCP 或 cache。</p>}
+              (item.title + ' ' + pageName(item.id, item.title)).includes(search),
+            ) && <p className="empty-settings">没有匹配的设置</p>}
         </nav>
         <details className="settings-quick">
           <summary>外观与当前会话</summary>
@@ -360,49 +420,40 @@ export function SettingsPanel({
             <header className="settings-page-heading">
               <div>
                 <span className="settings-eyebrow">{category(selected)}</span>
-                <h2>{descriptor.title}</h2>
+                <h2 aria-label={descriptor.title}>{pageName(selected, descriptor.title)}</h2>
               </div>
               <div className="settings-header-actions">
-                <div className="configuration-scope">
-                  <label>
-                    编辑作用域{' '}
-                    <select
-                      aria-label="配置作用域"
-                      value={scope}
-                      disabled={pending || !descriptor.scopes.length}
-                      onChange={(e) => {
-                        if (!abandon()) return;
-                        markDirty(false);
-                        setScope(e.target.value as typeof scope);
-                      }}
+                <label className="configuration-scope">
+                  <span className="sr-only">编辑作用域</span>
+                  <select
+                    aria-label="配置作用域"
+                    value={scope}
+                    disabled={pending}
+                    onChange={(e) => {
+                      if (!abandon()) return;
+                      markDirty(false);
+                      setScope(e.target.value as typeof scope);
+                    }}
+                  >
+                    <option value="global">全局配置</option>
+                    <option
+                      value="project"
+                      disabled={
+                        !runtime ||
+                        !runtime.settings.some(
+                          (s) => s.id === selected && s.scopes.some((t) => t.scope === 'project'),
+                        )
+                      }
                     >
-                      {[{ scope: 'global' }, { scope: 'project' }].map((item) => (
-                        <option
-                          key={item.scope}
-                          value={item.scope}
-                          disabled={
-                            item.scope === 'project' &&
-                            (!runtime ||
-                              !runtime.settings.some(
-                                (s) =>
-                                  s.id === selected && s.scopes.some((t) => t.scope === 'project'),
-                              ))
-                          }
-                        >
-                          {item.scope === 'global'
-                            ? '全局配置 · 所有项目默认'
-                            : '高级 · 仅覆盖当前项目'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <span className="tag" role="status">
-                    {dirty ? '未保存' : editor?.saved ? '已保存' : '原始层值'}
-                  </span>
-                </div>{' '}
+                      项目覆盖 · 高级
+                    </option>
+                  </select>
+                </label>
                 <button
+                  className="icon-button settings-reload"
                   type="button"
-                  className="outline settings-reload"
+                  aria-label="重新读取"
+                  title="重新读取"
                   disabled={pending || settingsBusy}
                   onClick={() => {
                     if (!abandon()) return;
@@ -414,182 +465,177 @@ export function SettingsPanel({
                     }).catch((e) => setError(e.message));
                   }}
                 >
-                  重新读取
+                  ↻
                 </button>
               </div>
             </header>
-            <details className="settings-location">
-              <summary>保存位置与生效方式</summary>
-              <p className="configuration-path">
-                {descriptor.scopes.find((item) => item.scope === scope)?.path ?? '只读运行状态'}
-              </p>
-              <p className="small">{descriptor.description}</p>
-            </details>
-            <p className="info">{timing}</p>
-            {runtime && (
-              <p className="small settings-current-runtime">
-                当前会话：{runtime.provider} / {runtime.model} · {runtime.mode} · 思考{' '}
-                {runtime.thinking}。启动默认值不覆盖已恢复会话。
-              </p>
-            )}
-
-            {selected === 'configuration-connection' && context && (
-              <section className="provider-manager" aria-label="Provider 管理">
-                <h3>已注册 Provider</h3>
-                <p className="small save-help">
-                  选择 Provider 与模型，一次提交启动默认值。内置 openai / anthropic 使用下方
-                  Endpoint；API key
-                  在下方直接输入并加密保存。环境变量是可选高级方式。命名连接在“Provider
-                  连接”管理。保存后重新装配采用。
+            <div className="configuration-scroll">
+              <div className="settings-content">
+                <p className="scope-explanation">
+                  {scope === 'global'
+                    ? '所有项目共享的默认配置。项目可按需覆盖。'
+                    : '仅覆盖当前项目；未自定义的字段继承全局。权限规则仍按既有规则合并。'}
                 </p>
-                <div className="provider-cards">
-                  {(context.providerOptions ?? context.providers).map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      disabled={pending || settingsBusy}
-                      aria-pressed={(draft as { provider?: string })?.provider === id}
-                      onClick={() => update({ ...(draft as object), provider: id })}
+                {editor?.effectiveError && (
+                  <p role="status" className="info">
+                    有效值暂时无法合成：{editor.effectiveError}
+                  </p>
+                )}
+                {error && (
+                  <div role="alert" className="error-banner">
+                    {error}
+                  </div>
+                )}
+                {loading ? (
+                  <p className="settings-loading" role="status">
+                    {settingsBusy
+                      ? '任务结算后可编辑项目设置，现有审批保持待处理。'
+                      : '正在读取设置…'}
+                  </p>
+                ) : descriptor.editable ? (
+                  <>
+                    <form
+                      id={formId}
+                      key={selected + ':' + scope + ':' + context?.generation + ':' + resetEpoch}
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void submit();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape' && !pending) {
+                          setDraft(editor.value);
+                          setResetEpoch((v) => v + 1);
+                          markDirty(false);
+                        }
+                      }}
                     >
-                      <strong>{context.providerLabels?.[id] ?? id}</strong>
-                      <small>
-                        {id} ·{' '}
-                        {scope === 'global'
-                          ? context.provider === id
-                            ? '全局默认'
-                            : '可用连接'
-                          : context.provider === id
-                            ? '当前会话使用'
-                            : context.providers.includes(id)
-                              ? '已加载'
-                              : '保存后待装配'}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = sections.find(
-                      (s) => s.id === 'configuration-agentlab.provider-connections',
-                    );
-                    if (target) select(target);
-                  }}
-                >
-                  添加或管理 Provider 连接
-                </button>
-              </section>
-            )}
-            {scope === 'global' &&
-              ['configuration-connection', 'configuration-agentlab.provider-connections'].includes(
-                selected,
-              ) &&
-              globalSettings && (
-                <CredentialPanel
-                  key={selected}
-                  settings={globalSettings}
-                  blocked={dirty}
-                  dirtyChanged={(v) => {
-                    setCredentialDirty(v);
-                    dirtyChanged(dirty || v);
-                  }}
-                  refresh={async () => {
-                    await globalRequest({
-                      type: 'settings-read',
-                      sectionId: selected,
-                      scope: 'global',
-                    });
-                  }}
-                />
-              )}
-            <p className="scope-explanation">
-              {scope === 'global'
-                ? '保存到用户目录，作为所有项目的默认值；不会创建项目配置或会话。'
-                : '仅覆盖当前项目；未勾选字段继承全局配置。权限规则按既有合并规则生效。'}
-            </p>
-            {editor?.effectiveError && (
-              <p role="status" className="info">
-                其他层的有效值暂时无法合成：{editor.effectiveError}。本层值仍可审阅。
-              </p>
-            )}
-            {error && (
-              <div className="error-banner" role="alert">
-                {error}
+                      <fieldset disabled={pending || settingsBusy}>
+                        <legend className="sr-only">本层覆盖</legend>
+                        {selected === 'configuration-connection' ? (
+                          <ModelDefaultsForm
+                            schema={descriptor.schema as FormSchema}
+                            value={value}
+                            effective={editor.effectiveValue}
+                            context={context}
+                            scope={scope}
+                            onChange={update}
+                            manageModels={() => chooseSection('configuration-model-catalog')}
+                            manageProviders={() =>
+                              chooseSection('configuration-agentlab.provider-connections')
+                            }
+                          />
+                        ) : domain ? (
+                          <div className="configuration-field domain-map" data-field={domain}>
+                            <Field
+                              name={domain}
+                              schema={(descriptor.schema as FormSchema).properties![domain]}
+                              value={value[domain] ?? {}}
+                              effective={
+                                (editor.effectiveValue as Record<string, unknown>)?.[domain]
+                              }
+                              runtime={context}
+                              onChange={(item) => update({ ...value, [domain]: item })}
+                              renderRecordFooter={
+                                domain === 'connections'
+                                  ? (id, item) =>
+                                      (item as { type?: string })?.type === 'fake'
+                                        ? null
+                                        : credential(id)
+                                  : undefined
+                              }
+                            />
+                          </div>
+                        ) : descriptor.schema.properties ? (
+                          <Fields
+                            schema={descriptor.schema as FormSchema}
+                            value={value}
+                            effective={editor.effectiveValue}
+                            runtime={context}
+                            onChange={update}
+                          />
+                        ) : (
+                          <Field
+                            name={descriptor.title}
+                            schema={descriptor.schema as FormSchema}
+                            value={draft}
+                            runtime={context}
+                            onChange={update}
+                          />
+                        )}
+                      </fieldset>
+                    </form>
+                    {scope === 'global' &&
+                      globalSettings &&
+                      (selected === 'configuration-connection'
+                        ? String(
+                            value.provider ??
+                              (editor.effectiveValue as Record<string, unknown>)?.provider ??
+                              globalSettings.provider,
+                          ) !== 'fake' &&
+                          credential(
+                            String(
+                              value.provider ??
+                                (editor.effectiveValue as Record<string, unknown>)?.provider ??
+                                globalSettings.provider,
+                            ),
+                          )
+                        : selected === 'configuration-agentlab.provider-openai'
+                          ? credential('openai')
+                          : selected === 'configuration-agentlab.provider-anthropic'
+                            ? credential('anthropic')
+                            : null)}
+                    <details className="settings-advanced">
+                      <summary>生效方式与高级操作</summary>
+                      <p>{timing}</p>
+                      <p className="configuration-path">
+                        {descriptor.scopes.find((t) => t.scope === scope)?.path}
+                      </p>
+                      <p>{descriptor.description}</p>
+                      <button
+                        type="button"
+                        className="danger-link"
+                        disabled={pending || settingsBusy}
+                        onClick={() => update({})}
+                      >
+                        {resetLabel}
+                      </button>
+                      <p className="field-hint">{resetHelp}</p>
+                    </details>
+                  </>
+                ) : (
+                  <ValueView value={editor.value} />
+                )}
               </div>
-            )}
-            {loading ? (
-              <p role="status">
-                {runtime?.busy
-                  ? '任务或审批仍在处理中；结算后自动读取设置，当前审批保持待处理。'
-                  : '正在读取设置…'}
-              </p>
-            ) : descriptor.editable ? (
-              <form
-                key={selected + ':' + scope + ':' + context?.generation + ':' + resetEpoch}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void submit();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' && !pending) {
-                    setDraft(editor.value);
-                    setResetEpoch((epoch) => epoch + 1);
-                    markDirty(false);
-                  }
-                }}
-              >
-                <fieldset disabled={pending || settingsBusy}>
-                  <legend className="sr-only">本层覆盖</legend>
-                  {descriptor.schema.properties &&
-                  Object.keys(descriptor.schema.properties as object).length ? (
-                    <Fields
-                      schema={descriptor.schema as FormSchema}
-                      value={draft as Record<string, unknown>}
-                      onChange={update}
-                      runtime={context}
-                      effective={editor.effectiveValue}
-                    />
-                  ) : (
-                    <Field
-                      name={descriptor.title}
-                      schema={descriptor.schema as FormSchema}
-                      value={draft}
-                      onChange={update}
-                      runtime={runtime}
-                    />
-                  )}
-                </fieldset>
-                <div className="configuration-actions">
-                  <button
-                    className="primary"
-                    disabled={!dirty || pending || settingsBusy}
-                    type="submit"
-                  >
-                    {pending ? '正在验证与保存…' : '提交此节'}
-                  </button>
+            </div>
+            {descriptor.editable && (
+              <footer className="configuration-actions">
+                <div className="save-state" role="status">
+                  <span className={dirty ? 'dirty-dot' : 'saved-dot'} />
+                  {dirty ? '未保存' : editor?.saved ? '已保存' : '已同步'}
+                  <span className="save-timing">新打开项目或重新装配后采用</span>
+                </div>
+                <div className="button-group">
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={pending || loading || !dirty}
                     onClick={() => {
-                      setDraft(editor.value);
-                      setResetEpoch((epoch) => epoch + 1);
+                      setDraft(editor?.value ?? {});
+                      setResetEpoch((v) => v + 1);
                       markDirty(false);
                     }}
                   >
                     放弃更改
                   </button>
                   <button
-                    type="button"
-                    disabled={pending || settingsBusy}
-                    onClick={() => update({})}
+                    type="submit"
+                    form={formId}
+                    className="primary"
+                    disabled={!dirty || pending || settingsBusy || loading}
                   >
-                    {resetLabel}
+                    {pending ? '正在保存…' : '保存更改'}
                   </button>
                 </div>
-                <p className="small">{resetHelp}</p>
-              </form>
-            ) : (
-              <ValueView value={editor.value} />
+              </footer>
             )}
           </>
         )}

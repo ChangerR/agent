@@ -5,18 +5,21 @@ import { getBridge } from './bridge.js';
 /** 明文只停留在用户正在输入的密码控件和白名单保存调用；读取只返回状态。 */
 export function CredentialPanel({
   settings,
+  providerId,
   blocked,
   dirtyChanged,
   refresh,
 }: {
   settings: SettingsSnapshot;
+  providerId?: string;
   blocked: boolean;
   dirtyChanged: (v: boolean) => void;
   refresh: () => Promise<void>;
 }) {
-  const [provider, setProvider] = useState(
+  const [choice, setProvider] = useState(
     settings.provider === 'fake' ? 'openai' : settings.provider,
   );
+  const provider = providerId ?? choice;
   const [status, setStatus] = useState<CredentialStatus>(),
     [key, setKey] = useState(''),
     [error, setError] = useState(''),
@@ -25,6 +28,10 @@ export function CredentialPanel({
   const bridge = getBridge();
   const read = async () => {
     setError('');
+    if (blocked && !(settings.providerOptions ?? settings.providers).includes(provider)) {
+      setStatus(undefined);
+      return;
+    }
     try {
       if (!bridge.credentialStatus) throw new Error('此预览不提供系统安全存储；请在 App 中配置。');
       setStatus(await bridge.credentialStatus(provider));
@@ -73,13 +80,15 @@ export function CredentialPanel({
       <header>
         <div>
           <h3>API key</h3>
-          <p className="small">直接输入，所有项目共享。保存后重新装配连接或重启 App 采用。</p>
+          <p>加密保存，供所有项目使用。</p>
         </div>
-        <span className="tag">全局安全存储</span>
+        <span className={'credential-state ' + (status?.configured ? 'configured' : '')}>
+          {status?.configured ? '已配置' : '未配置'}
+        </span>
       </header>
-      <div className="credential-form">
-        <label>
-          Provider
+      {!providerId && (
+        <label className="credential-provider">
+          服务连接
           <select
             aria-label="密钥所属 Provider"
             value={provider}
@@ -95,36 +104,43 @@ export function CredentialPanel({
               ))}
           </select>
         </label>
-        <label>
-          API key
-          <input
-            aria-label="直接输入 API key"
-            type="password"
-            autoComplete="new-password"
-            spellCheck={false}
-            value={key}
-            placeholder={status?.configured ? '已设置 · 输入以替换' : '粘贴或输入 API key'}
-            disabled={pending || !status?.available}
-            onChange={(e) => {
-              setKey(e.target.value);
-              dirtyChanged(!!e.target.value);
-              setSaved(false);
-            }}
-          />
-        </label>
-      </div>
-      <p className="small credential-endpoint">
-        绑定端点：{status?.endpoint ?? '请先保存连接'} ·{' '}
-        {status?.configured ? '已保存，明文不会返回界面' : '尚未保存'}
-      </p>
-      <p className="small">
-        {status?.available
-          ? `使用 Electron safeStorage（${status.backend}）加密，密文保存在 ~/.agentlab/credentials.enc.json；配置文件仅保存随机引用。`
-          : '系统安全存储不可用或未解锁，禁止保存明文。Linux 需 Secret Service/KWallet。环境变量仍可作为高级方式。'}
+      )}
+      <label className="credential-input">
+        <span className="sr-only">API key</span>
+        <input
+          aria-label="直接输入 API key"
+          type="password"
+          autoComplete="new-password"
+          spellCheck={false}
+          value={key}
+          placeholder={status?.configured ? '已设置 · 输入以替换' : '粘贴或输入 API key'}
+          disabled={pending || blocked || !status?.available}
+          onChange={(e) => {
+            setKey(e.target.value);
+            dirtyChanged(!!e.target.value);
+            setSaved(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void save();
+            }
+          }}
+        />
+      </label>
+      <p className="credential-endpoint">
+        {settings.providerLabels?.[provider] ?? provider}
+        <span>·</span>
+        {status?.endpoint ?? '保存连接后可配置密钥'}
       </p>
       {blocked && (
         <p role="status" className="info">
-          请先提交上方连接设置，再保存 API key；密钥绑定已保存的 Provider 与端点。
+          请先保存连接更改，再设置 API key。
+        </p>
+      )}
+      {!blocked && !status?.available && !error && (
+        <p role="status" className="info">
+          安全存储不可用或未解锁，无法保存。可在下方查看说明并重新检查。
         </p>
       )}
       {error && (
@@ -132,11 +148,12 @@ export function CredentialPanel({
           {error}
         </p>
       )}
-      {saved && <p role="status">API key 已{status?.configured ? '加密保存' : '清除'}。</p>}
+      {saved && (
+        <p role="status" className="credential-feedback">
+          API key 已{status?.configured ? '加密保存' : '清除'}。
+        </p>
+      )}
       <div className="credential-actions">
-        <button type="button" disabled={pending || !!key} onClick={() => void read()}>
-          重新检查安全存储
-        </button>
         <button
           type="button"
           className="primary"
@@ -147,6 +164,7 @@ export function CredentialPanel({
         </button>
         <button
           type="button"
+          className="text-button"
           disabled={!status?.configured || pending || blocked}
           onClick={() => void save(true)}
         >
@@ -165,6 +183,26 @@ export function CredentialPanel({
           </button>
         )}
       </div>
+      <details className="credential-security">
+        <summary>安全存储与生效方式</summary>
+        <p>
+          {status?.available
+            ? `使用 Electron safeStorage（${status.backend}）加密；密文位于 ~/.agentlab/credentials.enc.json，普通配置仅存随机引用。`
+            : '系统安全存储不可用时不会保存明文。Linux 需解锁 Secret Service/KWallet；basic_text 不被接受。'}
+        </p>
+        <p>
+          保存后新打开项目、重新装配或重启采用。环境变量保留为高级方式；清除 key
+          会恢复原环境变量方式。
+        </p>
+        <button
+          type="button"
+          className="text-button"
+          disabled={pending || !!key}
+          onClick={() => void read()}
+        >
+          重新检查安全存储
+        </button>
+      </details>
     </section>
   );
 }

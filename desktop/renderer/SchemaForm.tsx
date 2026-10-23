@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { RuntimeSnapshot, SettingsSnapshot } from '../shared/protocol.js';
 import { getBridge } from './bridge.js';
 
@@ -212,6 +212,8 @@ type Props = {
   onChange: (v: unknown) => void;
   runtime?: RuntimeSnapshot | SettingsSnapshot;
   effective?: unknown;
+  inputId?: string;
+  renderRecordFooter?: (key: string, value: unknown) => ReactNode;
 };
 function RuleInput({ value, onChange, name, runtime }: Props) {
   const raw = String(value ?? ''),
@@ -270,7 +272,15 @@ function RuleInput({ value, onChange, name, runtime }: Props) {
     </div>
   );
 }
-function MapInput({ schema, value, onChange, name, runtime, effective }: Props) {
+function MapInput({
+  schema,
+  value,
+  onChange,
+  name,
+  runtime,
+  effective,
+  renderRecordFooter,
+}: Props) {
   type Row = { id: number; key: string; value: unknown };
   const from = () =>
     Object.entries(record(value) ? value : {}).map(([key, value]) => ({ id: ++rowId, key, value }));
@@ -281,7 +291,10 @@ function MapInput({ schema, value, onChange, name, runtime, effective }: Props) 
   useEffect(() => {
     if (JSON.stringify(value) !== emitted.current) {
       const key = rows.find((row) => row.id === active)?.key;
-      const next = from();
+      const next = from().map((row) => ({
+        ...row,
+        id: rows.find((existing) => existing.key === row.key)?.id ?? row.id,
+      }));
       setRows(next);
       setActive(next.find((row) => row.key === key)?.id ?? next[0]?.id);
       emitted.current = JSON.stringify(value);
@@ -315,11 +328,45 @@ function MapInput({ schema, value, onChange, name, runtime, effective }: Props) 
           <div className="record-list-heading">
             <span>{rows.length} 项自定义配置</span>
           </div>
+          <button
+            type="button"
+            className="add-record"
+            aria-label={`新增 ${label}`}
+            onClick={() => {
+              const id = ++rowId;
+              setActive(id);
+              change([
+                ...rows,
+                {
+                  id,
+                  key: '',
+                  value:
+                    name === 'connections'
+                      ? { ...(initial(item) as object), enabled: true }
+                      : initial(item),
+                },
+              ]);
+            }}
+          >
+            + 添加
+            {name === 'connections'
+              ? '连接'
+              : name === 'catalog' || name === 'models'
+                ? '模型'
+                : name === 'mcpServers'
+                  ? '服务器'
+                  : '条目'}
+          </button>
           {rows.map((row, index) => (
             <button
               key={row.id}
               type="button"
               aria-pressed={selected === row.id}
+              title={
+                record(row.value) && typeof row.value.displayName === 'string'
+                  ? row.value.displayName
+                  : row.key
+              }
               onClick={() => setActive(row.id)}
             >
               <span className="record-mark">
@@ -393,7 +440,9 @@ function MapInput({ schema, value, onChange, name, runtime, effective }: Props) 
                   )
                 }
               />
+              {name === 'connections' && renderRecordFooter?.(row.key, row.value)}
               <button
+                className="record-delete"
                 type="button"
                 aria-label={`删除 ${label} ${row.key || index + 1}`}
                 onClick={() => change(rows.filter((r) => r.id !== row.id))}
@@ -411,17 +460,37 @@ function MapInput({ schema, value, onChange, name, runtime, effective }: Props) 
           </div>
         )}
       </div>
-      <button
-        type="button"
-        className="add-record"
-        onClick={() => {
-          const id = ++rowId;
-          setActive(id);
-          change([...rows, { id, key: '', value: initial(item) }]);
-        }}
-      >
-        新增 {label}
-      </button>
+      {!masterDetail && (
+        <button
+          type="button"
+          className="add-record"
+          aria-label={`新增 ${label}`}
+          onClick={() => {
+            const id = ++rowId;
+            setActive(id);
+            change([
+              ...rows,
+              {
+                id,
+                key: '',
+                value:
+                  name === 'connections'
+                    ? { ...(initial(item) as object), enabled: true }
+                    : initial(item),
+              },
+            ]);
+          }}
+        >
+          + 添加
+          {name === 'connections'
+            ? '连接'
+            : name === 'catalog' || name === 'models'
+              ? '模型'
+              : name === 'mcpServers'
+                ? '服务器'
+                : '条目'}
+        </button>
+      )}
     </fieldset>
   );
 }
@@ -557,13 +626,19 @@ export function Field(props: Props) {
     return (
       <div className="union-editor">
         <label>
-          配置类型
+          {name.startsWith('connections') ? '服务类型' : '配置类型'}
           <select
             aria-label={`${label} 类型`}
             value={index}
             onChange={(e) => {
               const next = alternatives[Number(e.target.value)];
               let v = initial(next);
+              if (name.startsWith('connections') && record(v) && next.properties?.enabled)
+                v = {
+                  ...v,
+                  enabled:
+                    record(value) && typeof value.enabled === 'boolean' ? value.enabled : true,
+                };
               if (record(v) && record(value) && value.$entry) v = { ...v, $entry: value.$entry };
               onChange(
                 record(v) && typeof value === 'string' && next.properties?.entry
@@ -590,6 +665,47 @@ export function Field(props: Props) {
       </div>
     );
   }
+  if (
+    schema.type === 'object' &&
+    schema.properties &&
+    name.startsWith('connections') &&
+    runtime &&
+    'revision' in runtime
+  ) {
+    const primary = ['displayName', 'enabled', 'baseURL'];
+    return (
+      <fieldset>
+        <legend className="sr-only">连接详情</legend>
+        <Fields
+          schema={{
+            type: 'object',
+            properties: Object.fromEntries(
+              Object.entries(schema.properties).filter(([key]) => primary.includes(key)),
+            ),
+          }}
+          value={record(value) ? value : {}}
+          effective={props.effective}
+          onChange={onChange}
+          runtime={runtime}
+        />
+        <details className="advanced-fields">
+          <summary>高级协议与环境变量</summary>
+          <Fields
+            schema={{
+              type: 'object',
+              properties: Object.fromEntries(
+                Object.entries(schema.properties).filter(([key]) => !primary.includes(key)),
+              ),
+            }}
+            value={record(value) ? value : {}}
+            effective={props.effective}
+            onChange={onChange}
+            runtime={runtime}
+          />
+        </details>
+      </fieldset>
+    );
+  }
   if (schema.type === 'object')
     return schema.properties ? (
       <fieldset>
@@ -611,13 +727,18 @@ export function Field(props: Props) {
     const choices = schema.enum ?? [schema.const];
     return (
       <select
+        id={props.inputId}
         aria-label={label}
         value={String(value ?? '')}
         onChange={(e) => onChange(choices.find((v) => String(v) === e.target.value))}
       >
         {choices.map((v) => (
           <option key={String(v)} value={String(v)}>
-            {String(v)}
+            {name === 'thinking'
+              ? (({ off: '关闭', low: '低', medium: '中', high: '高' } as Record<string, string>)[
+                  String(v)
+                ] ?? String(v))
+              : String(v)}
           </option>
         ))}
       </select>
@@ -637,6 +758,7 @@ export function Field(props: Props) {
   if (schema.type === 'number' || schema.type === 'integer')
     return (
       <input
+        id={props.inputId}
         aria-label={label}
         type="number"
         required
@@ -651,6 +773,7 @@ export function Field(props: Props) {
     if (name === 'provider' && runtime)
       return (
         <select
+          id={props.inputId}
           aria-label={label}
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
@@ -672,6 +795,7 @@ export function Field(props: Props) {
     return (
       <>
         <input
+          id={props.inputId}
           aria-label={label}
           type="text"
           autoComplete="off"
@@ -759,18 +883,87 @@ export function Fields({
   runtime?: RuntimeSnapshot | SettingsSnapshot;
   effective?: unknown;
 }) {
+  const prefix = useId();
   return (
     <>
       {Object.entries(schema.properties ?? {}).map(([name, child]) => {
+        if (child.const !== undefined)
+          return (
+            <span key={name} className="sr-only constant-field" data-field={name}>
+              {String(child.const)}
+            </span>
+          );
         if (name === 'apiKeyRef')
           return (
-            <div className="configuration-field managed-reference-row" data-field={name} key={name}>
+            <div
+              className="configuration-field managed-reference-row sr-only"
+              data-field={name}
+              key={name}
+            >
               <span>保存的 API key</span>
               <Field name={name} schema={child} value={value[name]} onChange={() => {}} />
             </div>
           );
         const present = Object.hasOwn(value ?? {}, name),
           label = child.title ?? labels[name] ?? name;
+        const simpleGlobal =
+          runtime &&
+          'revision' in runtime &&
+          !['object', 'array'].includes(String(child.type)) &&
+          !child.anyOf &&
+          !child['x-any'] &&
+          !child['x-rule'] &&
+          !child.writeOnly;
+        if (simpleGlobal) {
+          const inherited =
+            record(effective) && Object.hasOwn(effective, name) ? effective[name] : initial(child);
+          return (
+            <div
+              className="configuration-field field-scalar simple-global-field"
+              data-field={name}
+              key={name}
+            >
+              <div className="field-label-with-reset">
+                <label htmlFor={prefix + encodeURIComponent(name)}>{label}</label>
+                {present && (
+                  <button
+                    type="button"
+                    className="inherit-button"
+                    title={'恢复默认：' + label}
+                    aria-label={'恢复默认 ' + label}
+                    onClick={() => {
+                      const next = { ...value };
+                      delete next[name];
+                      onChange(next);
+                    }}
+                  >
+                    ↺
+                  </button>
+                )}
+              </div>
+              <Field
+                inputId={prefix + encodeURIComponent(name)}
+                name={name}
+                schema={child}
+                value={present ? value[name] : inherited}
+                runtime={runtime}
+                onChange={(item) => {
+                  const next = { ...value };
+                  if (item === undefined) delete next[name];
+                  else next[name] = item;
+                  onChange(next);
+                }}
+              />
+              {(child.minimum !== undefined || child.maximum !== undefined) && (
+                <small className="field-constraint">
+                  {child.minimum !== undefined ? '最小 ' + child.minimum : ''}
+                  {child.minimum !== undefined && child.maximum !== undefined ? ' · ' : ''}
+                  {child.maximum !== undefined ? '最大 ' + child.maximum : ''}
+                </small>
+              )}
+            </div>
+          );
+        }
         return (
           <div
             className={
@@ -783,21 +976,27 @@ export function Fields({
             key={name}
           >
             <label className="override-label">
+              <span className="field-label-text">{label}</span>
               <input
                 type="checkbox"
                 aria-label={'覆盖 ' + label}
                 checked={present}
                 onChange={(e) => {
                   const next = { ...value };
-                  if (e.target.checked) next[name] = initial(child);
+                  if (e.target.checked)
+                    next[name] =
+                      !['object', 'array'].includes(String(child.type)) &&
+                      record(effective) &&
+                      Object.hasOwn(effective, name)
+                        ? effective[name]
+                        : initial(child);
                   else delete next[name];
                   onChange(next);
                 }}
               />
-              <span>
-                {label}
-                <small>{present ? '本层覆盖' : '继承 / 默认'}</small>
-              </span>
+              <small>
+                {present ? '自定义' : runtime && 'revision' in runtime ? '默认' : '继承'}
+              </small>
             </label>
             {(present ||
               (runtime &&
@@ -826,7 +1025,7 @@ export function Fields({
                 }}
               />
             )}
-            {record(effective) && Object.hasOwn(effective, name) && (
+            {!present && record(effective) && Object.hasOwn(effective, name) && (
               <details className="effective-value">
                 <summary>合成有效值（不自动写入本层）</summary>
                 <ValueView value={effective[name]} />
