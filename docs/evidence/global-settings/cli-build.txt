@@ -1,0 +1,15 @@
+$ tsup src/cli/index.ts src/index.ts src/sdk/index.ts --format esm --no-dts
+CLI Building entry: src/index.ts, src/cli/index.ts, src/sdk/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Target: es2022
+ESM Build start
+ESM dist/chunk-N3ODGRWF.js 100.00 B
+ESM dist/sdk/index.js      221.00 B
+ESM dist/index.js          2.91 KB
+ESM dist/cli/index.js      4.61 KB
+ESM dist/app-IMPL5KTV.js   131.74 KB
+ESM dist/chunk-XAYHGYWV.js 62.11 KB
+ESM dist/chunk-RXJMKXUE.js 470.00 B
+ESM dist/chunk-7HL7UCRB.js 641.27 KB
+ESM ⚡️ Build success in 252ms

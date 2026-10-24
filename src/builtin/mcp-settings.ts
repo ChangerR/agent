@@ -17,12 +17,16 @@ const fields = ['command', 'args', 'env', 'url', 'headers'];
 const reserved = new Set(['__proto__', 'prototype', 'constructor']);
 const text = { type: 'string' };
 const secret = { type: 'string', writeOnly: true };
-export function mcpSettingsSection(cwd: string, activePath?: string): SettingsSection {
+export function mcpSettingsSection(
+  cwd: string,
+  activePath?: string,
+  globalOnly = false,
+): SettingsSection {
   const paths = resolveAgentPaths(cwd);
   const references = createScopedConfigStores(cwd);
   const target = (scope: 'project' | 'global') => {
     const root = scope === 'project' ? paths.projectRoot : paths.agentHome;
-    const configured = loadConfigWithSources(cwd).layers[scope].mcpConfig;
+    const configured = loadConfigWithSources(cwd, {}, { globalOnly }).layers[scope].mcpConfig;
     return resolve(root, typeof configured === 'string' ? configured : 'mcp.json');
   };
   const bases = new Map<
@@ -226,7 +230,7 @@ export function mcpSettingsSection(cwd: string, activePath?: string): SettingsSe
       const targetStore = store(scope),
         active =
           scope === 'project'
-            ? loadConfigWithSources(cwd).config.mcpConfig
+            ? loadConfigWithSources(cwd, {}, { globalOnly }).config.mcpConfig
             : target(scope as 'global');
       commitSettingsReference(
         references.store(scope),

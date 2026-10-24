@@ -1,6 +1,11 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { RuntimeSnapshot, WorkerMessage, WorkerRequest } from '../shared/protocol.js';
+import type {
+  RuntimeSnapshot,
+  SettingsSnapshot,
+  WorkerMessage,
+  WorkerRequest,
+} from '../shared/protocol.js';
 /** 每个项目一个独立 Node 进程，环境加载与本地原生模块不进入 Electron。 */
 export class WorkerHost {
   private child: ChildProcess;
@@ -18,6 +23,7 @@ export class WorkerHost {
     env: NodeJS.ProcessEnv,
     onState: (state: RuntimeSnapshot) => void,
     onExit: () => void,
+    onGlobalSettings?: (state: SettingsSnapshot) => void,
   ) {
     this.child = fork(entry, [], {
       execPath: node,
@@ -35,6 +41,7 @@ export class WorkerHost {
           resolve();
         }
         if (raw.type === 'state') onState(raw.state);
+        if (raw.type === 'global-settings-state') onGlobalSettings?.(raw.state);
         if (raw.type === 'reply') {
           const request = this.pending.get(raw.id);
           if (request) {

@@ -78,6 +78,24 @@ export const actionSchema = z.discriminatedUnion('type', [
     .strict(),
 ]);
 export type DesktopAction = z.infer<typeof actionSchema>;
+export const globalSettingsActionSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('read'),
+      generation: z.string().uuid(),
+      sectionId: z.string().min(1).max(200),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('commit'),
+      generation: z.string().uuid(),
+      editorId: z.string().uuid(),
+      json: z.string().max(64 * 1024),
+    })
+    .strict(),
+]);
+export type GlobalSettingsAction = z.infer<typeof globalSettingsActionSchema>;
 export interface Row {
   id: string;
   kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'notice';
@@ -159,6 +177,29 @@ export interface SettingsDescriptor {
   scopes: Array<{ scope: 'project' | 'global'; path: string }>;
   editable: boolean;
 }
+export interface SettingsSnapshot extends Pick<
+  RuntimeSnapshot,
+  | 'generation'
+  | 'settings'
+  | 'settingsEditor'
+  | 'provider'
+  | 'providers'
+  | 'providerOptions'
+  | 'providerLabels'
+  | 'models'
+  | 'modelDetails'
+  | 'tools'
+> {
+  revision: number;
+}
+export interface CredentialStatus {
+  token: string;
+  provider: string;
+  endpoint: string;
+  configured: boolean;
+  available: boolean;
+  backend: string;
+}
 export interface SettingsEditor {
   id: string;
   sectionId: string;
@@ -179,6 +220,7 @@ export interface ProjectSummary {
   lastSessionId?: string;
 }
 export interface DesktopState {
+  globalSettings?: SettingsSnapshot;
   theme?: 'system' | 'light' | 'dark' | 'blue';
   version: typeof PROTOCOL_VERSION;
   revision: number;
@@ -189,6 +231,9 @@ export interface DesktopState {
   platform?: string;
 }
 export interface DesktopBridge {
+  globalSettingsRequest?(action: GlobalSettingsAction): Promise<void>;
+  credentialStatus?(provider: string): Promise<CredentialStatus>;
+  saveCredential?(token: string, key: string | null): Promise<void>;
   setTheme?(theme: 'system' | 'light' | 'dark' | 'blue'): Promise<void>;
   snapshot(): Promise<DesktopState>;
   onState(listener: (state: DesktopState) => void): () => void;
@@ -205,10 +250,19 @@ export interface WorkerRequest {
   id: string;
   action:
     | DesktopAction
-    | { type: 'init'; cwd: string; demo: boolean; generation: string }
+    | {
+        type: 'init';
+        cwd: string;
+        demo: boolean;
+        generation: string;
+        credentials?: Record<string, { key: string; binding: string }>;
+      }
+    | { type: 'init-settings'; generation: string }
+    | { type: 'global-settings'; action: GlobalSettingsAction }
     | { type: 'dispose' };
 }
 export type WorkerMessage =
+  | { type: 'global-settings-state'; state: SettingsSnapshot }
   | { type: 'state'; state: RuntimeSnapshot }
   | { type: 'reply'; id: string; error?: string }
   | { type: 'ready' };

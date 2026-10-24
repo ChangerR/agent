@@ -106,7 +106,12 @@ export class DesktopController {
     this.state.seq = ++this.seq;
     this.publish(structuredClone({ ...this.state, rows: this.state.rows.slice(-500) }));
   }
-  async initialize(cwd: string, demo: boolean, generation: string) {
+  async initialize(
+    cwd: string,
+    demo: boolean,
+    generation: string,
+    credentials: Record<string, { key: string; binding: string }> = {},
+  ) {
     if (this.agent || this.disposed) throw new Error('运行时不能重复初始化');
     this.agent = await this.factory(
       cwd,
@@ -135,7 +140,17 @@ export class DesktopController {
             },
             plugins: [inspectionPlugin()],
           }
-        : { plugins: [inspectionPlugin()] },
+        : {
+            plugins: [inspectionPlugin()],
+            resolveCredential(reference, identity) {
+              const item = credentials[reference];
+              if (!item || item.binding !== identity)
+                throw new Error(
+                  '保存的 API key 不可用或实际端点已变化，请检查全局安全存储；未发送请求。',
+                );
+              return item.key;
+            },
+          },
     );
     const a = this.agent;
     this.state = {

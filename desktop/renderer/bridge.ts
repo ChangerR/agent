@@ -20,6 +20,7 @@ export function getBridge(): DesktopBridge {
     return data;
   };
   return {
+    globalSettingsRequest: (action) => call('global-settings', action),
     snapshot: () => call('snapshot'),
     onState(listener) {
       const events = new EventSource('/api/events');

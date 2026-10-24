@@ -1,0 +1,37 @@
+{
+  "note": "All actual screenshots, not imagegen concepts. Browser fixtures and real Linux Electron are identified separately. No macOS native verification.",
+  "browser": {
+    "beforeModels": {
+      "library_file_id": "libfile_acfde1bc1fcc819199f9d191c07fd020",
+      "version": 0
+    },
+    "models": {
+      "library_file_id": "libfile_5daa4721d0f881919e3d9c9a7fd6235e",
+      "version": 1
+    },
+    "providers": {
+      "library_file_id": "libfile_2f917f9316ac8191a1e8fb3da49a3958",
+      "version": 1
+    },
+    "main": {
+      "library_file_id": "libfile_ff81a89b0b4c81919260637bb0c2edbb",
+      "version": 1
+    }
+  },
+  "electron": {
+    "globalKey": {
+      "library_file_id": "libfile_4aaf3350871881919900b13942a0a3cf",
+      "version": 0
+    },
+    "dark": {
+      "library_file_id": "libfile_d6500686a1848191b47f5194da58277b",
+      "version": 0
+    },
+    "zoom125": {
+      "library_file_id": "libfile_965f2cb203bc81919b7a8904c8db2ab3",
+      "version": 1,
+      "file_id": "file_000000003d2c81fd9150f9dd307b302a",
+      "note": "Full native900×700 content capture at125%, CSS720×560; supersedes cropped version0."
+    }
+  }
+}

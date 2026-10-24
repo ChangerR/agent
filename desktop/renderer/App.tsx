@@ -187,7 +187,7 @@ export default function App() {
   const [state, setState] = useState(empty),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false);
-  const [view, setView] = useState<'projects' | 'chat' | 'settings'>('projects'),
+  const [view, setView] = useState<'projects' | 'chat'>('projects'),
     [tab, setTab] = useState<'diff' | 'files' | 'logs'>('diff');
   const [theme, setTheme] = useState<Theme>(() => {
     try {
@@ -203,22 +203,48 @@ export default function App() {
     [model, setModel] = useState(''),
     [files, setFiles] = useState<string[]>([]),
     [inspector, setInspector] = useState(false),
-    [sidebar, setSidebar] = useState(true);
+    [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const workspaceScroll = useRef<Array<{ element: HTMLElement; top: number; left: number }>>([]);
   const settingsDirtyRef = useRef(false);
   const dirtyChanged = (dirty: boolean) => {
     settingsDirtyRef.current = dirty;
     void bridge.settingsDirty(dirty).catch(() => {});
   };
-  const allowLeave = () => {
-    if (settingsDirtyRef.current && !window.confirm('设置有未保存更改，放弃后继续？')) return false;
+  const allowLeave = () =>
+    !settingsDirtyRef.current || window.confirm('设置有未保存更改，放弃后继续？');
+  const closeSettings = () => {
+    if (!allowLeave()) return;
     dirtyChanged(false);
-    return true;
+    setSettingsOpen(false);
+    requestAnimationFrame(() => {
+      for (const item of workspaceScroll.current) {
+        if (!item.element.isConnected) continue;
+        item.element.scrollTop = item.top;
+        item.element.scrollLeft = item.left;
+      }
+      returnFocus.current?.focus({ preventScroll: true });
+    });
   };
-  const navigate = (next: typeof view) => {
-    if (next === view || allowLeave()) {
-      setView(next);
-      if (window.innerWidth <= 650) setSidebar(false);
+  const navigate = (next: typeof view | 'settings') => {
+    if (next === 'settings') {
+      if (!settingsOpen) {
+        returnFocus.current = document.activeElement as HTMLElement | null;
+        workspaceScroll.current = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '.app .conversation, .app .inspect-body, .app .project-tree, .app .session-list, .app .projects-page',
+          ),
+        ).map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
+      }
+      setSettingsOpen(true);
+      return;
     }
+    if (!allowLeave()) return;
+    dirtyChanged(false);
+    setSettingsOpen(false);
+    setView(next);
+    if (window.innerWidth <= 650) setSidebar(false);
   };
   const scroll = useRef<HTMLDivElement>(null),
     follow = useRef(true);
@@ -322,7 +348,10 @@ export default function App() {
     });
   };
   useEffect(() => {
-    if (runtime?.generation) setView('chat');
+    if (runtime?.generation) {
+      setView('chat');
+      setSettingsOpen(false);
+    }
   }, [runtime?.generation]);
   const startDemo = () => {
     if (!allowLeave()) return;
@@ -378,8 +407,10 @@ export default function App() {
     document.documentElement.dataset.platform = state.platform ?? 'browser';
   }, [state.platform]);
   const allError = error || state.error || runtime?.error;
-  return (
+  const workspace = (
     <div
+      hidden={settingsOpen}
+      inert={settingsOpen}
       className={
         'app ' +
         (!inspector || view !== 'chat' ? 'inspector-closed ' : '') +
@@ -550,22 +581,26 @@ export default function App() {
                 <Icon name="sidebar" />
               </button>
             )}
-            {view !== 'projects' && runtime && (
+            {view === 'chat' && runtime && (
               <span className="breadcrumb">
                 <Icon name="folder" size={14} />
                 {runtime.projectName}
                 <span>/</span>
               </span>
             )}
-            <h1>
-              {view === 'projects'
-                ? '项目'
-                : view === 'settings'
-                  ? '设置'
-                  : (runtime?.title ?? 'agentlab')}
-            </h1>
+            <h1>{view === 'projects' ? '项目' : (runtime?.title ?? 'agentlab')}</h1>
           </div>
           <div className="header-actions">
+            {!sidebar && (
+              <button
+                className="icon-button"
+                aria-label="打开应用设置"
+                title="设置"
+                onClick={() => navigate('settings')}
+              >
+                <Icon name="settings" />
+              </button>
+            )}
             <span className="tag" role="status">
               {state.connecting ? '正在打开项目' : (runtime?.phase ?? '就绪')}
             </span>
@@ -593,10 +628,15 @@ export default function App() {
                 <Icon name="terminal" size={30} />
               </span>
               <h2>从项目开始。</h2>
-              <p>每个项目拥有自己的会话、模型配置和文件工作区。</p>
-              <button className="primary" disabled={disabled} onClick={choose}>
-                <Icon name="plus" /> 添加本地项目
-              </button>
+              <p>选择一个项目继续工作，模型与连接默认使用全局设置。</p>
+              <div className="project-intro-actions">
+                <button className="primary" disabled={disabled} onClick={choose}>
+                  <Icon name="plus" /> 添加本地项目
+                </button>
+                <button className="outline" onClick={() => navigate('settings')}>
+                  设置模型
+                </button>
+              </div>
             </div>
             <div className="projects-list-heading">
               <h3>我的项目</h3>
@@ -648,15 +688,6 @@ export default function App() {
               </div>
             )}
           </section>
-        ) : view === 'settings' ? (
-          <SettingsPanel
-            key={runtime?.generation ?? 'preferences'}
-            runtime={runtime}
-            request={action}
-            dirtyChanged={dirtyChanged}
-            theme={theme}
-            changeTheme={changeTheme}
-          />
         ) : (
           <>
             <div
@@ -996,5 +1027,35 @@ export default function App() {
         ))}
       </datalist>
     </div>
+  );
+  return (
+    <>
+      {settingsOpen && (
+        <SettingsPanel
+          key={runtime?.generation ?? 'preferences'}
+          onBack={closeSettings}
+          appError={allError}
+          runtime={runtime}
+          globalSettings={state.globalSettings}
+          globalRequest={async (payload) => {
+            if (!bridge.globalSettingsRequest || !state.globalSettings)
+              throw new Error('全局设置尚未就绪，请重新打开 App。');
+            const action =
+              payload.type === 'settings-read'
+                ? { type: 'read', sectionId: payload.sectionId }
+                : { type: 'commit', editorId: payload.editorId, json: payload.json };
+            await bridge.globalSettingsRequest({
+              ...action,
+              generation: state.globalSettings.generation,
+            } as import('../shared/protocol.js').GlobalSettingsAction);
+          }}
+          request={action}
+          dirtyChanged={dirtyChanged}
+          theme={theme}
+          changeTheme={changeTheme}
+        />
+      )}
+      {workspace}
+    </>
   );
 }

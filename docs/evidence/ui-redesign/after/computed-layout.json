@@ -1,0 +1,8492 @@
+{
+  "commit": "d231bae77de0df7581bc1f153b12f7272387e247",
+  "note": "Browser zoom125 uses CSS720×560 + DPR1.25 as equivalent viewport. Real Electron uses native zoom separately. Fixtures contain no real credential; credential methods here do not validate safeStorage.",
+  "reports": [
+    {
+      "name": "01-projects-desktop-light",
+      "kind": "real renderer web + isolated worker",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": {
+          "x": 0,
+          "y": 0,
+          "width": 208,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 10px 12px",
+          "gap": "4px",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".workspace": {
+          "x": 208,
+          "y": 0,
+          "width": 1232,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 208,
+          "y": 0,
+          "width": 1232,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": null,
+        ".configuration-nav": null,
+        ".configuration-editor": null,
+        ".settings-page-heading": null,
+        ".settings-content": null,
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": null
+      },
+      "fonts": {},
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": null,
+      "bodyOverflow": false
+    },
+    {
+      "name": "02-chat-desktop-light",
+      "kind": "real renderer web + isolated FakeProvider worker",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": {
+          "x": 0,
+          "y": 0,
+          "width": 208,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 10px 12px",
+          "gap": "4px",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".workspace": {
+          "x": 208,
+          "y": 0,
+          "width": 1232,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 208,
+          "y": 0,
+          "width": 1232,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": null,
+        ".configuration-nav": null,
+        ".configuration-editor": null,
+        ".settings-page-heading": null,
+        ".settings-content": null,
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": null
+      },
+      "fonts": {},
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": null,
+      "bodyOverflow": false
+    },
+    {
+      "name": "02-chat-desktop-dark",
+      "kind": "real renderer web + isolated FakeProvider worker",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": {
+          "x": 0,
+          "y": 0,
+          "width": 208,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 10px 12px",
+          "gap": "4px",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".workspace": {
+          "x": 208,
+          "y": 0,
+          "width": 1232,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 208,
+          "y": 0,
+          "width": 1232,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": null,
+        ".configuration-nav": null,
+        ".configuration-editor": null,
+        ".settings-page-heading": null,
+        ".settings-content": null,
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": null
+      },
+      "fonts": {},
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": null,
+      "bodyOverflow": false
+    },
+    {
+      "name": "03-model-settings-desktop-light",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 706.828125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 707,
+          "clientHeight": 707
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": {
+          "x": 356,
+          "y": 549.328125,
+          "width": 920,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 2,
+        "22px": 1,
+        "12px": 8,
+        "13px": 6,
+        "11px": 2
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 295.328125,
+        "height": 40,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "04-provider-settings-desktop-light",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 878.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 879,
+          "clientHeight": 879
+        },
+        ".record-list": {
+          "x": 357,
+          "y": 201.078125,
+          "width": 176,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".record-details": {
+          "x": 533,
+          "y": 201.078125,
+          "width": 742,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".credential-panel": {
+          "x": 555,
+          "y": 648.078125,
+          "width": 698,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 4,
+        "22px": 1,
+        "12px": 9,
+        "13px": 7,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 248.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "06-provider-long-name-desktop",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 878.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 879,
+          "clientHeight": 879
+        },
+        ".record-list": {
+          "x": 357,
+          "y": 201.078125,
+          "width": 176,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".record-details": {
+          "x": 533,
+          "y": 201.078125,
+          "width": 742,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".credential-panel": {
+          "x": 555,
+          "y": 648.078125,
+          "width": 698,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 4,
+        "22px": 1,
+        "12px": 9,
+        "13px": 6,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 248.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "05-provider-settings-desktop-dark",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 878.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 879,
+          "clientHeight": 879
+        },
+        ".record-list": {
+          "x": 357,
+          "y": 201.078125,
+          "width": 176,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".record-details": {
+          "x": 533,
+          "y": 201.078125,
+          "width": 742,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".credential-panel": {
+          "x": 555,
+          "y": 648.078125,
+          "width": 698,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 4,
+        "22px": 1,
+        "12px": 9,
+        "13px": 6,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 37
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 248.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "07-model-catalog-desktop",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 540.1875,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 540,
+          "clientHeight": 540
+        },
+        ".record-list": {
+          "x": 357,
+          "y": 201.078125,
+          "width": 176,
+          "height": 426,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 426,
+          "clientHeight": 426
+        },
+        ".record-details": {
+          "x": 533,
+          "y": 201.078125,
+          "width": 742,
+          "height": 426,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 426,
+          "clientHeight": 426
+        },
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 3,
+        "22px": 1,
+        "12px": 6,
+        "13px": 3,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        },
+        {
+          "x": 872.03125,
+          "width": 380.96875,
+          "height": 36
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 248.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "08-budgets-desktop",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 391.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 392,
+          "clientHeight": 392
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 3,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 216.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "09-permissions-desktop",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 274.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 275,
+          "clientHeight": 275
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 2,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 216.078125,
+        "height": 37,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "10-mcp-empty-desktop",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 412.1875,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 412,
+          "clientHeight": 412
+        },
+        ".record-list": {
+          "x": 357,
+          "y": 201.078125,
+          "width": 176,
+          "height": 274,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 274,
+          "clientHeight": 274
+        },
+        ".record-details": {
+          "x": 533,
+          "y": 201.078125,
+          "width": 742,
+          "height": 274,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 274,
+          "clientHeight": 274
+        },
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "12px": 4
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": null,
+      "bodyOverflow": false
+    },
+    {
+      "name": "11-save-conflict-desktop",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 1440,
+        "height": 960,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 960,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 960,
+          "clientHeight": 960
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 1440,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 1248,
+          "height": 904,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 904,
+          "clientHeight": 904
+        },
+        ".settings-page-heading": {
+          "x": 324,
+          "y": 56,
+          "width": 984,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 356,
+          "y": 156.890625,
+          "width": 920,
+          "height": 454.375,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 454,
+          "clientHeight": 454
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 894,
+          "width": 1248,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 3,
+        "17px": 1,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 278.875,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "03-model-settings-narrow-light",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 900,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".settings-page-heading": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 224,
+          "y": 156.890625,
+          "width": 644,
+          "height": 706.828125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 707,
+          "clientHeight": 707
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": {
+          "x": 224,
+          "y": 549.328125,
+          "width": 644,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 192,
+          "y": 634,
+          "width": 708,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 2,
+        "22px": 1,
+        "12px": 8,
+        "13px": 6,
+        "11px": 2
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 295.328125,
+        "height": 40,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "04-provider-settings-narrow-light",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 726,
+          "clientHeight": 700
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 900,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".settings-page-heading": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 224,
+          "y": 156.890625,
+          "width": 644,
+          "height": 878.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 879,
+          "clientHeight": 879
+        },
+        ".record-list": {
+          "x": 225,
+          "y": 201.078125,
+          "width": 176,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".record-details": {
+          "x": 401,
+          "y": 201.078125,
+          "width": 466,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".credential-panel": {
+          "x": 423,
+          "y": 648.078125,
+          "width": 422,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 192,
+          "y": 634,
+          "width": 708,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 4,
+        "22px": 1,
+        "12px": 9,
+        "13px": 7,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 37
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 36
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 37
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 36
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 36
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 37
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 248.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "07-model-catalog-narrow",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 900,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".settings-page-heading": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 224,
+          "y": 156.890625,
+          "width": 644,
+          "height": 540.1875,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 540,
+          "clientHeight": 540
+        },
+        ".record-list": {
+          "x": 225,
+          "y": 201.078125,
+          "width": 176,
+          "height": 426,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 426,
+          "clientHeight": 426
+        },
+        ".record-details": {
+          "x": 401,
+          "y": 201.078125,
+          "width": 466,
+          "height": 426,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 426,
+          "clientHeight": 426
+        },
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 634,
+          "width": 708,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 3,
+        "22px": 1,
+        "12px": 6,
+        "13px": 3,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 36
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 36
+        },
+        {
+          "x": 620.03125,
+          "width": 224.96875,
+          "height": 36
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 248.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "08-budgets-narrow",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 900,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".settings-page-heading": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 224,
+          "y": 156.890625,
+          "width": 644,
+          "height": 391.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 392,
+          "clientHeight": 392
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 634,
+          "width": 708,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 3,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 216.078125,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "09-permissions-narrow",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 900,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".settings-page-heading": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 224,
+          "y": 156.890625,
+          "width": 644,
+          "height": 274.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 275,
+          "clientHeight": 275
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 634,
+          "width": 708,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 2,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 216.078125,
+        "height": 37,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "10-mcp-empty-narrow",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "dpr": 1
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 700,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 700,
+          "clientHeight": 700
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 26px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 900,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 192,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "24px 12px 12px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".configuration-editor": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 644,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 644,
+          "clientHeight": 644
+        },
+        ".settings-page-heading": {
+          "x": 192,
+          "y": 56,
+          "width": 708,
+          "height": 100.890625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "26px 32px 20px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 101,
+          "clientHeight": 101
+        },
+        ".settings-content": {
+          "x": 224,
+          "y": 156.890625,
+          "width": 644,
+          "height": 412.1875,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 412,
+          "clientHeight": 412
+        },
+        ".record-list": {
+          "x": 225,
+          "y": 201.078125,
+          "width": 176,
+          "height": 274,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 274,
+          "clientHeight": 274
+        },
+        ".record-details": {
+          "x": 401,
+          "y": 201.078125,
+          "width": 466,
+          "height": 274,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 274,
+          "clientHeight": 274
+        },
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 192,
+          "y": 634,
+          "width": 708,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "14px 32px",
+          "gap": "16px",
+          "overflow": "visible",
+          "scrollHeight": 65,
+          "clientHeight": 65
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "12px": 4
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": null,
+      "bodyOverflow": false
+    },
+    {
+      "name": "03-model-settings-zoom125-light",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 720,
+        "height": 560,
+        "dpr": 1.25
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 668,
+          "clientHeight": 560
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 18px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 504,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 504,
+          "clientHeight": 504
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 79.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "10px 18px",
+          "gap": "6px 10px",
+          "overflow": "visible",
+          "scrollHeight": 79,
+          "clientHeight": 79
+        },
+        ".configuration-editor": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 424.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 425,
+          "clientHeight": 425
+        },
+        ".settings-page-heading": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 20px 16px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 66,
+          "clientHeight": 66
+        },
+        ".settings-content": {
+          "x": 20,
+          "y": 201.5,
+          "width": 680,
+          "height": 702.828125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 703,
+          "clientHeight": 703
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": {
+          "x": 20,
+          "y": 589.9375,
+          "width": 680,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 0,
+          "y": 498,
+          "width": 720,
+          "height": 62,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "12px 20px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 61,
+          "clientHeight": 61
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 2,
+        "22px": 1,
+        "12px": 8,
+        "13px": 6,
+        "11px": 2
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 335.9375,
+        "height": 40,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "04-provider-settings-zoom125-light",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 720,
+        "height": 560,
+        "dpr": 1.25
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 767,
+          "clientHeight": 560
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 18px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 504,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 504,
+          "clientHeight": 504
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 79.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "10px 18px",
+          "gap": "6px 10px",
+          "overflow": "visible",
+          "scrollHeight": 79,
+          "clientHeight": 79
+        },
+        ".configuration-editor": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 424.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 425,
+          "clientHeight": 425
+        },
+        ".settings-page-heading": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 20px 16px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 66,
+          "clientHeight": 66
+        },
+        ".settings-content": {
+          "x": 20,
+          "y": 201.5,
+          "width": 680,
+          "height": 874.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 875,
+          "clientHeight": 875
+        },
+        ".record-list": {
+          "x": 21,
+          "y": 241.6875,
+          "width": 176,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".record-details": {
+          "x": 197,
+          "y": 241.6875,
+          "width": 502,
+          "height": 764.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 764,
+          "clientHeight": 764
+        },
+        ".credential-panel": {
+          "x": 219,
+          "y": 688.6875,
+          "width": 458,
+          "height": 245.390625,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "20px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 243,
+          "clientHeight": 243
+        },
+        ".configuration-actions": {
+          "x": 0,
+          "y": 498,
+          "width": 720,
+          "height": 62,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "12px 20px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 61,
+          "clientHeight": 61
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 4,
+        "22px": 1,
+        "12px": 9,
+        "13px": 7,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 37
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 36
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 37
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 36
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 36
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 37
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 288.6875,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "07-model-catalog-zoom125",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 720,
+        "height": 560,
+        "dpr": 1.25
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 18px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 504,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 504,
+          "clientHeight": 504
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 79.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "10px 18px",
+          "gap": "6px 10px",
+          "overflow": "visible",
+          "scrollHeight": 79,
+          "clientHeight": 79
+        },
+        ".configuration-editor": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 424.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 425,
+          "clientHeight": 425
+        },
+        ".settings-page-heading": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 20px 16px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 66,
+          "clientHeight": 66
+        },
+        ".settings-content": {
+          "x": 20,
+          "y": 201.5,
+          "width": 680,
+          "height": 536.1875,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 536,
+          "clientHeight": 536
+        },
+        ".record-list": {
+          "x": 21,
+          "y": 241.6875,
+          "width": 176,
+          "height": 426,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 426,
+          "clientHeight": 426
+        },
+        ".record-details": {
+          "x": 197,
+          "y": 241.6875,
+          "width": 502,
+          "height": 426,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 426,
+          "clientHeight": 426
+        },
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 0,
+          "y": 498,
+          "width": 720,
+          "height": 62,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "12px 20px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 61,
+          "clientHeight": 61
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 3,
+        "22px": 1,
+        "12px": 6,
+        "13px": 3,
+        "17px": 3
+      },
+      "alignedDetails": [
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 36
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 36
+        },
+        {
+          "x": 431.6875,
+          "width": 245.3125,
+          "height": 36
+        }
+      ],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 288.6875,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "08-budgets-zoom125",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 720,
+        "height": 560,
+        "dpr": 1.25
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 18px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 504,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 504,
+          "clientHeight": 504
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 79.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "10px 18px",
+          "gap": "6px 10px",
+          "overflow": "visible",
+          "scrollHeight": 79,
+          "clientHeight": 79
+        },
+        ".configuration-editor": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 424.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 425,
+          "clientHeight": 425
+        },
+        ".settings-page-heading": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 20px 16px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 66,
+          "clientHeight": 66
+        },
+        ".settings-content": {
+          "x": 20,
+          "y": 201.5,
+          "width": 680,
+          "height": 387.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 388,
+          "clientHeight": 388
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 0,
+          "y": 498,
+          "width": 720,
+          "height": 62,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "12px 20px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 61,
+          "clientHeight": 61
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 3,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 256.6875,
+        "height": 36,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "09-permissions-zoom125",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 720,
+        "height": 560,
+        "dpr": 1.25
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 18px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 504,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 504,
+          "clientHeight": 504
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 79.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "10px 18px",
+          "gap": "6px 10px",
+          "overflow": "visible",
+          "scrollHeight": 79,
+          "clientHeight": 79
+        },
+        ".configuration-editor": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 424.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 425,
+          "clientHeight": 425
+        },
+        ".settings-page-heading": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 20px 16px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 66,
+          "clientHeight": 66
+        },
+        ".settings-content": {
+          "x": 20,
+          "y": 201.5,
+          "width": 680,
+          "height": 270.578125,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 271,
+          "clientHeight": 271
+        },
+        ".record-list": null,
+        ".record-details": null,
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 0,
+          "y": 498,
+          "width": 720,
+          "height": 62,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "12px 20px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 61,
+          "clientHeight": 61
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "13px": 2,
+        "12px": 3
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": {
+        "y": 256.6875,
+        "height": 37,
+        "visible": true,
+        "hit": true
+      },
+      "bodyOverflow": false
+    },
+    {
+      "name": "10-mcp-empty-zoom125",
+      "kind": "browser renderer + explicit no-project/credential fixture + isolated real configuration worker; not Electron",
+      "viewport": {
+        "width": 720,
+        "height": 560,
+        "dpr": 1.25
+      },
+      "boxes": {
+        ".app": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".sidebar": null,
+        ".workspace": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 560,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 560,
+          "clientHeight": 560
+        },
+        ".heading": {
+          "x": 0,
+          "y": 0,
+          "width": 720,
+          "height": 56,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px 18px",
+          "gap": "12px",
+          "overflow": "visible",
+          "scrollHeight": 56,
+          "clientHeight": 56
+        },
+        ".configuration-page": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 504,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 504,
+          "clientHeight": 504
+        },
+        ".configuration-nav": {
+          "x": 0,
+          "y": 56,
+          "width": 720,
+          "height": 79.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "10px 18px",
+          "gap": "6px 10px",
+          "overflow": "visible",
+          "scrollHeight": 79,
+          "clientHeight": 79
+        },
+        ".configuration-editor": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 424.5,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "grid",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "hidden",
+          "scrollHeight": 425,
+          "clientHeight": 425
+        },
+        ".settings-page-heading": {
+          "x": 0,
+          "y": 135.5,
+          "width": 720,
+          "height": 66,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "18px 20px 16px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 66,
+          "clientHeight": 66
+        },
+        ".settings-content": {
+          "x": 20,
+          "y": 201.5,
+          "width": 680,
+          "height": 408.1875,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "0px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 408,
+          "clientHeight": 408
+        },
+        ".record-list": {
+          "x": 21,
+          "y": 241.6875,
+          "width": 176,
+          "height": 274,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "12px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 274,
+          "clientHeight": 274
+        },
+        ".record-details": {
+          "x": 197,
+          "y": 241.6875,
+          "width": 502,
+          "height": 274,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "block",
+          "padding": "22px",
+          "gap": "normal",
+          "overflow": "visible",
+          "scrollHeight": 274,
+          "clientHeight": 274
+        },
+        ".credential-panel": null,
+        ".configuration-actions": {
+          "x": 0,
+          "y": 498,
+          "width": 720,
+          "height": 62,
+          "font": "14px",
+          "lineHeight": "21px",
+          "display": "flex",
+          "padding": "12px 20px",
+          "gap": "10px",
+          "overflow": "visible",
+          "scrollHeight": 61,
+          "clientHeight": 61
+        }
+      },
+      "fonts": {
+        "12.5px": 18,
+        "14px": 1,
+        "22px": 1,
+        "12px": 4
+      },
+      "alignedDetails": [],
+      "duplicateSelectors": [
+        [
+          "*",
+          2
+        ],
+        [
+          ".sidebar",
+          2
+        ],
+        [
+          ".heading",
+          2
+        ],
+        [
+          ".projects-page",
+          2
+        ],
+        [
+          ".projects-intro",
+          2
+        ],
+        [
+          ".projects-intro h2",
+          2
+        ],
+        [
+          ".project-card",
+          2
+        ],
+        [
+          ".inspector",
+          2
+        ],
+        [
+          ".conversation",
+          2
+        ],
+        [
+          ".welcome h2",
+          2
+        ],
+        [
+          ".suggestion",
+          2
+        ],
+        [
+          ".approval-dock",
+          2
+        ],
+        [
+          ".composer-wrap",
+          2
+        ],
+        [
+          ".composer",
+          2
+        ],
+        [
+          ".controls select",
+          2
+        ],
+        [
+          ".configuration-page",
+          2
+        ],
+        [
+          ".configuration-nav",
+          3
+        ],
+        [
+          ".configuration-nav > input",
+          2
+        ],
+        [
+          ".settings-page-select",
+          2
+        ],
+        [
+          ".settings-quick",
+          2
+        ],
+        [
+          ".settings-quick > summary",
+          2
+        ],
+        [
+          ".configuration-editor",
+          2
+        ],
+        [
+          ".settings-page-heading",
+          3
+        ],
+        [
+          ".settings-page-heading h2",
+          2
+        ],
+        [
+          ".settings-eyebrow",
+          2
+        ],
+        [
+          ".settings-header-actions",
+          2
+        ],
+        [
+          ".configuration-scroll",
+          3
+        ],
+        [
+          ".settings-content",
+          2
+        ],
+        [
+          ".scope-explanation",
+          2
+        ],
+        [
+          ".form-section-heading",
+          2
+        ],
+        [
+          ".primary-model-fields",
+          2
+        ],
+        [
+          ".field-scalar > .effective-value, .field-scalar > .field-constraint, .field-scalar > .small",
+          2
+        ],
+        [
+          ".record-workspace",
+          2
+        ],
+        [
+          ".record-list",
+          2
+        ],
+        [
+          ".record-list-heading",
+          2
+        ],
+        [
+          ".record-list > .add-record",
+          2
+        ],
+        [
+          ".record-list > button:not(.add-record)",
+          2
+        ],
+        [
+          ".record-details",
+          2
+        ],
+        [
+          ".rule-editor",
+          2
+        ],
+        [
+          ".rule-editor label",
+          2
+        ],
+        [
+          ".credential-panel",
+          2
+        ],
+        [
+          ".configuration-actions",
+          3
+        ],
+        [
+          ".save-state",
+          2
+        ],
+        [
+          ".save-timing",
+          2
+        ],
+        [
+          ".configuration-actions button",
+          2
+        ]
+      ],
+      "unconditionalDuplicateSelectors": [],
+      "firstEditable": null,
+      "bodyOverflow": false
+    }
+  ],
+  "errors": []
+}

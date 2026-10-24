@@ -121,8 +121,8 @@ const expected: Record<string, string[]> = {
     'maxOutputTokens',
     'prefixCache',
   ],
-  'configuration-agentlab.provider-openai': ['dialect', 'models'],
-  'configuration-agentlab.provider-anthropic': ['models'],
+  'configuration-agentlab.provider-openai': ['dialect', 'models', 'apiKeyRef', 'apiKeyEnv'],
+  'configuration-agentlab.provider-anthropic': ['models', 'apiKeyRef', 'apiKeyEnv'],
   'configuration-agentlab.mcp': [
     'maxInlineChars',
     'maxAgeDays',

@@ -1,0 +1,2631 @@
+[
+  {
+    "name": "01-projects-desktop-light",
+    "kind": "real renderer web + isolated worker",
+    "viewport": {
+      "width": 1440,
+      "height": 960,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 228,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 12px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".workspace": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".heading": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": null,
+      ".configuration-nav": null,
+      ".configuration-editor": null,
+      ".settings-page-heading": null,
+      ".provider-manager": null,
+      ".credential-panel": null,
+      ".configuration-actions": null
+    },
+    "fonts": {},
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": null,
+    "bodyOverflow": false
+  },
+  {
+    "name": "02-chat-desktop-light",
+    "kind": "real renderer web + isolated FakeProvider worker",
+    "viewport": {
+      "width": 1440,
+      "height": 960,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 228,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 12px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".workspace": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".heading": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": null,
+      ".configuration-nav": null,
+      ".configuration-editor": null,
+      ".settings-page-heading": null,
+      ".provider-manager": null,
+      ".credential-panel": null,
+      ".configuration-actions": null
+    },
+    "fonts": {},
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": null,
+    "bodyOverflow": false
+  },
+  {
+    "name": "03-model-settings-desktop-light",
+    "kind": "browser renderer + explicit bridge credential/no-project fixture; not Electron",
+    "viewport": {
+      "width": 1440,
+      "height": 960,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 228,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 12px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".workspace": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".heading": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 228,
+        "y": 56,
+        "width": 1212,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 904,
+        "clientHeight": 904
+      },
+      ".configuration-nav": {
+        "x": 228,
+        "y": 56,
+        "width": 212,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "26px 14px 12px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 904,
+        "clientHeight": 904
+      },
+      ".configuration-editor": {
+        "x": 440,
+        "y": 56,
+        "width": 1000,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "28px 43.2px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 1502,
+        "clientHeight": 904
+      },
+      ".settings-page-heading": {
+        "x": 483.1875,
+        "y": 84,
+        "width": 903.625,
+        "height": 94,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 0px",
+        "gap": "18px",
+        "overflow": "visible",
+        "scrollHeight": 94,
+        "clientHeight": 94
+      },
+      ".provider-manager": {
+        "x": 483.1875,
+        "y": 290.5,
+        "width": 903.625,
+        "height": 278,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "18px 0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 276,
+        "clientHeight": 276
+      },
+      ".credential-panel": {
+        "x": 483.1875,
+        "y": 588.5,
+        "width": 903.625,
+        "height": 273,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "20px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 271,
+        "clientHeight": 271
+      },
+      ".configuration-actions": {
+        "x": 483.1875,
+        "y": 895,
+        "width": 913.625,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "10px": 1
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 927.5,
+      "height": 36,
+      "visible": false
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "04-provider-settings-desktop-light",
+    "kind": "browser renderer + explicit bridge credential/no-project fixture; not Electron",
+    "viewport": {
+      "width": 1440,
+      "height": 960,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 228,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 12px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".workspace": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".heading": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 228,
+        "y": 56,
+        "width": 1212,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 904,
+        "clientHeight": 904
+      },
+      ".configuration-nav": {
+        "x": 228,
+        "y": 56,
+        "width": 212,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "26px 14px 12px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 904,
+        "clientHeight": 904
+      },
+      ".configuration-editor": {
+        "x": 440,
+        "y": 56,
+        "width": 1000,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "28px 43.2px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 1921,
+        "clientHeight": 904
+      },
+      ".settings-page-heading": {
+        "x": 483.1875,
+        "y": 84,
+        "width": 903.625,
+        "height": 94,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 0px",
+        "gap": "18px",
+        "overflow": "visible",
+        "scrollHeight": 94,
+        "clientHeight": 94
+      },
+      ".provider-manager": null,
+      ".credential-panel": {
+        "x": 483.1875,
+        "y": 288.5,
+        "width": 903.625,
+        "height": 273,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "20px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 271,
+        "clientHeight": 271
+      },
+      ".configuration-actions": {
+        "x": 483.1875,
+        "y": 895,
+        "width": 913.625,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "11px": 2
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 770,
+      "height": 36,
+      "visible": true
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "05-provider-settings-desktop-dark",
+    "kind": "browser renderer + explicit fixture; not Electron",
+    "viewport": {
+      "width": 1440,
+      "height": 960,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 228,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 12px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".workspace": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 960,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 960,
+        "clientHeight": 960
+      },
+      ".heading": {
+        "x": 228,
+        "y": 0,
+        "width": 1212,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 228,
+        "y": 56,
+        "width": 1212,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 904,
+        "clientHeight": 904
+      },
+      ".configuration-nav": {
+        "x": 228,
+        "y": 56,
+        "width": 212,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "26px 14px 12px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 904,
+        "clientHeight": 904
+      },
+      ".configuration-editor": {
+        "x": 440,
+        "y": 56,
+        "width": 1000,
+        "height": 904,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "28px 43.2px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 1921,
+        "clientHeight": 904
+      },
+      ".settings-page-heading": {
+        "x": 483.1875,
+        "y": 84,
+        "width": 903.625,
+        "height": 94,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 0px",
+        "gap": "18px",
+        "overflow": "visible",
+        "scrollHeight": 94,
+        "clientHeight": 94
+      },
+      ".provider-manager": null,
+      ".credential-panel": {
+        "x": 483.1875,
+        "y": 288.5,
+        "width": 903.625,
+        "height": 273,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "20px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 271,
+        "clientHeight": 271
+      },
+      ".configuration-actions": {
+        "x": 483.1875,
+        "y": 895,
+        "width": 913.625,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "11px": 2
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 770,
+      "height": 36,
+      "visible": true
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "03-model-settings-narrow-light",
+    "kind": "browser renderer + explicit bridge credential/no-project fixture; not Electron",
+    "viewport": {
+      "width": 900,
+      "height": 700,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 900,
+        "height": 700,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 1185,
+        "clientHeight": 700
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 220,
+        "height": 700,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 10px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 700,
+        "clientHeight": 700
+      },
+      ".workspace": {
+        "x": 220,
+        "y": 0,
+        "width": 680,
+        "height": 700,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 700,
+        "clientHeight": 700
+      },
+      ".heading": {
+        "x": 220,
+        "y": 0,
+        "width": 680,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 220,
+        "y": 56,
+        "width": 680,
+        "height": 644,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 644,
+        "clientHeight": 644
+      },
+      ".configuration-nav": {
+        "x": 220,
+        "y": 56,
+        "width": 180,
+        "height": 644,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "26px 14px 12px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 644,
+        "clientHeight": 644
+      },
+      ".configuration-editor": {
+        "x": 400,
+        "y": 56,
+        "width": 500,
+        "height": 644,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "22px 20px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 1923,
+        "clientHeight": 644
+      },
+      ".settings-page-heading": {
+        "x": 420,
+        "y": 78,
+        "width": 450,
+        "height": 143.5,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 0px",
+        "gap": "18px",
+        "overflow": "visible",
+        "scrollHeight": 144,
+        "clientHeight": 144
+      },
+      ".provider-manager": {
+        "x": 420,
+        "y": 350.5,
+        "width": 450,
+        "height": 377,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "18px 0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 375,
+        "clientHeight": 375
+      },
+      ".credential-panel": {
+        "x": 420,
+        "y": 747.5,
+        "width": 450,
+        "height": 385,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "20px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 383,
+        "clientHeight": 383
+      },
+      ".configuration-actions": {
+        "x": 420,
+        "y": 635,
+        "width": 460,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "10px": 1
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 1242.5,
+      "height": 36,
+      "visible": false
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "04-provider-settings-narrow-light",
+    "kind": "browser renderer + explicit bridge credential/no-project fixture; not Electron",
+    "viewport": {
+      "width": 900,
+      "height": 700,
+      "dpr": 1
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 900,
+        "height": 700,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 786,
+        "clientHeight": 700
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 220,
+        "height": 700,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 10px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 700,
+        "clientHeight": 700
+      },
+      ".workspace": {
+        "x": 220,
+        "y": 0,
+        "width": 680,
+        "height": 700,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 700,
+        "clientHeight": 700
+      },
+      ".heading": {
+        "x": 220,
+        "y": 0,
+        "width": 680,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 220,
+        "y": 56,
+        "width": 680,
+        "height": 644,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 644,
+        "clientHeight": 644
+      },
+      ".configuration-nav": {
+        "x": 220,
+        "y": 56,
+        "width": 180,
+        "height": 644,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "26px 14px 12px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 644,
+        "clientHeight": 644
+      },
+      ".configuration-editor": {
+        "x": 400,
+        "y": 56,
+        "width": 500,
+        "height": 644,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "22px 20px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 2361,
+        "clientHeight": 644
+      },
+      ".settings-page-heading": {
+        "x": 420,
+        "y": 78,
+        "width": 450,
+        "height": 143.5,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 0px",
+        "gap": "18px",
+        "overflow": "visible",
+        "scrollHeight": 144,
+        "clientHeight": 144
+      },
+      ".provider-manager": null,
+      ".credential-panel": {
+        "x": 420,
+        "y": 348.5,
+        "width": 450,
+        "height": 385,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "20px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 383,
+        "clientHeight": 383
+      },
+      ".configuration-actions": {
+        "x": 420,
+        "y": 635,
+        "width": 460,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "11px": 2
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 936,
+      "height": 36,
+      "visible": false
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "03-model-settings-zoom125-light",
+    "kind": "browser renderer + explicit bridge credential/no-project fixture; not Electron",
+    "viewport": {
+      "width": 720,
+      "height": 560,
+      "dpr": 1.25
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": 0,
+        "width": 720,
+        "height": 560,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 1074,
+        "clientHeight": 560
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 220,
+        "height": 560,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 10px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 560,
+        "clientHeight": 560
+      },
+      ".workspace": {
+        "x": 220,
+        "y": 0,
+        "width": 500,
+        "height": 560,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 560,
+        "clientHeight": 560
+      },
+      ".heading": {
+        "x": 220,
+        "y": 0,
+        "width": 500,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 220,
+        "y": 56,
+        "width": 500,
+        "height": 504,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 504,
+        "clientHeight": 504
+      },
+      ".configuration-nav": {
+        "x": 220,
+        "y": 56,
+        "width": 500,
+        "height": 84,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "8px 14px",
+        "gap": "4px 8px",
+        "overflow": "hidden",
+        "scrollHeight": 134,
+        "clientHeight": 83
+      },
+      ".configuration-editor": {
+        "x": 220,
+        "y": 140,
+        "width": 500,
+        "height": 420,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "12px 14px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 1728,
+        "clientHeight": 420
+      },
+      ".settings-page-heading": {
+        "x": 234,
+        "y": 152,
+        "width": 462,
+        "height": 75.5,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 0px 8px",
+        "gap": "6px",
+        "overflow": "visible",
+        "scrollHeight": 76,
+        "clientHeight": 76
+      },
+      ".provider-manager": {
+        "x": 234,
+        "y": 335.5,
+        "width": 462,
+        "height": 377,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "18px 0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 375,
+        "clientHeight": 375
+      },
+      ".credential-panel": {
+        "x": 234,
+        "y": 732.5,
+        "width": 462,
+        "height": 303.5,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "14px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 302,
+        "clientHeight": 302
+      },
+      ".configuration-actions": {
+        "x": 234,
+        "y": 495,
+        "width": 472,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "10px": 1
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 1132,
+      "height": 36,
+      "visible": false
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "04-provider-navigation-blocked-zoom125",
+    "kind": "before: actual navigation hit-target failure; no forced click",
+    "viewport": {
+      "width": 720,
+      "height": 560,
+      "dpr": 1.25
+    },
+    "boxes": {
+      ".app": {
+        "x": 0,
+        "y": -56,
+        "width": 720,
+        "height": 560,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 1074,
+        "clientHeight": 560
+      },
+      ".sidebar": {
+        "x": 0,
+        "y": -56,
+        "width": 220,
+        "height": 560,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "16px 10px 12px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 560,
+        "clientHeight": 560
+      },
+      ".workspace": {
+        "x": 220,
+        "y": -56,
+        "width": 500,
+        "height": 560,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 560,
+        "clientHeight": 560
+      },
+      ".heading": {
+        "x": 220,
+        "y": -56,
+        "width": 500,
+        "height": 56,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 24px",
+        "gap": "12px",
+        "overflow": "visible",
+        "scrollHeight": 56,
+        "clientHeight": 56
+      },
+      ".configuration-page": {
+        "x": 220,
+        "y": 0,
+        "width": 500,
+        "height": 504,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px",
+        "gap": "normal",
+        "overflow": "hidden",
+        "scrollHeight": 504,
+        "clientHeight": 504
+      },
+      ".configuration-nav": {
+        "x": 220,
+        "y": 0,
+        "width": 500,
+        "height": 84,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "8px 14px",
+        "gap": "4px 8px",
+        "overflow": "hidden",
+        "scrollHeight": 134,
+        "clientHeight": 83
+      },
+      ".configuration-editor": {
+        "x": 220,
+        "y": 84,
+        "width": 500,
+        "height": 420,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "12px 14px 0px",
+        "gap": "normal",
+        "overflow": "auto",
+        "scrollHeight": 1728,
+        "clientHeight": 420
+      },
+      ".settings-page-heading": {
+        "x": 234,
+        "y": 96,
+        "width": 462,
+        "height": 75.5,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "flex",
+        "padding": "0px 0px 8px",
+        "gap": "6px",
+        "overflow": "visible",
+        "scrollHeight": 76,
+        "clientHeight": 76
+      },
+      ".provider-manager": {
+        "x": 234,
+        "y": 279.5,
+        "width": 462,
+        "height": 377,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "18px 0px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 375,
+        "clientHeight": 375
+      },
+      ".credential-panel": {
+        "x": 234,
+        "y": 676.5,
+        "width": 462,
+        "height": 303.5,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "block",
+        "padding": "14px",
+        "gap": "normal",
+        "overflow": "visible",
+        "scrollHeight": 302,
+        "clientHeight": 302
+      },
+      ".configuration-actions": {
+        "x": 234,
+        "y": 495,
+        "width": 472,
+        "height": 65,
+        "font": "14px",
+        "lineHeight": "21px",
+        "display": "grid",
+        "padding": "14px 0px",
+        "gap": "8px",
+        "overflow": "visible",
+        "scrollHeight": 64,
+        "clientHeight": 64
+      }
+    },
+    "fonts": {
+      "12px": 44,
+      "0px": 1,
+      "10px": 1
+    },
+    "duplicateSelectors": [
+      [
+        ".configuration-page",
+        9
+      ],
+      [
+        ".configuration-editor",
+        7
+      ],
+      [
+        ".settings-page-heading",
+        6
+      ],
+      [
+        ".configuration-nav",
+        5
+      ],
+      [
+        ".configuration-actions",
+        5
+      ],
+      [
+        ".configuration-scope",
+        4
+      ],
+      [
+        ".credential-form",
+        4
+      ],
+      [
+        ":root",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".app",
+        3
+      ],
+      [
+        ".sidebar",
+        3
+      ],
+      [
+        ".heading",
+        3
+      ],
+      [
+        ".conversation",
+        3
+      ],
+      [
+        ".approval-dock",
+        3
+      ],
+      [
+        ".composer-wrap",
+        3
+      ],
+      [
+        ".controls select",
+        3
+      ],
+      [
+        ".configuration-scope label",
+        3
+      ],
+      [
+        ".override-label",
+        3
+      ],
+      [
+        ".override-label small",
+        3
+      ],
+      [
+        ".configuration-nav > input",
+        3
+      ],
+      [
+        ".settings-categories",
+        3
+      ],
+      [
+        ".settings-category button",
+        3
+      ],
+      [
+        ".settings-page-heading h2",
+        3
+      ],
+      [
+        ".configuration-scope select",
+        3
+      ],
+      [
+        ".configuration-editor .record-workspace",
+        3
+      ],
+      [
+        ".record-workspace > .record-details",
+        3
+      ],
+      [
+        ".settings-header-actions",
+        3
+      ],
+      [
+        ":root[data-theme=\"dark\"]",
+        2
+      ],
+      [
+        ".primary",
+        2
+      ],
+      [
+        ".app.inspector-closed",
+        2
+      ],
+      [
+        ".heading p",
+        2
+      ],
+      [
+        ".workspace",
+        2
+      ],
+      [
+        ".heading h1",
+        2
+      ],
+      [
+        ".breadcrumb",
+        2
+      ],
+      [
+        ".welcome h2",
+        2
+      ]
+    ],
+    "firstEditable": {
+      "y": 1076,
+      "height": 36,
+      "visible": false
+    },
+    "bodyOverflow": false
+  },
+  {
+    "name": "blocked-zoom125",
+    "error": "locator.click: Timeout 2000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.configuration-nav').getByRole('button', { name: 'Provider 连接', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button class=\"\">Provider 连接</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <aside class=\"configuration-nav\">…</aside> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <aside class=\"configuration-nav\">…</aside> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    4 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <aside class=\"configuration-nav\">…</aside> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n"
+  }
+]

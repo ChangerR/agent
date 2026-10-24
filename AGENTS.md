@@ -42,7 +42,10 @@ pnpm build      # tsup → dist/
   对应 provider 的 `*_BASE_URL` 环境变量。纯 `loadConfigWithSources()` 不加载 `.env`。
 - `.env` 缺省正常；其他读取错误应明确报告路径/安全错误码，不吞掉，也不输出原始内容或 key。
   修改环境变量或 provider/key/端点配置后必须退出进程重新启动；`/model` 只切换当前 provider 的模型 ID，并自动保存项目模型默认值。
-- 设置默认操作项目层；模式选择自动保存并即时应用，不设置 Save 页面或二次确认。
+- CLI 设置默认操作项目层；App 设置默认全局层，无项目/会话也能配置。项目覆盖须显式选择。
+  App 可直接输入 API key，经系统 safeStorage 加密后写入 ~/.agentlab/credentials.enc.json，配置仅存 apiKeyRef；
+  basic_text/不可用后端拒绝保存。CLI 环境变量方式保留，不在 Node CLI 中加载 Electron；App 密钥引用无解密宿主时明确失败，不回退其他 key。
+  模式选择自动保存并即时应用，不设置 Save 页面或二次确认。
   `/mode`、`/model`、`/think` 同样持久化到项目；文本/JSON 一次提交，Esc 未提交不写。
   只在保存成功后应用当前模式，保留原子写/CAS/未知字段与安全错误信息。
   全局入口明确范围，按项目覆盖后的有效模式应用；规则、审批模型和插件实现需重启时必须明示。

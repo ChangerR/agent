@@ -1,0 +1,48 @@
+{
+  "codeCommit": "f952756",
+  "baseline": "d5de823a1ed7fcf6ea946917aa35e5227cd128a0",
+  "typecheck": "passed",
+  "appBuildAndRun": "passed via real run.mjs, no LICENSE env bypass",
+  "vitest": {
+    "files": 100,
+    "passed": 1780,
+    "skipped": 2,
+    "failed": 0
+  },
+  "electron": {
+    "globalScenarios": 14,
+    "combinedScenarios": 17,
+    "layoutStates": 18,
+    "nativeZoom125Css": {
+      "width": 720,
+      "height": 560
+    },
+    "actualLibsecret": true
+  },
+  "browser": {
+    "visualStates": 24,
+    "interactiveSuites": 2,
+    "credentialFixtureOnlyForVisualAudit": true
+  },
+  "macNativeTested": false,
+  "paidRequests": 0,
+  "userComputerAccess": false,
+  "responsiveCorrection": {
+    "codeCommit": "7148156f6801028520b8aa216900f225d8096987",
+    "nativePng": {
+      "width": 900,
+      "height": 700
+    },
+    "cssViewport": {
+      "width": 720,
+      "height": 560,
+      "dpr": 1.25
+    },
+    "primaryColumns": 1,
+    "actualAllControlBoundsAndClicks": "passed",
+    "globalSaveAndScopeSwitch": "passed",
+    "existingLayoutScenarios": 3,
+    "typecheck": "passed",
+    "previousFullSuitesReused": "production diff is only primary model responsive CSS; screenshot helpers/tests also corrected"
+  }
+}

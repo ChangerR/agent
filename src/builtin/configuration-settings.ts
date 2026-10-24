@@ -274,6 +274,7 @@ const baseGroups = [
 export function configurationSections(
   cwd: string,
   plugins: readonly Plugin[] = [],
+  globalOnly = false,
 ): Array<{ id: string; section: SettingsSection }> {
   const stores = createScopedConfigStores(cwd);
   const result: Array<{ id: string; section: SettingsSection }> = [];
@@ -294,12 +295,12 @@ export function configurationSections(
       order: 20 + result.length,
       applyMode: 'newSession',
       description:
-        '只编辑所选层的原始覆盖值，省略字段恢复继承。Enter 一次提交；Esc 放弃未提交草稿。保存后需重启 App/CLI，已有会话与审批不改变。密钥仅使用环境变量引用，不读取 .env。',
+        '只编辑所选层的原始覆盖值，省略字段恢复继承。Enter 一次提交；Esc 放弃未提交草稿。保存后需重启 App/CLI，已有会话与审批不改变。API key 在 App 全局安全存储页直接输入；环境变量引用为高级方式。',
       schema: settingsJsonSchema(z.object(shape)),
       scopeTargets: targets,
       readEffective(signal) {
         signal.throwIfAborted();
-        const config = loadConfigWithSources(cwd).config;
+        const config = loadConfigWithSources(cwd, {}, { globalOnly }).config;
         const raw = plugin ? (config.pluginConfig[plugin.manifest.id] ?? {}) : config;
         const parsed = definition?.schema
           ? definition.schema.parse({ ...definition.defaults, ...raw })

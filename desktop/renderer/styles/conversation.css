@@ -1,0 +1,425 @@
+.conversation {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 30px max(28px, calc((100% - 800px) / 2)) 20px;
+  scroll-padding: 24px;
+}
+.welcome-workspace .conversation {
+  flex: 0 0 auto;
+  padding-top: clamp(64px, calc((100dvh - 520px) / 2), 180px);
+  padding-bottom: 16px;
+}
+.welcome {
+  text-align: center;
+  padding: 0 0 12px;
+}
+.welcome .home-mark {
+  margin-bottom: 8px;
+}
+.welcome h2 {
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.8px;
+  margin: 8px 0 12px;
+}
+.welcome p {
+  color: var(--muted);
+  font-size: 14px;
+}
+.starter-prompts {
+  padding: 0 20px;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+.suggestion {
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px 12px;
+}
+.message {
+  margin: 0 0 24px;
+}
+.message.user {
+  margin-left: auto;
+  width: fit-content;
+  max-width: 88%;
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.message .who {
+  display: none;
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--rail);
+}
+.user-text {
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--rail);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.markdown {
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 0 0 14px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 24px;
+  margin: 0 0 16px;
+}
+.markdown li {
+  margin: 4px 0;
+}
+.markdown li > p {
+  margin-bottom: 6px;
+}
+.markdown .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+.markdown .task-list-item input {
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.markdown .task-list-item input:disabled {
+  opacity: 1;
+}
+.markdown blockquote {
+  color: var(--muted);
+  border-left: 3px solid var(--control);
+  padding: 2px 0 2px 16px;
+  margin: 16px 0;
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 24px 0 12px;
+  font-weight: 600;
+}
+.markdown h1 {
+  font-size: 24px;
+}
+.markdown h2 {
+  font-size: 21px;
+}
+.markdown h3 {
+  font-size: 17px;
+}
+.markdown pre {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow: auto;
+  margin: 16px 0;
+  white-space: pre;
+  font-size: 12px;
+}
+.markdown pre code {
+  white-space: pre;
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+.markdown :not(pre) > code {
+  font-size: 0.88em;
+  padding: 2px 5px;
+  background: var(--rail);
+  border-radius: 4px;
+}
+.markdown-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 16px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.markdown table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 100%;
+}
+.markdown th,
+.markdown td {
+  text-align: left;
+  padding: 9px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  min-width: 110px;
+  vertical-align: top;
+}
+.markdown th {
+  font-weight: 500;
+  background: var(--rail);
+}
+.markdown td:last-child {
+  border-right: 0;
+}
+.markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+.link-text {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.thinking {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 0;
+}
+.thinking summary,
+.tool summary,
+.notice summary {
+  cursor: pointer;
+}
+.thinking > pre {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px 0;
+}
+.tool {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+.tool summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  min-height: 38px;
+}
+.tool summary:before {
+  content: '›';
+  color: var(--muted);
+}
+.tool[open] summary:before {
+  content: '⌄';
+}
+.tool strong {
+  font-weight: 500;
+}
+.tool-status {
+  width: 13px;
+  color: var(--muted);
+}
+.tool-status.error {
+  color: var(--del-ink);
+}
+.tool-path {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.duration {
+  color: var(--muted);
+  margin-left: auto;
+  font-size: 11px;
+}
+.tool-body {
+  border-top: 1px solid var(--line);
+  padding: 12px;
+}
+.tool-body pre {
+  max-height: 260px;
+  overflow: auto;
+  font-size: 11.5px;
+}
+.notice {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 10px 0;
+}
+.notice pre {
+  max-height: 280px;
+  overflow: auto;
+}
+.approval-dock {
+  flex-shrink: 0;
+  max-height: 48vh;
+  overflow: auto;
+  padding: 0 max(28px, calc((100% - 800px) / 2));
+}
+.approval {
+  border: 1px solid var(--control);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+  margin: 8px 0;
+}
+.approval-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.approval .small {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.approval pre.command {
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--rail);
+  margin: 10px 0;
+}
+.approval input {
+  width: 100%;
+}
+.approval select {
+  max-width: 100%;
+  margin-top: 10px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.composer-wrap {
+  padding: 10px max(28px, calc((100% - 800px) / 2)) 20px;
+  flex-shrink: 0;
+}
+.composer {
+  padding: 14px 16px 10px;
+  border: 1px solid var(--control);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: 0 2px 12px #00000003;
+}
+.composer:focus-within {
+  border-color: var(--muted);
+}
+.composer textarea {
+  display: block;
+  width: 100%;
+  height: 76px;
+  max-height: 180px;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 0 12px;
+  font-size: 14px;
+  line-height: 24px;
+}
+.composer textarea:focus-visible {
+  outline: 0;
+}
+.composer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.controls select {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  min-height: 30px;
+  max-width: 210px;
+  padding: 3px 5px;
+  font-size: 12px;
+}
+.send-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 9px 3px 0;
+}
+@media (max-width: 760px) {
+  .conversation {
+    padding: 24px 20px 16px;
+  }
+  .composer-wrap {
+    padding: 8px 16px 14px;
+  }
+  .composer {
+    padding: 12px 13px 10px;
+  }
+  .controls select {
+    max-width: 160px;
+  }
+  .approval-dock {
+    padding: 0 16px;
+  }
+  .welcome h2 {
+    font-size: 24px;
+  }
+  .suggestion {
+    font-size: 11.5px;
+  }
+}

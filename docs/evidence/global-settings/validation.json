@@ -1,0 +1,68 @@
+{
+  "baseline": "d5de823a1ed7fcf6ea946917aa35e5227cd128a0",
+  "productionCommit": "0d7227fb070a33e827ecc1c3fec0aae3e2b7d929",
+  "platform": "linux",
+  "nativeMac": false,
+  "fullRegression": {
+    "files": 100,
+    "passed": 1780,
+    "skipped": 2,
+    "failed": 0,
+    "skipReason": "原有 Windows cwd 大小写与原生 PowerShell 条件",
+    "durationSeconds": 167.08
+  },
+  "electronGlobal": {
+    "passed": 14,
+    "backend": "gnome_libsecret",
+    "basicTextRejected": true,
+    "globalSections": 18,
+    "actualProviderAuthorizationVerified": true,
+    "requests": [
+      {
+        "authorized": true,
+        "model": "local-offline-model",
+        "task": true
+      },
+      {
+        "authorized": true,
+        "model": "local-offline-model",
+        "task": true
+      },
+      {
+        "authorized": true,
+        "model": "local-offline-model",
+        "task": true
+      },
+      {
+        "authorized": true,
+        "model": "local-offline-model",
+        "task": true
+      },
+      {
+        "authorized": false,
+        "model": "local-offline-model",
+        "task": true
+      }
+    ],
+    "plaintextLeakScan": "passed across isolated HOME/config/state/logs/profile/projects",
+    "layoutScreens": 18
+  },
+  "electronCombined": {
+    "passed": 17,
+    "realIPCWorkerFilesystem": true
+  },
+  "checks": {
+    "types": "passed",
+    "cliBuild": "passed",
+    "desktopBuild": "passed through actual run.mjs",
+    "sidecar": "passed",
+    "browserUi": "passed",
+    "browserCache": "passed"
+  },
+  "remaining": [
+    "macOS AppKit/Cmd/Dock/Retina/native picker/.app/Keychain behavior 未实测",
+    "App 加密凭据需要可信解密宿主；CLI 保留环境方式，但不能自动读取 App 密钥",
+    "项目 .env 与 MCP 仍是 CLI 兼容文本配置；掩码不代表加密",
+    "未加载/无 schema 的未知插件字段保留；受管根外领域文件不开放任意写入"
+  ]
+}

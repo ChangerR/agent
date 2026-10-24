@@ -29,8 +29,8 @@ import { SUBAGENT_PLUGIN, SUBAGENT_TOOLS } from './subagents/identity.js';
 export function defaultPreset(input: PresetContext): Preset {
   const { cwd, config, services } = input;
   const plugins: Plugin[] = [
-    ...providerPlugins(config),
-    providerConnectionsPlugin(cwd, config),
+    ...providerPlugins(config, input.resolveCredential),
+    providerConnectionsPlugin(cwd, config, input.resolveCredential, input.settingsGlobalOnly),
     createLocalToolsPlugin(
       config.pluginEntries
         .filter((entry) => typeof entry === 'string' || entry.enabled)

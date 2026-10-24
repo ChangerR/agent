@@ -31,6 +31,7 @@ try {
   await page.getByRole('button', { name: '离线演示', exact: true }).click();
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
   await page.getByRole('button', { name: '主任务与模型连接（启动默认值）', exact: true }).click();
   await page
     .locator('.settings-quick')
@@ -52,11 +53,9 @@ try {
   const runtime = (await current.json()).runtime;
   assert.equal(runtime.thinking, 'low');
   assert.equal(runtime.mode, 'auto');
-  const modelOverride = page.getByRole('checkbox', { name: '覆盖 模型 ID', exact: true });
-  await expect(modelOverride).toBeVisible();
-  await modelOverride.check();
+  const modelOverride = page.getByRole('button', { name: '恢复继承 model', exact: true });
   const model = 'cloud-ui-' + randomUUID().slice(0, 8);
-  await page.getByLabel('模型 ID', { exact: true }).fill(model);
+  await page.getByLabel('默认模型', { exact: true }).fill(model);
   await expect(page.getByText('未保存', { exact: true })).toBeVisible();
   let unexpectedDialogs = 0;
   const reselectDialog = (dialog) => {
@@ -69,41 +68,41 @@ try {
   assert.equal(unexpectedDialogs, 0, '重选当前节不能询问或丢失草稿');
   await expect(page.getByText('未保存', { exact: true })).toBeVisible();
   page.once('dialog', (dialog) => void dialog.dismiss());
-  await page.getByRole('button', { name: '所有项目', exact: false }).click();
+  await page.getByRole('button', { name: '返回工作区', exact: true }).click();
   await expect(page.getByRole('region', { name: '应用设置', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '提交此节', exact: true }).click();
+  await page.getByRole('button', { name: '保存更改', exact: true }).click();
   await expect(page.getByText('已保存', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('模型 ID', { exact: true })).toHaveValue(model);
+  await expect(page.getByLabel('默认模型', { exact: true })).toHaveValue(model);
+  await page.locator('.advanced-fields > summary').click();
   await page.getByRole('checkbox', { name: '覆盖 Endpoint URL', exact: true }).check();
   await page
     .getByRole('textbox', { name: 'Endpoint URL', exact: true })
     .fill('file:///invalid-endpoint');
-  await page.getByRole('button', { name: '提交此节', exact: true }).click();
+  await page.getByRole('button', { name: '保存更改', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: '验证或保存失败' })).toBeVisible();
-  await page.getByRole('button', { name: '提交此节', exact: true }).click();
+  await page.getByRole('button', { name: '保存更改', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: '验证或保存失败' })).toBeVisible();
   await page.getByRole('button', { name: '放弃更改', exact: true }).click();
-  await expect(
-    page.getByRole('checkbox', { name: '覆盖 Endpoint URL', exact: true }),
-  ).not.toBeChecked();
+  await expect(page.locator('input[aria-label="覆盖 Endpoint URL"]')).not.toBeChecked();
   await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
-  await expect(modelOverride).not.toBeChecked();
+  await expect(modelOverride).toHaveCount(0);
   await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-  await expect(modelOverride).toBeChecked();
+  await expect(modelOverride).toHaveCount(1);
   await page.screenshot({ path: join(out, 'settings-light.png'), fullPage: true });
-  await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
+  await page.locator('select[aria-label="设置界面主题"]').selectOption('dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: '上下文与缓存预算', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: '覆盖 最大轮数', exact: true })).toBeVisible();
   await page.getByRole('checkbox', { name: '覆盖 最大轮数', exact: true }).check();
   await page.getByRole('spinbutton', { name: '最大轮数', exact: true }).fill('12');
+  await page.locator('.settings-advanced > summary').click();
   await page.getByRole('button', { name: '清除此节的本层覆盖', exact: true }).click();
   await expect(
     page.getByRole('checkbox', { name: '覆盖 最大轮数', exact: true }),
   ).not.toBeChecked();
   await expect(page.getByText('未保存', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '放弃更改', exact: true }).click();
-  await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('system');
+  await page.locator('select[aria-label="设置界面主题"]').selectOption('system');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.setViewportSize({ width: 900, height: 650 });
