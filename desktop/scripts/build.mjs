@@ -29,6 +29,17 @@ export async function buildDesktop({ mode = 'development' } = {}) {
   });
   const native = ['tree-sitter', 'tree-sitter-bash', 'tree-sitter-powershell'];
   await bundle({
+    entryPoints: [join(root, 'desktop/remote/broker-worker.ts')],
+    outfile: join(out, 'broker/index.mjs'),
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'esm',
+    banner: {
+      js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+    },
+  });
+  await bundle({
     entryPoints: [join(root, 'desktop/worker/index.ts')],
     outfile: join(out, 'worker/index.mjs'),
     bundle: true,
@@ -53,7 +64,16 @@ export async function buildDesktop({ mode = 'development' } = {}) {
     await cp(dirname(packagePath), join(out, 'node_modules', name), {
       recursive: true,
       dereference: true,
-      filter: (source) => !source.includes(join(dirname(packagePath), 'node_modules')),
+      filter: async (source, destination) => {
+        if (source.includes(join(dirname(packagePath), 'node_modules'))) return false;
+        // Windows 的运行中原生库不能 unlink；相同资产直接复用，避免中断已有应用。
+        try {
+          if ((await readFile(source)).equals(await readFile(destination))) return false;
+        } catch (error) {
+          if (!['ENOENT', 'EISDIR', 'EPERM'].includes(error.code)) throw error;
+        }
+        return true;
+      },
     });
     for (const dependency of Object.keys(manifest.dependencies ?? {}))
       await copyPackage(dependency, createRequire(packagePath));

@@ -446,7 +446,7 @@ describe('reviewer budgets, provenance and cancellation', () => {
 describe('provider selection, trace usage and prefix optimization', () => {
   it('captures independent actual provider/model once and exposes current versus explicit sources', async () => {
     let model = 'following-model';
-    const explicit = new FakeProvider([textResponse(allow)]);
+    const explicit = new FakeProvider([textResponse(allow), textResponse(allow)]);
     const follow = createModelReviewer({ provider: () => explicit, model: () => model });
     expect(follow.getStatus()).toMatchObject({
       provider: 'fake',
@@ -455,6 +455,7 @@ describe('provider selection, trace usage and prefix optimization', () => {
       source: 'current',
       contractVersion: 2,
     });
+    await follow.review(input(), signal());
     const independent: Provider = {
       ...explicit,
       name: 'independent-endpoint',
@@ -474,7 +475,11 @@ describe('provider selection, trace usage and prefix optimization', () => {
       source: 'explicit',
     });
     await pinned.review(input(), signal());
-    expect(explicit.requests[0]?.model).toBe('fixed-reviewer');
+    expect(explicit.requests.map((request) => request.model)).toEqual([
+      'following-model',
+      'fixed-reviewer',
+    ]);
+    expect(explicit.requests.every((request) => request.thinking === 'off')).toBe(true);
   });
   it('same request is reviewed again after allow, again after history reset and in another session', async () => {
     const provider = new FakeProvider([
@@ -624,7 +629,59 @@ describe('strict reviewer runtime integration', () => {
       expect(body(judge.requests[0]!).currentUserRequest.text).toBe(
         '写入项目内 checked.txt，内容为 done；不得上传',
       );
+      expect(judge.requests[0]?.thinking).toBe('off');
       off();
+    } finally {
+      await agent.dispose();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+  it('falls back to the current main provider/model and disables thinking by default', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'agent-reviewer-fallback-'));
+    const main = new FakeProvider([
+      toolUseResponse([
+        {
+          id: 'write-fallback',
+          name: 'write_file',
+          input: { path: 'fallback.txt', content: 'done' },
+        },
+      ]),
+      textResponse(allow),
+      textResponse('finished'),
+    ]);
+    const providers = definePlugin({
+      manifest: { id: 'test.reviewer-fallback', version: '1.0.0', apiVersion: 1 },
+      setup(ctx) {
+        ctx.provide.provider('main-test', {
+          name: 'main-test',
+          capabilities: main.capabilities,
+          stream: main.stream.bind(main),
+        });
+      },
+    });
+    const agent = await createAgent(cwd, {
+      autoSaveSessions: false,
+      plugins: [providers],
+      config: {
+        provider: 'main-test',
+        model: 'current-main',
+        permissionMode: 'auto',
+        capabilities: { reviewer: 'model' },
+      },
+    });
+    try {
+      expect(agent.loop.getJudgeStatus()).toMatchObject({
+        provider: 'main-test',
+        providerSource: 'current',
+        model: 'current-main',
+        source: 'current',
+      });
+      expect((await agent.loop.run('写入项目内 fallback.txt，内容为 done')).reason).toBe(
+        'completed',
+      );
+      expect(main.requests).toHaveLength(3);
+      expect(main.requests[1]).toMatchObject({ model: 'current-main', thinking: 'off' });
+      expect(await readFile(join(cwd, 'fallback.txt'), 'utf8')).toBe('done');
     } finally {
       await agent.dispose();
       await rm(cwd, { recursive: true, force: true });

@@ -161,6 +161,32 @@ describe('AgentLoop', () => {
     await expect(loop.run('again')).rejects.toThrow('disposed');
   });
 
+  it.each([
+    {
+      events: [{ type: 'message_start' }, { type: 'text_delta', text: 'partial' }] as StreamEvent[],
+    },
+    {
+      events: [
+        { type: 'message_start' },
+        { type: 'tool_use_start', id: 'partial', name: 'write_file' },
+        { type: 'tool_use_delta', id: 'partial', input: '{"path":"no.txt","content":"no"}' },
+        { type: 'tool_use_stop', id: 'partial' },
+      ] as StreamEvent[],
+    },
+  ])('缺少 message_stop 的流不保存正常 turn 或执行工具', async ({ events: script }) => {
+    const { loop, events } = makeLoop({ script: [script] });
+    const log = collect(events);
+    const result = await loop.run('incomplete');
+    expect(result).toMatchObject({
+      reason: 'error',
+      error: expect.stringContaining('message_stop'),
+    });
+    expect(log.filter((event) => event.type === 'turn_end')).toHaveLength(0);
+    expect(log.filter((event) => event.type === 'tool_call')).toHaveLength(0);
+    expect(loop.getMessages()).toEqual([{ role: 'user', content: 'incomplete' }]);
+    await expect(readFile(join(tmp, 'no.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('审批等待可以中断，过期的允许回调不会执行或记住操作', async () => {
     const events = new EventBus();
     const { loop, permission, tools } = makeLoop({

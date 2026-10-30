@@ -32,27 +32,24 @@ try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(origin);
-  await page.getByRole('button', { name: '离线演示', exact: true }).click();
+  await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+  await page
+    .locator('.settings-developer-tools')
+    .getByRole('button', { name: '离线演示', exact: true })
+    .click();
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
+  await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
   const choose = async (title) => {
-    await page.getByRole('button', { name: title, exact: true }).click();
+    const button = page.getByRole('button', { name: title, exact: true });
+    if (!(await button.isVisible())) await page.locator('.settings-advanced-nav > summary').click();
+    await button.click();
     await expect(page.getByRole('button', { name: '重新读取', exact: true })).toBeVisible();
   };
   const override = async (label) => {
     await expect
-      .poll(async () => {
-        const state = await readState();
-        const scope = await page
-          .getByRole('combobox', { name: '配置作用域', exact: true })
-          .inputValue();
-        return (
-          (scope === 'global' ? state.globalSettings : state.runtime)?.settingsEditor?.scope ===
-          scope
-        );
-      })
-      .toBe(true);
+      .poll(async () => (await readState()).globalSettings.settingsEditor?.scope)
+      .toBe('global');
     await expect(page.locator('.configuration-editor form')).toBeVisible();
     const checkbox = page.getByRole('checkbox', { name: '覆盖 ' + label, exact: true });
     if (await checkbox.count()) await checkbox.check();
@@ -78,31 +75,25 @@ try {
     return response.json();
   };
   const save = async () => {
-    const scope = await page
-      .getByRole('combobox', { name: '配置作用域', exact: true })
-      .inputValue();
-    const pick = (s) => (scope === 'global' ? s.globalSettings : s.runtime).settingsEditor;
-    const before = pick(await readState()).id;
+    const before = (await readState()).globalSettings.settingsEditor.id;
     await expect(page.getByText('未保存', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '保存更改', exact: true }).click();
     await expect
       .poll(async () => {
-        const e = pick(await readState());
+        const e = (await readState()).globalSettings.settingsEditor;
         return e.id !== before && e.saved;
       })
       .toBe(true);
-    return pick(await readState()).value;
+    return (await readState()).globalSettings.settingsEditor.value;
   };
   await choose('上下文与缓存预算');
-  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
-  await override('缓存');
   await select('启用', 'false');
   await select('TTL', '5m');
   assert.deepEqual(await save(), { cache: { enabled: false, ttl: '5m' } });
-  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-  await override('缓存');
   await select('静态前缀 TTL（省略时继承会话 TTL）', '1h');
-  assert.deepEqual(await save(), { cache: { staticTtl: '1h' } });
+  assert.deepEqual(await save(), {
+    cache: { enabled: false, ttl: '5m', staticTtl: '1h' },
+  });
   await page.screenshot({ path: join(out, 'cache-sparse-overrides.png'), fullPage: true });
   await choose('其他运行配置');
   await select('原始工具参数回放（默认关闭）', 'false');

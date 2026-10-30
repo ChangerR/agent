@@ -151,6 +151,21 @@ describe('OpenAI 消息转换', () => {
     ).rejects.toThrow('Invalid JSON');
   });
 
+  it('collector 区分真实结束事件与自然 EOF', async () => {
+    const incomplete = await collectStreamAsync(
+      toAsync<StreamEvent>([{ type: 'message_start' }, { type: 'text_delta', text: 'partial' }]),
+    );
+    expect(incomplete).toMatchObject({ stopped: false, stopReason: 'end_turn' });
+    const complete = await collectStreamAsync(
+      toAsync<StreamEvent>([
+        { type: 'message_start' },
+        { type: 'text_delta', text: 'done' },
+        { type: 'message_stop', stopReason: 'end_turn' },
+      ]),
+    );
+    expect(complete.stopped).toBe(true);
+  });
+
   it('tool_result 拆成独立 tool 消息', () => {
     const messages: Message[] = [
       {

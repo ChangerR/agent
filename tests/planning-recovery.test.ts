@@ -209,3 +209,12 @@ it.each(['bad', 'null', '{"goal":"x","steps":["a"]}'])(
     expect(f.provider.requests).toHaveLength(1);
   },
 );
+
+it('规划默认输出预算为 8192，显式配置保持优先', async () => {
+  const f = fixture([textResponse('null'), textResponse('null')]);
+  await planningStrategy.prepare(f.input);
+  expect(f.provider.requests[0].maxTokens).toBe(8192);
+  f.input.maxTokens = 12288;
+  await planningStrategy.prepare(f.input);
+  expect(f.provider.requests[1].maxTokens).toBe(12288);
+});

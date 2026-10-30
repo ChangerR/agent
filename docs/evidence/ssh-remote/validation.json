@@ -1,0 +1,220 @@
+{
+  "date": "2026-10-25",
+  "scope": "首轮 SSH 远程工作区，使用固定假 key 和本机 mock API",
+  "ssh": {
+    "target": "ubuntu@10.100.0.8",
+    "remoteRoot": "/tmp/agentlab-ssh-test-8acad85c-4728-4296-bb9c-6ba64343c022",
+    "remoteNodeNetworkDisabled": true,
+    "loop": {
+      "modelRequests": 7,
+      "approvals": 2,
+      "tools": [
+        {
+          "name": "read_file",
+          "status": "completed"
+        },
+        {
+          "name": "write_file",
+          "status": "completed"
+        },
+        {
+          "name": "bash",
+          "status": "completed"
+        }
+      ],
+      "sessionId": "s-20261025-145442-c1fc"
+    },
+    "projectLock": true,
+    "childProxy": true,
+    "compactProxy": true,
+    "resume": true,
+    "staleApprovalRejected": true,
+    "disconnectRecovery": true,
+    "remoteKeyLeak": false,
+    "requests": [
+      {
+        "model": "ssh-plan",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      },
+      {
+        "model": "ssh-judge",
+        "auth": true
+      },
+      {
+        "model": "ssh-compact",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      },
+      {
+        "model": "ssh-plan",
+        "auth": true
+      },
+      {
+        "model": "ssh-compact",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      },
+      {
+        "model": "ssh-plan",
+        "auth": true
+      },
+      {
+        "model": "ssh-main",
+        "auth": true
+      }
+    ],
+    "ok": true
+  },
+  "electron": {
+    "ok": true,
+    "packaged": true,
+    "target": "ubuntu@10.100.0.8",
+    "project": "/tmp/agentlab-ssh-test-8acad85c-4728-4296-bb9c-6ba64343c022/ui-project-015f5a70-f738-4b6e-a85c-957cd2a711ee",
+    "requests": 3,
+    "sessionId": "s-20261025-204047-8a6a",
+    "remoteKeyInRenderer": false,
+    "hostSavedBeforeProject": true,
+    "savedHostCount": 1,
+    "projectCountImmediatelyAfterHost": 0,
+    "browsedProjectDirectory": true,
+    "hostRestoredAfterRestart": true,
+    "multipleProjectsOnOneHost": true,
+    "newSessionWithoutRuntime": true,
+    "projectChooserLocalAndRemote": true,
+    "selectedProjectStartsFreshSession": true,
+    "oldConversationPreserved": true,
+    "projectScopedNewSession": true,
+    "cancelPreservesCurrentSession": true,
+    "openDirectoryStartsFreshSession": true,
+    "createRemoteProjectAndSession": true,
+    "browseParentWithoutSwitchingSession": true,
+    "createLocalProjectAndSession": true,
+    "switchLocalToRemoteForNewSession": true,
+    "newSessionModelRequests": 0
+  },
+  "relatedTests": {
+    "passed": 48,
+    "failed": 0
+  },
+  "fullSuite": {
+    "passed": 1382,
+    "failed": 50,
+    "skipped": 411
+  },
+  "priorPresetComparison": {
+    "passed": 1382,
+    "failed": 50,
+    "newFailures": [],
+    "scope": "改动前默认 preset + 当前工作区其余代码"
+  },
+  "limitations": [
+    "完整历史代码未回滚，基线对照只替换默认 preset",
+    "Windows 全量套件仍未通过",
+    "没有调用真实模型 API",
+    "远程操作在专用临时 HOME 和项目内进行"
+  ],
+  "package": {
+    "platform": "win32",
+    "arch": "x64",
+    "path": "desktop/release/agentlab-win32-x64",
+    "verifiedPackagedUi": true
+  },
+  "build": {
+    "typecheck": true,
+    "library": true,
+    "desktop": true,
+    "remote": true,
+    "package": true
+  },
+  "hostProjectFlow": {
+    "description": "先添加主机，后在打开项目中浏览目录",
+    "electron": {
+      "ok": true,
+      "packaged": true,
+      "target": "ubuntu@10.100.0.8",
+      "project": "/tmp/agentlab-ssh-test-8acad85c-4728-4296-bb9c-6ba64343c022/ui-project-68a33659-eeb7-4415-9399-f5f0c8963d03",
+      "requests": 3,
+      "sessionId": "s-20261025-184928-db37",
+      "remoteKeyInRenderer": false,
+      "hostSavedBeforeProject": true,
+      "savedHostCount": 1,
+      "projectCountImmediatelyAfterHost": 0,
+      "browsedProjectDirectory": true,
+      "hostRestoredAfterRestart": true,
+      "multipleProjectsOnOneHost": true
+    },
+    "relatedTests": {
+      "passed": 38,
+      "failed": 0
+    },
+    "fullSuite": {
+      "passed": 1390,
+      "failed": 50,
+      "skipped": 411
+    },
+    "newFailures": []
+  },
+  "newSessionFlow": {
+    "description": "全局新建会话先选本机或远程项目，支持新建项目目录；项目旁加号直接新建空白会话",
+    "electron": {
+      "ok": true,
+      "packaged": true,
+      "target": "ubuntu@10.100.0.8",
+      "project": "/tmp/agentlab-ssh-test-8acad85c-4728-4296-bb9c-6ba64343c022/ui-project-015f5a70-f738-4b6e-a85c-957cd2a711ee",
+      "requests": 3,
+      "sessionId": "s-20261025-204047-8a6a",
+      "remoteKeyInRenderer": false,
+      "hostSavedBeforeProject": true,
+      "savedHostCount": 1,
+      "projectCountImmediatelyAfterHost": 0,
+      "browsedProjectDirectory": true,
+      "hostRestoredAfterRestart": true,
+      "multipleProjectsOnOneHost": true,
+      "newSessionWithoutRuntime": true,
+      "projectChooserLocalAndRemote": true,
+      "selectedProjectStartsFreshSession": true,
+      "oldConversationPreserved": true,
+      "projectScopedNewSession": true,
+      "cancelPreservesCurrentSession": true,
+      "openDirectoryStartsFreshSession": true,
+      "createRemoteProjectAndSession": true,
+      "browseParentWithoutSwitchingSession": true,
+      "createLocalProjectAndSession": true,
+      "switchLocalToRemoteForNewSession": true,
+      "newSessionModelRequests": 0
+    },
+    "relatedTests": {
+      "passed": 49,
+      "failed": 0
+    },
+    "fullSuite": {
+      "failed": 50,
+      "skipped": 411,
+      "passed": 1401
+    },
+    "newFailures": [],
+    "typecheck": true
+  }
+}

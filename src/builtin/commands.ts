@@ -18,7 +18,15 @@ import {
 import { createScopedConfigStores, settingsErrorMessage } from '../runtime/config-store.js';
 export type BuiltinCommandServices = Pick<
   import('../runtime/services.js').RuntimeServices,
-  'model' | 'setModel' | 'thinking' | 'setThinking' | 'models' | 'permission' | 'session'
+  | 'model'
+  | 'setModel'
+  | 'thinking'
+  | 'setThinking'
+  | 'thinkingLevels'
+  | 'compatibleThinking'
+  | 'models'
+  | 'permission'
+  | 'session'
 >;
 const text = (text: string): CommandResult => ({ type: 'text', text });
 const args = (input: Record<string, unknown>) =>
@@ -45,10 +53,11 @@ export function modelCommandsPlugin(services: BuiltinCommandServices, cwd = proc
           async handler(input, context) {
             const store = stores.store('project');
             const sessionId = services.session().id;
+            const levels = services.thinkingLevels() ?? ['off', 'low', 'medium', 'high'];
             // 在打开选择器前固定基线；等待选择期间的外部修改必须通过 CAS 检测。
             let base;
             try {
-              base = store.readFields([field]);
+              base = store.readFields(id === 'model' ? ['model', 'thinking'] : [field]);
             } catch (error) {
               throw new Error(settingsErrorMessage(error));
             }
@@ -59,12 +68,12 @@ export function modelCommandsPlugin(services: BuiltinCommandServices, cwd = proc
                 id === 'model' ? '选择模型 · 本项目' : '思考等级 · 本项目',
                 id === 'model'
                   ? services.models().map((m) => ({ id: m.name, label: m.name }))
-                  : ['off', 'low', 'medium', 'high'].map((id) => ({ id, label: id })),
+                  : levels.map((id) => ({ id, label: id })),
                 context,
               ));
             if (typeof selected !== 'string') return selected;
-            if (id === 'think' && !['off', 'low', 'medium', 'high'].includes(selected))
-              throw new Error('用法: /think off|low|medium|high');
+            if (id === 'think' && !levels.includes(selected as ThinkingLevel))
+              throw new Error(`当前模型支持的思考等级: ${levels.join('|')}`);
             if (
               id === 'model' &&
               (!selected.trim() || /[\s\u0000-\u001f\u007f-\u009f]/u.test(selected))
@@ -73,8 +82,13 @@ export function modelCommandsPlugin(services: BuiltinCommandServices, cwd = proc
             context.signal.throwIfAborted();
             if (services.session().id !== sessionId)
               throw new Error('会话已变化，请重新选择设置。');
+            const thinking =
+              id === 'model' ? services.compatibleThinking(selected) : (selected as ThinkingLevel);
             try {
-              store.commitFields(base, { [field]: selected });
+              store.commitFields(
+                base,
+                id === 'model' ? { model: selected, thinking } : { thinking },
+              );
             } catch (error) {
               throw new Error(settingsErrorMessage(error));
             }

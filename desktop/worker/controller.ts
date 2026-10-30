@@ -9,8 +9,9 @@ import {
   type RuntimeSnapshot,
   type Row,
 } from '../shared/protocol.js';
-import { inspectionPlugin } from './inspection.js';
+import { inspectLocalProject } from './inspection.js';
 import { demoProviderPlugin } from './demo.js';
+import { SessionDebugTrace, sessionDebugPlugin } from './debug-trace.js';
 import { planningErrorMessage } from '../../src/builtin/planning/errors.js';
 import { settingsErrorMessage } from '../../src/runtime/config-store.js';
 import { safeSettingsValue } from '../../src/builtin/configuration-settings.js';
@@ -31,8 +32,9 @@ async function effectiveSettings(
 }
 import type { SettingsSection } from '../../src/sdk/index.js';
 
-/** 跨进程只传纯展示快照；审批函数、凭证与模型请求保留在 worker。 */
+/** 跨进程只传展示快照与脱敏调试副本；审批函数、凭证与执行对象保留在 worker。 */
 export class DesktopController {
+  private debug = new SessionDebugTrace();
   private agent?: Agent;
   private state?: RuntimeSnapshot;
   private active?: Promise<unknown>;
@@ -102,6 +104,7 @@ export class DesktopController {
       this.state.sessionId = a.session.id;
       this.state.title = a.session.title || '新会话';
       this.state.usage = a.session.tokenUsage;
+      this.state.debug = this.debug.snapshot();
     }
     this.state.seq = ++this.seq;
     this.publish(structuredClone({ ...this.state, rows: this.state.rows.slice(-500) }));
@@ -138,10 +141,10 @@ export class DesktopController {
                 ],
               };
             },
-            plugins: [inspectionPlugin()],
+            plugins: [sessionDebugPlugin(this.debug)],
           }
         : {
-            plugins: [inspectionPlugin()],
+            plugins: [sessionDebugPlugin(this.debug)],
             resolveCredential(reference, identity) {
               const item = credentials[reference];
               if (!item || item.binding !== identity)
@@ -153,6 +156,7 @@ export class DesktopController {
           },
     );
     const a = this.agent;
+    this.debug.configure(a.paths.projectStateDir, a.session.id);
     this.state = {
       generation,
       seq: 0,
@@ -396,6 +400,7 @@ export class DesktopController {
     this.state!.sessions = listing.sessions.map((s) => ({
       id: s.id,
       title: s.title,
+      createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       messageCount: s.messageCount,
     }));
@@ -436,6 +441,28 @@ export class DesktopController {
     if (!s || !a || this.disposed || this.disposal) throw new Error('运行时不可用');
     if (action.generation !== s.generation || action.sessionId !== a.session.id)
       throw new Error('会话已变化，请刷新后重试');
+    if (
+      action.type === 'debug-read' ||
+      action.type === 'debug-export' ||
+      action.type === 'debug-close'
+    ) {
+      try {
+        if (action.type === 'debug-read')
+          this.debug.select(
+            action.page,
+            action.eventPage,
+            action.requestId,
+            action.eventId,
+            action.filters,
+          );
+        else if (action.type === 'debug-export') this.debug.exportReport();
+        else this.debug.select(0, 0);
+      } catch {
+        throw new Error('调试记录读取或导出失败，请检查记录文件或重新打开会话；原会话未修改。');
+      }
+      this.emit(true);
+      return;
+    }
     if (action.type === 'approve') {
       const pending = this.approved.get(action.approvalId);
       if (!pending || pending.signal.aborted) throw new Error('审批已结束，未执行迟到操作');
@@ -588,6 +615,7 @@ export class DesktopController {
     if (action.type === 'submit') {
       if (this.submissions.has(action.invocationId)) throw new Error('此任务已提交，不会重复执行');
       this.submissions.add(action.invocationId);
+      this.debug.input(action.text);
       this.row('user', action.text);
     }
     s.busy = true;
@@ -628,20 +656,17 @@ export class DesktopController {
         } else if (action.type === 'inspect') {
           const kind = action.kind;
           if (kind === 'read' && !action.path) throw new Error('请选择文件');
-          const result = await a.invokeTool(
-            kind === 'files' ? 'glob' : kind === 'read' ? 'read_file' : 'desktop_git_diff',
-            kind === 'files'
-              ? { pattern: '**/*' }
-              : kind === 'read'
-                ? { path: action.path, limit: 500 }
-                : {},
-            controller.signal,
-          );
+          const result = await inspectLocalProject({
+            cwd: a.cwd,
+            kind,
+            path: action.path,
+            signal: controller.signal,
+          });
           s.inspection = {
             kind,
             path: action.path,
             content: result.content,
-            error: result.isError,
+            error: result.error,
           };
         }
         await this.refreshSessions();

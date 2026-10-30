@@ -709,10 +709,19 @@ export class AgentSupervisor {
       this.persistRoot();
     }
     const run =
-      (event.type === 'model_usage' || event.type === 'model_request') && event.runId
+      (event.type === 'model_usage' ||
+        event.type === 'model_request' ||
+        event.type === 'model_response' ||
+        event.type === 'model_transport') &&
+      event.runId
         ? node.record.runs.find((run) => run.runId === event.runId)
         : node.active;
     if (!run) return;
+    if (event.type === 'model_transport' || event.type === 'model_response') {
+      // 纯诊断事件不能推进计划或使工具批准的版本绑定失效。
+      this.emit(node, run, 'status', { detail: structuredClone(event) as unknown as Record<string, unknown> }, false);
+      return;
+    }
     if (event.type === 'text_delta') {
       const remaining = Math.max(
         0,
@@ -795,9 +804,10 @@ export class AgentSupervisor {
     run: SubagentRun,
     kind: 'status' | 'text' | 'usage' | 'complete',
     fields: Partial<Extract<AgentEvent, { type: 'subagent_event' }>> = {},
+    updatePlan = true,
   ): void {
     const parent = this.opts.rootLoop;
-    parent.plan.childChanged(node.record.agentId, node.record.name, run);
+    if (updatePlan) parent.plan.childChanged(node.record.agentId, node.record.name, run);
     this.opts.events.emit({
       ...fields,
       type: 'subagent_event',

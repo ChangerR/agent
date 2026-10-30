@@ -11,6 +11,7 @@ export async function createAgent(cwd: string, options?: CreateAgentOptions) {
 
 // 公共 API 导出（供测试与外部插件使用）
 export * from './core/protocol/types.js';
+export type { ProviderTrace, ApiTransport } from './core/protocol/transport.js';
 export {
   EventBus,
   type AgentEvent,

@@ -4,6 +4,37 @@ const binding = { generation: z.string().uuid(), sessionId: z.string().min(1).ma
 export const actionSchema = z.discriminatedUnion('type', [
   z
     .object({
+      type: z.literal('debug-read'),
+      ...binding,
+      page: z.number().int().min(0).max(1000000),
+      eventPage: z.number().int().min(0).max(1000000),
+      requestId: z.string().uuid().optional(),
+      eventId: z.string().uuid().optional(),
+      filters: z
+        .object({
+          query: z.string().max(200).optional(),
+          provider: z.string().max(200).optional(),
+          model: z.string().max(200).optional(),
+          role: z.string().max(50).optional(),
+          status: z.string().max(30).optional(),
+          from: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+          to: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+          order: z.enum(['newest', 'oldest']).optional(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal('debug-export'), ...binding }).strict(),
+  z.object({ type: z.literal('debug-close'), ...binding }).strict(),
+  z
+    .object({
       type: z.literal('submit'),
       ...binding,
       invocationId: z.string().uuid(),
@@ -125,6 +156,9 @@ export interface Interaction {
   choices?: Array<{ id: string; label: string; description?: string }>;
 }
 export interface RuntimeSnapshot {
+  projectId?: string;
+  remote?: { target: string; path: string; connected: boolean };
+  debug?: import('./debug.js').DebugSnapshot;
   generation: string;
   seq: number;
   cwd: string;
@@ -159,7 +193,13 @@ export interface RuntimeSnapshot {
     cacheReadTokens: number;
     cacheWriteTokens: number;
   };
-  sessions: Array<{ id: string; title: string; updatedAt: string; messageCount: number }>;
+  sessions: Array<{
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    messageCount: number;
+  }>;
   brokenSessions: number;
   plugins: Array<{ id: string; version: string }>;
   tools: Array<{ name: string; risk: string }>;
@@ -213,13 +253,25 @@ export interface SettingsEditor {
 }
 export type DesktopNavigation = 'settings' | 'new-session' | 'open-project';
 export interface ProjectSummary {
+  remoteHostId?: string;
+  remoteIdentity?: string;
+  remote?: import('../remote/protocol.js').SshProjectInput;
   id: string;
   name: string;
   path: string;
   demo: boolean;
   lastSessionId?: string;
 }
+export interface RemoteHostSummary {
+  id: string;
+  name: string;
+  target: string;
+  identity?: string;
+  home: string;
+}
 export interface DesktopState {
+  remoteHosts?: RemoteHostSummary[];
+  connectionStatus?: string;
   globalSettings?: SettingsSnapshot;
   theme?: 'system' | 'light' | 'dark' | 'blue';
   version: typeof PROTOCOL_VERSION;
@@ -231,6 +283,16 @@ export interface DesktopState {
   platform?: string;
 }
 export interface DesktopBridge {
+  addRemoteHost?(input: import('../remote/protocol.js').SshHostInput): Promise<void>;
+  openRemoteProject?(input: import('../remote/protocol.js').OpenRemoteProjectInput): Promise<void>;
+  createProject?(input: import('../remote/protocol.js').NewProjectInput): Promise<void>;
+  cancelRemoteConnection?(): Promise<void>;
+  remoteConnections?(): Promise<Array<{ id: string; model: string; label: string }>>;
+  pickRemoteDirectory?(input: { hostId: string; path?: string }): Promise<string[]>;
+  readModelSetup?(
+    service?: import('./model-setup.js').ModelService,
+  ): Promise<import('./model-setup.js').ModelSetupView>;
+  saveModelSetup?(input: import('./model-setup.js').ModelSetupSave): Promise<void>;
   globalSettingsRequest?(action: GlobalSettingsAction): Promise<void>;
   credentialStatus?(provider: string): Promise<CredentialStatus>;
   saveCredential?(token: string, key: string | null): Promise<void>;
@@ -239,11 +301,11 @@ export interface DesktopBridge {
   onState(listener: (state: DesktopState) => void): () => void;
   onNavigate(listener: (action: DesktopNavigation) => void): () => void;
   settingsDirty(dirty: boolean): Promise<void>;
-  pickProject(): Promise<void>;
+  pickProject(options?: { newSession?: boolean }): Promise<void>;
   pickDirectory(): Promise<string | undefined>;
   openProject(id: string): Promise<void>;
   startDemo(): Promise<void>;
-  newSession(): Promise<void>;
+  newSession(options?: { projectId: string }): Promise<void>;
   request(action: DesktopAction): Promise<void>;
 }
 export interface WorkerRequest {

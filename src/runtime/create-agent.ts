@@ -154,6 +154,8 @@ export async function createRuntime(
     setModel: (model) => agent!.loop.setModel(model),
     thinking: () => agent?.loop.thinking ?? config.thinking,
     setThinking: (thinking) => agent!.loop.setThinking(thinking),
+    thinkingLevels: (model) => agent!.loop.thinkingLevels(model),
+    compatibleThinking: (model, requested) => agent!.loop.compatibleThinking(model, requested),
     models: () => agent!.knownModels,
     permission: () => agent!.permission,
     session: () => agent!.session,

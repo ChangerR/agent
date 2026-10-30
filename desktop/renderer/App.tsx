@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { MessageMarkdown } from './MessageMarkdown.js';
 import { Icon } from './Icon.js';
 import type {
@@ -11,14 +12,22 @@ import type {
 } from '../shared/protocol.js';
 import { getBridge } from './bridge.js';
 import { SettingsPanel } from './SettingsPanel.js';
+import { DebugPage } from './DebugPage.js';
+import { RemoteHostForm, RemoteProjectPicker } from './RemoteHosts.js';
+import { NewSessionChooser, NewProjectForm } from './NewSession.js';
 const bridge = getBridge();
 const empty: DesktopState = { version: 1, revision: -1, connecting: false, projects: [] };
 type Theme = 'system' | 'light' | 'dark' | 'blue';
-const labels: Record<string, string> = {
-  default: '内置',
-  global: '全局',
-  project: '项目',
-  session: '会话',
+const DEFAULT_INSPECTOR_WIDTH = 380;
+const clampInspectorWidth = (width: number) =>
+  Math.max(300, Math.min(560, Math.round(width), Math.round(window.innerWidth * 0.55)));
+const initialInspectorWidth = () => {
+  try {
+    const saved = Number(localStorage.getItem('agentlab-inspector-width'));
+    return saved ? clampInspectorWidth(saved) : DEFAULT_INSPECTOR_WIDTH;
+  } catch {
+    return DEFAULT_INSPECTOR_WIDTH;
+  }
 };
 function pathFrom(row: Row) {
   try {
@@ -27,6 +36,24 @@ function pathFrom(row: Row) {
   } catch {
     return undefined;
   }
+}
+function inspectionGuidance(content: string) {
+  if (content.includes('plan_step_required'))
+    return '当前计划没有正在执行的步骤。请先让 agent 建立或继续计划步骤，再检查文件。';
+  if (content.includes('task_read_only'))
+    return '当前步骤只允许经过验证的专用读取，Git 差异命令不能执行；专用文件读取仍可继续。';
+  return '请根据工具返回检查项目状态、Git 安装和当前权限。';
+}
+function formatSessionTime(value: string) {
+  const date = new Date(value);
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  return sameDay
+    ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 }
 function ApprovalCard({
   approval,
@@ -183,12 +210,72 @@ function MessageRow({
     </article>
   );
 }
+function ConversationRows({
+  rows,
+  busy,
+  openFile,
+  disabled,
+}: {
+  rows: Row[];
+  busy: boolean;
+  openFile: (path: string) => void;
+  disabled: boolean;
+}) {
+  const groups: Array<{ key: string; activity: boolean; rows: Row[] }> = [];
+  for (const row of rows) {
+    const activity = row.kind === 'tool' || row.kind === 'thinking';
+    const previous = groups.at(-1);
+    if (activity && previous?.activity) previous.rows.push(row);
+    else groups.push({ key: row.id, activity, rows: [row] });
+  }
+  const knownGroups = useRef(new Set<string>());
+  const expandedGroups = useRef(new Set<string>());
+  useEffect(() => {
+    for (const group of groups) {
+      if (!group.activity || knownGroups.current.has(group.key)) continue;
+      knownGroups.current.add(group.key);
+      if (busy) expandedGroups.current.add(group.key);
+    }
+    if (!busy) expandedGroups.current.clear();
+  }, [busy, groups]);
+  return groups.map((group) => {
+    if (!group.activity) {
+      const row = group.rows[0];
+      return <MessageRow key={row.id} row={row} openFile={openFile} disabled={disabled} />;
+    }
+    const expanded = expandedGroups.current.has(group.key);
+    const latestTool = [...group.rows].reverse().find((row) => row.kind === 'tool');
+    return (
+      <details className="activity-group" key={group.key} open={expanded ? true : undefined}>
+        <summary>
+          <span className="activity-title">{expanded ? '正在执行' : '执行过程'}</span>
+          <span className="activity-summary">
+            {latestTool?.toolName ? latestTool.toolName + ' · ' : ''}
+            {group.rows.length} 步
+          </span>
+        </summary>
+        <div className="activity-rows">
+          {group.rows.map((row) => (
+            <MessageRow key={row.id} row={row} openFile={openFile} disabled={disabled} />
+          ))}
+        </div>
+      </details>
+    );
+  });
+}
 export default function App() {
   const [state, setState] = useState(empty),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false);
   const [view, setView] = useState<'projects' | 'chat'>('projects'),
     [tab, setTab] = useState<'diff' | 'files' | 'logs'>('diff');
+  const [sessionSort, setSessionSort] = useState<'created' | 'updated'>(() => {
+    try {
+      return localStorage.getItem('agentlab-session-sort') === 'updated' ? 'updated' : 'created';
+    } catch {
+      return 'created';
+    }
+  });
   const [theme, setTheme] = useState<Theme>(() => {
     try {
       const saved = localStorage.getItem('agentlab-theme');
@@ -200,12 +287,21 @@ export default function App() {
     }
   });
   const [prompt, setPrompt] = useState(''),
-    [model, setModel] = useState(''),
     [files, setFiles] = useState<string[]>([]),
     [inspector, setInspector] = useState(false),
+    [inspectorWidth, setInspectorWidth] = useState(initialInspectorWidth),
     [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [remoteOpen, setRemoteOpen] = useState(false);
+  const [projectPicker, setProjectPicker] = useState<{
+    hostId?: string;
+    purpose?: 'open-project' | 'new-session';
+  }>();
+  const [newSessionOpen, setNewSessionOpen] = useState(false),
+    [newProjectOpen, setNewProjectOpen] = useState(false);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const inspectorResizeStart = useRef<{ x: number; width: number } | undefined>(undefined);
   const workspaceScroll = useRef<Array<{ element: HTMLElement; top: number; left: number }>>([]);
   const settingsDirtyRef = useRef(false);
   const dirtyChanged = (dirty: boolean) => {
@@ -229,6 +325,10 @@ export default function App() {
   };
   const navigate = (next: typeof view | 'settings') => {
     if (next === 'settings') {
+      if (debugOpen) {
+        setDebugOpen(false);
+        void action({ type: 'debug-close' }).catch(() => {});
+      }
       if (!settingsOpen) {
         returnFocus.current = document.activeElement as HTMLElement | null;
         workspaceScroll.current = Array.from(
@@ -251,6 +351,7 @@ export default function App() {
   const runtime = state.runtime,
     busy = state.connecting || !!runtime?.busy;
   const disabled = busy || pending;
+  const disconnected = runtime?.remote?.connected === false;
   useEffect(() => {
     if (state.theme) setTheme(state.theme);
   }, [state.theme]);
@@ -283,10 +384,18 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    setModel(runtime?.model ?? '');
-  }, [runtime?.model]);
+    try {
+      localStorage.setItem('agentlab-inspector-width', String(inspectorWidth));
+    } catch {}
+  }, [inspectorWidth]);
+  useEffect(() => {
+    const fit = () => setInspectorWidth((width) => clampInspectorWidth(width));
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
   useEffect(() => {
     setFiles([]);
+    setDebugOpen(false);
     setPrompt('');
     setError('');
     follow.current = true;
@@ -332,13 +441,22 @@ export default function App() {
   const openFile = (path: string) => inspect('read', path);
   const choose = () => {
     if (!allowLeave()) return;
+    if (state.remoteHosts?.length) {
+      const current = state.projects.find((p) => p.id === runtime?.projectId);
+      setProjectPicker({ hostId: current?.remoteHostId });
+      return;
+    }
     void perform(async () => {
       await bridge.pickProject();
     });
   };
   const openProject = (id: string) => {
     if (!allowLeave()) return;
-    if (runtime?.cwd === id && runtime.phase !== '进程中断') {
+    if (
+      (runtime?.projectId ?? runtime?.cwd) === id &&
+      runtime?.phase !== '进程中断' &&
+      runtime?.phase !== '连接中断'
+    ) {
       setView('chat');
       return;
     }
@@ -360,16 +478,17 @@ export default function App() {
       setView('chat');
     });
   };
+  const createSessionInProject = async (projectId: string) => {
+    await bridge.newSession({ projectId });
+    setView('chat');
+  };
   const newSession = () => {
     if (!allowLeave()) return;
-    void perform(async () => {
-      await bridge.newSession();
-      setView('chat');
-    });
+    setNewSessionOpen(true);
   };
   const submit = () => {
     const text = prompt.trim();
-    if (!text || !runtime || disabled) return;
+    if (!text || !runtime || disabled || runtime.remote?.connected === false) return;
     follow.current = true;
     void perform(async () => {
       await action({ type: 'submit', text, invocationId: crypto.randomUUID() });
@@ -389,7 +508,7 @@ export default function App() {
     const off = bridge.onNavigate((target) => {
       if (target === 'settings') navigate('settings');
       else if (target === 'open-project') choose();
-      else if (!disabled && runtime) newSession();
+      else if (!disabled) newSession();
     });
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (settingsDirtyRef.current) {
@@ -407,10 +526,15 @@ export default function App() {
     document.documentElement.dataset.platform = state.platform ?? 'browser';
   }, [state.platform]);
   const allError = error || state.error || runtime?.error;
+  const sortedSessions = [...(runtime?.sessions ?? [])].sort((a, b) => {
+    const field = sessionSort === 'created' ? 'createdAt' : 'updatedAt';
+    return new Date(b[field]).getTime() - new Date(a[field]).getTime();
+  });
   const workspace = (
     <div
-      hidden={settingsOpen}
-      inert={settingsOpen}
+      hidden={debugOpen}
+      inert={settingsOpen || debugOpen}
+      style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
       className={
         'app ' +
         (!inspector || view !== 'chat' ? 'inspector-closed ' : '') +
@@ -420,10 +544,16 @@ export default function App() {
       {sidebar && (
         <aside className="sidebar">
           <div className="brand">
-            <span className="logo">
-              <Icon name="terminal" size={19} />
-            </span>
-            <span className="brand-name">agentlab</span>
+            <button
+              className="brand-home"
+              aria-label="所有项目"
+              onClick={() => navigate('projects')}
+            >
+              <span className="logo">
+                <Icon name="terminal" size={17} />
+              </span>
+              <span className="brand-name">agentlab</span>
+            </button>
             <button
               className="icon-button sidebar-toggle"
               aria-label="收起侧栏"
@@ -432,62 +562,97 @@ export default function App() {
               <Icon name="sidebar" />
             </button>
           </div>
-          <button className="nav-new" disabled={disabled || !runtime} onClick={newSession}>
+          <button className="nav-new" disabled={disabled} onClick={newSession}>
             <Icon name="plus" /> 新建会话
           </button>
-          <button
-            className={'nav-home ' + (view === 'projects' ? 'active' : '')}
-            onClick={() => navigate('projects')}
-          >
-            <Icon name="grid" /> 所有项目 <span>{state.projects.length}</span>
-          </button>
-          <div className="section-label">
-            <span>项目</span>
-            <button
-              className="icon-button"
-              aria-label="添加本地项目"
-              title="添加本地项目"
-              disabled={disabled}
-              onClick={choose}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          </div>
           <nav className="project-tree" aria-label="项目列表">
             {state.projects.map((project) => (
               <div
-                className={'project-group ' + (runtime?.cwd === project.path ? 'selected' : '')}
+                className={
+                  'project-group ' +
+                  ((runtime?.projectId ?? runtime?.cwd) === project.id ? 'selected' : '')
+                }
                 key={project.id}
               >
-                <button
-                  className="project-entry"
-                  title={project.path}
-                  aria-label={'打开项目 ' + project.name}
-                  disabled={disabled && runtime?.cwd !== project.path}
-                  onClick={() => openProject(project.id)}
-                >
-                  <Icon name="folder" />
-                  <span className="project-entry-name">{project.name}</span>
-                  {runtime?.cwd === project.path && (
-                    <span className="project-indicator" title={runtime.phase}>
-                      ●
-                    </span>
-                  )}
-                </button>
-                {runtime?.cwd === project.path && (
-                  <div className="project-children">
-                    <div className="project-shortcuts">
-                      <button disabled={disabled} onClick={newSession}>
-                        <Icon name="plus" size={13} /> 新建会话
-                      </button>
+                <div className="project-entry-row">
+                  <button
+                    className="project-entry"
+                    title={project.path}
+                    aria-label={'打开项目 ' + project.name}
+                    disabled={disabled && (runtime?.projectId ?? runtime?.cwd) !== project.id}
+                    onClick={() => openProject(project.id)}
+                  >
+                    <Icon name={project.remote ? 'server' : 'folder'} />
+                    <span className="project-entry-name">{project.name}</span>
+                    {project.remote && (
+                      <span className="remote-target">
+                        {project.remote.target}
+                        <span
+                          className={
+                            'remote-status ' +
+                            ((runtime?.projectId ?? runtime?.cwd) === project.id &&
+                            runtime?.remote?.connected
+                              ? 'connected'
+                              : '')
+                          }
+                          title={
+                            (runtime?.projectId ?? runtime?.cwd) === project.id &&
+                            runtime?.remote?.connected
+                              ? '已连接'
+                              : '未连接'
+                          }
+                        />
+                      </span>
+                    )}
+                  </button>
+                  {(runtime?.projectId ?? runtime?.cwd) === project.id && (
+                    <div className="project-entry-actions">
                       <button
-                        aria-label={'设置项目 ' + project.name}
+                        className="icon-button project-settings"
+                        aria-label="设置当前项目"
                         title="项目设置"
                         onClick={() => navigate('settings')}
                       >
-                        <Icon name="settings" size={14} />
+                        <Icon name="more" size={17} />
+                      </button>
+                      <button
+                        className="icon-button project-new-session"
+                        aria-label="新建当前项目会话"
+                        title="新建会话"
+                        disabled={disabled}
+                        onClick={() => {
+                          if (allowLeave()) void perform(() => createSessionInProject(project.id));
+                        }}
+                      >
+                        <Icon name="plus" size={14} />
                       </button>
                     </div>
+                  )}
+                </div>
+                {project.remote &&
+                  !project.lastSessionId &&
+                  (runtime?.projectId ?? runtime?.cwd) !== project.id && (
+                    <div className="remote-empty">暂无会话</div>
+                  )}
+                {(runtime?.projectId ?? runtime?.cwd) === project.id && (
+                  <div className="project-children">
+                    <label className="session-sort">
+                      <span>排序</span>
+                      <select
+                        aria-label="会话排序"
+                        value={sessionSort}
+                        onChange={(event) => {
+                          const value = event.target.value as typeof sessionSort;
+                          setSessionSort(value);
+                          try {
+                            localStorage.setItem('agentlab-session-sort', value);
+                          } catch {}
+                        }}
+                      >
+                        <option value="created">创建时间</option>
+                        <option value="updated">最近使用</option>
+                      </select>
+                    </label>
                     <div className="session-list" aria-label={project.name + ' 的会话'}>
                       {runtime && !runtime.sessions.some((s) => s.id === runtime.sessionId) && (
                         <button className="active" onClick={() => navigate('chat')}>
@@ -495,24 +660,26 @@ export default function App() {
                           <span className="session-meta">{runtime.phase}</span>
                         </button>
                       )}
-                      {runtime?.sessions.map((s) => (
+                      {sortedSessions.map((s) => (
                         <button
                           key={s.id}
-                          className={s.id === runtime.sessionId ? 'active' : ''}
+                          className={s.id === runtime?.sessionId ? 'active' : ''}
                           disabled={disabled}
                           onClick={() => {
                             if (!allowLeave()) return;
                             setView('chat');
-                            if (s.id !== runtime.sessionId)
+                            if (s.id !== runtime?.sessionId)
                               void perform(() => action({ type: 'resume', id: s.id }));
                           }}
                         >
                           <span>{s.title || '未命名会话'}</span>
-                          <span className="session-meta" title={s.messageCount + ' 条消息'}>
-                            {new Date(s.updatedAt).toLocaleDateString('zh-CN', {
-                              month: 'numeric',
-                              day: 'numeric',
-                            })}
+                          <span
+                            className="session-meta"
+                            title={`${s.messageCount} 条消息 · 最近使用 ${new Date(s.updatedAt).toLocaleString('zh-CN')}`}
+                          >
+                            {formatSessionTime(
+                              sessionSort === 'created' ? s.createdAt : s.updatedAt,
+                            )}
                           </span>
                         </button>
                       ))}
@@ -536,32 +703,8 @@ export default function App() {
           </nav>
           <div className="sidebar-bottom">
             <button aria-label="打开应用设置" onClick={() => navigate('settings')}>
-              <Icon name="settings" /> 设置{' '}
-              <kbd>{state.platform === 'darwin' ? '⌘,' : 'Ctrl+,'}</kbd>
+              <Icon name="settings" /> 设置
             </button>
-            <label className="theme-control">
-              <span>
-                <Icon name="moon" /> 外观
-              </span>
-              <select
-                aria-label="桌面主题"
-                value={theme}
-                onChange={(e) => changeTheme(e.target.value)}
-              >
-                <option value="system">跟随系统</option>
-                <option value="light">黑白灰</option>
-                <option value="dark">深色石墨</option>
-                <option value="blue">冷灰蓝</option>
-              </select>
-            </label>
-            <button disabled={disabled} onClick={startDemo}>
-              <Icon name="terminal" /> 离线演示
-            </button>
-            <div className="local">
-              <Icon name="monitor" size={14} />
-              {runtime?.demo ? '离线演示 · FakeProvider' : runtime ? '本地运行' : '未打开项目'}
-              <span>v0.1</span>
-            </div>
           </div>
         </aside>
       )}
@@ -591,6 +734,12 @@ export default function App() {
             <h1>{view === 'projects' ? '项目' : (runtime?.title ?? 'agentlab')}</h1>
           </div>
           <div className="header-actions">
+            {runtime?.remote && (
+              <span className="remote-identity" title={runtime.remote.path}>
+                SSH · {runtime.remote.target} · {runtime.remote.path} ·{' '}
+                {runtime.remote.connected ? '本机代理模型' : '连接中断'}
+              </span>
+            )}
             {!sidebar && (
               <button
                 className="icon-button"
@@ -601,9 +750,11 @@ export default function App() {
                 <Icon name="settings" />
               </button>
             )}
-            <span className="tag" role="status">
-              {state.connecting ? '正在打开项目' : (runtime?.phase ?? '就绪')}
-            </span>
+            {(state.connecting || (runtime && runtime.phase !== '就绪')) && (
+              <span className="tag" role="status">
+                {state.connecting ? (state.connectionStatus ?? '正在打开项目') : runtime?.phase}
+              </span>
+            )}
             {view === 'chat' && (
               <button
                 aria-label="收起或显示检查栏"
@@ -623,28 +774,67 @@ export default function App() {
         )}
         {view === 'projects' ? (
           <section className="projects-page">
-            <div className="projects-intro">
-              <span className="home-mark">
-                <Icon name="terminal" size={30} />
-              </span>
-              <h2>从项目开始。</h2>
-              <p>选择一个项目继续工作，模型与连接默认使用全局设置。</p>
+            <header className="projects-toolbar">
+              <div>
+                <span className="eyebrow">WORKSPACE / PROJECTS</span>
+                <h2>项目目录</h2>
+                <p>打开本机项目，或添加主机后选择远程项目。</p>
+              </div>
               <div className="project-intro-actions">
-                <button className="primary" disabled={disabled} onClick={choose}>
-                  <Icon name="plus" /> 添加本地项目
-                </button>
+                {bridge.addRemoteHost && (
+                  <button
+                    className="outline"
+                    disabled={disabled}
+                    onClick={() => setRemoteOpen(true)}
+                  >
+                    添加主机
+                  </button>
+                )}
                 <button className="outline" onClick={() => navigate('settings')}>
-                  设置模型
+                  <Icon name="settings" /> 模型设置
+                </button>
+                <button className="primary" disabled={disabled} onClick={choose}>
+                  <Icon name="folder" /> 打开项目
                 </button>
               </div>
-            </div>
+            </header>
+            {!!state.remoteHosts?.length && (
+              <section className="remote-hosts-section" aria-label="SSH 主机">
+                <div className="projects-list-heading">
+                  <h3>远程主机</h3>
+                  <span className="small">{state.remoteHosts.length} 台主机</span>
+                </div>
+                <div className="remote-host-cards">
+                  {state.remoteHosts.map((host) => (
+                    <article className="remote-host-card" key={host.id}>
+                      <Icon name="folder" size={19} />
+                      <div className="remote-host-info">
+                        <strong>{host.name}</strong>
+                        <code>{host.target}</code>
+                        <span className="small">
+                          {state.projects.filter((p) => p.remoteHostId === host.id).length} 个项目
+                        </span>
+                      </div>
+                      <button
+                        className="outline"
+                        disabled={disabled}
+                        aria-label={'打开主机项目 ' + host.name}
+                        onClick={() => setProjectPicker({ hostId: host.id })}
+                      >
+                        打开项目
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="projects-list-heading">
-              <h3>我的项目</h3>
+              <h3>所有项目</h3>
               <span className="small">{state.projects.length} 个项目</span>
             </div>
-            <div className="project-cards">
+            <div className="project-cards" aria-label="项目目录">
               {state.projects.map((project) => {
-                const current = runtime?.cwd === project.path;
+                const current = (runtime?.projectId ?? runtime?.cwd) === project.id;
                 return (
                   <button
                     key={project.id}
@@ -653,21 +843,29 @@ export default function App() {
                     onClick={() => openProject(project.id)}
                   >
                     <span className="project-card-icon">
-                      <Icon name="folder" size={22} />
+                      <Icon name="folder" size={19} />
                     </span>
                     <span className="project-card-info">
                       <strong>{project.name}</strong>
                       <code>{project.path}</code>
+                    </span>
+                    <span className="project-card-state">
                       <small>
                         {current
-                          ? runtime.sessions.length + ' 个已保存会话 · ' + runtime.phase
+                          ? runtime!.sessions.length + ' 个会话 · ' + runtime!.phase
                           : project.lastSessionId
                             ? '继续上次会话'
-                            : '打开项目工作区'}
+                            : '打开工作区'}
                       </small>
-                    </span>
-                    <span className="tag">
-                      {current ? '当前项目' : project.demo ? '离线演示' : '本地'}
+                      <span className="tag">
+                        {current
+                          ? '当前项目'
+                          : project.demo
+                            ? '离线演示'
+                            : project.remote
+                              ? 'SSH · ' + project.remote.target
+                              : '本地'}
+                      </span>
                     </span>
                     <Icon name="chevron" />
                   </button>
@@ -676,10 +874,23 @@ export default function App() {
             </div>
             {!state.projects.length && (
               <div className="projects-empty">
-                <p>还没有添加项目。选择代码所在的文件夹即可开始。</p>
-                <button className="outline" disabled={disabled} onClick={startDemo}>
-                  先试离线演示项目
-                </button>
+                <Icon name="folder" size={24} />
+                <div>
+                  <h3>项目目录为空</h3>
+                  <p>
+                    {state.remoteHosts?.length
+                      ? '从上方主机打开项目，或选择本机文件夹。'
+                      : '先打开本机项目或添加 SSH 主机。'}
+                  </p>
+                </div>
+                <div className="project-intro-actions">
+                  <button className="primary" disabled={disabled} onClick={choose}>
+                    <Icon name="plus" /> 添加项目
+                  </button>
+                  <button className="outline" disabled={disabled} onClick={startDemo}>
+                    离线演示
+                  </button>
+                </div>
               </div>
             )}
             {runtime?.busy && (
@@ -723,20 +934,24 @@ export default function App() {
                 </div>
               ) : runtime.rows.length === 0 ? (
                 <div className="welcome">
-                  <span className="home-mark">
-                    <Icon name="terminal" size={30} />
-                  </span>
-                  <h2>一起把想法变成代码。</h2>
-                  <p>
-                    {runtime.demo
-                      ? '在隔离项目里，试试你的第一个任务。'
-                      : '从 ' + runtime.projectName + ' 开始，描述你想完成的事。'}
-                  </p>
+                  <div className="welcome-brand" aria-label="agentlab">
+                    agent<span>lab</span>
+                  </div>
+                  <p>{runtime.projectName}</p>
                 </div>
               ) : (
-                runtime.rows.map((row) => (
-                  <MessageRow key={row.id} row={row} openFile={openFile} disabled={disabled} />
-                ))
+                <ConversationRows
+                  key={runtime.generation + ':' + runtime.sessionId}
+                  rows={runtime.rows}
+                  busy={runtime.busy}
+                  openFile={openFile}
+                  disabled={disabled}
+                />
+              )}
+              {runtime?.phase === '已停止' && (
+                <div className="run-stopped" role="status">
+                  本次执行已停止，可重新发送任务继续。
+                </div>
               )}
             </div>
             {runtime?.approvals[0] && (
@@ -744,7 +959,7 @@ export default function App() {
                 <ApprovalCard
                   key={runtime.approvals[0].id}
                   approval={runtime.approvals[0]}
-                  disabled={pending}
+                  disabled={pending || disconnected}
                   respond={(allow, feedback) =>
                     void perform(() =>
                       action({
@@ -843,7 +1058,7 @@ export default function App() {
                       className="primary send-button"
                       aria-label="发送任务"
                       title="发送任务"
-                      disabled={disabled || !runtime || !prompt.trim()}
+                      disabled={disabled || disconnected || !runtime || !prompt.trim()}
                       onClick={submit}
                     >
                       <Icon name="arrow" size={17} />
@@ -856,7 +1071,7 @@ export default function App() {
                   <Icon name="folder" size={13} />
                   {runtime?.projectName ?? '未选择项目'}
                   <span>·</span>
-                  {runtime?.demo ? '离线' : '本地'}
+                  {runtime?.demo ? '离线' : runtime?.remote ? '远程 SSH' : '本地'}
                 </span>
                 <span>
                   {runtime
@@ -869,56 +1084,77 @@ export default function App() {
                     : '本地工作台'}
                 </span>
               </div>
-              {runtime?.rows.length === 0 && (
-                <div className="starter-prompts">
-                  <button
-                    className="suggestion"
-                    onClick={() =>
-                      setPrompt(
-                        runtime.demo
-                          ? '演示读取、审批和写入文件'
-                          : '阅读 README.md，解释这个项目的架构',
-                      )
-                    }
-                  >
-                    <Icon name="code" />
-                    {runtime.demo ? '试试工具审批' : '理解这个项目'}
-                  </button>
-                  <button
-                    className="suggestion"
-                    onClick={() =>
-                      setPrompt(
-                        runtime.demo
-                          ? '演示 Markdown 排版'
-                          : '检查项目里的测试，说明如何运行和验证',
-                      )
-                    }
-                  >
-                    <Icon name="terminal" />
-                    {runtime.demo ? '表格与代码示例' : '运行与验证'}
-                  </button>
-                </div>
-              )}
             </footer>
           </>
         )}
       </main>
       {inspector && view === 'chat' && (
         <aside className="inspector">
+          <div
+            className="inspector-resizer"
+            role="separator"
+            aria-label="调整检查面板宽度"
+            aria-orientation="vertical"
+            aria-valuemin={300}
+            aria-valuemax={560}
+            aria-valuenow={inspectorWidth}
+            tabIndex={0}
+            onPointerDown={(event) => {
+              if (window.innerWidth <= 1100) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              inspectorResizeStart.current = { x: event.clientX, width: inspectorWidth };
+            }}
+            onPointerMove={(event) => {
+              const start = inspectorResizeStart.current;
+              if (start)
+                setInspectorWidth(clampInspectorWidth(start.width + start.x - event.clientX));
+            }}
+            onPointerUp={(event) => {
+              inspectorResizeStart.current = undefined;
+              if (event.currentTarget.hasPointerCapture(event.pointerId))
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onLostPointerCapture={() => {
+              inspectorResizeStart.current = undefined;
+            }}
+            onDoubleClick={() => setInspectorWidth(clampInspectorWidth(DEFAULT_INSPECTOR_WIDTH))}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                event.preventDefault();
+                setInspectorWidth((width) =>
+                  clampInspectorWidth(width + (event.key === 'ArrowLeft' ? 20 : -20)),
+                );
+              } else if (event.key === 'Home') {
+                event.preventDefault();
+                setInspectorWidth(clampInspectorWidth(DEFAULT_INSPECTOR_WIDTH));
+              }
+            }}
+          />
           <nav className="tabs" aria-label="检查面板">
-            {[
-              ['diff', '改动'],
-              ['files', '文件'],
-              ['logs', '执行记录'],
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                className={tab === id ? 'active' : ''}
-                onClick={() => setTab(id as typeof tab)}
-              >
-                {label}
-              </button>
-            ))}
+            <div className="inspector-tabs">
+              {[
+                ['diff', '改动'],
+                ['files', '文件'],
+                ['logs', '执行记录'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  className={tab === id ? 'active' : ''}
+                  onClick={() => setTab(id as typeof tab)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="icon-button inspector-close"
+              aria-label="关闭检查面板"
+              title="关闭检查面板"
+              onClick={() => setInspector(false)}
+            >
+              <Icon name="close" size={14} />
+            </button>
           </nav>
           <div className="inspect-body">
             {tab === 'logs' ? (
@@ -998,7 +1234,17 @@ export default function App() {
                     </div>
                     {runtime?.inspection.kind === 'read' ? (
                       <div className="file-preview">
-                        <h4>{runtime.inspection.path}</h4>
+                        <header>
+                          <h4>{runtime.inspection.path}</h4>
+                          <button
+                            className="icon-button"
+                            aria-label="关闭文件预览"
+                            title="返回文件列表"
+                            onClick={() => inspect('files')}
+                          >
+                            <Icon name="close" size={13} />
+                          </button>
+                        </header>
                         <pre>{runtime.inspection.content}</pre>
                       </div>
                     ) : (
@@ -1010,8 +1256,12 @@ export default function App() {
                     )}
                   </>
                 )}
-                {runtime?.inspection.error && (
-                  <p className="error-text">检查未完成，保留工具返回结果。</p>
+                {runtime?.inspection.error && runtime.inspection.kind === tab && (
+                  <div className="inspection-error" role="alert">
+                    <strong>检查被权限策略阻止</strong>
+                    <p>{runtime.inspection.content}</p>
+                    <p className="small">{inspectionGuidance(runtime.inspection.content)}</p>
+                  </div>
                 )}
               </>
             )}
@@ -1030,32 +1280,110 @@ export default function App() {
   );
   return (
     <>
-      {settingsOpen && (
-        <SettingsPanel
-          key={runtime?.generation ?? 'preferences'}
-          onBack={closeSettings}
-          appError={allError}
+      {debugOpen && runtime && (
+        <DebugPage
+          key={runtime.generation + ':' + runtime.sessionId}
           runtime={runtime}
-          globalSettings={state.globalSettings}
-          globalRequest={async (payload) => {
-            if (!bridge.globalSettingsRequest || !state.globalSettings)
-              throw new Error('全局设置尚未就绪，请重新打开 App。');
-            const action =
-              payload.type === 'settings-read'
-                ? { type: 'read', sectionId: payload.sectionId }
-                : { type: 'commit', editorId: payload.editorId, json: payload.json };
-            await bridge.globalSettingsRequest({
-              ...action,
-              generation: state.globalSettings.generation,
-            } as import('../shared/protocol.js').GlobalSettingsAction);
-          }}
           request={action}
-          dirtyChanged={dirtyChanged}
-          theme={theme}
-          changeTheme={changeTheme}
+          onBack={() => {
+            setDebugOpen(false);
+            void action({ type: 'debug-close' }).catch((e) => setError(e.message));
+          }}
         />
       )}
+      {settingsOpen && (
+        <div className="settings-overlay">
+          <SettingsPanel
+            key={runtime?.generation ?? 'preferences'}
+            onBack={closeSettings}
+            appError={allError}
+            runtime={runtime}
+            globalSettings={state.globalSettings}
+            globalRequest={async (payload) => {
+              if (!bridge.globalSettingsRequest || !state.globalSettings)
+                throw new Error('全局设置尚未就绪，请重新打开 App。');
+              const action =
+                payload.type === 'settings-read'
+                  ? { type: 'read', sectionId: payload.sectionId }
+                  : { type: 'commit', editorId: payload.editorId, json: payload.json };
+              await bridge.globalSettingsRequest({
+                ...action,
+                generation: state.globalSettings.generation,
+              } as import('../shared/protocol.js').GlobalSettingsAction);
+            }}
+            request={action}
+            dirtyChanged={dirtyChanged}
+            theme={theme}
+            changeTheme={changeTheme}
+            onStartDemo={() => {
+              if (!allowLeave()) return;
+              dirtyChanged(false);
+              setSettingsOpen(false);
+              startDemo();
+            }}
+            onOpenDebug={() => {
+              if (!allowLeave()) return;
+              dirtyChanged(false);
+              setSettingsOpen(false);
+              setDebugOpen(true);
+            }}
+          />
+        </div>
+      )}
       {workspace}
+      {remoteOpen && (
+        <RemoteHostForm
+          bridge={bridge}
+          close={() => setRemoteOpen(false)}
+          saved={() => setView('projects')}
+        />
+      )}
+      {projectPicker && (
+        <RemoteProjectPicker
+          bridge={bridge}
+          hosts={state.remoteHosts ?? []}
+          initialHostId={projectPicker.hostId}
+          purpose={projectPicker.purpose}
+          close={() => setProjectPicker(undefined)}
+          opened={() => setView('chat')}
+          status={state.connectionStatus}
+        />
+      )}
+      {newSessionOpen && (
+        <NewSessionChooser
+          projects={state.projects}
+          hosts={state.remoteHosts ?? []}
+          currentProjectId={runtime?.projectId ?? runtime?.cwd}
+          close={() => setNewSessionOpen(false)}
+          select={createSessionInProject}
+          openDirectory={() => {
+            setNewSessionOpen(false);
+            setProjectPicker({
+              hostId:
+                state.projects.find((p) => p.id === runtime?.projectId)?.remoteHostId ?? 'local',
+              purpose: 'new-session',
+            });
+          }}
+          createProject={
+            bridge.createProject
+              ? () => {
+                  setNewSessionOpen(false);
+                  setNewProjectOpen(true);
+                }
+              : undefined
+          }
+        />
+      )}
+      {newProjectOpen && (
+        <NewProjectForm
+          bridge={bridge}
+          hosts={state.remoteHosts ?? []}
+          initialHostId={state.projects.find((p) => p.id === runtime?.projectId)?.remoteHostId}
+          close={() => setNewProjectOpen(false)}
+          created={() => setView('chat')}
+          status={state.connectionStatus}
+        />
+      )}
     </>
   );
 }

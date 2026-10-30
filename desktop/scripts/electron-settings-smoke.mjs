@@ -23,9 +23,12 @@ await mkdir(join(project, '.git'), { recursive: true });
 await mkdir(output, { recursive: true });
 const json = async (path) => JSON.parse(await readFile(path, 'utf8'));
 const store = async (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n');
-const configPath = join(project, 'agent.config.json');
-await store(join(home, '.agentlab/config.json'), { cache: { enabled: false, ttl: '5m' } });
-await store(configPath, {
+const configPath = join(home, '.agentlab/config.json');
+const projectConfigPath = join(project, 'agent.config.json');
+const modelsPath = join(home, '.agentlab/models.json');
+const mcpPath = join(home, '.agentlab/mcp.json');
+await store(configPath, { cache: { enabled: false, ttl: '5m' } });
+await store(projectConfigPath, {
   provider: 'acceptance',
   model: 'offline-model',
   permissionMode: 'ask',
@@ -144,13 +147,7 @@ async function launch() {
 const snapshot = () => page.evaluate(() => window.agentlab.snapshot());
 const editor = () => page.locator('.configuration-editor');
 const form = () => editor().locator('form');
-const currentEditor = async () => {
-  const s = await snapshot();
-  const scope = await editor()
-    .getByRole('combobox', { name: '配置作用域', exact: true })
-    .inputValue();
-  return (scope === 'global' ? s.globalSettings : s.runtime)?.settingsEditor;
-};
+const currentEditor = async () => (await snapshot()).globalSettings?.settingsEditor;
 // 作用于当前分组的直接字段，避免同名嵌套项互相命中。
 const groupField = (group, name) =>
   group.locator(
@@ -158,13 +155,17 @@ const groupField = (group, name) =>
   );
 async function openSection(id) {
   const state = await snapshot();
-  const section = state.runtime?.settings.find((s) => s.id === id);
+  const section = state.globalSettings?.settings.find((s) => s.id === id);
   assert.ok(section, 'missing actual registered settings: ' + id);
-  const button = page
-    .locator('.configuration-nav')
-    .getByRole('button', { name: section.title, exact: true });
-  if (await button.isVisible()) await button.click();
-  else await page.getByRole('combobox', { name: '设置页面', exact: true }).selectOption(id);
+  const mobile = page.getByRole('combobox', { name: '设置页面', exact: true });
+  if (await mobile.isVisible()) await mobile.selectOption(id);
+  else {
+    const button = page
+      .locator('.configuration-nav')
+      .getByRole('button', { name: section.title, exact: true });
+    if (!(await button.isVisible())) await page.locator('.settings-advanced-nav > summary').click();
+    await button.click();
+  }
   await expect.poll(async () => (await currentEditor())?.sectionId).toBe(id);
   await expect(editor().getByRole('heading', { name: section.title, exact: true })).toBeVisible();
   await expect(editor().getByText('正在读取设置…', { exact: true })).toHaveCount(0);
@@ -181,8 +182,7 @@ async function revealDetails(item) {
   for (const detail of parents.reverse()) await detail.locator(':scope > summary').click();
 }
 async function selectTheme(value) {
-  const theme = page.locator('select[aria-label="设置界面主题"]');
-  await revealDetails(theme);
+  const theme = page.locator('.settings-appearance select[aria-label="设置界面主题"]');
   await theme.selectOption(value);
 }
 async function override(group, name) {
@@ -346,7 +346,8 @@ try {
   });
   await check('可发现的设置按钮与真实菜单入口', async () => {
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
+    await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
+    await expect(page.locator('.settings-preferences,.settings-quick')).toHaveCount(0);
     await expect(
       editor().getByRole('heading', { name: '主任务与模型连接（启动默认值）', exact: true }),
     ).toBeVisible();
@@ -367,10 +368,7 @@ try {
       item.click();
     });
     await expect(page.getByRole('region', { name: '应用设置', exact: true })).toBeVisible();
-    await expect(page.getByRole('combobox', { name: '配置作用域', exact: true })).toHaveValue(
-      'global',
-    );
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
+    await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
     await expect(form().locator('textarea')).toHaveCount(0);
     await captureWindow(app, page, join(output, '01-settings-entry-linux-electron.png'));
   });
@@ -388,14 +386,8 @@ try {
     await (await override(model, 'maxOutputTokens')).getByRole('spinbutton').fill('2048');
     await (await override(model, 'displayName')).getByRole('textbox').fill('离线验收模型');
     await save();
-    assert.equal(
-      (await json(join(project, 'models.json')))['offline-custom'].displayName,
-      '离线验收模型',
-    );
-    assert.equal(
-      resolve(project, (await json(configPath)).modelsFile),
-      join(project, 'models.json'),
-    );
+    assert.equal((await json(modelsPath))['offline-custom'].displayName, '离线验收模型');
+    assert.equal(resolve(dirname(configPath), (await json(configPath)).modelsFile), modelsPath);
     await captureWindow(app, page, join(output, '02-model-catalog-linux-electron.png'));
   });
 
@@ -464,18 +456,18 @@ try {
     await captureWindow(app, page, join(output, '03-provider-connections-linux-electron.png'));
   });
 
-  await check('作用域稀疏覆盖、继承取消与缓存预算', async () => {
+  await check('全局缓存字段保存、导航取消与草稿放弃', async () => {
     await openSection('configuration-budgets');
-    let cache = await override(form().locator(':scope > fieldset'), 'cache');
+    const cache = await override(form().locator(':scope > fieldset'), 'cache');
     const cacheGroup = cache.locator(':scope > fieldset');
     await (await override(cacheGroup, 'staticTtl')).getByRole('combobox').selectOption('1h');
     await save();
-    assert.deepEqual((await json(configPath)).cache, { staticTtl: '1h' });
-    assert.deepEqual((await json(join(home, '.agentlab/config.json'))).cache, {
+    assert.deepEqual((await json(configPath)).cache, {
       enabled: false,
       ttl: '5m',
+      staticTtl: '1h',
     });
-    const effective = (await snapshot()).runtime.settingsEditor.effectiveValue.cache;
+    const effective = (await snapshot()).globalSettings.settingsEditor.effectiveValue.cache;
     assert.equal(effective.enabled, false);
     assert.equal(effective.ttl, '5m');
     assert.equal(effective.staticTtl, '1h');
@@ -485,29 +477,26 @@ try {
       .getByRole('combobox')
       .selectOption('1h');
     acceptConfirm = false;
-    await editor()
-      .getByRole('combobox', { name: '配置作用域', exact: true })
-      .selectOption('global');
-    assert.equal((await snapshot()).runtime.settingsEditor.scope, 'project');
+    await page
+      .locator('.configuration-nav')
+      .getByRole('button', { name: '工具权限与审批规则', exact: true })
+      .click();
+    assert.equal((await currentEditor()).sectionId, 'configuration-budgets');
     acceptConfirm = true;
     await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
-    assert.deepEqual((await json(configPath)).cache, { staticTtl: '1h' });
-    await editor()
-      .getByRole('combobox', { name: '配置作用域', exact: true })
-      .selectOption('global');
-    await expect.poll(async () => (await currentEditor()).scope).toBe('global');
+    assert.deepEqual((await json(configPath)).cache, {
+      enabled: false,
+      ttl: '5m',
+      staticTtl: '1h',
+    });
     await (
       await override(form().locator(':scope > fieldset'), 'maxTurns')
     )
       .getByRole('spinbutton')
       .fill('27');
     await save();
-    assert.equal((await json(join(home, '.agentlab/config.json'))).maxTurns, 27);
-    assert.equal((await json(configPath)).maxTurns, undefined);
-    await editor()
-      .getByRole('combobox', { name: '配置作用域', exact: true })
-      .selectOption('project');
-    await expect.poll(async () => (await snapshot()).runtime.settingsEditor.scope).toBe('project');
+    assert.equal((await json(configPath)).maxTurns, 27);
+    assert.equal((await json(projectConfigPath)).maxTurns, undefined);
   });
 
   await check('MCP stdio、参数排序、env 和 HTTP headers 图形化配置', async () => {
@@ -545,7 +534,7 @@ try {
       .fill('manual-mcp-private-fixture');
     await save();
     assert.equal(
-      (await json(join(project, 'mcp.json'))).mcpServers.local.env.MCP_FIXTURE_TOKEN,
+      (await json(mcpPath)).mcpServers.local.env.MCP_FIXTURE_TOKEN,
       'manual-mcp-private-fixture',
     );
     assert.ok(!JSON.stringify(await snapshot()).includes('manual-mcp-private-fixture'));
@@ -555,7 +544,7 @@ try {
       .fill('localRenamed');
     await save();
     assert.equal(
-      (await json(join(project, 'mcp.json'))).mcpServers.localRenamed.env.MCP_FIXTURE_TOKEN,
+      (await json(mcpPath)).mcpServers.localRenamed.env.MCP_FIXTURE_TOKEN,
       'manual-mcp-private-fixture',
     );
     await servers.getByRole('button', { name: '新增 MCP 服务器', exact: true }).click();
@@ -589,37 +578,7 @@ try {
       .getByRole('button', { name: '删除 MCP 服务器 httpTemporary', exact: true })
       .click();
     await save();
-    assert.deepEqual(Object.keys((await json(join(project, 'mcp.json'))).mcpServers), [
-      'localRenamed',
-    ]);
-  });
-
-  await check('凭据不回传、手动替换/清除、项目环境与注释保留', async () => {
-    await openSection('configuration-project-environment');
-    const variables = await override(form().locator(':scope > fieldset'), 'variables');
-    assert.ok(!JSON.stringify(await snapshot()).includes('private-existing-fixture'));
-    await expect(variables.getByText('已设置 · 保留原值', { exact: true })).toBeVisible();
-    await variables
-      .getByRole('button', { name: '替换 variables · FIXTURE_SECRET', exact: true })
-      .click();
-    await variables
-      .getByLabel('variables · FIXTURE_SECRET', { exact: true })
-      .fill('replacement-private-fixture');
-    await variables.getByRole('button', { name: '新增 项目环境变量', exact: true }).click();
-    await variables
-      .getByRole('textbox', { name: '项目环境变量 名称 2', exact: true })
-      .fill('TEMP_SECRET');
-    await variables.getByLabel('variables · TEMP_SECRET', { exact: true }).fill('will-be-cleared');
-    await save();
-    assert.match(await readFile(join(project, '.env'), 'utf8'), /# preserved comment\n/);
-    assert.match(await readFile(join(project, '.env'), 'utf8'), /replacement-private-fixture/);
-    assert.ok(!JSON.stringify(await snapshot()).includes('replacement-private-fixture'));
-    await variables
-      .getByRole('button', { name: '清除 variables · TEMP_SECRET', exact: true })
-      .click();
-    await save();
-    assert.ok(!(await readFile(join(project, '.env'), 'utf8')).includes('TEMP_SECRET='));
-    await captureWindow(app, page, join(output, '05-environment-masked-linux-electron.png'));
+    assert.deepEqual(Object.keys((await json(mcpPath)).mcpServers), ['localRenamed']);
   });
 
   await check('辅助角色、请求预算、缓存回放与 MCP 保留策略', async () => {
@@ -666,20 +625,33 @@ try {
     assert.equal((await json(configPath)).replayToolArguments, false);
   });
 
-  await check('插件列表增删排序与无 Zod 插件的嵌套类型控件', async () => {
+  await check('全局插件列表增删排序与无 Zod 插件的嵌套类型控件', async () => {
     await openSection('configuration-files');
     const entries = await override(form().locator(':scope > fieldset'), 'pluginEntries');
     await entries.getByRole('button', { name: '新增 插件入口', exact: true }).click();
     await entries
+      .getByRole('textbox', { name: '插件入口 1 模块', exact: true })
+      .fill('./unused-first.mjs');
+    await entries.getByRole('checkbox', { name: '插件入口 1 启用', exact: true }).uncheck();
+    await entries.getByRole('button', { name: '新增 插件入口', exact: true }).click();
+    await entries
       .getByRole('textbox', { name: '插件入口 2 模块', exact: true })
-      .fill('./unused.mjs');
+      .fill('./unused-second.mjs');
     await entries.getByRole('checkbox', { name: '插件入口 2 启用', exact: true }).uncheck();
     await entries.getByRole('button', { name: '上移 插件入口 2', exact: true }).click();
     await save();
-    assert.equal((await json(configPath)).pluginEntries[0].enabled, false);
+    assert.deepEqual(
+      (await json(configPath)).pluginEntries.map((entry) => entry.entry),
+      ['./unused-second.mjs', './unused-first.mjs'],
+    );
     await entries.getByRole('button', { name: '删除 插件入口 1', exact: true }).click();
     await save();
-    assert.deepEqual((await json(configPath)).pluginEntries, ['./acceptance.mjs']);
+    assert.deepEqual((await json(configPath)).pluginEntries, [
+      { entry: './unused-first.mjs', enabled: false },
+    ]);
+    await entries.getByRole('button', { name: '删除 插件入口 1', exact: true }).click();
+    await save();
+    assert.deepEqual((await json(configPath)).pluginEntries, []);
     await openSection('configuration-acceptance.provider');
     const group = form().locator(':scope > fieldset');
     await (await override(group, 'count')).getByRole('spinbutton').fill('9');
@@ -736,7 +708,7 @@ try {
       .selectOption('pattern');
     await deny.getByRole('textbox', { name: 'deny 1 目标', exact: true }).fill('rm *');
     await save();
-    assert.deepEqual((await json(configPath)).permissions.ask, ['write_file']);
+    assert.equal((await json(configPath)).permissions.ask, undefined);
     assert.deepEqual((await json(configPath)).permissions.deny, ['bash(rm *)']);
     await openSection('policy-deterministic-config');
     const roots = await override(form().locator(':scope > fieldset'), 'writeRoots');
@@ -756,7 +728,9 @@ try {
   });
 
   await check('全部已注册配置字段和条件分支的真实表单控件覆盖', async () => {
-    const sections = (await snapshot()).runtime.settings.filter((section) => section.editable);
+    const sections = (await snapshot()).globalSettings.settings.filter(
+      (section) => section.editable,
+    );
     const diskBefore = await readFile(configPath, 'utf8');
     for (const section of sections) {
       await openSection(section.id);
@@ -764,7 +738,6 @@ try {
         {
           'configuration-model-catalog': '清空此文件的自定义模型',
           'configuration-mcp-servers': '清空此文件的服务器',
-          'configuration-project-environment': '清空项目环境变量',
         }[section.id] ?? '清除此节的本层覆盖';
       const reset = editor().locator('.settings-advanced > button');
       await revealDetails(reset);
@@ -799,29 +772,31 @@ try {
     });
   });
 
-  await check('当前模型/思考/模式选择即保存，工具审批仍逐次确认', async () => {
-    const quick = page.locator('.settings-quick').filter({ hasText: '外观与当前会话' });
-    await quick.locator(':scope > summary').click();
-    const current = (await snapshot()).runtime;
-    const candidate = current.models.find((model) => model !== current.model) ?? current.model;
-    await page.getByRole('combobox', { name: '设置当前模型', exact: true }).selectOption(candidate);
-    await expect.poll(async () => (await json(configPath)).model).toBe(candidate);
-    await page.getByRole('combobox', { name: '设置当前思考等级', exact: true }).selectOption('low');
-    await expect.poll(async () => (await json(configPath)).thinking).toBe('low');
-    await page.getByRole('combobox', { name: '设置当前权限模式', exact: true }).selectOption('ask');
-    await expect.poll(async () => (await json(configPath)).permissionMode).toBe('ask');
+  await check('聊天区当前模型/思考/模式选择即保存，工具审批仍逐次确认', async () => {
     await showSidebar();
     await page.getByRole('button', { name: '打开项目 settings-project', exact: true }).click();
+    const current = (await snapshot()).runtime;
+    const candidate = current.models.find((model) => model !== current.model) ?? current.model;
+    const model = page.getByRole('combobox', { name: '当前模型', exact: true });
+    await model.selectOption(candidate);
+    await expect(model).toHaveValue(candidate);
+    await expect.poll(async () => (await json(projectConfigPath)).model).toBe(candidate);
+    const thinking = page.getByRole('combobox', { name: '思考等级', exact: true });
+    await thinking.selectOption('low');
+    await expect(thinking).toHaveValue('low');
+    await expect.poll(async () => (await json(projectConfigPath)).thinking).toBe('low');
+    const permission = page.getByRole('combobox', { name: '权限模式', exact: true });
+    await permission.selectOption('ask');
+    await expect(permission).toHaveValue('ask');
+    await expect.poll(async () => (await json(projectConfigPath)).permissionMode).toBe('ask');
     await page.getByRole('textbox', { name: '输入任务', exact: true }).fill('WRITE_FIXTURE');
     await page.getByRole('button', { name: '发送任务', exact: true }).click();
     await expect(page.getByRole('region', { name: '工具审批', exact: true })).toBeVisible();
     await assert.rejects(access(join(project, 'approval-proof.txt')));
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
+    await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
     await expect(
-      editor().getByText('任务结算后可编辑项目设置，现有审批保持待处理。', {
-        exact: true,
-      }),
+      editor().getByRole('heading', { name: '主任务与模型连接（启动默认值）', exact: true }),
     ).toBeVisible();
     assert.equal((await snapshot()).runtime.approvals.length, 1);
     await showSidebar();
@@ -847,7 +822,6 @@ try {
     );
     await captureWindow(app, page, join(output, '07-conversation-linux-electron.png'));
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
   });
 
   await check('主任务选用保存的 Provider/模型，关闭重启后真实采用并加载本地 MCP', async () => {
@@ -862,6 +836,11 @@ try {
     await (await override(group, 'thinking')).getByRole('combobox').selectOption('off');
     await save();
     assert.equal((await snapshot()).runtime.provider, 'acceptance');
+    const projectConfig = await json(projectConfigPath);
+    delete projectConfig.provider;
+    delete projectConfig.model;
+    delete projectConfig.thinking;
+    await store(projectConfigPath, projectConfig);
     await app.close();
     app = undefined;
     await launch();
@@ -894,14 +873,13 @@ try {
     assert.ok(
       state.runtime.tools.some((tool) => /localRenamed.*add|add.*localRenamed/.test(tool.name)),
     );
-    assert.deepEqual((await json(configPath)).future, { preserve: 'fixture-metadata' });
+    assert.deepEqual((await json(projectConfigPath)).future, { preserve: 'fixture-metadata' });
     assert.equal((await json(configPath)).externalEdit, true);
     await page.getByRole('textbox', { name: '输入任务', exact: true }).fill('offline hello');
     await page.getByRole('button', { name: '发送任务', exact: true }).click();
     await expect(page.getByText('[fake connection offlineRenamed]', { exact: true })).toBeVisible();
     await expect.poll(async () => (await snapshot()).runtime.busy).toBe(false);
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
     await openSection('configuration-model-catalog');
     await selectTheme('dark');
     await editor().evaluate((node) => {
@@ -910,15 +888,13 @@ try {
     await captureWindow(app, page, join(output, '08-models-dark-linux-electron.png'));
   });
 
-  await check('项目会话保存、新建、恢复与删除', async () => {
-    let sessions = page.locator('.settings-quick').filter({ hasText: '项目与会话管理' });
-    await sessions.locator(':scope > summary').click();
-    await sessions.getByRole('button', { name: '保存当前会话', exact: true }).click();
+  await check('聊天侧栏会话保存、新建与恢复', async () => {
+    await showSidebar();
     const oldId = (await snapshot()).runtime.sessionId;
     await expect
       .poll(async () => (await snapshot()).runtime.sessions.some((s) => s.id === oldId))
       .toBe(true);
-    await sessions.getByRole('button', { name: '重新装配并新建会话', exact: true }).click();
+    await page.locator('.nav-new').click();
     await waitForNewSession(oldId);
     await page
       .getByRole('textbox', { name: '输入任务', exact: true })
@@ -926,25 +902,25 @@ try {
     await page.getByRole('button', { name: '发送任务', exact: true }).click();
     await expect.poll(async () => (await snapshot()).runtime.busy).toBe(false);
     const secondId = (await snapshot()).runtime.sessionId;
-    await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-    sessions = page.locator('.settings-quick').filter({ hasText: '项目与会话管理' });
-    await sessions.locator(':scope > summary').click();
-    await sessions
-      .locator(`[data-session-id="${oldId}"]`)
-      .getByRole('button', { name: '恢复', exact: true })
-      .click();
-    await expect.poll(async () => (await snapshot()).runtime.sessionId).toBe(oldId);
-    await sessions
-      .locator(`[data-session-id="${secondId}"]`)
-      .getByRole('button', { name: '删除记录', exact: true })
-      .click();
     await expect
       .poll(async () => (await snapshot()).runtime.sessions.some((s) => s.id === secondId))
-      .toBe(false);
+      .toBe(true);
+    await page
+      .locator('.session-list')
+      .getByRole('button')
+      .filter({ hasText: 'offline hello' })
+      .click();
+    await expect.poll(async () => (await snapshot()).runtime.sessionId).toBe(oldId);
+    await expect(
+      page
+        .locator('.session-list')
+        .getByRole('button')
+        .filter({ hasText: 'second offline session' }),
+    ).toBeVisible();
   });
 
   await check('主题受控 IPC、保存失败反馈和原值保留', async () => {
+    await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
     const prefs = join(
       await app.evaluate(({ app }) => app.getPath('userData')),
       'desktop-preferences.json',
@@ -998,7 +974,7 @@ try {
     await expect(form().getByRole('spinbutton', { name: '最大轮数', exact: true })).toHaveValue(
       '99',
     );
-    assert.equal((await json(configPath)).maxTurns, undefined);
+    assert.equal((await json(configPath)).maxTurns, layoutOnly ? undefined : 27);
     await editor().getByRole('button', { name: '放弃更改', exact: true }).click();
     await app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
@@ -1007,9 +983,10 @@ try {
     });
     // 真实 BrowserWindow 和 Chromium 缩放；原本打开的辅助面板必须收合。
     await expect(page.locator('.configuration-nav > details[open]')).toHaveCount(0);
-    await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).scrollIntoViewIfNeeded();
-    await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).uncheck();
-    await form().getByRole('checkbox', { name: '覆盖 缓存', exact: true }).check();
+    const cacheEnabled = form().getByRole('combobox', { name: '启用', exact: true });
+    await cacheEnabled.scrollIntoViewIfNeeded();
+    await cacheEnabled.selectOption('true');
+    await cacheEnabled.selectOption('false');
     const actions = await editor().locator('.configuration-actions').boundingBox(),
       viewport = { height: await page.evaluate(() => innerHeight) };
     assert.ok(
@@ -1087,7 +1064,7 @@ try {
       phase: s?.runtime?.phase,
       error: s?.error,
       runtimeError: s?.runtime?.error,
-      section: s?.runtime?.settingsEditor?.sectionId,
+      section: s?.globalSettings?.settingsEditor?.sectionId,
     });
   }
   await store(

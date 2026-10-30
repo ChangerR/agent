@@ -27,10 +27,25 @@ import type { Plugin } from '../sdk/index.js';
 import { subagentsPlugin } from './subagents/index.js';
 import { SUBAGENT_PLUGIN, SUBAGENT_TOOLS } from './subagents/identity.js';
 export function defaultPreset(input: PresetContext): Preset {
+  return composePreset(input, [
+    ...providerPlugins(input.config, input.resolveCredential),
+    providerConnectionsPlugin(
+      input.cwd,
+      input.config,
+      input.resolveCredential,
+      input.settingsGlobalOnly,
+    ),
+  ]);
+}
+/** 不同宿主只替换 provider 装配；共享工具、策略、会话和插件生命周期。 */
+export function composePreset(
+  input: PresetContext,
+  modelPlugins: readonly Plugin[],
+  overrides: { modelCatalog?: Plugin } = {},
+): Preset {
   const { cwd, config, services } = input;
   const plugins: Plugin[] = [
-    ...providerPlugins(config, input.resolveCredential),
-    providerConnectionsPlugin(cwd, config, input.resolveCredential, input.settingsGlobalOnly),
+    ...modelPlugins,
     createLocalToolsPlugin(
       config.pluginEntries
         .filter((entry) => typeof entry === 'string' || entry.enabled)
@@ -43,7 +58,7 @@ export function defaultPreset(input: PresetContext): Preset {
     createContextDefaultPlugin(),
     createCompactionSummaryPlugin(input),
     createCachePrefixPlugin(),
-    createModelCatalogPlugin(loadModelsFile(config.modelsFile)),
+    overrides.modelCatalog ?? createModelCatalogPlugin(loadModelsFile(config.modelsFile)),
     createSessionFilePlugin(),
     createTelemetryJsonlPlugin({
       path: input.logPath,

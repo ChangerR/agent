@@ -99,6 +99,131 @@ describe('原子完成并启动步骤', () => {
   });
 });
 
+describe('显式继续的状态迁移', () => {
+  it('重开未完成步骤并保留完成证据、children 与真实进度，旧 revision 仍失效', () => {
+    const plan = new PlanController(new EventBus());
+    plan.create('目标', ['已完成', '阻塞', '取消', '中断', '待办'], 'auto');
+    let p = plan.snapshot!;
+    plan.update(p.revision, { stepId: p.steps[0].id, status: 'running' });
+    plan.toolStarted('complete');
+    plan.toolFinished('complete', false, '完成结果');
+    plan.update(plan.snapshot!.revision, {
+      stepId: p.steps[0].id,
+      status: 'completed',
+      evidence: '保留这份完成证据',
+    });
+    plan.bindChild(p.steps[1].id, { agentId: 'child', runId: 'run', name: '子任务' });
+    plan.update(plan.snapshot!.revision, { stepId: p.steps[1].id, status: 'running' });
+    plan.toolStarted('successful');
+    plan.toolFinished('successful', false, '真实成功');
+    plan.update(plan.snapshot!.revision, {
+      stepId: p.steps[1].id,
+      status: 'blocked',
+      reason: '等待处理',
+    });
+    plan.update(plan.snapshot!.revision, { stepId: p.steps[2].id, status: 'running' });
+    plan.stop('cancelled', '用户取消');
+    plan.resume();
+    plan.update(plan.snapshot!.revision, {
+      stepId: p.steps[1].id,
+      status: 'blocked',
+      reason: '再次阻塞',
+    });
+    plan.update(plan.snapshot!.revision, { stepId: p.steps[3].id, status: 'running' });
+    plan.stop('interrupted', '执行中断');
+    plan.deny('用户拒绝');
+    const before = plan.snapshot!;
+    const generation = plan.generation;
+    const denialGeneration = plan.denialGeneration;
+    const completed = before.steps[0];
+    const children = before.steps[1].children;
+
+    plan.resume();
+
+    expect(plan.snapshot).toMatchObject({
+      phase: 'executing',
+      activeStepId: p.steps[1].id,
+      denialReason: undefined,
+      reason: undefined,
+      steps: [
+        { status: 'completed', evidence: '保留这份完成证据' },
+        { status: 'running', reason: undefined, children },
+        { status: 'pending', reason: undefined },
+        { status: 'pending', reason: undefined },
+        { status: 'pending' },
+      ],
+    });
+    expect(plan.snapshot!.steps[0]).toEqual(completed);
+    expect(plan.stepProgress).toEqual({ stepId: p.steps[1].id, successfulCalls: 1 });
+    expect(plan.generation).toBe(generation + 1);
+    expect(plan.denialGeneration).toBe(denialGeneration + 1);
+    expect(() =>
+      plan.update(before.revision, { stepId: p.steps[2].id, status: 'running' }),
+    ).toThrow('plan_stale');
+  });
+
+  it('only 继续不自动启动实施步骤', () => {
+    const plan = new PlanController(new EventBus());
+    plan.create('只出方案', ['实施一', '实施二'], 'only');
+    const p = plan.snapshot!;
+    plan.update(p.revision, { stepId: p.steps[0].id, status: 'running' });
+    plan.stop('cancelled', '等待用户修订');
+
+    plan.resume();
+
+    expect(plan.snapshot).toMatchObject({
+      phase: 'planning',
+      activeStepId: undefined,
+      steps: [{ status: 'pending' }, { status: 'pending' }],
+    });
+    expect(plan.current).toBeUndefined();
+  });
+
+  it('无计划与已完成计划仍拒绝继续', () => {
+    const plan = new PlanController(new EventBus());
+    expect(() => plan.resume()).toThrow('No plan');
+    plan.create('目标', ['完成'], 'auto');
+    const id = plan.snapshot!.steps[0].id;
+    plan.update(plan.snapshot!.revision, { stepId: id, status: 'running' });
+    plan.toolStarted('done');
+    plan.toolFinished('done', false, '完成');
+    plan.update(plan.snapshot!.revision, { stepId: id, status: 'completed', evidence: '真实结果' });
+    const before = plan.snapshot;
+    expect(() => plan.resume()).toThrow('already complete');
+    expect(plan.snapshot).toEqual(before);
+  });
+});
+
+describe('并行工具结算与阻塞原因', () => {
+  it('失败后成功不清除阻塞原因，显式重试后的成功才清除', () => {
+    const { plan, first } = fixture();
+    plan.toolStarted('failed');
+    plan.toolStarted('succeeded');
+    plan.toolFinished('failed', true, '并行调用失败');
+    plan.toolFinished('succeeded', false, '另一调用成功');
+    expect(plan.snapshot!.steps[0]).toMatchObject({
+      status: 'blocked',
+      reason: '并行调用失败',
+    });
+
+    plan.update(plan.snapshot!.revision, { stepId: first.id, status: 'running' });
+    plan.waiting('等待显式重试');
+    plan.toolStarted('retry');
+    plan.toolFinished('retry', false, '重试成功');
+    expect(plan.snapshot!.steps[0]).toMatchObject({ status: 'running', reason: undefined });
+    expect(plan.stepProgress).toEqual({ stepId: first.id, successfulCalls: 2 });
+  });
+
+  it('成功后失败保留最后的失败原因', () => {
+    const { plan } = fixture();
+    plan.toolStarted('succeeded');
+    plan.toolStarted('failed');
+    plan.toolFinished('succeeded', false, '先行成功');
+    plan.toolFinished('failed', true, '随后失败');
+    expect(plan.snapshot!.steps[0]).toMatchObject({ status: 'blocked', reason: '随后失败' });
+  });
+});
+
 describe('收窄计划与真实进度', () => {
   it('可删除已结算的当前未完成步骤，清理 activeStepId 且只发布一次修订', () => {
     const { plan, events, second } = fixture();

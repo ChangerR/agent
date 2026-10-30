@@ -33,7 +33,7 @@ export function getBridge(): DesktopBridge {
     pickDirectory: async () => (await call('pick-directory')).path,
     openProject: (id) => call('open-project', { id }),
     startDemo: () => call('demo'),
-    newSession: () => call('new-session'),
+    newSession: (options) => call('new-session', options),
     request: (action) => call('request', action),
   };
 }

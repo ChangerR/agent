@@ -160,7 +160,7 @@ export function providerPlugins(
             .string()
             .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
             .optional(),
-          dialect: z.enum(['auto', 'generic', 'deepseek']).default('auto'),
+          dialect: z.enum(['auto', 'generic', 'deepseek', 'kimi']).default('auto'),
           models: ProviderModelsSchema,
         }),
         ownedFields: ['dialect', 'models', 'apiKeyRef', 'apiKeyEnv'],
@@ -176,7 +176,7 @@ export function providerPlugins(
           'openai',
           new OpenAIProvider({
             models: ctx.config.value.models as Record<string, ModelCapabilities>,
-            dialect: ctx.config.value.dialect as 'auto' | 'generic' | 'deepseek',
+            dialect: ctx.config.value.dialect as 'auto' | 'generic' | 'deepseek' | 'kimi',
             apiKeyEnv,
             apiKeyResolver: ref
               ? (endpoint) =>

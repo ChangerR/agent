@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage } from 'electron';
 import { homedir } from 'node:os';
 import { CredentialVault, CredentialSettings } from './credentials.js';
+import { ModelSetupSettings, ModelSetupError } from './model-setup.js';
+import { settingsErrorMessage } from '../../src/runtime/config-store.js';
 import { loadConfigWithSources } from '../../src/core/config.js';
 import { desktopMenu, platformWindowOptions } from './platform.js';
 import { delimiter, join, resolve } from 'node:path';
@@ -8,6 +10,21 @@ import { realpath, stat, readFile, writeFile, mkdir, rename, rm } from 'node:fs/
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { WorkerHost } from './worker-host.js';
+import type { RuntimeHost } from './runtime-host.js';
+import { SshHost } from './ssh-host.js';
+import { BrokerHost } from './broker-host.js';
+import { listRemoteDirectories } from './remote-directories.js';
+import { inspectRemoteHost } from './remote-host-profile.js';
+import { createLocalProjectDirectory, createRemoteProjectDirectory } from './create-project.js';
+import { selectSessionProject } from './session-target.js';
+import {
+  sshHostInputSchema,
+  openRemoteProjectSchema,
+  newProjectSchema,
+  type SshProjectInput,
+} from '../remote/protocol.js';
+import type { ProviderDescription } from '../../src/providers/semantics.js';
+import { ProviderConnectionsSchema } from '../../src/builtin/provider-connections.js';
 import { ProjectCatalog } from './project-catalog.js';
 import { resolveProjectRoot } from '../../src/core/paths.js';
 import {
@@ -19,12 +36,13 @@ import {
 } from '../shared/protocol.js';
 
 let window: BrowserWindow;
-let host: WorkerHost | undefined;
+let host: RuntimeHost | undefined;
 let globalHost: WorkerHost | undefined;
 let vault: CredentialVault;
 let credentials: CredentialSettings;
 let generation: string | undefined;
 let transition = false;
+let creatingProject = false;
 let exiting = false;
 let closing = false;
 let quitting = false;
@@ -78,6 +96,7 @@ async function startGlobalSettings() {
 function publish() {
   catalog.observe(state.runtime);
   state.projects = catalog.projects;
+  state.remoteHosts = catalog.remoteHosts;
   state.revision++;
   if (window && !window.isDestroyed()) window.webContents.send('agentlab:state', state);
 }
@@ -88,6 +107,7 @@ async function readPreferences() {
     preferencesRaw = value;
     if (['system', 'light', 'dark', 'blue'].includes(value.theme)) state.theme = value.theme;
     state.projects = catalog.projects;
+    state.remoteHosts = catalog.remoteHosts;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
       state.error = '桌面偏好读取失败；项目配置与会话未修改。';
@@ -98,6 +118,7 @@ async function savePreferences(failure = '项目已打开，但项目列表与�
   const contents = JSON.stringify({
     ...preferencesRaw,
     projects: catalog.projects,
+    remoteHosts: catalog.remoteHosts,
     theme: state.theme,
   });
   const save = preferencesQueue.then(async () => {
@@ -159,6 +180,7 @@ async function start(path: string, demo = false, fresh = false) {
       env,
       (snapshot: RuntimeSnapshot) => {
         if (snapshot.generation !== generation) return;
+        snapshot.projectId = cwd;
         state.runtime = snapshot;
         state.connecting = false;
         publish();
@@ -202,6 +224,123 @@ async function start(path: string, demo = false, fresh = false) {
   } catch (error) {
     state.error = error instanceof Error ? error.message : '打开项目失败';
     throw error;
+  } finally {
+    transition = false;
+    state.connecting = false;
+    publish();
+  }
+}
+async function startRemote(input: SshProjectInput, fresh = false, hostId?: string) {
+  if (transition) throw new Error('项目正在切换');
+  if (state.runtime?.busy) throw new Error('请先停止当前任务并等待结算，再切换项目。');
+  const existing = catalog.projects.find(
+    (p) => p.remote?.target === input.target && p.path === input.path,
+  );
+  const profile = catalog.getHost(hostId ?? existing?.remoteHostId ?? '');
+  if (!profile || profile.target !== input.target)
+    throw new Error('请先添加 SSH 主机，再打开项目。');
+  if (!fresh && existing?.id === state.runtime?.projectId && state.runtime?.remote?.connected)
+    return;
+  transition = true;
+  state.connecting = true;
+  state.error = undefined;
+  publish();
+  const node = join(root, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
+  let broker: BrokerHost | undefined, remote: SshHost | undefined;
+  try {
+    await host?.dispose();
+    await savePreferences();
+    host = undefined;
+    state.runtime = undefined;
+    const config = loadConfigWithSources(homedir(), {}, { globalOnly: true }).config;
+    broker = new BrokerHost(node, join(root, 'broker/index.mjs'));
+    let projectId = existing?.id;
+    remote = new SshHost({
+      project: input,
+      archive: join(root, 'remote/linux-x64.tgz'),
+      expectedIdentity: profile.identity ?? existing?.remoteIdentity,
+      remoteHome: process.env.AGENTLAB_REMOTE_TEST_HOME,
+      defaults: { provider: config.provider, model: config.model },
+      broker,
+      configure: async (workspace) => {
+        const mappings = { ...input.mappings };
+        if (mappings.$default) {
+          const selected = mappings.$default;
+          delete mappings.$default;
+          for (const required of workspace.requirements) mappings[required.name] ??= selected;
+        }
+        if (workspace.requirements.length === 1 && !mappings[workspace.requirements[0].name])
+          mappings[workspace.requirements[0].name] = config.provider;
+        const credentials = vault.resolve(
+          config,
+          workspace.requirements.map((r) => mappings[r.name] ?? r.name),
+        );
+        const descriptions = await broker!.request<ProviderDescription[]>('configure', {
+          config,
+          requirements: workspace.requirements,
+          mappings,
+          credentials,
+        });
+        const entry = catalog.openRemote(
+          { ...input, path: workspace.root, mappings },
+          remote!.identity,
+          profile.id,
+        );
+        projectId = entry.id;
+        return descriptions;
+      },
+      onState: (snapshot) => {
+        if (generation !== remote!.generation) return;
+        snapshot.projectId = projectId;
+        snapshot.remote = { target: input.target, path: snapshot.cwd, connected: true };
+        state.runtime = snapshot;
+        state.connecting = false;
+        publish();
+      },
+      onExit: () => {
+        if (generation !== remote!.generation) return;
+        state.error = 'SSH 连接中断。远程状态待确认；重连后检查会话，不会自动重试工具。';
+        state.connecting = false;
+        if (state.runtime) {
+          state.runtime.busy = false;
+          state.runtime.phase = '连接中断';
+          state.runtime.approvals = [];
+          state.runtime.interaction = undefined;
+          if (state.runtime.remote) state.runtime.remote.connected = false;
+        }
+        publish();
+      },
+      onStatus: (message) => {
+        state.connectionStatus = message;
+        publish();
+      },
+    });
+    generation = remote.generation;
+    host = remote;
+    await remote.connect();
+    if (!fresh && existing?.lastSessionId && state.runtime) {
+      const snapshot = state.runtime as RuntimeSnapshot;
+      await remote.request({
+        type: 'resume',
+        generation: remote.generation,
+        sessionId: snapshot.sessionId,
+        id: existing.lastSessionId,
+      });
+    }
+    await savePreferences();
+  } catch (e) {
+    await remote?.dispose().catch(() => {});
+    if (e instanceof Error && e.message === 'ABORTED') {
+      state.error = undefined;
+      state.connectionStatus = '连接已取消';
+      throw new Error('远程连接已取消。');
+    }
+    broker?.close();
+    state.error =
+      '远程连接失败（' +
+      (e instanceof Error && /^[A-Z_]+$/.test(e.message) ? e.message : 'SSH_SETUP_FAILED') +
+      '）。请检查 SSH 信任、服务包和本机模型映射。';
+    throw new Error(state.error);
   } finally {
     transition = false;
     state.connecting = false;
@@ -335,6 +474,22 @@ app
     await readPreferences();
     vault = new CredentialVault(safeStorage);
     credentials = new CredentialSettings(vault);
+    const modelSetup = new ModelSetupSettings(vault);
+    const modelSetupRequest = (action: () => unknown) => {
+      try {
+        return action();
+      } catch (error) {
+        throw new Error(
+          error instanceof ModelSetupError ? error.message : settingsErrorMessage(error),
+        );
+      }
+    };
+    register('agentlab:model-setup-read', async (payload) =>
+      modelSetupRequest(() => modelSetup.read(payload)),
+    );
+    register('agentlab:model-setup-save', async (payload) =>
+      modelSetupRequest(() => modelSetup.save(payload)),
+    );
     register('agentlab:global-settings', async (payload) => {
       await startGlobalSettings();
       await globalHost!.request({
@@ -377,12 +532,25 @@ app
       themeQueue = save.catch(() => {});
       await save;
     });
-    register('agentlab:pick-project', async () => {
+    register('agentlab:pick-project', async (payload) => {
+      if (
+        payload !== undefined &&
+        (!payload ||
+          typeof payload !== 'object' ||
+          Object.keys(payload).some((k) => k !== 'newSession') ||
+          ('newSession' in payload && typeof payload.newSession !== 'boolean'))
+      )
+        throw new Error('无效项目选择。');
       const selection = await dialog.showOpenDialog(window, {
         title: '打开 agentlab 项目',
         properties: ['openDirectory'],
       });
-      if (!selection.canceled && selection.filePaths[0]) await start(selection.filePaths[0]);
+      if (!selection.canceled && selection.filePaths[0])
+        await start(
+          selection.filePaths[0],
+          false,
+          !!(payload as { newSession?: boolean } | undefined)?.newSession,
+        );
     });
     register('agentlab:pick-directory', async () => {
       const selection = await dialog.showOpenDialog(window, {
@@ -394,15 +562,117 @@ app
       if (!(await stat(path)).isDirectory()) throw new Error('请选择目录。');
       return path;
     });
+    register('agentlab:pick-remote-directory', async (payload) => {
+      try {
+        const request = openRemoteProjectSchema
+          .pick({ hostId: true })
+          .extend({ path: openRemoteProjectSchema.shape.path.optional() })
+          .strict()
+          .parse(payload);
+        const profile = catalog.getHost(request.hostId);
+        if (!profile) throw new Error('HOST_NOT_FOUND');
+        const inspected = await inspectRemoteHost({ target: profile.target });
+        if (profile.identity && profile.identity !== inspected.identity)
+          throw new Error('HOST_TARGET_CHANGED');
+        return await listRemoteDirectories({
+          target: profile.target,
+          path: request.path ?? profile.home,
+        });
+      } catch {
+        throw new Error('远程目录读取失败，请检查 SSH 主机、路径和权限。');
+      }
+    });
     register('agentlab:open-project', async (payload) => {
       const project = typeof payload === 'string' ? catalog.get(payload) : undefined;
       if (!project) throw new Error('项目不在列表中，请重新选择文件夹。');
-      await start(project.path, project.demo);
+      if (project.remote) await startRemote(project.remote, false, project.remoteHostId);
+      else await start(project.path, project.demo);
+    });
+    register('agentlab:add-remote-host', async (payload) => {
+      const request = sshHostInputSchema.parse(payload);
+      const inspected = await inspectRemoteHost(request);
+      const previous = catalog.remoteHosts;
+      catalog.addHost({
+        ...inspected,
+        home: process.env.AGENTLAB_REMOTE_TEST_HOME ?? inspected.home,
+      });
+      if (!(await savePreferences('SSH 主机保存失败，请检查应用数据目录。'))) {
+        catalog.restore({ projects: catalog.projects, remoteHosts: previous });
+        publish();
+        throw new Error('SSH 主机未保存。');
+      }
+      publish();
+    });
+    register('agentlab:open-remote-project', async (payload) => {
+      const request = openRemoteProjectSchema.parse(payload);
+      const profile = catalog.getHost(request.hostId);
+      if (!profile) throw new Error('主机不存在，请先添加主机。');
+      await startRemote(
+        { target: profile.target, path: request.path, mappings: request.mappings },
+        request.newSession ?? false,
+        profile.id,
+      );
+    });
+    register('agentlab:create-project', async (payload) => {
+      const parsed = newProjectSchema.safeParse(payload);
+      if (!parsed.success) throw new Error('请填写有效的父目录与项目名称。');
+      const request = parsed.data;
+      if (transition || creatingProject || state.runtime?.busy)
+        throw new Error('请先等待当前会话结算。');
+      creatingProject = true;
+      try {
+        if (request.location === 'local') {
+          const path = await createLocalProjectDirectory(request);
+          await start(path, false, true);
+        } else {
+          const profile = catalog.getHost(request.hostId!);
+          if (!profile) throw new Error('请先添加主机。');
+          const inspected = await inspectRemoteHost({ target: profile.target });
+          if (profile.identity && profile.identity !== inspected.identity)
+            throw new Error('HOST_TARGET_CHANGED');
+          const path = await createRemoteProjectDirectory(profile.target, request);
+          await startRemote({ target: profile.target, path, mappings: {} }, true, profile.id);
+        }
+      } catch (e) {
+        if (
+          (e as NodeJS.ErrnoException).code === 'EEXIST' ||
+          (e instanceof Error && e.message === 'PROJECT_ALREADY_EXISTS')
+        )
+          throw new Error('项目目录已存在，请选择已有项目或更换名称。');
+        throw e;
+      } finally {
+        creatingProject = false;
+      }
+    });
+    register('agentlab:cancel-remote-project', async () => {
+      if (transition && host instanceof SshHost) {
+        host.cancelConnect();
+        if (state.runtime?.remote) {
+          state.runtime.remote.connected = false;
+          state.runtime.busy = false;
+          state.runtime.approvals = [];
+          state.runtime.phase = '连接已取消';
+        }
+        publish();
+      }
+    });
+    register('agentlab:remote-connections', async () => {
+      const c = loadConfigWithSources(homedir(), {}, { globalOnly: true }).config;
+      const entries = ProviderConnectionsSchema.parse(
+        c.pluginConfig['agentlab.provider-connections'] ?? {},
+      ).connections;
+      return [
+        { id: c.provider, model: c.model, label: c.provider },
+        ...Object.entries(entries)
+          .filter(([, v]) => v.enabled)
+          .map(([id, v]) => ({ id, model: c.model, label: v.displayName ?? id })),
+      ].filter((v, i, all) => all.findIndex((x) => x.id === v.id) === i);
     });
     register('agentlab:demo', async () => demo());
-    register('agentlab:new-session', async () => {
-      if (!state.runtime) throw new Error('请先打开项目');
-      await start(state.runtime.cwd, state.runtime.demo, true);
+    register('agentlab:new-session', async (payload) => {
+      const project = selectSessionProject(catalog, state.runtime, payload);
+      if (project.remote) await startRemote(project.remote, true, project.remoteHostId);
+      else await start(project.path, project.demo, true);
     });
     register('agentlab:request', async (payload) => {
       if (transition || !host) throw new Error('请先打开项目');

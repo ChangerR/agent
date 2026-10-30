@@ -6,5 +6,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["main", "preload", "shared", "worker", "renderer"]
+  "include": ["main", "preload", "shared", "worker", "renderer", "remote"]
 }

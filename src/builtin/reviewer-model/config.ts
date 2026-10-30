@@ -1,9 +1,9 @@
-/** 审批不缓存批准结果；thinking 省略时保留现有厂商默认，不自动降质。 */
+/** 审批不缓存批准结果；thinking 默认关闭，显式配置仍可覆盖。 */
 import { z } from 'zod';
 export const ReviewerConfigSchema = z.object({
   provider: z.string().min(1).optional(),
   model: z.string().optional(),
-  thinking: z.enum(['off', 'low', 'medium', 'high']).optional(),
+  thinking: z.enum(['off', 'low', 'medium', 'high']).default('off'),
   timeoutMs: z.number().int().min(1).max(300000).default(30000),
   maxRequestBytes: z.number().int().min(1).max(1048576).default(32768),
   maxResponseBytes: z.number().int().min(1).max(65536).default(65536),

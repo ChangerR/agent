@@ -64,6 +64,8 @@ export class GlobalSettingsController {
         setModel: unavailable,
         thinking: unavailable,
         setThinking: unavailable,
+        thinkingLevels: unavailable,
+        compatibleThinking: unavailable,
         models: unavailable,
         permission: unavailable,
         session: unavailable,
