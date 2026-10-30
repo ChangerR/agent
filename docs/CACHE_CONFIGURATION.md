@@ -26,7 +26,7 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agentlab.planning`           | `mode=auto`；`provider`、`model`、`thinking` 省略时继承当前主模型；`maxOutputTokens` 省略时调用使用 `4096`；`maxRequestBytes` 可选。                                                                                   |
 | `agentlab.compaction-summary` | `provider`、`model` 省略时继承执行路由；`thinking` 省略时保留厂商默认；`maxOutputTokens=2048`；`maxRequestBytes` 可选；`strategy=isolated`。                                                                           |
-| `agentlab.reviewer-model`     | `provider` 省略时跟随当前 provider；`model` 省略时沿用 `judgeModel`，空字符串跟随主模型；`thinking` 省略时保留厂商默认；`maxOutputTokens=8192`、`maxRequestBytes=32768`、`maxResponseBytes=65536`、`timeoutMs=30000`。 |
+| `agentlab.reviewer-model`     | `provider` 省略时跟随当前 provider；`model` 省略时沿用 `judgeModel`，空字符串跟随主模型；`thinking=off`，可显式覆盖；`maxOutputTokens=8192`、`maxRequestBytes=32768`、`maxResponseBytes=65536`、`timeoutMs=30000`。 |
 
 所有输出均受实际路由的模型上限约束。所有角色共用最终请求 token 检查，字节上限另行检查。
 容量未知时不会假装已证明请求可容纳；缺省输出预留明确设为 8192。Thinking 扩大后的输出超过模型上限时拒绝请求，不自动降低质量。

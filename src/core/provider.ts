@@ -7,8 +7,10 @@
 import type { Message, StreamEvent, ToolDefinition, StopReason } from './protocol/types.js';
 import { cacheUsage, emptyUsage, mergeUsage, type TokenUsage } from './protocol/types.js';
 import { randomUUID } from 'node:crypto';
+import { ResponseTrace, modelErrorCode } from './protocol/response-trace.js';
 import type { EventBus } from './events.js';
 import type { ModelInfo } from './config.js';
+import type { ProviderTrace } from './protocol/transport.js';
 import {
   prepareModelRequest,
   type RequestEstimate,
@@ -78,7 +80,7 @@ export interface Provider {
   requestBytes?(req: ChatRequest): number;
   /** 适配器可按最终协议估算实际输入及输出预算，尤其是额外 thinking 预留。 */
   estimateRequest?(req: ChatRequest): RequestEstimate;
-  stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent>;
+  stream(req: ChatRequest, signal: AbortSignal, trace?: ProviderTrace): AsyncIterable<StreamEvent>;
 }
 
 /** 角色独立于事件用途，planner 不再与主循环用量混在一起。 */
@@ -123,6 +125,9 @@ export async function* observedStream(
   const startedAt = performance.now();
   let ttftMs: number | undefined;
   const reportedUsage: Partial<TokenUsage> = {};
+  const response = new ResponseTrace();
+  let failed = false;
+  let errorCode: string | undefined;
   let usageReported = false;
   const modelRole = trace.modelRole ?? (trace.purpose === 'agent' ? 'main' : trace.purpose);
   const size = requestSize(req);
@@ -139,7 +144,11 @@ export async function* observedStream(
     request: structuredClone(req),
   });
   try {
-    for await (const event of provider.stream(req, signal)) {
+    for await (const event of provider.stream(req, signal, {
+      onTransport: (transport) =>
+        trace.events.emit({ type: 'model_transport', requestId, runId: trace.runId, transport }),
+    })) {
+      response.push(event);
       if (
         ttftMs === undefined &&
         [
@@ -157,7 +166,20 @@ export async function* observedStream(
       }
       yield event;
     }
+  } catch (error) {
+    failed = true;
+    errorCode = modelErrorCode(error);
+    throw error;
   } finally {
+    trace.events.emit({
+      type: 'model_response',
+      requestId,
+      runId: trace.runId,
+      response: response.finish(
+        signal.aborted ? 'aborted' : failed ? 'error' : undefined,
+        errorCode,
+      ),
+    });
     trace.events.emit({
       type: 'model_usage',
       requestId,

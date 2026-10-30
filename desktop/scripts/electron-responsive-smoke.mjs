@@ -95,16 +95,8 @@ try {
   await expect.poll(async () => !!(await snapshot()).globalSettings).toBe(true);
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
   await expect(page.locator('.configuration-editor form')).toBeVisible();
-  // 通过真正目录 IPC 打开隔离项目，使全局/项目作用域都能实际切换。
-  await page.getByRole('button', { name: '返回工作区', exact: true }).click();
-  const show = page.getByRole('button', { name: '显示侧栏', exact: true });
-  if (await show.isVisible()) await show.click();
-  await app.evaluate(({ dialog }, path) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
-  }, project);
-  await page.locator('.sidebar').getByRole('button', { name: '添加本地项目', exact: true }).click();
-  await expect.poll(async () => (await snapshot()).runtime?.phase).toBe('就绪');
-  await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+  await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
+  await page.locator('.settings-advanced-nav > summary').click();
   for (const [name, width, height, zoom] of [
     ['desktop', 1440, 960, 1],
     ['narrow', 900, 700, 1],
@@ -146,7 +138,13 @@ try {
       await page.getByRole('textbox', { name: '查找设置页面', exact: true }).fill('');
     }
     rows.push(
-      await bounds(page.getByRole('combobox', { name: '配置作用域', exact: true }), 'scope'),
+      await bounds(
+        page.locator('.settings-appearance').getByRole('combobox', {
+          name: '设置界面主题',
+          exact: true,
+        }),
+        'theme',
+      ),
     );
     for (const label of ['服务连接', '默认模型', '思考等级'])
       rows.push(
@@ -185,14 +183,11 @@ try {
   await expect
     .poll(async () => JSON.parse(await readFile(join(home, '.agentlab/config.json'), 'utf8')).model)
     .toBe('offline-responsive-model');
-  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-  await expect.poll(async () => (await snapshot()).runtime.settingsEditor?.scope).toBe('project');
-  await bounds(page.getByRole('combobox', { name: '配置作用域', exact: true }), 'project scope');
-  await bounds(page.getByLabel('默认模型', { exact: true }), 'project inherited model');
-  await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
+  await expect(model).toHaveValue('offline-responsive-model');
   await expect
     .poll(async () => (await snapshot()).globalSettings.settingsEditor?.scope)
     .toBe('global');
+  assert.equal((await snapshot()).runtime, undefined);
   await page.locator('.configuration-scroll').evaluate((e) => {
     e.scrollTop = 0;
   });
@@ -215,7 +210,7 @@ try {
     ) + '\n',
   );
   console.log(
-    'PASS native Electron desktop/narrow/125%, complete window capture, all control bounds/clicks, scope switching and global save',
+    'PASS native Electron desktop/narrow/125%, complete window capture, all control bounds/clicks and global save',
   );
 } catch (error) {
   await writeFile(join(out, 'failure.txt'), String(error) + '\n');

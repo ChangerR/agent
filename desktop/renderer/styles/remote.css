@@ -1,0 +1,201 @@
+.remote-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(0 0 0 / 35%);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.remote-dialog {
+  box-sizing: border-box;
+  width: min(540px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.remote-dialog h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+.remote-dialog p {
+  line-height: 1.6;
+}
+.remote-dialog label {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+}
+.remote-path-field {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+  font-size: 14px;
+}
+.remote-path-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.remote-path-control > button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+.remote-path-field > .small {
+  margin: 0;
+}
+.remote-path-field > label {
+  margin: 0;
+}
+.remote-dialog input,
+.remote-dialog select,
+.remote-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  background: inherit;
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.remote-dialog textarea {
+  min-height: 90px;
+  font-family: monospace;
+}
+.remote-identity {
+  font-size: 12px;
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-host-cards {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.remote-host-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.remote-host-info {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+.remote-host-info code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.remote-project-picker {
+  width: min(680px, 100%);
+}
+.remote-directory-list {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 120px;
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 12px;
+  padding: 6px;
+}
+.remote-directory-entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  border-radius: 4px;
+  text-align: left;
+}
+.remote-directory-entry:hover {
+  background: var(--tint);
+}
+.remote-directory-entry span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.remote-selected-path {
+  overflow-wrap: anywhere;
+}
+.new-session-dialog {
+  width: min(700px, 100%);
+}
+.new-session-filters {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.new-session-projects {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+  margin-bottom: 18px;
+}
+.new-session-project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 8px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  color: var(--ink);
+  border-radius: 5px;
+}
+.new-session-project:hover {
+  background: var(--tint);
+}
+.new-session-project-info {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 5px;
+}
+.new-session-project-info strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.new-session-project-info small {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+}
+.new-session-project-info code {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.new-session-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.new-session-cancel {
+  margin-left: auto;
+}
+.new-project-parent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}

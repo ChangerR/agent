@@ -3,3 +3,5 @@
 @import './styles/shell.css';
 @import './styles/conversation.css';
 @import './styles/settings.css';
+@import './styles/debug.css';
+@import './styles/remote.css';

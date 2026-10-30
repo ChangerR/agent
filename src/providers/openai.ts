@@ -7,6 +7,8 @@
  * - 流式 tool_calls 按 index 增量下发，需要自己拼装 id/name/arguments
  */
 import OpenAI from 'openai';
+import { TransportCapture, observeSDKFetch } from './transport-trace.js';
+import type { ProviderTrace } from '../core/protocol/transport.js';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
 import { estimateTextTokens } from '../core/context/tokens.js';
 import type {
@@ -19,7 +21,7 @@ import { replayArguments } from '../core/protocol/types.js';
 import { routeIdentity, checkModelCapabilities } from './capabilities.js';
 import type { Message, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
 
-export type OpenAIDialect = 'generic' | 'deepseek';
+export type OpenAIDialect = 'generic' | 'deepseek' | 'kimi';
 export type OpenAIDialectSetting = OpenAIDialect | 'auto';
 
 /** 只自动识别官方端点；代理须显式声明，不能从模型名猜测厂商。 */
@@ -31,9 +33,13 @@ export function resolveOpenAIDialect(
   if (!baseURL) return 'generic';
   try {
     const url = new URL(baseURL);
-    return url.protocol === 'https:' && url.hostname === 'api.deepseek.com'
-      ? 'deepseek'
-      : 'generic';
+    if (url.protocol !== 'https:') return 'generic';
+    if (url.hostname === 'api.deepseek.com') return 'deepseek';
+    if (
+      ['api.kimi.com', 'api.kimi.ai', 'api.moonshot.ai', 'api.moonshot.cn'].includes(url.hostname)
+    )
+      return 'kimi';
+    return 'generic';
   } catch {
     return 'generic';
   }
@@ -71,7 +77,7 @@ export function toOpenAIMessages(
       if (texts.length > 0) out.push({ role: 'user', content: texts.join('\n') });
       continue;
     }
-    // 推理与正文分离；DeepSeek 携带 tools 时回传所有轮次的原始推理。
+    // 推理与正文分离；工具调用即使无推理也按协议保留空推理字段。
     const text = m.content
       .filter((b) => b.type === 'text')
       .map((b) => b.text)
@@ -88,17 +94,16 @@ export function toOpenAIMessages(
             : JSON.stringify(b.input),
         },
       }));
+    const reasoning = m.content
+      .filter((b) => b.type === 'thinking')
+      .map((b) => b.thinking)
+      .join('');
     out.push({
       role: 'assistant',
       content: text || null,
       ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-      ...(reasoningHistory
-        ? {
-            reasoning_content: m.content
-              .filter((b) => b.type === 'thinking')
-              .map((b) => b.thinking)
-              .join(''),
-          }
+      ...(reasoningHistory && (toolCalls.length > 0 || reasoning)
+        ? { reasoning_content: reasoning }
         : {}),
     });
   }
@@ -245,7 +250,7 @@ export function toOpenAIParams(
       { role: 'system', content: req.system },
       ...toOpenAIMessages(
         req.messages,
-        dialect === 'deepseek' && req.tools.length > 0,
+        (dialect === 'deepseek' && req.tools.length > 0) || dialect === 'kimi',
         req.replayToolArguments && options
           ? { routeId: options.routeId, model: req.model }
           : undefined,
@@ -301,6 +306,13 @@ export class OpenAIProvider implements Provider {
     if (this.opts.models?.[model]) return this.opts.models[model];
     const endpoint = this.endpoint;
     const dialect = resolveOpenAIDialect(endpoint, this.opts.dialect);
+    if (dialect === 'kimi' && /^(?:kimi-)?k3(?:\.|-|$)/.test(model))
+      return {
+        api: 'chat-completions',
+        thinkingLevels: ['low', 'high'],
+        rawToolArguments: true,
+        outputParameter: 'max_completion_tokens',
+      };
     if (dialect === 'deepseek')
       return {
         api: 'chat-completions',
@@ -371,21 +383,38 @@ export class OpenAIProvider implements Provider {
           this.sdkEndpoint ??
           (process.env.OPENAI_BASE_URL === undefined ? undefined : this.endpoint),
       });
+      observeSDKFetch(this.client);
     }
     return this.client;
   }
 
-  async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
+  async *stream(
+    req: ChatRequest,
+    signal: AbortSignal,
+    trace?: ProviderTrace,
+  ): AsyncIterable<StreamEvent> {
     req = this.normalizeRequest(req);
     const client = this.getClient();
-    const stream = await client.chat.completions.create(this.params(req), { signal });
-    yield { type: 'message_start' };
-    const translator = new OpenAIStreamTranslator();
-    for await (const chunk of stream) {
-      for (const ev of translator.translate(chunk))
-        yield ev.type === 'tool_use_start' && req.replayToolArguments
-          ? { ...ev, source: { routeId: this.routeId, model: req.model } }
-          : ev;
+    const capture = new TransportCapture(trace, 'OpenAI Chat Completions');
+    let failure: unknown;
+    try {
+      const stream = await capture.run(
+        async () => await client.chat.completions.create(this.params(req), { signal }),
+      );
+      yield { type: 'message_start' };
+      const translator = new OpenAIStreamTranslator();
+      for await (const chunk of stream) {
+        capture.chunk(chunk);
+        for (const ev of translator.translate(chunk))
+          yield ev.type === 'tool_use_start' && req.replayToolArguments
+            ? { ...ev, source: { routeId: this.routeId, model: req.model } }
+            : ev;
+      }
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      capture.finish(failure);
     }
   }
 }

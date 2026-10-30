@@ -150,13 +150,13 @@ export function withRequestBudget(
       const base = provider.estimateRequest?.(normalized) ?? estimateRequestTokens(normalized);
       return anchors.estimate(normalized, base);
     },
-    async *stream(request, signal) {
+    async *stream(request, signal, trace) {
       signal.throwIfAborted();
       const { request: req } = prepareModelRequest(result, request);
       const base = provider.estimateRequest?.(req) ?? estimateRequestTokens(req);
       const usage: Partial<TokenUsage> = {};
       let complete = false;
-      for await (const event of provider.stream(req, signal)) {
+      for await (const event of provider.stream(req, signal, trace)) {
         if (event && typeof event === 'object' && event.type === 'usage') mergeUsage(usage, event);
         if (event && typeof event === 'object' && event.type === 'message_stop') complete = true;
         yield event;

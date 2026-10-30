@@ -98,11 +98,13 @@ async function section(id) {
     item = s.globalSettings.settings.find((s) => s.id === id);
   const mobile = page.getByRole('combobox', { name: '设置页面', exact: true });
   if (await mobile.isVisible()) await mobile.selectOption(id);
-  else
-    await page
+  else {
+    const button = page
       .locator('.configuration-nav')
-      .getByRole('button', { name: item.title, exact: true })
-      .click();
+      .getByRole('button', { name: item.title, exact: true });
+    if (!(await button.isVisible())) await page.locator('.settings-advanced-nav > summary').click();
+    await button.click();
+  }
   await expect
     .poll(async () => (await snapshot()).globalSettings.settingsEditor?.sectionId)
     .toBe(id);
@@ -126,12 +128,9 @@ async function saveGlobal(value) {
   await expect(page.getByText('已保存', { exact: true })).toBeVisible();
 }
 async function theme(value) {
-  const control = page.locator('select[aria-label="设置界面主题"]');
-  if (!(await control.isVisible()))
-    await control.locator('xpath=ancestor::details').locator(':scope > summary').click();
+  const control = page.locator('.settings-appearance select[aria-label="设置界面主题"]');
   await control.selectOption(value);
   await expect(page.locator('html')).toHaveAttribute('data-theme', value);
-  await control.locator('xpath=ancestor::details').locator(':scope > summary').click();
 }
 try {
   app = await _electron.launch({
@@ -155,9 +154,8 @@ try {
     await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
     await independent();
     assert.equal((await snapshot()).runtime, undefined);
-    await expect(page.getByRole('combobox', { name: '配置作用域', exact: true })).toHaveValue(
-      'global',
-    );
+    await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
+    await expect(page.locator('.settings-preferences,.settings-quick')).toHaveCount(0);
     await section('configuration-budgets');
     await page.getByLabel('最大轮数', { exact: true }).fill('40');
     const count = dialogs;
@@ -179,7 +177,11 @@ try {
     assert.equal((await snapshot()).runtime, undefined);
     assert.deepEqual((await json(config)).future, { preserve: 'fixture' });
   });
-  await page.getByRole('button', { name: '离线演示', exact: true }).click();
+  await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+  await page
+    .locator('.settings-developer-tools')
+    .getByRole('button', { name: '离线演示', exact: true })
+    .click();
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByLabel('输入任务', { exact: true }).fill('演示 Markdown 排版');
   await page.getByRole('button', { name: '发送任务', exact: true }).click();
@@ -222,9 +224,8 @@ try {
   }
   await check('聊天整页进入/返回恢复相同会话、输入DOM、草稿、光标焦点、滚动与检查栏', async () => {
     await menu();
-    await expect(page.getByRole('combobox', { name: '配置作用域', exact: true })).toHaveValue(
-      'global',
-    );
+    await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
+    await expect(page.locator('.settings-preferences,.settings-quick')).toHaveCount(0);
     await back();
     await restored();
     await expect(page.getByLabel('输入任务', { exact: true })).toBeFocused();
@@ -253,20 +254,17 @@ try {
     await back();
     await restored();
   });
-  await check('设置自身项目作用域可保存和恢复继承，不露出原项目导航', async () => {
+  await check('全局字段可保存和清除本层设置，不露出原项目导航', async () => {
     await menu();
     await section('configuration-budgets');
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-    await expect.poll(async () => (await snapshot()).runtime.settingsEditor?.scope).toBe('project');
     await independent();
-    await page.getByRole('checkbox', { name: '覆盖 最大轮数', exact: true }).check();
     await page.getByLabel('最大轮数', { exact: true }).fill('7');
     await page.getByRole('button', { name: '保存更改', exact: true }).click();
-    const path = join(before.cwd, 'agent.config.json');
-    await expect.poll(async () => (await json(path)).maxTurns).toBe(7);
-    await page.getByRole('checkbox', { name: '覆盖 最大轮数', exact: true }).uncheck();
+    await expect.poll(async () => (await json(config)).maxTurns).toBe(7);
+    await page.locator('.settings-advanced > summary').click();
+    await page.getByRole('button', { name: '清除此节的本层覆盖', exact: true }).click();
     await page.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect.poll(async () => (await json(path)).maxTurns === undefined).toBe(true);
+    await expect.poll(async () => (await json(config)).maxTurns === undefined).toBe(true);
     await back();
     await restored();
   });
@@ -287,12 +285,12 @@ try {
       );
       await expect.poll(() => page.evaluate(() => innerWidth)).toBe(Math.round(width / zoom));
       const structure = await independent();
-      for (const name of ['返回工作区', '配置作用域', '查找设置页面']) {
+      for (const name of ['返回工作区', '设置界面主题', '查找设置页面']) {
         const control =
           name === '返回工作区'
             ? page.getByRole('button', { name, exact: true })
-            : name === '配置作用域'
-              ? page.getByRole('combobox', { name, exact: true })
+            : name === '设置界面主题'
+              ? page.locator('.settings-appearance').getByRole('combobox', { name, exact: true })
               : page.getByRole('textbox', { name, exact: true });
         const b = await control.boundingBox();
         assert.ok(

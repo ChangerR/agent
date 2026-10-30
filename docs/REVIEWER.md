@@ -8,6 +8,7 @@
   "pluginConfig": {
     "agentlab.reviewer-model": {
       "model": "",
+      "thinking": "off",
       "timeoutMs": 30000,
       "maxRequestBytes": 32768,
       "maxResponseBytes": 65536,
@@ -18,7 +19,7 @@
 }
 ```
 
-`provider` 可指定一个已经注册的 provider ID；省略时使用当前主 provider。`model` 省略时读取顶层 `judgeModel` 配置；空字符串明确跟随当前主模型；非空字符串固定审批模型。选择独立 provider 时，必须确认模型名称和模型规格与该端点一致。上述配置不创建凭据或隐藏网络请求。设置修改在新会话生效，设置中的“严格审批模型状态”显示实际 provider/model、各自来源、当前是否选中及计数，而“严格审批模型配置”是下次启动配置。
+`provider` 可指定一个已经注册的 provider ID；省略时使用当前主 provider。`model` 省略时读取顶层 `judgeModel` 配置；空字符串明确跟随当前主模型；非空字符串固定审批模型。`thinking` 默认 `off`，只有显式配置才启用其他思考等级。选择独立 provider 时，必须确认模型名称和模型规格与该端点一致。上述配置不创建凭据或隐藏网络请求。设置修改在新会话生效，设置中的“严格审批模型状态”显示实际 provider/model、各自来源、当前是否选中及计数，而“严格审批模型配置”是下次启动配置。
 
 ## 严格输出与保守失败
 
@@ -53,7 +54,7 @@
 
 ## 离线证据与限制
 
-`tests/reviewer-contract.test.ts` 的测试使用 FakeProvider 或本地故障 provider 验证严格解析、deny/unknown、注入内容的分层与来源、完整参数及尾部限制、预算、超时/取消、独立 provider/model 来源、请求/用量关联和重复调用。另有 createAgent 配置级集成测试，验证独立 provider/model 的实际选择、受控写工具的完整链路和 run/tool/request 用量关联。
+`tests/reviewer-contract.test.ts` 的测试使用 FakeProvider 或本地故障 provider 验证严格解析、deny/unknown、注入内容的分层与来源、完整参数及尾部限制、预算、超时/取消、独立 provider/model 来源、请求/用量关联和重复调用。另有 createAgent 配置级集成测试，验证独立 provider/model 的实际选择、未配置时跟随当前主 provider/model、默认关闭 thinking、受控写工具的完整链路和 run/tool/request 用量关联。
 
 当前固定规范前缀实测为 1939 UTF-8 字节（913 字符）。两次不同用户要求和参数的离线请求使用字节一致的 system；只有可变 JSON 消息改变。启用前缀建议后仍是 2 次模型调用，决策缓存命中为 0。`getMetrics()` 提供请求数、请求/输出字节、静态前缀字节和前缀建议次数，可用于复现实验。
 

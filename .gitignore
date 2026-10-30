@@ -3,6 +3,8 @@ node_modules/
 dist/
 desktop/release/
 desktop/.validation/
+desktop/.web/
+desktop/remote-assets/
 .env
 .agentlab/
 agent.config.json

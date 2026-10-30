@@ -1227,11 +1227,45 @@ describe('直接描述任务，自动规划并持续执行', () => {
     await expect(readFile(join(f.cwd, 'denied.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('自动推进使用同一次运行的轮数预算', async () => {
+  it('预规划发布后执行提示只更新现有计划，不重复创建或启动首步', async () => {
+    const f = await fixture([textResponse('已收到现有计划')], {
+      planning: [textResponse(JSON.stringify({ goal: '核对', steps: ['读取', '汇总'] }))],
+    });
+    await f.agent.loop.run('核对项目');
+    const system = f.fake.requests[0].system;
+    expect(system).toContain('仅 runtime_plan.plan=null');
+    expect(system).toContain('已有计划直接使用快照 revision/stepId');
+    expect(system).toContain('快照已 running 的步骤直接执行');
+    expect(from(f.fake.requests[0]).steps[0].status).toBe('running');
+  });
+
+  it('恢复后的显式继续重新启用自动续跑提醒', async () => {
+    const f = await fixture([textResponse('继续处理'), textResponse('本轮先汇报')]);
+    f.agent.loop.plan.create('目标', ['继续'], 'auto');
+    const p = f.agent.loop.plan.snapshot!;
+    f.agent.loop.plan.update(p.revision, { stepId: p.steps[0].id, status: 'running' });
+    f.agent.loop.plan.restore(f.agent.loop.plan.snapshot);
+    f.agent.loop.plan.resume();
+    await f.agent.loop.run('继续当前计划');
+    expect(f.fake.requests).toHaveLength(2);
+    expect(f.fake.requests[1].messages.at(-1)).toMatchObject({
+      role: 'user',
+      source: 'tool',
+      content: expect.stringContaining('计划尚未完成'),
+    });
+  });
+
+  it('自动推进共用轮数预算，最后一轮不写入未发送的提醒', async () => {
     const f = await fixture([proposal, textResponse('接下来做')], { config: { maxTurns: 2 } });
-    expect((await f.agent.loop.run('完成这个任务')).reason).toBe('max_turns');
+    expect((await f.agent.loop.run('完成这个任务')).reason).toBe('completed');
     expect(f.fake.requests).toHaveLength(2);
     expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+    expect(f.agent.loop.getMessages().at(-1)).toMatchObject({ role: 'assistant' });
+    expect(
+      f.agent.loop
+        .getMessages()
+        .filter((message) => message.role === 'user' && message.source === 'tool'),
+    ).toHaveLength(0);
   });
 
   it('输出截断不触发自动续跑', async () => {

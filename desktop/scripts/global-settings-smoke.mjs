@@ -235,38 +235,33 @@ async function launch(extra = []) {
 }
 async function settings() {
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '配置作用域', exact: true })).toHaveValue(
-    'global',
-  );
+  await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
+  await expect(page.locator('.settings-preferences,.settings-quick')).toHaveCount(0);
 }
 async function section(id) {
-  const state = await snapshot(),
-    scope = await page.getByRole('combobox', { name: '配置作用域', exact: true }).inputValue(),
-    context = scope === 'global' ? state.globalSettings : state.runtime;
-  const item = context.settings.find((s) => s.id === id);
+  const state = await snapshot();
+  const item = state.globalSettings.settings.find((s) => s.id === id);
   assert.ok(item, 'registered section ' + id);
-  const button = page
-    .locator('.configuration-nav')
-    .getByRole('button', { name: item.title, exact: true });
-  if (await button.isVisible()) await button.click();
-  else await page.getByRole('combobox', { name: '设置页面', exact: true }).selectOption(id);
+  const mobile = page.getByRole('combobox', { name: '设置页面', exact: true });
+  if (await mobile.isVisible()) await mobile.selectOption(id);
+  else {
+    const button = page
+      .locator('.configuration-nav')
+      .getByRole('button', { name: item.title, exact: true });
+    if (!(await button.isVisible())) await page.locator('.settings-advanced-nav > summary').click();
+    await button.click();
+  }
   await expect
-    .poll(async () => {
-      const state = await snapshot();
-      return (scope === 'global' ? state.globalSettings : state.runtime)?.settingsEditor?.sectionId;
-    })
+    .poll(async () => (await snapshot()).globalSettings.settingsEditor?.sectionId)
     .toBe(id);
   await expect(editor().getByText('正在读取设置…', { exact: true })).toHaveCount(0);
 }
 async function save() {
-  const scope = await page.getByRole('combobox', { name: '配置作用域', exact: true }).inputValue(),
-    state = await snapshot(),
-    before = (scope === 'global' ? state.globalSettings : state.runtime).settingsEditor.id;
+  const before = (await snapshot()).globalSettings.settingsEditor.id;
   await editor().getByRole('button', { name: '保存更改', exact: true }).click();
   await expect
     .poll(async () => {
-      const s = await snapshot();
-      const e = (scope === 'global' ? s.globalSettings : s.runtime).settingsEditor;
+      const e = (await snapshot()).globalSettings.settingsEditor;
       return e.error || (e.id !== before && e.saved);
     })
     .toBe(true);
@@ -392,39 +387,30 @@ try {
       }
     },
   );
-  await check('项目覆盖必须显式选择，模型覆盖后可恢复全局继承', async () => {
+  await check('全局预算字段保存后可清除本层设置', async () => {
     await settings();
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-    await expect
-      .poll(async () => (await snapshot()).runtime?.settingsEditor?.scope)
-      .toBe('project');
-    await (
-      await override(rootFields(), 'model')
-    )
-      .locator(':scope > input')
-      .fill('project-only-model');
+    await section('configuration-budgets');
+    await (await override(rootFields(), 'maxTurns')).locator(':scope > input').fill('7');
     await save();
-    assert.equal((await json(join(projectB, 'agent.config.json'))).model, 'project-only-model');
-    await field(rootFields(), 'model')
-      .getByRole('button', { name: '恢复继承 model', exact: true })
-      .click();
+    assert.equal((await json(globalPath)).maxTurns, 7);
+    await page.locator('.settings-advanced > summary').click();
+    await page.getByRole('button', { name: '清除此节的本层覆盖', exact: true }).click();
     await save();
-    assert.equal((await json(join(projectB, 'agent.config.json'))).model, undefined);
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
-    await expect
-      .poll(async () => (await snapshot()).globalSettings.settingsEditor?.scope)
-      .toBe('global');
-    await screenshot('03-global-inheritance.png');
+    assert.equal((await json(globalPath)).maxTurns, undefined);
+    await screenshot('03-global-reset.png');
   });
-  await check('项目专用设置返回全局时回到有效全局页面', async () => {
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('project');
-    await section('configuration-project-environment');
-    await page.getByRole('combobox', { name: '配置作用域', exact: true }).selectOption('global');
-    await expect
-      .poll(async () => (await snapshot()).globalSettings?.settingsEditor?.sectionId)
-      .toBe('configuration-connection');
+  await check('常用导航与高级设置导航均可达', async () => {
+    await section('configuration-connection');
     await expect(
       editor().getByRole('heading', { name: '主任务与模型连接（启动默认值）', exact: true }),
+    ).toBeVisible();
+    await section('configuration-permissions');
+    await expect(
+      editor().getByRole('heading', { name: '工具权限与审批规则', exact: true }),
+    ).toBeVisible();
+    await section('configuration-budgets');
+    await expect(
+      editor().getByRole('heading', { name: '上下文与缓存预算', exact: true }),
     ).toBeVisible();
   });
   await check('真实保存冲突保留输入并显示失败，不覆盖其他写入', async () => {
@@ -552,8 +538,7 @@ try {
       w.setSize(1440, 960);
     });
 
-    const theme = page.locator('select[aria-label="设置界面主题"]');
-    if (!(await theme.isVisible())) await revealDetails(theme);
+    const theme = page.locator('.settings-appearance select[aria-label="设置界面主题"]');
     await theme.selectOption('dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await section('configuration-agentlab.provider-connections');

@@ -2,53 +2,71 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 30px max(28px, calc((100% - 800px) / 2)) 20px;
+  padding: 28px max(28px, calc((100% - var(--reading-width)) / 2)) 24px;
   scroll-padding: 24px;
+  background: var(--bg);
+}
+.welcome-workspace {
+  position: relative;
+  justify-content: center;
+  background: var(--bg);
+}
+.welcome-workspace .heading {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+}
+.welcome-workspace .heading-main {
+  visibility: hidden;
 }
 .welcome-workspace .conversation {
   flex: 0 0 auto;
-  padding-top: clamp(64px, calc((100dvh - 520px) / 2), 180px);
-  padding-bottom: 16px;
+  padding-top: 0;
+  padding-bottom: 28px;
+}
+.welcome-workspace .composer-wrap {
+  margin-bottom: 14vh;
 }
 .welcome {
+  width: 100%;
+  padding: 0;
   text-align: center;
-  padding: 0 0 12px;
 }
-.welcome .home-mark {
-  margin-bottom: 8px;
+.welcome-brand {
+  color: var(--ink);
+  font-size: 42px;
+  font-weight: 650;
+  letter-spacing: -2px;
+  line-height: 1.1;
 }
-.welcome h2 {
-  font-size: 28px;
-  font-weight: 500;
-  letter-spacing: -0.8px;
-  margin: 8px 0 12px;
+.welcome-brand > span {
+  color: var(--brand);
+  font-weight: 450;
 }
 .welcome p {
-  color: var(--muted);
-  font-size: 14px;
-}
-.starter-prompts {
-  padding: 0 20px;
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-}
-.suggestion {
-  border-color: var(--line);
+  margin: 14px 0 0;
   color: var(--muted);
   font-size: 12px;
-  padding: 6px 12px;
+}
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+.welcome > .small {
+  font-size: 11px;
+  margin-top: 12px;
 }
 .message {
-  margin: 0 0 24px;
+  margin: 0 0 30px;
 }
 .message.user {
   margin-left: auto;
   width: fit-content;
-  max-width: 88%;
+  max-width: 82%;
 }
 .who {
   display: flex;
@@ -70,12 +88,16 @@
   background: var(--rail);
 }
 .user-text {
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: var(--rail);
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: var(--tint);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 14px;
+  line-height: 1.65;
+}
+.message.assistant {
+  padding: 0;
 }
 .markdown {
   font-size: 14px;
@@ -94,11 +116,11 @@
 }
 .markdown ul,
 .markdown ol {
-  padding-left: 24px;
+  padding-left: 23px;
   margin: 0 0 16px;
 }
 .markdown li {
-  margin: 4px 0;
+  margin: 5px 0;
 }
 .markdown li > p {
   margin-bottom: 6px;
@@ -116,8 +138,9 @@
 }
 .markdown blockquote {
   color: var(--muted);
-  border-left: 3px solid var(--control);
-  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--control);
+  background: var(--panel);
+  padding: 8px 14px;
   margin: 16px 0;
 }
 .markdown blockquote > :last-child {
@@ -134,22 +157,24 @@
 .markdown h4,
 .markdown h5,
 .markdown h6 {
-  margin: 24px 0 12px;
-  font-weight: 600;
+  margin: 26px 0 12px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
 }
 .markdown h1 {
-  font-size: 24px;
+  font-size: 23px;
 }
 .markdown h2 {
-  font-size: 21px;
+  font-size: 20px;
 }
 .markdown h3 {
-  font-size: 17px;
+  font-size: 16px;
 }
 .markdown pre {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-left: 3px solid var(--control);
+  border-radius: var(--radius);
   padding: 14px 16px;
   overflow: auto;
   margin: 16px 0;
@@ -165,7 +190,8 @@
 .markdown :not(pre) > code {
   font-size: 0.88em;
   padding: 2px 5px;
-  background: var(--rail);
+  background: var(--tint);
+  color: var(--accent);
   border-radius: 4px;
 }
 .markdown-table-scroll {
@@ -174,11 +200,11 @@
   overflow-x: auto;
   margin: 16px 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 .markdown table {
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 12px;
   min-width: 100%;
 }
 .markdown th,
@@ -191,8 +217,8 @@
   vertical-align: top;
 }
 .markdown th {
-  font-weight: 500;
-  background: var(--rail);
+  font-weight: 600;
+  background: var(--panel);
 }
 .markdown td:last-child {
   border-right: 0;
@@ -205,10 +231,46 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.activity-group {
+  margin: 10px 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.activity-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 0;
+  cursor: pointer;
+  list-style-position: inside;
+}
+.activity-group > summary:hover {
+  color: var(--ink);
+}
+.activity-title {
+  color: var(--ink);
+  font-weight: 500;
+}
+.activity-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.activity-rows {
+  margin-left: 5px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+.activity-rows .thinking {
+  margin: 6px 0;
+}
 .thinking {
   color: var(--muted);
   font-size: 12px;
-  margin: 12px 0;
+  margin: 12px 0 18px;
+  padding-left: 0;
 }
 .thinking summary,
 .tool summary,
@@ -221,9 +283,8 @@
   padding: 10px 0;
 }
 .tool {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  margin: 8px 0;
+  margin: 8px 0 14px;
+  color: var(--muted);
   font-size: 12px;
   overflow: hidden;
 }
@@ -231,22 +292,30 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 12px;
-  min-height: 38px;
+  padding: 6px 0;
+  min-height: 32px;
+}
+.tool summary:hover {
+  color: var(--ink);
 }
 .tool summary:before {
   content: '›';
   color: var(--muted);
+  font-family: var(--mono);
 }
 .tool[open] summary:before {
   content: '⌄';
 }
 .tool strong {
-  font-weight: 500;
+  font-weight: 600;
 }
 .tool-status {
   width: 13px;
   color: var(--muted);
+  font-family: var(--mono);
+}
+.tool-status.completed {
+  color: var(--add-ink);
 }
 .tool-status.error {
   color: var(--del-ink);
@@ -258,25 +327,47 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
 }
 .duration {
   color: var(--muted);
   margin-left: auto;
-  font-size: 11px;
+  font: 10px var(--mono);
+}
+.run-stopped {
+  margin: 16px 0;
+  padding: 9px 12px;
+  border-left: 2px solid var(--warning-ink);
+  background: var(--warning-bg);
+  color: var(--warning-ink);
+  font-size: 12px;
 }
 .tool-body {
-  border-top: 1px solid var(--line);
-  padding: 12px;
+  border-left: 1px solid var(--line);
+  margin: 4px 0 8px 5px;
+  padding: 4px 0 4px 14px;
+}
+.tool-body h4 {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 6px 0;
 }
 .tool-body pre {
   max-height: 260px;
   overflow: auto;
-  font-size: 11.5px;
+  font-size: 11px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-radius: 5px;
 }
 .notice {
   color: var(--muted);
   font-size: 12px;
   margin: 10px 0;
+  padding-left: 0;
 }
 .notice pre {
   max-height: 280px;
@@ -286,14 +377,16 @@
   flex-shrink: 0;
   max-height: 48vh;
   overflow: auto;
-  padding: 0 max(28px, calc((100% - 800px) / 2));
+  padding: 0 max(32px, calc((100% - var(--reading-width)) / 2));
+  background: var(--surface);
 }
 .approval {
-  border: 1px solid var(--control);
-  border-radius: 10px;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--warning-ink) 35%, var(--line));
+  border-left: 3px solid var(--warning-ink);
+  border-radius: var(--radius-lg);
+  background: var(--warning-bg);
   padding: 16px;
-  margin: 8px 0;
+  margin: 8px 0 12px;
 }
 .approval-head {
   display: flex;
@@ -301,17 +394,36 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+}
+.approval-head .tag {
+  background: var(--surface);
 }
 .approval .small {
   margin: 8px 0;
   overflow-wrap: anywhere;
 }
 .approval pre.command {
-  padding: 10px;
-  border-radius: 6px;
-  background: var(--rail);
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
   margin: 10px 0;
+}
+.approval details {
+  margin: 10px 0;
+  font-size: 12px;
+}
+.approval details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.approval details pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: var(--radius);
 }
 .approval input {
   width: 100%;
@@ -327,28 +439,28 @@
   margin-top: 12px;
 }
 .composer-wrap {
-  padding: 10px max(28px, calc((100% - 800px) / 2)) 20px;
+  padding: 8px max(28px, calc((100% - var(--reading-width)) / 2)) 22px;
   flex-shrink: 0;
+  background: var(--bg);
 }
 .composer {
-  padding: 14px 16px 10px;
+  padding: 12px 14px 9px;
   border: 1px solid var(--control);
   border-radius: 15px;
-  background: var(--surface);
-  box-shadow: 0 2px 12px #00000003;
+  background: var(--panel);
 }
 .composer:focus-within {
-  border-color: var(--muted);
+  border-color: var(--focus);
 }
 .composer textarea {
   display: block;
   width: 100%;
-  height: 76px;
+  height: 58px;
   max-height: 180px;
   resize: none;
   border: 0;
   background: transparent;
-  padding: 2px 0 12px;
+  padding: 2px 0 8px;
   font-size: 14px;
   line-height: 24px;
 }
@@ -363,63 +475,83 @@
 }
 .controls {
   display: flex;
+  flex: 1;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-wrap: wrap;
   min-width: 0;
+}
+.controls select:first-child {
+  order: 3;
+  margin-left: auto;
+}
+.controls select:nth-child(2) {
+  order: 1;
+}
+.controls select:nth-child(3) {
+  order: 2;
 }
 .controls select {
   border: 0;
   background: transparent;
   color: var(--muted);
-  min-height: 30px;
-  max-width: 210px;
-  padding: 3px 5px;
-  font-size: 12px;
+  min-height: 26px;
+  max-width: 180px;
+  padding: 2px 5px;
+  font-size: 11px;
+  border-radius: 5px;
+}
+.controls select:hover {
+  color: var(--ink);
+  background: var(--tint);
 }
 .send-button {
-  width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
   padding: 0;
+  border: 0;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.context {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 11.5px;
-}
 .hint {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  padding: 9px 3px 0;
+  display: none;
 }
 @media (max-width: 760px) {
   .conversation {
-    padding: 24px 20px 16px;
+    padding: 24px 20px 18px;
+  }
+  .welcome-workspace .conversation {
+    padding-top: 0;
+  }
+  .welcome-brand {
+    font-size: 34px;
   }
   .composer-wrap {
-    padding: 8px 16px 14px;
+    padding: 8px 14px 12px;
   }
   .composer {
-    padding: 12px 13px 10px;
+    padding: 11px 12px 8px;
   }
   .controls select {
-    max-width: 160px;
+    max-width: 150px;
   }
   .approval-dock {
-    padding: 0 16px;
+    padding: 0 14px;
   }
   .welcome h2 {
-    font-size: 24px;
+    font-size: 21px;
+  }
+  .session-context-strip > span:first-child {
+    flex-basis: 100%;
+  }
+  .message.user {
+    max-width: 92%;
+  }
+  .message.assistant {
+    padding-left: 0;
   }
   .suggestion {
-    font-size: 11.5px;
+    font-size: 11px;
   }
 }

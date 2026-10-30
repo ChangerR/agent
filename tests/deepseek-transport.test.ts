@@ -33,7 +33,7 @@ vi.mock('openai', async (load) => {
   };
 });
 import { OpenAIProvider, resolveOpenAIDialect, toOpenAIParams } from '../src/providers/openai.js';
-import { collectStreamAsync, type Message } from '../src/core/protocol/types.js';
+import { collectStreamAsync, toolInputHash, type Message } from '../src/core/protocol/types.js';
 import type { ChatRequest, ThinkingLevel } from '../src/core/provider.js';
 
 afterEach(() => {
@@ -68,6 +68,101 @@ const request = (thinking?: ThinkingLevel): ChatRequest => ({
 });
 
 describe('DeepSeek 能力隔离与真实传输', () => {
+  it.each([
+    'https://api.kimi.com/v1',
+    'https://api.kimi.ai/v1',
+    'https://api.moonshot.cn/v1',
+    'https://api.moonshot.ai/v1',
+  ])('Kimi 官方端点 %s 使用 K3 参数并按要求回放推理', async (baseURL) => {
+    const provider = new OpenAIProvider({ apiKey: 'offline-never-sent', baseURL });
+    const model = 'k3.1-pro-highspeed';
+    const rawArguments = '{\n  "path": "a"\n}';
+    const replayMessages: Message[] = [
+      { role: 'user', content: 'read' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'tool reasoning' },
+          {
+            type: 'tool_use',
+            id: 't',
+            name: 'read_file',
+            input: { path: 'a' },
+            replay: {
+              arguments: rawArguments,
+              inputHash: toolInputHash({ path: 'a' }),
+              routeId: provider.routeId,
+              model,
+            },
+          },
+        ],
+      },
+      { role: 'user', content: [{ type: 'tool_result', toolUseId: 't', content: 'result' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'answer reasoning' },
+          { type: 'text', text: 'done' },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 't2', name: 'read_file', input: { path: 'b' } }],
+      },
+      { role: 'user', content: [{ type: 'tool_result', toolUseId: 't2', content: 'result' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'plain answer' }] },
+      { role: 'user', content: 'next' },
+    ];
+    await collectStreamAsync(
+      provider.stream(
+        {
+          ...request('high'),
+          model,
+          messages: replayMessages,
+          replayToolArguments: true,
+          maxTokens: 8192,
+        },
+        new AbortController().signal,
+      ),
+    );
+    const body = transport.bodies[0];
+    expect(body.max_completion_tokens).toBe(8192);
+    expect(body).not.toHaveProperty('max_tokens');
+    expect(body).not.toHaveProperty('thinking');
+    expect(body.reasoning_effort).toBe('high');
+    const turns = (body.messages as Record<string, unknown>[]).filter(
+      (m) => m.role === 'assistant',
+    );
+    expect(turns.map((m) => m.reasoning_content)).toEqual([
+      'tool reasoning',
+      'answer reasoning',
+      '',
+      undefined,
+    ]);
+    expect(turns[2]).toHaveProperty('reasoning_content', '');
+    expect(turns[3]).not.toHaveProperty('reasoning_content');
+    const toolCalls = turns[0].tool_calls as { function: { arguments: string } }[];
+    expect(toolCalls[0].function.arguments).toBe(rawArguments);
+    expect(transport.fetch).toHaveBeenCalledTimes(1);
+
+    expect(resolveOpenAIDialect(baseURL)).toBe('kimi');
+    expect(resolveOpenAIDialect(baseURL, 'generic')).toBe('generic');
+    expect(resolveOpenAIDialect('https://proxy.invalid/v1', 'kimi')).toBe('kimi');
+    for (const name of ['k3', 'k3.1-pro', 'k3.1-pro-highspeed', 'kimi-k3.1-pro']) {
+      expect(provider.modelCapabilities(name)).toEqual({
+        api: 'chat-completions',
+        thinkingLevels: ['low', 'high'],
+        rawToolArguments: true,
+        outputParameter: 'max_completion_tokens',
+      });
+    }
+    expect(() => provider.normalizeRequest({ ...request('off'), model })).toThrow(
+      /unsupported_thinking_level/,
+    );
+    const hostname = new URL(baseURL).hostname;
+    expect(resolveOpenAIDialect(`https://${hostname}.attacker.test/v1`)).toBe('generic');
+    expect(resolveOpenAIDialect(baseURL.replace('https://', 'http://'))).toBe('generic');
+  });
   it.each(['low', 'medium', 'high', 'off'] as const)(
     'thinking=%s 回传工具轮和纯回答轮，最后内容 chunk 用量不漏计',
     async (thinking) => {

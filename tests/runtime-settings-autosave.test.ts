@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAgent } from '../src/index.js';
+import { definePlugin, type InteractionRequest } from '../src/sdk/index.js';
+import { OpenAIProvider } from '../src/providers/openai.js';
 import { ConfigConflictError, settingsErrorMessage } from '../src/runtime/config-store.js';
 import { mkdtempProjectSync } from './helpers/project.js';
 
@@ -160,6 +162,47 @@ describe('模型与思考设置立即保存并应用', () => {
       expect(failure.message).not.toContain('SECRET_PLUGIN_APPLY_ERROR');
       expect(read(path).model).toBe('chosen');
       expect(agent.loop.model).toBe('before');
+    } finally {
+      await agent.dispose();
+    }
+  });
+
+  it('Kimi 模型切换原子保存兼容 thinking，非法等级在保存前拒绝', async () => {
+    const cwd = project();
+    const path = join(cwd, 'agent.config.json');
+    write(path, { provider: 'kimi-test', model: 'k3', thinking: 'medium' });
+    const provider = definePlugin({
+      manifest: { id: 'test.kimi-settings', version: '1.0.0', apiVersion: 1 },
+      setup(ctx) {
+        const base = new OpenAIProvider({
+          apiKey: 'offline-never-sent',
+          baseURL: 'https://api.kimi.ai/coding/v1',
+        });
+        ctx.provide.provider('kimi-test', {
+          name: 'kimi-test',
+          capabilities: base.capabilities,
+          modelCapabilities: base.modelCapabilities.bind(base),
+          stream: base.stream.bind(base),
+        });
+      },
+    });
+    let agent = await createAgent(cwd, { autoSaveSessions: false, plugins: [provider] });
+    try {
+      expect(agent.loop.thinking).toBe('high');
+      await expect(agent.dispatchCommand('/think off')).rejects.toThrow('low|high');
+      expect(read(path)).toMatchObject({ model: 'k3', thinking: 'medium' });
+      await agent.dispatchCommand('/model k3.1-pro');
+      expect(read(path)).toMatchObject({ model: 'k3.1-pro', thinking: 'high' });
+      const interact = vi.fn(async (_request: InteractionRequest) => 'low');
+      await agent.dispatchCommand('/think', { interact });
+      expect(interact.mock.calls[0][0].choices).toEqual([
+        { id: 'low', label: 'low' },
+        { id: 'high', label: 'high' },
+      ]);
+      expect(read(path).thinking).toBe('low');
+      await agent.dispose();
+      agent = await createAgent(cwd, { autoSaveSessions: false, plugins: [provider] });
+      expect(agent.loop.thinking).toBe('low');
     } finally {
       await agent.dispose();
     }

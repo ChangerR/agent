@@ -17,6 +17,8 @@ export interface RuntimeServices {
   setModel(value: string): void;
   thinking(): ThinkingLevel;
   setThinking(value: ThinkingLevel): void;
+  thinkingLevels(model?: string): readonly ThinkingLevel[] | undefined;
+  compatibleThinking(model: string, requested?: ThinkingLevel): ThinkingLevel;
   models(): Array<{ name: string; info?: { contextWindow: number; maxOutputTokens: number } }>;
   permission(): PermissionController;
   session(): SessionManager;

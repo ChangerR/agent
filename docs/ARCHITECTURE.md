@@ -37,7 +37,7 @@ EventBus、上下文和会话。具体控制工具、设置与 TUI 放在 builti
 
 - **`Message`**：持久化的对话历史。AssistantMessage 的内容是 content blocks（`text | thinking | tool_use`），工具结果以 `tool_result` block 包在 user 消息里回填 —— 这是 Anthropic 的建模方式，OpenAI 侧由 adapter 转译。
 - **`StreamEvent`**：流式增量。关键设计是把 tool_use 的输入建模为 **JSON 字符串增量**（`tool_use_delta.input`），与 Anthropic 的 `input_json_delta` 对齐；OpenAI 的 arguments 分片也能自然映射。每个工具增量和结束事件都必须带 `id`，聚合器按 ID 独立缓存参数；缺少或引用未知 ID 时拒绝处理。Anthropic adapter 将 wire block index 关联到真实调用 ID，OpenAI adapter 将分片 index 关联到调用 ID。参数不是合法 JSON 时直接报错，不会把错误参数交给工具执行。
-- **`collectStreamAsync`**：把增量流聚合成完整消息的状态机，是"流式 → 结构化"的通用归约器，loop 和测试共用。
+- **`collectStreamAsync`**：把增量流聚合成完整消息的状态机，是"流式 → 结构化"的通用归约器，loop 和测试共用。返回值用 `stopped` 区分真实 `message_stop` 与自然 EOF；主 loop 和规划器都必须收到明确结束事件，不能把残缺响应当作正常 `end_turn`。
 
 **学习要点**：读 `tests/protocol.test.ts`，看同一个规范化消息如何被翻译成两家厂商格式，以及 OpenAI 分片 tool_calls 如何被重新聚合。
 
@@ -87,7 +87,7 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 1. `UserPromptSubmit` 钩子 → 用户消息入历史
 2. 检查是否需要压缩上下文（超阈值 → 总结老消息）
 3. `provider.stream()`，边收边把 text/thinking 增量转发成 UI 事件
-4. 聚合成 AssistantMessage 入历史，发 `turn_end`（带 token 用量），通知 `TurnEnd` 钩子
+4. 确认收到 `message_stop` 后聚合成 AssistantMessage 入历史，发 `turn_end`（带 token 用量），通知 `TurnEnd` 钩子；自然 EOF 按错误结束，不执行残缺工具调用
 5. 没有 tool_use → `loop_end`，结束
 6. 有 tool_use → 逐个（连续的只读工具并行）：
    - `PreToolUse` 钩子：可改写参数、可 veto
@@ -104,9 +104,11 @@ loop 是一台不碰 UI 的状态机，所有对外沟通走 `EventBus`。一次
 
 `run()` 返回 `AgentRunResult`：`reason` 区分 `completed / max_turns / max_tokens / aborted / error`，同时提供模型轮数、累计用量和错误信息。`completed` 只代表循环正常结束，研究中的任务成功率应由外部评测器判断。没有 UI 或 `error` 事件订阅者时，模型失败也能返回 `error` 终态。
 
-每次主模型、压缩器和审批员调用都通过 `observedStream` 发出 `model_request` 与 `model_usage`，使用 `requestId` 关联，并用 `purpose: agent / compact / judge` 区分用途。请求记录是调用时的独立快照，不随后续历史修改而变化。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。装配入口把这些事件写入 `~/.agentlab/state/projects/<项目 ID>/logs/*.jsonl`。
+主模型、规划、压缩和审批调用在观测边界发出 `model_request`、`model_response` 与 `model_usage`，使用 `requestId` 关联，并用 purpose 与 modelRole 区分用途和角色。`observedStream` 负责常规调用；严格审批员在自己的流校验边界保留相同事件契约。请求记录是调用时的独立快照，不随后续历史修改而变化；响应副本包含服务返回的文本、可见思考、工具参数、结束原因和完成/失败/取消状态，过长时明确截断，不改变执行内容。`turn_end.usage` 是单次主模型响应的用量；`AgentRunResult.usage` 和 TUI 统计包含本次运行中的辅助调用。失败或取消时只能统计 provider 已经报告的用量。默认 JSONL telemetry 仍只将脱敏元数据写入 `~/.agentlab/state/projects/<项目 ID>/logs/*.jsonl`；桌面另通过 manifest/setup 挂载 `agentlab.desktop-debug` telemetry 插件，按会话保存脱敏学习记录并分页展示，详见 [会话调试](../desktop/README.md#会话调试学习-agent-的执行过程)。
 
 计划等执行约束的提前拒绝同时记录 `permission_decision` 和 `tool_execution`，用 requestId/toolUseId（工具审计中的 toolCallId）关联。此类事件标明 `denialScope: invocation`，仅记录当前调用的拒绝，不额外锁定整请求；已有的用户拒绝与计划锁不会因此解除。默认脱敏日志保留 scope/reasonCode，不记录参数和原始原因。
+
+Provider 可通过通用 `ProviderTrace` 回调补充 `model_transport`：实际请求地址、脱敏请求头、JSON 请求体、HTTP 状态与 SDK 解析后的 SSE JSON。观测仅包裹实例原有 fetch，并用 AsyncLocalStorage 隔离并发；重试独立编号，不增加网络调用。请求预算包装、审批员与子 Agent 保留关联；转发诊断事件不推进计划状态。桌面按会话保留学习副本，默认 telemetry 仅记录传输元数据；旧日志与未接入的插件不会补造 HTTP 数据。
 
 ## 5. 权限策略与唯一执行门
 

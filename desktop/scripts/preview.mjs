@@ -4,38 +4,69 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { build as bundle } from 'esbuild';
+import { createServer as createViteServer } from 'vite';
 import { WorkerHost } from '../main/worker-host.ts';
 import { ProjectCatalog } from '../main/project-catalog.ts';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const output = join(root, 'desktop/dist');
-const temporary = await mkdtemp(join(tmpdir(), 'agentlab-desktop-preview-'));
-const project = join(temporary, 'project'),
-  secondProject = join(temporary, 'sample-project'),
-  home = join(temporary, 'home');
-await mkdir(project);
-await mkdir(home);
-await mkdir(secondProject);
-await writeFile(
-  join(secondProject, 'README.md'),
-  '# Sample project\n\n第二个隔离项目，用于验证项目切换。\n',
-);
-await writeFile(
-  join(project, 'README.md'),
-  '# agentlab\n\n这是隔离的真实离线工作台，不连接模型。\n',
-);
-const env = {
-  ...process.env,
-  HOME: home,
-  USERPROFILE: home,
-  ANTHROPIC_API_KEY: 'test-only-never-sent',
-  OPENAI_API_KEY: 'test-only-never-sent',
-  AGENTLAB_DEMO_KEY: 'test-only-never-sent',
-};
-delete env.ANTHROPIC_AUTH_TOKEN;
-delete env.OPENAI_BASE_URL;
+const development = process.argv.includes('--dev');
+const real = process.argv.includes('--real');
+const workerEntry = development
+  ? join(root, 'desktop/.web/worker/index.mjs')
+  : join(output, 'worker/index.mjs');
+const workerNode = development
+  ? process.execPath
+  : join(output, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
+if (development)
+  await bundle({
+    entryPoints: [join(root, 'desktop/worker/index.ts')],
+    outfile: workerEntry,
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'esm',
+    external: ['tree-sitter', 'tree-sitter-bash', 'tree-sitter-powershell'],
+    banner: {
+      js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+    },
+  });
+const temporary = real ? undefined : await mkdtemp(join(tmpdir(), 'agentlab-desktop-preview-'));
+const project = real ? root : join(temporary, 'project');
+const secondProject = real ? undefined : join(temporary, 'sample-project');
+const home = real
+  ? (process.env.HOME ?? process.env.USERPROFILE ?? tmpdir())
+  : join(temporary, 'home');
+if (!real) {
+  await mkdir(project);
+  await mkdir(home);
+  await mkdir(secondProject);
+  await writeFile(
+    join(secondProject, 'README.md'),
+    '# Sample project\n\n第二个隔离项目，用于验证项目切换。\n',
+  );
+  await writeFile(
+    join(project, 'README.md'),
+    '# agentlab\n\n这是隔离的真实离线工作台，不连接模型。\n',
+  );
+}
+const env = real
+  ? { ...process.env, HOME: home, USERPROFILE: home }
+  : {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      ANTHROPIC_API_KEY: 'test-only-never-sent',
+      OPENAI_API_KEY: 'test-only-never-sent',
+      AGENTLAB_DEMO_KEY: 'test-only-never-sent',
+    };
+if (!real) {
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.OPENAI_BASE_URL;
+}
 const catalog = new ProjectCatalog();
-catalog.open(secondProject, true);
-catalog.open(project, true);
+if (secondProject) catalog.open(secondProject, false);
+catalog.open(project, !real);
 let state = { version: 1, revision: 0, connecting: false, projects: catalog.projects };
 let worker,
   changing = false,
@@ -63,8 +94,8 @@ async function start(cwd = project, fresh = false) {
     generation = randomUUID();
     const current = generation;
     worker = new WorkerHost(
-      join(output, 'node', process.platform === 'win32' ? 'node.exe' : 'node'),
-      join(output, 'worker/index.mjs'),
+      workerNode,
+      workerEntry,
       cwd,
       env,
       (snapshot) => {
@@ -81,8 +112,8 @@ async function start(cwd = project, fresh = false) {
         }
       },
     );
-    await worker.request({ type: 'init', cwd, demo: true, generation });
-    catalog.open(cwd, true);
+    await worker.request({ type: 'init', cwd, demo: !real, generation });
+    catalog.open(cwd, !real);
     if (lastSessionId)
       await worker.request({
         type: 'resume',
@@ -98,7 +129,7 @@ async function start(cwd = project, fresh = false) {
 }
 const globalWorker = new WorkerHost(
   process.execPath,
-  join(output, 'worker/index.mjs'),
+  workerEntry,
   home,
   env,
   () => {},
@@ -112,18 +143,22 @@ const globalWorker = new WorkerHost(
   },
 );
 await globalWorker.request({ type: 'init-settings', generation: randomUUID() });
+if (real) await start();
 const port = Number(process.env.AGENTLAB_PREVIEW_PORT ?? 4175);
+const apiPort = development ? port + 1 : port;
 const origin = 'http://127.0.0.1:' + port;
+const apiOrigin = 'http://127.0.0.1:' + apiPort;
+let vite;
 const server = createServer(async (req, res) => {
   try {
-    if (req.headers.host !== '127.0.0.1:' + port) {
+    if (req.headers.host !== '127.0.0.1:' + apiPort) {
       res.writeHead(403);
       res.end();
       return;
     }
-    const url = new URL(req.url, origin);
+    const url = new URL(req.url, apiOrigin);
     if (url.pathname.startsWith('/api/')) {
-      if (req.headers.origin && req.headers.origin !== origin) {
+      if (req.headers.origin && ![origin, apiOrigin].includes(req.headers.origin)) {
         res.writeHead(403);
         res.end();
         return;
@@ -179,8 +214,14 @@ const server = createServer(async (req, res) => {
       }
       if (url.pathname === '/api/demo') await start();
       else if (url.pathname === '/api/new-session') {
-        if (!state.runtime) throw new Error('请先打开项目');
-        await start(state.runtime.cwd, true);
+        const target =
+          typeof data.projectId === 'string'
+            ? catalog.get(data.projectId)
+            : state.runtime
+              ? catalog.get(state.runtime.cwd)
+              : undefined;
+        if (!target) throw new Error('请先选择会话项目');
+        await start(target.path, true);
       } else if (url.pathname === '/api/open-project') {
         const entry = typeof data.id === 'string' ? catalog.get(data.id) : undefined;
         if (!entry) throw new Error('仅允许打开列表中的隔离演示项目');
@@ -223,10 +264,31 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify({ error: error instanceof Error ? error.message : '操作失败' }));
   }
 });
-server.listen(port, '127.0.0.1', () =>
-  console.log('真实离线工作台：' + origin + '\n隔离项目：' + project),
+if (development) {
+  vite = await createViteServer({
+    configFile: false,
+    root: join(root, 'desktop/renderer'),
+    appType: 'spa',
+    server: {
+      host: '127.0.0.1',
+      port,
+      strictPort: true,
+      proxy: { '/api': { target: apiOrigin, changeOrigin: true } },
+    },
+  });
+  await vite.listen();
+}
+server.listen(apiPort, '127.0.0.1', () =>
+  console.log(
+    (development ? 'Web 开发工作台（热更新）：' : '真实离线工作台：') +
+      origin +
+      '\n隔离项目：' +
+      project,
+  ),
 );
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
-    void Promise.all([worker?.dispose(), globalWorker.dispose()]).finally(() => process.exit());
+    void Promise.all([worker?.dispose(), globalWorker.dispose(), vite?.close()]).finally(() =>
+      process.exit(),
+    );
   });

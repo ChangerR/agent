@@ -8,3 +8,4 @@ export type {
   TokenUsage,
 } from '../core/protocol/types.js';
 export type { Provider, ChatRequest, CachePolicy, ThinkingLevel } from '../core/provider.js';
+export type { ProviderTrace, ApiTransport } from '../core/protocol/transport.js';

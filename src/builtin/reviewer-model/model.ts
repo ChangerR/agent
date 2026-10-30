@@ -1,5 +1,6 @@
 /** 内置模型审批员：模型只审查 policy 委托的操作，不持有规则控制器、工具执行器或批准缓存。 */
 import { randomUUID } from 'node:crypto';
+import { ResponseTrace, modelErrorCode } from '../../core/protocol/response-trace.js';
 import { withRequestBudget, prepareModelRequest } from '../../core/context/request-budget.js';
 import { bounded, CapabilityTimeout } from '../../core/permission/async.js';
 import type { JudgeMetadata, JudgeReasonCode } from '../../core/permission/contracts.js';
@@ -351,7 +352,7 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
           system: STRICT_REVIEWER_SYSTEM,
           tools: [],
           maxTokens: outputTokens,
-          ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
+          thinking: options.thinking ?? 'off',
           messages: [
             {
               role: 'user',
@@ -432,13 +433,25 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
                 let stopReason: StopReason | undefined;
                 let ended = false;
                 let started = false;
-                const iterator = stream(request, child)[Symbol.asyncIterator]();
+                let failed = false;
+                let errorCode: string | undefined;
+                const responseTrace = new ResponseTrace();
+                const iterator = stream(request, child, {
+                  onTransport: (transport) =>
+                    input.events?.emit({
+                      type: 'model_transport',
+                      requestId,
+                      runId: input.runId,
+                      transport,
+                    }),
+                })[Symbol.asyncIterator]();
                 try {
                   while (true) {
                     child.throwIfAborted();
                     const next = await iterator.next();
                     if (next.done) break;
                     const event = validateStreamEvent(next.value, started, ended);
+                    responseTrace.push(event);
                     if (
                       ttftMs === undefined &&
                       (event.type === 'text_delta' || event.type === 'thinking_delta')
@@ -477,6 +490,10 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
                   }
                   if (!started) throw new InvalidResponseError();
                   return { text, stopReason };
+                } catch (error) {
+                  failed = true;
+                  errorCode = modelErrorCode(error);
+                  throw error;
                 } finally {
                   // 外层取消有界；真正关闭 iterator 前仍保留底层生命周期和资源。
                   try {
@@ -484,6 +501,15 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
                   } catch {
                     /* 结果不会因此变成批准。 */
                   }
+                  input.events?.emit({
+                    type: 'model_response',
+                    requestId,
+                    runId: input.runId,
+                    response: responseTrace.finish(
+                      child.aborted ? 'aborted' : failed ? 'error' : undefined,
+                      errorCode,
+                    ),
+                  });
                 }
               })().finally(reportUsage);
               input.events?.track(actual);
@@ -494,7 +520,15 @@ export function createModelReviewer(options: StrictModelReviewerOptions): Strict
           );
         } finally {
           // 实际 stream 结束后只报告一次，迟到用量仍归属于原请求。
-          if (!streamStarted) reportUsage();
+          if (!streamStarted) {
+            input.events?.emit({
+              type: 'model_response',
+              requestId,
+              runId: input.runId,
+              response: new ResponseTrace().finish(signal.aborted ? 'aborted' : 'interrupted'),
+            });
+            reportUsage();
+          }
         }
         signal.throwIfAborted();
         const parsed = parseStrictReview(response.text);

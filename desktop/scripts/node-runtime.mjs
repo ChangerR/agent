@@ -60,7 +60,14 @@ export async function stageNodeRuntime({
   await mkdir(directory, { recursive: true });
   // 不能让前次构建的旧 Node 许可证混入这次没有许可证的开发暂存。
   await rm(join(directory, 'LICENSE'), { force: true });
-  await cp(execPath, join(directory, platform === 'win32' ? 'node.exe' : 'node'));
+  const executable = join(directory, platform === 'win32' ? 'node.exe' : 'node');
+  let sameExecutable = false;
+  try {
+    sameExecutable = (await readFile(execPath)).equals(await readFile(executable));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  if (!sameExecutable) await cp(execPath, executable);
   if (license) await writeFile(join(directory, 'LICENSE'), license.content);
   const runtime = {
     platform,

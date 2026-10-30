@@ -196,10 +196,11 @@ async function openSection(page, id) {
   else {
     const snapshot = await call('snapshot');
     const title = snapshot.globalSettings.settings.find((s) => s.id === id).title;
-    await page
+    const button = page
       .locator('.configuration-nav')
-      .getByRole('button', { name: title, exact: true })
-      .click();
+      .getByRole('button', { name: title, exact: true });
+    if (!(await button.isVisible())) await page.locator('.settings-advanced-nav > summary').click();
+    await button.click();
   }
   await expect
     .poll(async () => (await call('snapshot')).globalSettings.settingsEditor?.sectionId)
@@ -211,12 +212,26 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(origin);
   await capture(page, '01-projects-desktop-light', 'real renderer web + isolated worker');
-  await page.getByRole('button', { name: '离线演示', exact: true }).click();
+  await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+  await page
+    .locator('.settings-developer-tools')
+    .getByRole('button', { name: '离线演示', exact: true })
+    .click();
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await capture(page, '02-chat-desktop-light', 'real renderer web + isolated FakeProvider worker');
-  await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('dark');
-  await capture(page, '02-chat-desktop-dark', 'real renderer web + isolated FakeProvider worker');
-  await page.getByRole('combobox', { name: '桌面主题', exact: true }).selectOption('light');
+  for (const theme of ['dark', 'light']) {
+    await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
+    await page
+      .locator('.settings-appearance')
+      .getByRole('combobox', { name: '设置界面主题', exact: true })
+      .selectOption(theme);
+    await page.getByRole('button', { name: '返回工作区', exact: true }).click();
+    await capture(
+      page,
+      `02-chat-desktop-${theme}`,
+      'real renderer web + isolated FakeProvider worker',
+    );
+  }
   await page.close();
   for (const [size, width, height, scale] of [
     ['desktop', 1440, 960, 1],
@@ -285,9 +300,8 @@ try {
     p.on('pageerror', (e) => errors.push(e.message));
     await p.goto(origin);
     await p.getByRole('button', { name: '打开应用设置', exact: true }).click();
-    await expect(p.getByRole('combobox', { name: '配置作用域', exact: true })).toHaveValue(
-      'global',
-    );
+    await expect(p.locator('.settings-scope-bar')).toHaveCount(0);
+    await expect(p.locator('.settings-preferences,.settings-quick')).toHaveCount(0);
     await expect(p.getByText('正在读取设置…', { exact: true })).toHaveCount(0);
     await capture(p, '03-model-settings-' + size + '-light');
     await openSection(p, 'configuration-agentlab.provider-connections');
@@ -296,12 +310,10 @@ try {
       const list = p.locator('.record-list');
       await list.getByRole('button').filter({ hasText: '用于检查长名称' }).click();
       await capture(p, '06-provider-long-name-desktop');
-      const theme = p.locator('select[aria-label="设置界面主题"]');
-      await theme.locator('xpath=ancestor::details').locator(':scope > summary').click();
+      const theme = p.locator('.settings-appearance select[aria-label="设置界面主题"]');
       await theme.selectOption('dark');
       await capture(p, '05-provider-settings-desktop-dark');
       await theme.selectOption('light');
-      await theme.locator('xpath=ancestor::details').locator(':scope > summary').click();
     }
     for (const [id, name] of [
       ['configuration-model-catalog', '07-model-catalog'],

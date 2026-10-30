@@ -117,14 +117,19 @@ export class CredentialVault {
       throw new Error('系统安全存储加密失败，API key 未保存。');
     }
   }
-  resolve(config: AgentConfig): Record<string, { key: string; binding: string }> {
+  resolve(
+    config: AgentConfig,
+    providers?: readonly string[],
+  ): Record<string, { key: string; binding: string }> {
     const refs: Target[] = [];
-    const active = new Set([
-      config.provider,
-      ...['agentlab.planning', 'agentlab.compaction-summary', 'agentlab.reviewer-model'].map((id) =>
-        String(config.pluginConfig[id]?.provider ?? config.provider),
-      ),
-    ]);
+    const active = new Set(
+      providers ?? [
+        config.provider,
+        ...['agentlab.planning', 'agentlab.compaction-summary', 'agentlab.reviewer-model'].map(
+          (id) => String(config.pluginConfig[id]?.provider ?? config.provider),
+        ),
+      ],
+    );
     for (const provider of ['openai', 'anthropic'])
       if (active.has(provider) && config.pluginConfig['agentlab.provider-' + provider]?.apiKeyRef)
         refs.push(target(config, provider));

@@ -395,6 +395,20 @@ export class PlanController {
     this.value.denialReason = undefined;
     this.value.phase = this.readOnly ? 'planning' : 'executing';
     this.value.reason = undefined;
+    this.value.activeStepId = undefined;
+    for (const step of this.value.steps) {
+      if (['blocked', 'interrupted', 'cancelled'].includes(step.status)) {
+        step.status = 'pending';
+        step.reason = undefined;
+      }
+    }
+    if (!this.readOnly) {
+      const next = this.value.steps.find((step) => step.status === 'pending');
+      if (next) {
+        next.status = 'running';
+        this.value.activeStepId = next.id;
+      }
+    }
     this.changed();
   }
   finish(reason: LoopEndReason) {
@@ -484,7 +498,11 @@ export class PlanController {
       this.changed();
     } else {
       this.successful.set(s.id, (this.successful.get(s.id) ?? 0) + 1);
-      if (!['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)) s.reason = undefined;
+      if (
+        !['paused', 'cancelled', 'interrupted'].includes(this.value!.phase) &&
+        s.status !== 'blocked'
+      )
+        s.reason = undefined;
     }
   }
   assertDelegation() {

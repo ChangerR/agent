@@ -5,6 +5,8 @@
  * 转换函数单独导出，便于脱离网络做单元测试。
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { TransportCapture, observeSDKFetch } from './transport-trace.js';
+import type { ProviderTrace } from '../core/protocol/transport.js';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
 import { estimateTextTokens } from '../core/context/tokens.js';
 import type { CacheTtl, ChatRequest, Provider, ModelCapabilities } from '../core/provider.js';
@@ -364,6 +366,8 @@ export class AnthropicProvider implements Provider {
       models?: Record<string, ModelCapabilities>;
     } = {},
   ) {}
+  /** 跨进程同步下一次请求构建状态；不披露凭据。 */
+  get cacheControlEnabled() { return this.opts.cacheControl !== false && !this.cacheDisabled; }
   get routeId() {
     return routeIdentity('anthropic', this.opts.baseURL ?? 'https://api.anthropic.com');
   }
@@ -423,44 +427,63 @@ export class AnthropicProvider implements Provider {
           : {}),
         baseURL: this.opts.baseURL,
       });
+      observeSDKFetch(this.client);
     }
     return this.client;
   }
 
-  async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
+  async *stream(
+    req: ChatRequest,
+    signal: AbortSignal,
+    trace?: ProviderTrace,
+  ): AsyncIterable<StreamEvent> {
     req = this.normalizeRequest(req);
     const allowCache = this.opts.cacheControl !== false && !this.cacheDisabled;
     const { body, headers } = buildAnthropicBody(req, {
       cacheControl: allowCache,
       capabilities: this.modelCapabilities(req.model),
     });
-    const response = this.getClient().messages.stream(body, {
-      signal,
-      ...(Object.keys(headers).length > 0 ? { headers } : {}),
-    });
-    const iter = response[Symbol.asyncIterator]();
-
-    // 只在吐出任何事件之前重试，避免 UI 收到重复文本
-    let first: IteratorResult<MessageStreamEvent>;
+    const capture = new TransportCapture(trace, 'Anthropic Messages');
+    let failure: unknown;
     try {
-      first = await iter.next();
-    } catch (err) {
-      if (allowCache && isCacheControlRejection(err)) {
-        this.cacheDisabled = true;
-        yield* this.stream(req, signal);
-        return;
-      }
-      throw err;
-    }
+      const response = capture.run(() =>
+        this.getClient().messages.stream(body, {
+          signal,
+          ...(Object.keys(headers).length > 0 ? { headers } : {}),
+        }),
+      );
+      const iter = response[Symbol.asyncIterator]();
 
-    const translator = new AnthropicStreamTranslator();
-    if (!first.done) {
-      for (const out of translator.push(first.value)) yield out;
-    }
-    let next = await iter.next();
-    while (!next.done) {
-      for (const out of translator.push(next.value)) yield out;
-      next = await iter.next();
+      // 只在吐出任何事件之前重试，避免 UI 收到重复文本
+      let first: IteratorResult<MessageStreamEvent>;
+      try {
+        first = await iter.next();
+      } catch (err) {
+        if (allowCache && isCacheControlRejection(err)) {
+          this.cacheDisabled = true;
+          capture.finish(err);
+          yield* this.stream(req, signal, trace);
+          return;
+        }
+        throw err;
+      }
+
+      const translator = new AnthropicStreamTranslator();
+      if (!first.done) {
+        capture.chunk(first.value);
+        for (const out of translator.push(first.value)) yield out;
+      }
+      let next = await iter.next();
+      while (!next.done) {
+        capture.chunk(next.value);
+        for (const out of translator.push(next.value)) yield out;
+        next = await iter.next();
+      }
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      capture.finish(failure);
     }
   }
 }

@@ -208,10 +208,12 @@ export interface ToolResult {
 export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Promise<{
   message: AssistantMessage;
   stopReason: StopReason;
+  stopped: boolean;
   usage: TokenUsage;
 }> {
   const blocks: ContentBlock[] = [];
   let stopReason: StopReason = 'end_turn';
+  let stopped = false;
   const usage = emptyUsage();
   // 工具可交错输出；每个增量与结束事件必须明确指定调用 ID。
   const tools = new Map<
@@ -302,6 +304,7 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
         finishTool(ev.id);
         break;
       case 'message_stop':
+        stopped = true;
         stopReason = ev.stopReason;
         break;
       case 'usage':
@@ -311,5 +314,5 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
   }
   flush();
   for (const id of [...tools.keys()]) finishTool(id);
-  return { message: { role: 'assistant', content: blocks }, stopReason, usage };
+  return { message: { role: 'assistant', content: blocks }, stopReason, stopped, usage };
 }

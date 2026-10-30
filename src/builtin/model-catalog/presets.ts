@@ -11,4 +11,7 @@ export const MODEL_PRESETS: Record<string, ModelInfo> = {
   'deepseek-reasoner': { contextWindow: 65_536, maxOutputTokens: 8192 },
   'gpt-4o': { contextWindow: 128_000, maxOutputTokens: 16_384 },
   'kimi-k2': { contextWindow: 131_072, maxOutputTokens: 8192 },
+  // 采用官方默认输出预算，为输入留出空间；可在 models.json 显式调整。
+  'kimi-k3.1-pro': { contextWindow: 1_048_576, maxOutputTokens: 131_072 },
+  'kimi-k3.1-pro-highspeed': { contextWindow: 1_048_576, maxOutputTokens: 131_072 },
 };

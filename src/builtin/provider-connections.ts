@@ -47,7 +47,7 @@ export const ProviderConnectionSchema = z.discriminatedUnion('type', [
       type: z.literal('openai'),
       ...common,
       ...network,
-      dialect: z.enum(['auto', 'generic', 'deepseek']).default('auto'),
+      dialect: z.enum(['auto', 'generic', 'deepseek', 'kimi']).default('auto'),
     })
     .describe('OpenAI 兼容连接'),
   z.object({ type: z.literal('anthropic'), ...common, ...network }).describe('Anthropic 连接'),

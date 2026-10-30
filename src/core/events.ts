@@ -56,6 +56,18 @@ export type UserDecision =
 export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
 
 export type AgentEvent =
+  | {
+      type: 'model_transport';
+      requestId: string;
+      runId?: string;
+      transport: import('./protocol/transport.js').ApiTransport;
+    }
+  | {
+      type: 'model_response';
+      requestId: string;
+      runId?: string;
+      response: import('./protocol/response-trace.js').ModelResponseTrace;
+    }
   | { type: 'plan_changed'; owner: string; plan?: import('./plan.js').Plan }
   | SubagentProgress
   | {

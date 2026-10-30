@@ -203,18 +203,27 @@ describe('脱敏的角色、请求大小和缓存用量', () => {
         /* 消费离线事件 */
       }
       expect(rows[0]).toMatchObject({ modelRole, runId: 'run', size: requestSize(req) });
-      expect(rows[1]).toMatchObject({
+      const usageEvent = rows.find((event) => event.type === 'model_usage');
+      const responseEvent = rows.find((event) => event.type === 'model_response');
+      expect(responseEvent).toMatchObject({
+        requestId: rows[0].type === 'model_request' ? rows[0].requestId : '',
+        response: { status: 'completed' },
+      });
+      expect(usageEvent).toMatchObject({
         modelRole,
         requestId: rows[0].type === 'model_request' ? rows[0].requestId : '',
         usageReported: true,
         cache: { hitTokens: 93, missTokens: 7 },
       });
-      expect(rows[1]).not.toHaveProperty('size');
-      expect(rows[1]).not.toHaveProperty('evidenceBytes');
+      expect(usageEvent).not.toHaveProperty('size');
+      expect(usageEvent).not.toHaveProperty('evidenceBytes');
       expect(requestSize(req).normalizedJsonBytes).toBe(Buffer.byteLength(JSON.stringify(req)));
       const saved = rows.map(redactedEvent);
       expect(JSON.stringify(saved)).not.toContain('SECRET');
-      expect(saved[1]).toMatchObject({ modelRole, cache: { hitTokens: 93, missTokens: 7 } });
+      expect(saved.find((event) => event.type === 'model_usage')).toMatchObject({
+        modelRole,
+        cache: { hitTokens: 93, missTokens: 7 },
+      });
     },
   );
 
