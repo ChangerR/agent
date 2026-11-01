@@ -9,7 +9,7 @@ import {
   type RuntimeSnapshot,
   type Row,
 } from '../shared/protocol.js';
-import { inspectLocalProject } from './inspection.js';
+import { inspectionPlugin, inspectProject } from './inspection.js';
 import { demoProviderPlugin } from './demo.js';
 import { SessionDebugTrace, sessionDebugPlugin } from './debug-trace.js';
 import { planningErrorMessage } from '../../src/builtin/planning/errors.js';
@@ -141,10 +141,10 @@ export class DesktopController {
                 ],
               };
             },
-            plugins: [sessionDebugPlugin(this.debug)],
+            plugins: [inspectionPlugin(), sessionDebugPlugin(this.debug)],
           }
         : {
-            plugins: [sessionDebugPlugin(this.debug)],
+            plugins: [inspectionPlugin(), sessionDebugPlugin(this.debug)],
             resolveCredential(reference, identity) {
               const item = credentials[reference];
               if (!item || item.binding !== identity)
@@ -656,8 +656,8 @@ export class DesktopController {
         } else if (action.type === 'inspect') {
           const kind = action.kind;
           if (kind === 'read' && !action.path) throw new Error('请选择文件');
-          const result = await inspectLocalProject({
-            cwd: a.cwd,
+          const result = await inspectProject({
+            agent: a,
             kind,
             path: action.path,
             signal: controller.signal,
@@ -666,7 +666,7 @@ export class DesktopController {
             kind,
             path: action.path,
             content: result.content,
-            error: result.error,
+            error: result.isError,
           };
         }
         await this.refreshSessions();
