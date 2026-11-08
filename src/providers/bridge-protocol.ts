@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ModelInfoSchema } from '../core/config.js';
 import type { ChatRequest } from '../core/provider.js';
-import type { StreamEvent } from '../core/protocol/types.js';
+import type { PermissionOutcome, StreamEvent } from '../core/protocol/types.js';
 import type { ProviderDescription } from './semantics.js';
 
 const caps = z
@@ -31,12 +31,28 @@ export const descriptionSchema: z.ZodType<ProviderDescription, z.ZodTypeDef, unk
   })
   .strict();
 const text = z.object({ type: z.literal('text'), text: z.string() }).strict();
+const permissionOutcome: z.ZodType<PermissionOutcome> = z
+  .object({
+    status: z.enum([
+      'denied',
+      'approval_required',
+      'cancelled',
+      'stale',
+      'boundary_unavailable',
+      'error',
+    ]),
+    reasonCode: z.string(),
+    retryable: z.boolean(),
+    requiresUser: z.boolean(),
+  })
+  .strict();
 const result = z
   .object({
     type: z.literal('tool_result'),
     toolUseId: z.string(),
     content: z.string(),
     isError: z.boolean().optional(),
+    permission: permissionOutcome.optional(),
   })
   .strict();
 const assistantBlock = z.discriminatedUnion('type', [

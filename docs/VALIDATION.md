@@ -187,3 +187,17 @@ Linux 上的 Windows 字符串测试不能代替原生 Windows 验收。原生 W
 没有验证隔离成功后的执行路径。Windows 权限分支通过平台注入测试，
 Windows/macOS 尚未实机验收。日志位于本机 `/tmp/agentlab-adversarial-*.log`，
 浏览器截图位于 `/tmp/agentlab-adversarial-ui/`。
+
+## PR #54 评审修复（2026-11-08）
+
+两项评审意见均通过失败回归复现，再完成修复：
+
+- Broker 的严格工具结果 schema 接受并验证 `permission`。真实 AgentLoop 经本地 ModelBroker 回填拒绝或非法参数结果后，可以继续安全操作和后续用户轮次；畸形权限状态、错误字段类型和未知字段仍被拒绝。
+- 根会话迁移预览与应用覆盖归属子会话。写入前检查整棵树的身份、归属、项目与策略版本；所有待迁移文件通过 CAS 保存，子会话先提交，根最后提交。真实恢复不会重放模型请求；已迁移根或子会话的混合版本补迁移、写锁等待时取消及重试均通过回归。
+
+`pnpm typecheck`、`pnpm test`（114 个文件，2034 通过、2 个既有跳过）、
+`pnpm build`、`pnpm desktop:build` 与 `git diff --check` 通过。
+默认远程资产目录缺少 Node；指定 `AGENTLAB_REMOTE_ASSETS=desktop/dist/node` 后，
+`pnpm desktop:remote:build` 使用本次桌面开发构建的 Node 与许可证完成打包。
+本轮验证了 Broker 协议与开发包构建，没有执行真实 SSH 连接或模型网络请求。
+日志位于 `/tmp/agentlab-pr54-review-*.log`。
