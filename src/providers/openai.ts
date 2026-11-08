@@ -1,12 +1,14 @@
 /**
- * OpenAI 兼容 Provider —— chat completions adapter。
+ * OpenAI 兼容 Provider —— Chat Completions / Responses adapter。
  *
  * 兼容所有讲 OpenAI 协议的厂商（OpenAI / DeepSeek / Kimi / 通义 / 本地 vLLM…）。
  * 与 Anthropic adapter 对照阅读，可以清楚看到两家协议的关键差异：
  * - 工具结果是独立的 role:'tool' 消息，而不是 user 消息的 content block
  * - 流式 tool_calls 按 index 增量下发，需要自己拼装 id/name/arguments
  */
-import OpenAI from 'openai';
+import { toResponsesParams, ResponsesStreamTranslator } from './openai-responses.js';
+import OpenAI, { type ClientOptions } from 'openai';
+import { EnvironmentProxyTransport } from '../runtime/http-proxy.js';
 import { TransportCapture, observeSDKFetch } from './transport-trace.js';
 import type { ProviderTrace } from '../core/protocol/transport.js';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
@@ -20,6 +22,8 @@ import type { ChatRequest, Provider, ModelCapabilities } from '../core/provider.
 import { replayArguments } from '../core/protocol/types.js';
 import { routeIdentity, checkModelCapabilities } from './capabilities.js';
 import type { Message, StreamEvent, ToolDefinition } from '../core/protocol/types.js';
+
+export type OpenAIAPI = 'chat-completions' | 'responses';
 
 export type OpenAIDialect = 'generic' | 'deepseek' | 'kimi';
 export type OpenAIDialectSetting = OpenAIDialect | 'auto';
@@ -286,6 +290,7 @@ export class OpenAIProvider implements Provider {
   readonly name = 'openai';
   readonly capabilities = { thinking: true, streaming: true };
   private client: OpenAI | null = null;
+  private readonly proxy = new EnvironmentProxyTransport();
   private readonly endpoint: string;
   private readonly sdkEndpoint: string | undefined;
 
@@ -293,6 +298,7 @@ export class OpenAIProvider implements Provider {
     private opts: ApiKeyOptions & {
       baseURL?: string;
       dialect?: OpenAIDialectSetting;
+      api?: OpenAIAPI;
       models?: Record<string, ModelCapabilities>;
     } = {},
   ) {
@@ -304,8 +310,19 @@ export class OpenAIProvider implements Provider {
   }
   modelCapabilities(model: string): ModelCapabilities {
     if (this.opts.models?.[model]) return this.opts.models[model];
+    const api = this.opts.api ?? 'chat-completions';
+    const caps = this.defaultModelCapabilities(model, api);
+    // Responses 不使用 DeepSeek/Kimi 的 Chat Completions 方言和输出字段。
+    if (api === 'responses') {
+      const { outputParameter, prefixCompaction, ...rest } = caps;
+      return { ...rest, api };
+    }
+    return caps;
+  }
+  private defaultModelCapabilities(model: string, api: OpenAIAPI): ModelCapabilities {
     const endpoint = this.endpoint;
-    const dialect = resolveOpenAIDialect(endpoint, this.opts.dialect);
+    const dialect =
+      api === 'responses' ? 'generic' : resolveOpenAIDialect(endpoint, this.opts.dialect);
     if (dialect === 'kimi' && /^(?:kimi-)?k3(?:\.|-|$)/.test(model))
       return {
         api: 'chat-completions',
@@ -349,14 +366,19 @@ export class OpenAIProvider implements Provider {
   }
   normalizeRequest(req: ChatRequest) {
     const caps = this.modelCapabilities(req.model);
-    if (caps.api !== 'chat-completions' && caps.api !== 'generic')
+    if (!['chat-completions', 'responses', 'generic'].includes(caps.api))
       throw new Error('unsupported_model_api');
     return checkModelCapabilities(
       caps.rawToolArguments === false ? { ...req, replayToolArguments: undefined } : req,
       caps,
     );
   }
+  private responsesOptions(req: ChatRequest) {
+    return { routeId: this.routeId + ':responses', ...this.modelCapabilities(req.model) };
+  }
   private params(req: ChatRequest) {
+    if (this.modelCapabilities(req.model).api === 'responses')
+      return toResponsesParams(this.normalizeRequest(req), this.responsesOptions(req));
     return toOpenAIParams(
       this.normalizeRequest(req),
       resolveOpenAIDialect(this.endpoint, this.opts.dialect),
@@ -370,14 +392,25 @@ export class OpenAIProvider implements Provider {
   estimateRequest(req: ChatRequest) {
     const body = this.params(req);
     const inputTokens =
-      estimateTextTokens(JSON.stringify({ messages: body.messages, tools: body.tools })) + 32;
-    const outputTokens = body.max_completion_tokens ?? body.max_tokens ?? 0;
+      estimateTextTokens(
+        JSON.stringify(
+          'input' in body
+            ? { instructions: body.instructions, input: body.input, tools: body.tools }
+            : { messages: body.messages, tools: body.tools },
+        ),
+      ) + 32;
+    const outputTokens =
+      'input' in body
+        ? (body.max_output_tokens ?? 0)
+        : (body.max_completion_tokens ?? body.max_tokens ?? 0);
     return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
   }
 
   private getClient(): OpenAI {
     if (!this.client) {
       this.client = new OpenAI({
+        // SDK v4 使用 node-fetch 类型，运行时接受标准 Fetch 实现。
+        ...(this.proxy.options() as Pick<ClientOptions, 'fetch'>),
         apiKey: resolveApiKey(this.opts, 'OPENAI_API_KEY', this.endpoint) ?? 'EMPTY',
         baseURL:
           this.sdkEndpoint ??
@@ -388,6 +421,10 @@ export class OpenAIProvider implements Provider {
     return this.client;
   }
 
+  dispose(): Promise<void> {
+    return this.proxy.dispose();
+  }
+
   async *stream(
     req: ChatRequest,
     signal: AbortSignal,
@@ -395,11 +432,41 @@ export class OpenAIProvider implements Provider {
   ): AsyncIterable<StreamEvent> {
     req = this.normalizeRequest(req);
     const client = this.getClient();
-    const capture = new TransportCapture(trace, 'OpenAI Chat Completions');
+    const responses = this.modelCapabilities(req.model).api === 'responses';
+    const capture = new TransportCapture(
+      trace,
+      responses ? 'OpenAI Responses' : 'OpenAI Chat Completions',
+    );
     let failure: unknown;
+    let responseStarted = false;
     try {
+      if (responses) {
+        const source = { routeId: this.responsesOptions(req).routeId, model: req.model };
+        const stream = await capture.run(
+          async () =>
+            await client.responses.create(toResponsesParams(req, this.responsesOptions(req)), {
+              signal,
+            }),
+        );
+        responseStarted = true;
+        yield { type: 'message_start' };
+        const translator = new ResponsesStreamTranslator(source);
+        for await (const chunk of stream) {
+          capture.chunk(chunk);
+          for (const event of translator.translate(chunk))
+            yield event.type === 'tool_use_start' && req.replayToolArguments
+              ? { ...event, source }
+              : event;
+        }
+        translator.finish();
+        return;
+      }
       const stream = await capture.run(
-        async () => await client.chat.completions.create(this.params(req), { signal }),
+        async () =>
+          await client.chat.completions.create(
+            this.params(req) as OpenAI.ChatCompletionCreateParamsStreaming,
+            { signal },
+          ),
       );
       yield { type: 'message_start' };
       const translator = new OpenAIStreamTranslator();
@@ -411,8 +478,12 @@ export class OpenAIProvider implements Provider {
             : ev;
       }
     } catch (error) {
-      failure = error;
-      throw error;
+      // SDK 会直接抛出 SSE event:error；同样不暴露服务端附带的正文。
+      failure =
+        responseStarted && error instanceof OpenAI.APIError
+          ? new Error('responses_stream_error')
+          : error;
+      throw failure;
     } finally {
       capture.finish(failure);
     }

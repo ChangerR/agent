@@ -1,3 +1,4 @@
+import { StartupTrustRequired } from '../../src/runtime/startup-trust.js';
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { createAgent, type Agent, type AgentEvent, type Message } from '../../src/index.js';
@@ -36,6 +37,13 @@ import type { SettingsSection } from '../../src/sdk/index.js';
 export class DesktopController {
   private debug = new SessionDebugTrace();
   private agent?: Agent;
+  private pendingStartup?: {
+    cwd: string;
+    demo: boolean;
+    generation: string;
+    credentials: Record<string, { key: string; binding: string }>;
+    fingerprint: string;
+  };
   private state?: RuntimeSnapshot;
   private active?: Promise<unknown>;
   private stopping = false;
@@ -50,7 +58,8 @@ export class DesktopController {
   private approved = new Map<
     string,
     {
-      resolve: (decision: { allow: true } | { allow: false; feedback?: string }) => void;
+      resolve: (decision: import('../../src/core/events.js').UserDecision) => void;
+      actions?: readonly import('../../src/core/permission/grants.js').ApprovalAction[];
       signal: AbortSignal;
       remove: () => void;
     }
@@ -114,47 +123,93 @@ export class DesktopController {
     demo: boolean,
     generation: string,
     credentials: Record<string, { key: string; binding: string }> = {},
+    startupFingerprint?: string,
   ) {
     if (this.agent || this.disposed) throw new Error('运行时不能重复初始化');
-    this.agent = await this.factory(
-      cwd,
-      demo
-        ? {
-            config: {
-              provider: 'fake',
-              model: 'fake-desktop',
-              apiKeyEnv: 'AGENTLAB_DEMO_KEY',
-              pluginEntries: [],
-              disabledPlugins: [],
-              mcpConfig: '.desktop-demo-no-mcp.json',
-              capabilities: { reviewer: false },
-              pluginConfig: { 'agentlab.planning': { mode: 'off' } },
-              permissions: { allow: [], deny: [], ask: ['write_file'] },
+    try {
+      this.agent = await this.factory(
+        cwd,
+        demo
+          ? {
+              config: {
+                provider: 'fake',
+                model: 'fake-desktop',
+                apiKeyEnv: 'AGENTLAB_DEMO_KEY',
+                pluginEntries: [],
+                disabledPlugins: [],
+                mcpConfig: '.desktop-demo-no-mcp.json',
+                capabilities: { reviewer: false },
+                pluginConfig: { 'agentlab.planning': { mode: 'off' } },
+                permissions: { allow: [], deny: [], ask: ['write_file'] },
+              },
+              preset: (input) => {
+                const preset = defaultPreset(input);
+                return {
+                  ...preset,
+                  plugins: [
+                    ...preset.plugins.filter((p) => p.manifest.id !== 'agentlab.provider-fake'),
+                    demoProviderPlugin(),
+                  ],
+                };
+              },
+              plugins: [inspectionPlugin(), sessionDebugPlugin(this.debug)],
+            }
+          : {
+              approveStartup: (request) => request.fingerprint === startupFingerprint,
+              plugins: [inspectionPlugin(), sessionDebugPlugin(this.debug)],
+              resolveCredential(reference, identity) {
+                const item = credentials[reference];
+                if (!item || item.binding !== identity)
+                  throw new Error(
+                    '保存的 API key 不可用或实际端点已变化，请检查全局安全存储；未发送请求。',
+                  );
+                return item.key;
+              },
             },
-            preset: (input) => {
-              const preset = defaultPreset(input);
-              return {
-                ...preset,
-                plugins: [
-                  ...preset.plugins.filter((p) => p.manifest.id !== 'agentlab.provider-fake'),
-                  demoProviderPlugin(),
-                ],
-              };
-            },
-            plugins: [inspectionPlugin(), sessionDebugPlugin(this.debug)],
-          }
-        : {
-            plugins: [inspectionPlugin(), sessionDebugPlugin(this.debug)],
-            resolveCredential(reference, identity) {
-              const item = credentials[reference];
-              if (!item || item.binding !== identity)
-                throw new Error(
-                  '保存的 API key 不可用或实际端点已变化，请检查全局安全存储；未发送请求。',
-                );
-              return item.key;
-            },
-          },
-    );
+      );
+    } catch (error) {
+      if (!(error instanceof StartupTrustRequired)) throw error;
+      this.pendingStartup = {
+        cwd,
+        demo,
+        generation,
+        credentials,
+        fingerprint: error.request.fingerprint,
+      };
+      this.state = {
+        generation,
+        seq: 0,
+        cwd,
+        projectName: basename(cwd),
+        sessionId: 'startup',
+        title: '项目启动信任',
+        demo,
+        busy: false,
+        phase: '等待启动信任',
+        startupTrust: error.request,
+        rows: [],
+        approvals: [],
+        model: '',
+        provider: '',
+        mode: 'ask',
+        thinking: 'off',
+        sources: { model: 'default', mode: 'default', thinking: 'default' },
+        models: [],
+        providers: [],
+        modelDetails: [],
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        sessions: [],
+        brokenSessions: 0,
+        plugins: [],
+        tools: [],
+        commands: [],
+        settings: [],
+        inspection: { kind: 'files', content: '' },
+      };
+      this.emit(true);
+      return;
+    }
+    this.pendingStartup = undefined;
     const a = this.agent;
     this.debug.configure(a.paths.projectStateDir, a.session.id);
     this.state = {
@@ -237,11 +292,13 @@ export class DesktopController {
     event.signal.addEventListener('abort', cancel, { once: true });
     this.approved.set(id, {
       resolve: event.resolve,
+      actions: event.request.actions,
       signal: event.signal,
       remove: () => event.signal.removeEventListener('abort', cancel),
     });
     this.state!.approvals.push({
       id,
+      actions: event.request.actions,
       summary: event.request.summary,
       reason: event.request.reason,
       toolName: event.request.toolName,
@@ -438,6 +495,36 @@ export class DesktopController {
     const action = actionSchema.parse(raw),
       s = this.state,
       a = this.agent;
+    if (
+      action.type === 'trust-startup' &&
+      s &&
+      this.pendingStartup &&
+      !this.disposed &&
+      !this.disposal
+    ) {
+      const pending = this.pendingStartup;
+      if (
+        action.generation !== s.generation ||
+        action.sessionId !== s.sessionId ||
+        action.fingerprint !== pending.fingerprint
+      )
+        throw new Error('会话已变化，请刷新后重试');
+      this.pendingStartup = undefined;
+      if (!action.allow) {
+        s.startupTrust = undefined;
+        s.phase = '已停止';
+        this.emit(true);
+        return;
+      }
+      await this.initialize(
+        pending.cwd,
+        pending.demo,
+        pending.generation,
+        pending.credentials,
+        pending.fingerprint,
+      );
+      return;
+    }
     if (!s || !a || this.disposed || this.disposal) throw new Error('运行时不可用');
     if (action.generation !== s.generation || action.sessionId !== a.session.id)
       throw new Error('会话已变化，请刷新后重试');
@@ -466,10 +553,22 @@ export class DesktopController {
     if (action.type === 'approve') {
       const pending = this.approved.get(action.approvalId);
       if (!pending || pending.signal.aborted) throw new Error('审批已结束，未执行迟到操作');
+      if (
+        action.actionId
+          ? !pending.actions?.some((item) => item.id === action.actionId)
+          : typeof action.allow !== 'boolean'
+      )
+        throw new Error('审批动作无效');
       this.approved.delete(action.approvalId);
       pending.remove();
       s.approvals = s.approvals.filter((p) => p.id !== action.approvalId);
-      pending.resolve(action.allow ? { allow: true } : { allow: false, feedback: action.feedback });
+      pending.resolve(
+        action.actionId
+          ? { actionId: action.actionId, feedback: action.feedback }
+          : action.allow
+            ? { allow: true }
+            : { allow: false, feedback: action.feedback },
+      );
       s.phase = '执行工具';
       this.emit(true);
       return;

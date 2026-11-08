@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ProjectCatalog } from '../desktop/main/project-catalog.js';
-import { DesktopController } from '../desktop/worker/controller.js';
+import { DesktopController } from './helpers/desktop-controller.js';
 import { resolveProjectRoot } from '../src/core/paths.js';
 
 describe('桌面以项目为边界', () => {

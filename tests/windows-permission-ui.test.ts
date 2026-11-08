@@ -166,17 +166,16 @@ describe.each(['auto', 'yolo'] as const)('Windows %s 项目内只读直接放行
         analysisReasonCode: 'native_windows_write_unverified',
       });
       expect(h.rememberChoices).toEqual([true]);
-      expect(h.policy.controller!.getSessionRules().allow).toEqual([
-        `${name}(=${JSON.stringify(path)})`,
-      ]);
+      expect(h.policy.controller!.getSessionRules().allow).toEqual([]);
+      expect(h.policy.controller!.listGrants!()).toHaveLength(1);
       const next =
         name === 'write_file'
           ? { path, content: 'second' }
           : { path, old_string: 'first', new_string: 'second' };
       expect((await h.run(name, next)).isError).toBeFalsy();
       expect(await readFile(join(cwd, path), 'utf8')).toBe('second');
-      expect(h.requests).toHaveLength(1);
-      expect(h.provider!.requests).toHaveLength(1);
+      expect(h.requests).toHaveLength(2);
+      expect(h.provider!.requests).toHaveLength(2);
     },
   );
 });
@@ -202,22 +201,15 @@ describe('人工模式和非 Windows 不被 reviewer 原因码误判', () => {
     },
   );
 
-  it('记住白名单只覆盖可生效的询问原因', () => {
+  it('记住动作由后端提供，前端不维护平台白名单', () => {
+    expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash' })).toBe(false);
     expect(
       canRememberPermission({
-        reasonCode: 'ask_mode',
-        analysisReasonCode: 'native_windows_shell_unverified',
-        toolName: 'bash',
+        actions: [
+          { id: 'test', kind: 'grant', label: '记住', description: '完整调用', scope: 'session' },
+        ],
       }),
     ).toBe(true);
-    expect(canRememberPermission({ reasonCode: 'explicit_ask', toolName: 'bash' })).toBe(false);
-    expect(
-      canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' }),
-    ).toBe(false);
-    expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'grep' })).toBe(false);
-    expect(
-      canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash', agentId: 'child' }),
-    ).toBe(false);
   });
 
   it('reviewer 自定义原因码不能冒充原策略的平台限制，写入能力以原策略为准', async () => {

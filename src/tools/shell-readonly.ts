@@ -831,9 +831,68 @@ async function gitCommand(args: string[], boundary: Boundary): Promise<string[]>
   // 只接受关闭 pager 的全局选项；-C/-c/--git-dir 等仍需独立证明。
   if (args[0] === '--no-pager') args = args.slice(1);
   const subcommand = args[0];
-  if (!['status', 'diff', 'ls-files'].includes(subcommand)) fail('shell_git_command_not_supported');
+  if (!['status', 'diff', 'ls-files', 'log'].includes(subcommand))
+    fail('shell_git_command_not_supported');
   let paths: string[] = [];
-  if (subcommand === 'ls-files') {
+  if (subcommand === 'log') {
+    // 只证明提交元数据读取；补丁、输出文件、签名验证和任意历史文件读取不在此路径放行。
+    if (args.includes('--')) fail('shell_git_revision_unverified');
+    const format: ValueRule = (value) => {
+      if (['oneline', 'short', 'medium', 'full', 'fuller', 'reference', 'raw'].includes(value))
+        return true;
+      const body = value.replace(/^(?:format|tformat):/, '');
+      // %G* 会启动签名验证，%aN/%aE 等会读取 mailmap，命名格式还可能间接展开这些占位符。
+      return (
+        (body !== value || body.includes('%')) &&
+        !body.replace(/%%|%x[\da-fA-F]{2}|%[hHsSbBpPdDn]|%[ac][nedtiI]/g, '').includes('%')
+      );
+    };
+    const parsed = options(
+      args.slice(1).map((arg) => (/^-\d+$/.test(arg) ? `--max-count=${arg.slice(1)}` : arg)),
+      {
+        short: 's',
+        shortValues: { n: number },
+        long: [
+          '--oneline',
+          '--graph',
+          '--no-patch',
+          '--no-decorate',
+          '--abbrev-commit',
+          '--no-abbrev-commit',
+          '--first-parent',
+          '--no-merges',
+          '--merges',
+          '--reverse',
+          '--topo-order',
+          '--date-order',
+        ],
+        longValues: {
+          '--max-count': number,
+          '--skip': number,
+          '--format': format,
+          '--date': [
+            'default',
+            'iso',
+            'iso-strict',
+            'rfc',
+            'short',
+            'relative',
+            'raw',
+            'unix',
+            'human',
+          ],
+        },
+        optionalLong: {
+          '--pretty': format,
+          '--decorate': ['short', 'full', 'auto', 'no'],
+          '--abbrev': number,
+          '--color': ['always', 'auto', 'never'],
+        },
+      },
+    );
+    if (parsed.operands.length > 1 || parsed.operands.some((arg) => arg !== 'HEAD'))
+      fail('shell_git_revision_unverified');
+  } else if (subcommand === 'ls-files') {
     // 限定索引中的文件名/阶段元数据，不读取历史 blob 或遍历未跟踪目录。
     paths = options(args.slice(1), {
       short: 'csz',
@@ -944,6 +1003,7 @@ async function gitCommand(args: string[], boundary: Boundary): Promise<string[]>
     'info',
     'info/attributes',
     'info/exclude',
+    ...(subcommand === 'log' ? ['shallow', 'info/grafts'] : []),
   ]) {
     const entry = await boundary.target(join(gitDir.actual, name), 'git');
     if (entry.link || !within(gitDir.actual, entry.actual)) fail('shell_git_symlink_unverified');
@@ -980,11 +1040,23 @@ async function gitCommand(args: string[], boundary: Boundary): Promise<string[]>
     )
       fail('shell_git_configuration_unverified');
   }
-  if (subcommand === 'diff') {
-    // diff 会输出对象内容，额外验证对象/引用存储；超过扫描预算时明确回退，不假定外部对象安全。
+  if (subcommand === 'diff' || subcommand === 'log') {
+    // 历史读取额外验证对象/引用存储；超过扫描预算时明确回退，不假定外部对象安全。
     await boundary.tree(join(gitDir.actual, 'objects'), 'git');
     await boundary.tree(join(gitDir.actual, 'refs'), 'git');
   }
+  if (subcommand === 'log')
+    return [
+      ...GIT_SAFE_OPTIONS,
+      'log',
+      '--no-patch',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-show-signature',
+      '--no-notes',
+      '--no-use-mailmap',
+      ...args.slice(1),
+    ];
   const tracked = await gitTrackedPaths(boundary);
   if (subcommand === 'diff' && args.some((arg) => ['HEAD', '--cached', '--staged'].includes(arg)))
     tracked.push(...(await gitTrackedPaths(boundary, true)));

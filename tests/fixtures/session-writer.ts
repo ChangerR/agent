@@ -2,7 +2,7 @@
 import { createAgent } from '../../src/index.js';
 
 const [cwd, id, text] = process.argv.slice(2);
-const agent = await createAgent(cwd, { autoSaveSessions: false });
+const agent = await createAgent(cwd, { autoSaveSessions: false, approveStartup: () => true });
 await agent.session.resume(id);
 process.send?.({ type: 'ready' });
 process.once('message', async () => {

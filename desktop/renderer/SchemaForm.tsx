@@ -18,10 +18,18 @@ export type FormSchema = {
   minLength?: number;
   maxLength?: number;
   writeOnly?: boolean;
+  readOnly?: boolean;
   'x-any'?: boolean;
   'x-rule'?: boolean;
 };
 export const labels: Record<string, string> = {
+  resourceRules: '资源规则',
+  grants: '已保存授权',
+  revokeId: '撤销授权',
+  effects: '读写效果',
+  resource: '资源范围',
+  action: '规则动作',
+  glob: '项目相对路径匹配',
   provider: 'Provider',
   connections: '命名连接',
   type: '适配器类型',
@@ -89,7 +97,7 @@ export const labels: Record<string, string> = {
   env: '环境变量',
   headers: '请求头',
   url: '服务器 URL',
-  variables: '项目环境变量',
+  variables: '全局环境变量',
   catalog: '模型目录',
 };
 const record = (v: unknown): v is Record<string, unknown> =>
@@ -611,6 +619,14 @@ export function Field(props: Props) {
       <span className="managed-reference">
         {value ? '已由全局 API key 安全保存；使用上方入口替换或清除。' : '尚未保存 API key。'}
       </span>
+    );
+  if (schema.readOnly)
+    return (
+      <div className="readonly-setting">
+        <strong>{label}</strong>
+        <ValueView value={value} />
+        {schema.description && <small>{schema.description}</small>}
+      </div>
     );
   if (schema['x-rule']) return <RuleInput {...props} />;
   if (schema.writeOnly || secret(value))

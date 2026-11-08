@@ -4,6 +4,7 @@ import { CredentialVault, CredentialSettings } from './credentials.js';
 import { ModelSetupSettings, ModelSetupError } from './model-setup.js';
 import { settingsErrorMessage } from '../../src/runtime/config-store.js';
 import { loadConfigWithSources } from '../../src/core/config.js';
+import { loadUserEnv } from '../../src/runtime/environment.js';
 import { desktopMenu, platformWindowOptions } from './platform.js';
 import { delimiter, join, resolve } from 'node:path';
 import { realpath, stat, readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
@@ -471,6 +472,7 @@ async function createWindow() {
 app
   .whenReady()
   .then(async () => {
+    loadUserEnv();
     await readPreferences();
     vault = new CredentialVault(safeStorage);
     credentials = new CredentialSettings(vault);

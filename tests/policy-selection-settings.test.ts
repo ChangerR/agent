@@ -2,7 +2,7 @@ import { readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { mkdtempProject } from './helpers/project.js';
 const signal = () => new AbortController().signal;
 it('实现选择提交后写项目配置，下次启动生效，保持当前审批实现', async () => {

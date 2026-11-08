@@ -17,7 +17,7 @@
 - 历史：摘要不能伪造真实用户来源；用户消息按原始顺序匹配；不合作 compactor 不提交迟到结果。
 - reviewer：完整参数与真实用户要求、严格 JSON/流协议、预算、独立模型/provider 来源、用途与执行关联、超时/取消、无批准结果缓存。
 - 设置：项目默认作用域、一次提交自动保存、Esc 不保存未提交输入、全局/项目覆盖、重启提示、CAS 冲突和安全错误。
-- `.env`：项目根加载、进程环境优先、显式 apiKeyEnv 不回退、不暴露 key、provider 端点与凭据身份绑定。
+- `.env`：仅用户 ~/.agentlab 目录加载、项目开发环境隔离、进程环境优先、显式 apiKeyEnv 不回退、不暴露 key、provider 端点与凭据身份绑定。
 - Shell：原始 `ls -la && echo "---" && cat package.json` 通过真实 runtime 和 pnpm dev PTY 验证实际 stdout 与 judge/人工次数，并在保存 auto 后重启复验；不能用内置 grep/glob 的通过数量代替 shell 可用性证据。
 - Headless/TUI：命令不加载 pi-tui；内存终端检查窄屏、焦点、详情、审批、队列和 renderer 异常；Linux 真 PTY 复用原 package.json/dev 与逐文件哈希一致的源码，验证单选自动保存、Esc 不保存、重启，以及真实工具失败和运行中取消后的再次请求。
 - 子 agent：`tests/subagents.test.ts` 使用真实 runtime 和 FakeProvider 验证两个并行 child、独立 fresh/snapshot、完成回传、FIFO 与完成边界、指定 run 的 wait race/timeout、全树额度、回合/时限/累计结构输出预算、父 deny/ask 与用户来源、一次性审批、只读兄弟权限交集、失败隔离和 headless approval_required。实际模型审批员与自定义压缩器验证各 agent 的 agent/compact/judge 用量以及迟到去重。
@@ -166,4 +166,38 @@ HOME/项目完全隔离；启动文件和源码 118 个文件的 SHA-256 与仓�
 
 Linux 上的 Windows 字符串测试不能代替原生 Windows 验收。原生 Windows 项目内 read_file/glob/grep 在通过通用检查后可于 auto/yolo 直接放行；写入、敏感、项目外、歧义路径与 Shell 仍沿用现有保护。Bash 仅对完整验证的只读执行计划确定性放行；动态展开、未知参数及不支持的仓库配置仍需审批。本轮 Shell 运行证据来自 Linux，不等于 macOS 或 Windows 实机验收。
 
-没有 OS 沙箱、在线插件安装器、任意热卸载或真实模型安全准确率保证。文件系统前提会重验，但不是针对恶意外部进程的原子隔离。缺失用量记为未知，不声称零费用。明确目录授权的确定性放行不能推导为任意任务都降低成本。
+默认宿主执行没有 OS 隔离；可选 Linux 项目副本执行仅在 bubblewrap 实际探针通过后可用。没有在线插件安装器、任意热卸载或真实模型安全准确率保证。文件系统前提会重验，但不是针对恶意外部进程的原子隔离。缺失用量记为未知，不声称零费用。明确目录授权的确定性放行不能推导为任意任务都降低成本。
+
+## 权限 v3 复测（2026-11-01）
+
+本轮先复现失败，再修复并补回归，新增 11 个测试用例，并扩展既有执行链断言：
+
+- 审批摘要与工具展示事件使用脱敏副本，覆盖常见密钥字段；实际执行仍取得原始参数。PowerShell 环境变量引用和普通 JSON 文本不会被误判为敏感值。
+- MCP 启动信任列出请求继承的环境变量名；信任详情展示实际授权内容，隐藏敏感值。重复授权 ID 明确报错，避免反复审批。
+- 进程内已加载的插件入口内容变化后明确要求重启，避免批准新内容却运行 ESM 缓存中的旧实现。
+- Windows 同资源拒绝按路径大小写和分隔符归一化；不适用的目录授权不会遮挡后续有效完整调用授权。
+- 相同启动配置允许并发批准，信任记录短暂写锁释放后重读并重试；每次重试仍验证完整激活内容，配置变化继续拒绝。两个真实进程的会话保存冲突测试通过。
+
+验证结果：`pnpm typecheck`、`pnpm test`（113 个文件，2024 通过、2 个既有跳过）、
+`pnpm build`、`pnpm desktop:build` 和真实 Linux Chromium 的
+`pnpm desktop:ui-smoke` 全部通过，`git diff --check` 通过。
+测试使用隔离 HOME、临时项目、固定假凭据与 FakeProvider/mock SDK，没有真实模型请求。
+
+本环境的 Linux 隔离探针返回 `sandbox_unavailable`，已验证不可用时拒绝执行；
+没有验证隔离成功后的执行路径。Windows 权限分支通过平台注入测试，
+Windows/macOS 尚未实机验收。日志位于本机 `/tmp/agentlab-adversarial-*.log`，
+浏览器截图位于 `/tmp/agentlab-adversarial-ui/`。
+
+## PR #54 评审修复（2026-11-08）
+
+两项评审意见均通过失败回归复现，再完成修复：
+
+- Broker 的严格工具结果 schema 接受并验证 `permission`。真实 AgentLoop 经本地 ModelBroker 回填拒绝或非法参数结果后，可以继续安全操作和后续用户轮次；畸形权限状态、错误字段类型和未知字段仍被拒绝。
+- 根会话迁移预览与应用覆盖归属子会话。写入前检查整棵树的身份、归属、项目与策略版本；所有待迁移文件通过 CAS 保存，子会话先提交，根最后提交。真实恢复不会重放模型请求；已迁移根或子会话的混合版本补迁移、写锁等待时取消及重试均通过回归。
+
+`pnpm typecheck`、`pnpm test`（114 个文件，2034 通过、2 个既有跳过）、
+`pnpm build`、`pnpm desktop:build` 与 `git diff --check` 通过。
+默认远程资产目录缺少 Node；指定 `AGENTLAB_REMOTE_ASSETS=desktop/dist/node` 后，
+`pnpm desktop:remote:build` 使用本次桌面开发构建的 Node 与许可证完成打包。
+本轮验证了 Broker 协议与开发包构建，没有执行真实 SSH 连接或模型网络请求。
+日志位于 `/tmp/agentlab-pr54-review-*.log`。

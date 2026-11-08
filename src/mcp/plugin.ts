@@ -14,6 +14,12 @@ import type { Tool } from '../core/registry.js';
 import type { McpServerConfig } from './config.js';
 import { loadMcpConfig } from './config.js';
 import { McpResultConfig, McpResultStore, type McpResultOptions } from './results.js';
+import { EnvironmentProxyTransport } from '../runtime/http-proxy.js';
+import { processEnvironment } from '../runtime/process-environment.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { permissionHash } from '../core/permission/grants.js';
 
 interface ConnectedServer {
   name: string;
@@ -25,6 +31,9 @@ export class McpClientManager {
   private servers: ConnectedServer[] = [];
   private closing?: Promise<void>;
   private readonly results: McpResultStore;
+  private readonly proxy = new EnvironmentProxyTransport();
+  private readonly homes: string[] = [];
+  private readonly connectionIdentities = new WeakMap<Client, string>();
 
   constructor(options: McpResultOptions = {}) {
     this.results = new McpResultStore(options);
@@ -57,13 +66,39 @@ export class McpClientManager {
     options: { cwd?: string } = {},
   ): Promise<Client> {
     const client = new Client({ name: 'agentlab', version: '0.1.0' });
+    this.connectionIdentities.set(
+      client,
+      permissionHash({
+        name,
+        config,
+        cwd: options.cwd,
+        inherited:
+          'command' in config
+            ? Object.fromEntries(
+                (config.inheritEnv ?? []).map((key) => [key, process.env[key] ?? null]),
+              )
+            : undefined,
+      }),
+    );
 
     if ('command' in config) {
+      const home = await mkdtemp(join(tmpdir(), 'agentlab-mcp-home-'));
+      this.homes.push(home);
       const transport = new StdioClientTransport({
         command: config.command,
         cwd: options.cwd,
         args: config.args,
-        env: { ...process.env, ...config.env } as Record<string, string>,
+        env: {
+          ...processEnvironment(config.inheritEnv),
+          HOME: home,
+          USERPROFILE: home,
+          ...Object.fromEntries(
+            (config.inheritEnv ?? []).flatMap((name) =>
+              process.env[name] === undefined ? [] : [[name, process.env[name]!]],
+            ),
+          ),
+          ...config.env,
+        } as Record<string, string>,
         stderr: 'pipe',
       });
       try {
@@ -81,6 +116,7 @@ export class McpClientManager {
       });
     } else {
       const transport = new StreamableHTTPClientTransport(new URL(config.url), {
+        ...this.proxy.options(),
         requestInit: config.headers ? { headers: config.headers } : undefined,
       });
       try {
@@ -105,6 +141,7 @@ export class McpClientManager {
     const { tools } = await client.listTools();
     return tools.map((t): Tool => ({
       name: `mcp__${serverName}__${t.name}`,
+      permissionIdentity: this.connectionIdentities.get(client),
       description: `[MCP:${serverName}] ${t.description ?? t.name}`,
       inputSchema: (t.inputSchema as Record<string, unknown>) ?? { type: 'object' },
       // MCP 工具风险未知，保守按 write 处理；可通过 allow 规则精细放行
@@ -147,8 +184,15 @@ export class McpClientManager {
           .map((r) => r.reason);
         if (errors.length) throw new AggregateError(errors, 'MCP cleanup failed');
       } finally {
-        await this.results.close();
-        this.closing = undefined;
+        try {
+          await this.proxy.dispose();
+        } finally {
+          await this.results.close();
+          await Promise.all(
+            this.homes.splice(0).map((home) => rm(home, { recursive: true, force: true })),
+          );
+          this.closing = undefined;
+        }
       }
     })();
     return this.closing;

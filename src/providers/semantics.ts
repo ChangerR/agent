@@ -12,6 +12,7 @@ export interface ProviderDescription {
   routeId: string;
   endpoint: string;
   dialect?: 'auto' | 'generic' | 'deepseek' | 'kimi';
+  api?: 'chat-completions' | 'responses';
   cacheControl?: boolean;
   models: Record<string, ModelInfo>;
   capabilities: Record<string, ModelCapabilities>;
@@ -19,7 +20,12 @@ export interface ProviderDescription {
 export function providerSemantics(d: ProviderDescription) {
   const base =
     d.kind === 'openai'
-      ? new OpenAIProvider({ baseURL: d.endpoint, dialect: d.dialect, models: d.capabilities })
+      ? new OpenAIProvider({
+          baseURL: d.endpoint,
+          dialect: d.dialect,
+          api: d.api,
+          models: d.capabilities,
+        })
       : d.kind === 'anthropic'
         ? new AnthropicProvider({
             baseURL: d.endpoint,

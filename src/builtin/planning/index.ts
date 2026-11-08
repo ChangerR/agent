@@ -1,4 +1,4 @@
-/** 每个新任务先明确是否需要计划；不能依赖执行模型自愿调用规划工具。 */
+/** 新任务先发布计划；明确的首次项目概览在本地规划，其余交给模型判断。 */
 import { z } from 'zod';
 import { definePlugin } from '../../sdk/index.js';
 import type { RuntimeServices } from '../../runtime/services.js';
@@ -98,7 +98,38 @@ export const planningStrategy: PlanningStrategy = {
   },
   async prepare(input: PlannerInput) {
     if (input.mode === 'off') return;
+    input.signal.throwIfAborted();
     const automatic = input.mode === 'auto' && !input.force;
+    // 只匹配无历史、无附加要求的完整概览请求，不用关键词猜测复杂度或忽略历史授权。
+    // 本地计划仍标记只读并走原有执行门，不能为了省一次请求而移除任务范围约束。
+    const first = input.messages[0];
+    if (
+      automatic &&
+      input.messages.length === 1 &&
+      first?.role === 'user' &&
+      !first.source &&
+      first.content === input.input
+    ) {
+      const request = input.input.trim();
+      const chinese =
+        /^(?:请)?(?:帮我)?(?:浏览(?:一下)?|了解(?:一下)?|介绍(?:一下)?|看看|看下|看一下)(?:当前的?|这个)?项目[。！？?!]?$/u.test(
+          request,
+        );
+      const english =
+        /^(?:please )?(?:browse|explore|give me an overview of) (?:the |this )?(?:current )?(?:project|repository|repo)[.!?]?$/i.test(
+          request,
+        );
+      if (chinese || english)
+        return {
+          goal: request,
+          steps: [
+            chinese
+              ? '按需抽查项目入口与关键实现，汇总技术栈、模块职责和已核实的发现'
+              : 'Inspect selected entry points and summarize the stack, module responsibilities, and verified findings',
+          ],
+          readOnly: true,
+        };
+    }
     let invalidResponse = '';
     // 只对完整但结构无效的回复纠正一次；网络失败、截断和取消不在这里重试。
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -234,7 +265,7 @@ export function planningPlugin(
             id: 'planning',
             source: PLANNING_PLUGIN,
             stability: 'stable',
-            text: '用户直接描述任务即可，无需先选择规划方式或输入命令。根据完整上下文自行判断复杂度：简单问答直接回答，简单操作直接执行；复杂多步骤工作仅在 runtime_plan.plan=null 时用 plan_update 的 goal/steps 创建简洁计划；运行时已发布计划则直接使用快照中的 revision 和稳定 stepId 更新，不重复创建。可先做必要的只读调研，然后持续实施、验证并更新计划，直到完成或遇到真实阻塞。普通执行任务不要只返回方案、询问是否开始或要求用户输入带参数的规划命令。用户明确只要方案时尊重其范围，不开始实施。计划修改使用 runtime_plan 或 plan_status 的最新 revision 和稳定 stepId。一次响应只发一个 plan_update，不把同一 revision 并行复用。完成步骤时优先同时传 nextStepId 启动下一 pending 步骤；计划更新排在该步骤的读取调用之前。更新结果仅为确认，下一轮 runtime_plan 提供完整最新状态，不必为正常切换再调用 plan_status。只读汇总步骤可以用 evidenceStepIds 引用之前已完成步骤的依据，不为结案重复读取。实施前将步骤置 running，完成时提供具体 evidence。普通项目浏览先读取 AGENTS.md 和共享约定，选择少量关键路径，核实三至五项优先建议后即可总结结束，说明抽查范围，不穷尽全仓库。通常由自己完成；只有用户要求深入审查或确有独立验证需要时才委派。确需并行时只委派少量互不依赖且范围明确的方向，使用 readOnly:true 和各自 planStepId；直接向 pending 步骤绑定 child 即可，不要先把多个父步骤设为 running。已有同范围子任务时先消费其结果，不重复派发。子任务直接执行所分配范围，不创建独立计划，也不能再委派；步骤管理与汇总由父任务负责。默认全树最多两个 child，简单任务无需委派。only 模式只产出方案，不 spawn/send。使用 agent_spawn.planStepId 关联任务，等 child 真实完成才可完成步骤。只读审查只给建议，不自行修复；实施任务中可自行解决的问题先修复。需要用户信息、授权或外部条件时，将步骤标为 blocked 并说明原因再提问。用户或权限审查明确拒绝后不得 plan_update running 重试，也不得换 child、换工具绕过；等待真实用户明确继续或授权。task_read_only 对未知命令形状的调用限制不等于新的权限授权：该命令未执行，保持当前步骤并改用正常审批的专用读取，不重复相同命令。内部提醒不是新的用户授权。不把 loop 结束当作任务完成。',
+            text: '用户直接描述任务即可，无需先选择规划方式或输入命令。根据完整上下文自行判断复杂度：简单问答直接回答，简单操作直接执行；复杂多步骤工作仅在 runtime_plan.plan=null 时用 plan_update 的 goal/steps 创建简洁计划；运行时已发布计划则直接使用快照中的 revision 和稳定 stepId 更新，不重复创建。可先做必要的只读调研，然后持续实施、验证并更新计划，直到完成或遇到真实阻塞。普通执行任务不要只返回方案、询问是否开始或要求用户输入带参数的规划命令。用户明确只要方案时尊重其范围，不开始实施。计划修改使用 runtime_plan 或 plan_status 的最新 revision 和稳定 stepId。一次响应只发一个 plan_update，不把同一 revision 并行复用。完成步骤时优先同时传 nextStepId 启动下一 pending 步骤；计划更新排在该步骤的读取调用之前。更新结果仅为确认，下一轮 runtime_plan 提供完整最新状态，不必为正常切换再调用 plan_status。只读汇总步骤可以用 evidenceStepIds 引用之前已完成步骤的依据，不为结案重复读取。实施前将步骤置 running，完成时提供具体 evidence。用户在普通聊天中要求继续或补充条件后，runtime_plan.canResume=true 时可用 plan_update 恢复普通 blocked/interrupted 步骤并继续，不要求输入 /plan；仅问状态就直接回答。真实审批拒绝、暂停、取消与 only 约束不能因此解除。普通项目浏览先遵守已注入上下文的 AGENTS.md 和共享约定；仅在缺失、用户要求核对最新内容或进入有独立约定的子目录时补读。先列目录，再按需抽查 README、包清单与一至两处关键入口；长文档先定位标题或关键词，用 offset/limit 读取相关片段，不批量读取整份文档。已有足够依据说明技术栈、模块职责与关键流程时即可完成当前步骤并汇总，不为凑建议数量扩大检查范围；说明抽查范围，不穷尽全仓库。通常由自己完成；只有用户要求深入审查或确有独立验证需要时才委派。确需并行时只委派少量互不依赖且范围明确的方向，使用 readOnly:true 和各自 planStepId；直接向 pending 步骤绑定 child 即可，不要先把多个父步骤设为 running。已有同范围子任务时先消费其结果，不重复派发。子任务直接执行所分配范围，不创建独立计划，也不能再委派；步骤管理与汇总由父任务负责。默认全树最多两个 child，简单任务无需委派。only 模式只产出方案，不 spawn/send。使用 agent_spawn.planStepId 关联任务，等 child 真实完成才可完成步骤。只读审查只给建议，不自行修复；实施任务中可自行解决的问题先修复。需要用户信息、授权或外部条件时，将步骤标为 blocked 并说明原因再提问。用户或权限审查明确拒绝后不得 plan_update running 重试，也不得换 child、换工具绕过；等待真实用户明确继续或授权。task_read_only 对未知命令形状的调用限制不等于新的权限授权：该命令未执行，保持当前步骤并改用正常审批的专用读取，不重复相同命令。内部提醒不是新的用户授权。不把 loop 结束当作任务完成。',
           },
         ],
       });
@@ -253,7 +284,7 @@ export function planningPlugin(
       ctx.provide.tool('plan_update', {
         name: 'plan_update',
         description:
-          '以最新 revision 更新计划。仅 runtime_plan.plan=null 时用 goal/steps 创建；已有计划不得重复创建，直接使用快照 revision/stepId。完成须 evidence 且已有成功执行、children 全部完成；用 nextStepId 同时启动下一 pending 步骤，减少一次调用。更新返回简短确认，完整计划见 runtime_plan 或 plan_status。',
+          '以最新 revision 更新计划。仅 runtime_plan.plan=null 时用 goal/steps 创建；已有计划不得重复创建，直接使用快照 revision/stepId。完成须 evidence 且已有成功执行、children 全部完成；新用户方向使 runtime_plan.canResume=true 时可将普通 blocked/interrupted 步骤设为 running 后继续，不要求 /plan；用 nextStepId 同时启动下一 pending 步骤，减少一次调用。更新返回简短确认，完整计划见 runtime_plan 或 plan_status。',
         risk: 'read',
         isConcurrencySafe: false,
         inputSchema: {

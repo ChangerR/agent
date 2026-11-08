@@ -330,7 +330,7 @@ describe('Windows 文件限制规则：大小写别名不能越过 deny / ask', 
         },
         signal(),
       ),
-    ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
+    ).toMatchObject({ kind: 'ask', reasonCode: 'unknown_operation' });
   });
 
   it.each(['linux', 'darwin'] as const)('%s 文件规则仍区分大小写', async (platform) => {

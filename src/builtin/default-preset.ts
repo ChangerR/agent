@@ -26,6 +26,7 @@ import type { Preset, PresetContext } from '../runtime/preset.js';
 import type { Plugin } from '../sdk/index.js';
 import { subagentsPlugin } from './subagents/index.js';
 import { SUBAGENT_PLUGIN, SUBAGENT_TOOLS } from './subagents/identity.js';
+import { projectExecutionPlugin } from './execution/index.js';
 export function defaultPreset(input: PresetContext): Preset {
   return composePreset(input, [
     ...providerPlugins(input.config, input.resolveCredential),
@@ -45,6 +46,10 @@ export function composePreset(
 ): Preset {
   const { cwd, config, services } = input;
   const plugins: Plugin[] = [
+    projectExecutionPlugin(
+      cwd,
+      config.pluginEntries.map((entry) => (typeof entry === 'string' ? entry : entry.entry)),
+    ),
     ...modelPlugins,
     createLocalToolsPlugin(
       config.pluginEntries
@@ -52,7 +57,7 @@ export function composePreset(
         .map((entry) => (typeof entry === 'string' ? entry : entry.entry)),
     ),
     skillsLocalPlugin(cwd),
-    builtinMcpPlugin(config.mcpConfig, cwd),
+    builtinMcpPlugin(config.mcpConfig, cwd, input.mcpConfigSnapshot),
     createDeterministicPolicyPlugin({ cwd, config }),
     modelReviewerPlugin(input),
     createContextDefaultPlugin(),
@@ -88,6 +93,7 @@ export function composePreset(
       })),
     ],
     selections: {
+      execution: false,
       policy: 'deterministic',
       reviewer: 'model',
       compactor: 'summary',

@@ -218,6 +218,11 @@ describe('strict model reviewer contract', () => {
         { type: 'thinking_delta', text: 'check' },
         { type: 'signature_delta', signature: 'signed' },
         { type: 'redacted_thinking', data: 'redacted' },
+        {
+          type: 'redacted_thinking',
+          data: 'encrypted',
+          source: { routeId: 'fixture:responses', model: 'reviewer' },
+        },
         { type: 'text_delta', text: allow },
         { type: 'message_stop', stopReason: 'end_turn' },
         { type: 'usage', inputTokens: 4, outputTokens: 7 },
@@ -226,6 +231,64 @@ describe('strict model reviewer contract', () => {
     expect(
       await createModelReviewer({ provider, model: 'reviewer' }).review(input(), signal()),
     ).toMatchObject({ decision: 'allow' });
+  });
+  it('审批响应的合法缓存 TTL 分桶不会被当成协议错误，并保留用量', async () => {
+    const events = new EventBus();
+    const usages: Array<Extract<AgentEvent, { type: 'model_usage' }>> = [];
+    events.on('model_usage', (event) => usages.push(event));
+    const provider = new FakeProvider([
+      [
+        ...textResponse(allow),
+        {
+          type: 'usage',
+          inputTokens: 10,
+          outputTokens: 7,
+          cacheReadTokens: 20,
+          cacheWriteTokens: 30,
+          cacheWriteTokensByTtl: { '5m': 5, '1h': 5, '30m': 10, '12h': 10 },
+        },
+      ],
+    ]);
+    const result = await createModelReviewer({ provider, model: 'reviewer' }).review(
+      input({ events }),
+      signal(),
+    );
+    expect(result.decision).toBe('allow');
+    expect(usages).toHaveLength(1);
+    expect(usages[0]).toMatchObject({
+      cache: { hitTokens: 20, missTokens: 40 },
+      usage: {
+        cacheWriteTokens: 30,
+        cacheWriteTokensByTtl: { '5m': 5, '1h': 5, '30m': 10, '12h': 10 },
+      },
+    });
+  });
+  it.each([
+    null,
+    [],
+    { '7d': 1 },
+    { '30m': -1 },
+    { '12h': '1' },
+    { '5m': Infinity },
+    { '1h': 1.5 },
+  ])('审批缓存分桶 %j 非法时仍然拒绝采纳模型批准', async (buckets) => {
+    const provider: Provider = {
+      name: 'invalid-buckets',
+      capabilities: { streaming: true, thinking: false },
+      async *stream() {
+        yield* textResponse(allow);
+        yield {
+          type: 'usage',
+          cacheWriteTokensByTtl: buckets,
+        } as unknown as import('../src/core/protocol/types.js').StreamEvent;
+      },
+    };
+    expect(
+      await createModelReviewer({ provider, model: 'reviewer' }).review(input(), signal()),
+    ).toMatchObject({
+      decision: 'unknown',
+      reasonCode: 'invalid_response',
+    });
   });
   it('never calls the provider for explicit policy deny, mandatory ask or nondelegated allow', async () => {
     const provider = new FakeProvider([textResponse(allow)]);

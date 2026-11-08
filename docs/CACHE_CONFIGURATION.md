@@ -22,10 +22,10 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 
 ## 辅助角色
 
-| 插件                          | 字段与有效默认                                                                                                                                                                                                         |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agentlab.planning`           | `mode=auto`；`provider`、`model`、`thinking` 省略时继承当前主模型；`maxOutputTokens` 省略时调用使用 `4096`；`maxRequestBytes` 可选。                                                                                   |
-| `agentlab.compaction-summary` | `provider`、`model` 省略时继承执行路由；`thinking` 省略时保留厂商默认；`maxOutputTokens=2048`；`maxRequestBytes` 可选；`strategy=isolated`。                                                                           |
+| 插件                          | 字段与有效默认                                                                                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentlab.planning`           | `mode=auto`；`provider`、`model`、`thinking` 省略时继承当前主模型；`maxOutputTokens` 省略时调用使用 `4096`；`maxRequestBytes` 可选。                                                                                |
+| `agentlab.compaction-summary` | `provider`、`model` 省略时继承执行路由；`thinking` 省略时保留厂商默认；`maxOutputTokens=2048`；`maxRequestBytes` 可选；`strategy=isolated`。                                                                        |
 | `agentlab.reviewer-model`     | `provider` 省略时跟随当前 provider；`model` 省略时沿用 `judgeModel`，空字符串跟随主模型；`thinking=off`，可显式覆盖；`maxOutputTokens=8192`、`maxRequestBytes=32768`、`maxResponseBytes=65536`、`timeoutMs=30000`。 |
 
 所有输出均受实际路由的模型上限约束。所有角色共用最终请求 token 检查，字节上限另行检查。
@@ -39,7 +39,7 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 ## 模型/API 能力
 
 `agentlab.provider-openai.models`、`agentlab.provider-anthropic.models` 是精确模型 ID → 能力的映射，默认 `{}`。
-每项需要 `api`（`chat-completions`、`messages` 或 `generic`），并可设置：
+每项需要 `api`（`chat-completions`、`responses`、`messages` 或 `generic`），并可设置：
 
 - `thinkingLevels`: 支持的 `off/low/medium/high` 子集。
 - `outputParameter`: `max_tokens` 或 `max_completion_tokens`，仅用于 Chat Completions。
@@ -47,6 +47,8 @@ tools、静态 system、上一轮消息末尾和本轮末尾最多四个边界�
 - `thinkingMode`: `budget` 或 `adaptive`，用于 Messages API；adaptive 的 off 会显式发送 disabled。
 - `rawToolArguments`: 是否支持原始工具参数字符串回放。
 - `prefixCompaction`: 是否允许保留原包络的可选摘要。不要在未经验证的代理上开启。
+
+`agentlab.provider-openai.api` 默认 `chat-completions`，显式选择 `responses` 使用 Responses API；命名 OpenAI 连接有同名字段，模型级 `api` 覆盖连接默认。Responses 固定使用 `max_output_tokens`，以 `store:false` 和加密推理 item 维护本地历史；请求预算包含 instructions、input、tools。
 
 `agentlab.provider-openai.dialect=auto` 仍只识别官方 DeepSeek HTTPS 端点；代理需显式 `deepseek` 或 `generic`。
 未识别的兼容厂商保留原有参数行为，不从模型名猜厂商。内置能力目录是有限集合，可用精确配置覆盖；不宣称覆盖所有未来模型。
@@ -84,6 +86,10 @@ cache 对象改为跨配置层逐字段合并；项目覆盖一个字段不会�
 
 默认脱敏 JSONL 增加路由、角色、模型、最终请求估算、TTFT、耗时、输入估算偏差及厂商报告的按 TTL 写入桶，不添加请求原文或密钥日志。
 缺失 usage、TTL 分桶或 TTFT 均为未知，不能按零解释。恢复前未保留的统计也不猜测。
+OpenAI Responses 的 `input_tokens` 已包含缓存读取和写入；适配器减去两者后记录普通输入，
+并保留服务端报告的 `cache_write_tokens` 及 `30m` / `12h` 分桶，避免重复计入总输入。
+与 Chat Completions 相同，GPT-5.6 / GPT-6 系列缺失写入字段时不报告零写入，缓存比例保持未知；旧模型未报告该字段时仍沿用零显式写入语义。
+字段说明见 [OpenAI Docs](https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance)。
 usage 锚点只保存计数与指纹；仅相同路由/包络、严格追加的完整历史前缀可复用。换模型、改 system/tools 或压缩后不会沿用旧锚点；校准不降低启发式安全下界。
 
 DeepSeek 按已持久化的 prefix unit 命中，构建是 best effort；任意公共前缀不保证第二次立即命中。

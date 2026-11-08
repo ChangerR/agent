@@ -111,7 +111,7 @@ describe('TUI 权限自动保存', () => {
     expect(windows).not.toContain('即明确授权下次 auto 会话自动写入');
     expect(windows).toContain('仅新会话生效');
     expect(describeWriteRootsSettings('linux')).toBe(
-      'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。',
+      'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次会话自动写入其中普通文件，ask/auto/yolo 均采用已有授权；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。',
     );
   });
 

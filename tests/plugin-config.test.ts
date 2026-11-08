@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { PluginConfigStore, ConfigConflictError } from '../src/runtime/config-store.js';
 import { loadConfig } from '../src/core/config.js';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { mkdtempProjectSync } from './helpers/project.js';
 const dirs: string[] = [];
 const dir = () => {

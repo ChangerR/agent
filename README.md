@@ -23,7 +23,7 @@ App 设置默认全局，不用先创建项目或会话；连接页可直接输�
 - 事件驱动的 **agent loop**（core 不碰 UI，TUI 只是事件订阅者）
 - **规范化协议层** + 两个 provider 参考实现：Anthropic Messages API、OpenAI 兼容 API（DeepSeek/Kimi/通义/vLLM…）
 - **工具系统**：read_file / write_file / edit_file / bash / glob / grep，只读工具并行执行；read_file 默认返回 200 行，未读完时提示续读 offset，显式 limit 可调整范围
-- **权限引擎**：deny → 不可降级约束 → ask → 已验证精确授权 → 模式默认值的决策管线；ask/auto/yolo 三模式；"始终允许"会话规则；审计日志
+- **权限引擎**：deny → 不可降级约束 → ask → 已验证精确授权 → 模式默认值的决策管线；ask/auto/yolo 三模式；任务/会话/项目范围授权；跨工具资源规则；审计日志
 - **钩子**：PreToolUse / PostToolUse / UserPromptSubmit / TurnEnd
 - **MCP**：stdio + streamable-http，工具以 `mcp__server__tool` 桥接
 - **Skill**：渐进式披露（清单进 system prompt，全文按需 `use_skill` 加载）
@@ -38,21 +38,22 @@ App 设置默认全局，不用先创建项目或会话；连接页可直接输�
 
 ```bash
 pnpm install
-cp .env.example .env
-cp agent.config.example.json agent.config.json
+mkdir -p ~/.agentlab
+cp -n .env.example ~/.agentlab/.env
+cp -n agent.config.example.json ~/.agentlab/config.json
 ```
 
-已有这两个文件时直接编辑，不要覆盖。`.env` 放密钥，`agent.config.json` 放 provider、模型和端点；根据实际服务选择下面一种配套配置。示例里的 key 和模型占位符必须替换后才能发送消息。
+已有用户配置时直接编辑，不要覆盖。`~/.agentlab/.env` 放密钥与代理，`~/.agentlab/config.json` 放 provider、模型和端点；仓库只保留开发文件与配置示例。根据实际服务选择下面一种配套配置。示例里的 key 和模型占位符必须替换后才能发送消息。
 
 ### Anthropic 官方
 
-在 `.env` 中取消注释并填写：
+在 `~/.agentlab/.env` 中取消注释并填写：
 
 ```dotenv
 ANTHROPIC_API_KEY=replace-with-your-anthropic-key
 ```
 
-在 `agent.config.json` 中设置（与其他需要保留的配置字段合并）：
+在 `~/.agentlab/config.json` 中设置（与其他需要保留的配置字段合并）：
 
 ```json
 {
@@ -68,13 +69,13 @@ ANTHROPIC_API_KEY=replace-with-your-anthropic-key
 
 ### DeepSeek 官方（OpenAI 兼容接口）
 
-在 `.env` 中取消注释并填写：
+在 `~/.agentlab/.env` 中取消注释并填写：
 
 ```dotenv
 DEEPSEEK_API_KEY=replace-with-your-deepseek-key
 ```
 
-在 `agent.config.json` 中设置：
+在 `~/.agentlab/config.json` 中设置：
 
 ```json
 {
@@ -104,19 +105,55 @@ MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范�
 
 使用 `provider: "openai"`，并填写该服务的完整 `model` 和 `baseURL`。默认 key 变量名是 `OPENAI_API_KEY`；若使用 `.env` 中的 `MY_MODEL_KEY=...`，JSON 里就写 `"apiKeyEnv": "MY_MODEL_KEY"`。`apiKeyEnv` 填变量名，不填密钥本身。OpenAI 官方默认端点为 `https://api.openai.com/v1`；其他服务应显式填写其接入文档要求的地址，不要让兼容服务的 key 误发到默认端点。
 
+默认调用 Chat Completions（`/chat/completions`）。使用 Responses API（`/responses`）时，在配置中合并以下字段，保留已有的其他设置：
+
+```json
+{
+  "provider": "openai",
+  "model": "替换为账户支持Responses的完整模型ID",
+  "baseURL": "https://api.openai.com/v1",
+  "apiKeyEnv": "OPENAI_API_KEY",
+  "pluginConfig": {
+    "agentlab.provider-openai": {
+      "api": "responses"
+    }
+  }
+}
+```
+
+`baseURL` 填 API 根地址，不追加 `/responses`。App 的 OpenAI 兼容协议设置可选择 `api`；命名连接使用 `pluginConfig["agentlab.provider-connections"].connections.<名称>.api`。若同一端点不同模型使用不同协议，可在对应插件或连接的 `models.<完整模型ID>.api` 中覆盖为 `responses` 或 `chat-completions`；`generic` 保持 Chat Completions。修改后需重启进程。
+
+Responses 支持流式正文、推理摘要、函数工具调用与结果回填、取消及用量统计；`maxTokens` 映射为 `max_output_tokens`。历史由本地维护，发送 `store: false`，加密推理状态随会话保存，只向同一端点、协议和模型回传。`dialect` 的 DeepSeek/Kimi 参数仅用于 Chat Completions；切换接口不会绕开工具权限审批。本次未接入服务端内置工具或图片/音频输入。协议参考 [OpenAI 官方 Responses 迁移文档](https://developers.openai.com/api/docs/guides/migrate-to-responses)。
+
+### HTTP 出站代理
+
+模型 API（Anthropic、OpenAI 兼容接口，包括审批、规划与压缩调用）和 streamable-http MCP 支持代理。在 `~/.agentlab/.env` 或启动进程的环境中设置：
+
+```dotenv
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
+NO_PROXY=localhost,127.0.0.1,[::1]
+```
+
+将端口替换为实际代理端口，`baseURL` 仍填写模型服务本身的端点。HTTP 请求使用 `HTTP_PROXY`；HTTPS 请求优先使用 `HTTPS_PROXY`，未设置或为空时沿用 `HTTP_PROXY`。代理地址支持 `http://` 和 `https://`，可带 URL 编码的用户名/密码；不支持 SOCKS。代理失败会报错，不会自动绕过代理。
+
+`NO_PROXY` 是逗号或空格分隔的主机列表，域名条目也匹配子域名，可指定端口（如 `localhost:3000`）；`*` 表示全部直连。支持对应的小写变量 `http_proxy` / `https_proxy` / `no_proxy`，同名小写优先于大写，空值也优先。已有进程变量仍优先于 `.env` 中的同名变量；修改后退出进程重新启动。
+
+CLI 和桌面工作进程使用同一传输实现；SSH 远程会话的模型代理设置放在本机 `~/.agentlab/.env`，因为模型由本机 Broker 请求；远程 HTTP MCP 使用远程用户的 `~/.agentlab/.env`。`127.0.0.1` 指发出该 HTTP 请求的机器。此配置只管理内置模型客户端与 HTTP MCP；stdio MCP 子进程虽继承环境，但其网络行为由该服务自行决定。
+
 ### 启动与检查
 
-配置完成后运行 `pnpm dev`。修改 `.env`、provider、baseURL、apiKeyEnv 或启动默认 model 后，退出当前进程再重新运行。只在界面中切换 `/model` 不会重新加载 key 或切换 provider/端点。
+配置完成后运行 `pnpm dev`。修改 `~/.agentlab/.env`、provider、baseURL、apiKeyEnv 或启动默认 model 后，退出当前进程再重新运行。只在界面中切换 `/model` 不会重新加载 key 或切换 provider/端点。
 
 排查“填了 key 仍不生效”时按顺序检查：
 
-1. 文件名确实是项目根的 `.env`，不是 `.env.example`、`.env.txt`、`.env.local` 或 `~/.agentlab/.env`。从项目子目录启动时仍加载规范化项目根的 `.env`，不加载子目录中的同名文件。
+1. 文件名确实是 `~/.agentlab/.env`，不是 `.env.example`、`.env.txt` 或 `.env.local`。项目根及子目录中的 `.env` 仅供该项目开发，不会被 agentlab 加载；从任何目录启动都使用同一用户环境文件。
 2. JSON 的 `apiKeyEnv` 与 `.env` 左侧变量名完全一致。省略 `apiKeyEnv` 时，`anthropic` 默认用 `ANTHROPIC_API_KEY`，`openai` 默认用 `OPENAI_API_KEY`。仅设置 `DEEPSEEK_API_KEY` 而没有对应 `apiKeyEnv` 不会被自动识别；key 也不会自动选择 provider/model。
-3. 已有进程环境变量优先于 `.env`，包括空字符串。若 shell 中已 export 同名变量，更新或取消那个变量，再重新启动。项目 JSON 中显式 `baseURL` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`；未配置时才使用环境变量或 SDK 默认端点。
+3. 已有进程环境变量优先于 `.env`，包括空字符串。若 shell 中已 export 同名变量，更新或取消那个变量，再重新启动。显式 JSON `baseURL` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`；未配置时才使用环境变量或 SDK 默认端点。
 4. 全局配置可能仍有其他厂商的 `apiKeyEnv`、`baseURL` 或 `model`。字段逐项继承，改 provider 不会清除其他字段；切换服务时请一起核对这四项，并确认模型 ID 与端点匹配。
-5. `.env` 可缺省，允许只用 shell 环境变量；如果存在但不可读取，启动会显示应检查的文件路径和错误码，不回显密钥。不要把 `.env` 内容、完整环境变量或真实 key 粘贴到日志/聊天中。
+5. `~/.agentlab/.env` 可缺省，允许只用 shell 环境变量；如果存在但不可读取，启动会显示应检查的文件路径和错误码，不回显密钥。不要把 `.env` 内容、完整环境变量或真实 key 粘贴到日志/聊天中。
 
-显式设置 `apiKeyEnv` 后，首次使用该 provider 发请求前会检查变量名和 key：变量名为空/纯空白，或对应变量缺失、为空/纯空白，都会明确报错；不会回退到默认 key。错误只提示配置项和修复步骤，不回显变量名原值或 key。先核对配置中的变量名，再在项目根 `.env` 或 shell 中设置对应的非空值，并重新启动。该检查不会阻止无 key 启动或打开配置菜单，`fake` 也不需要真实 key。
+显式设置 `apiKeyEnv` 后，首次使用该 provider 发请求前会检查变量名和 key：变量名为空/纯空白，或对应变量缺失、为空/纯空白，都会明确报错；不会回退到默认 key。错误只提示配置项和修复步骤，不回显变量名原值或 key。先核对配置中的变量名，再在 `~/.agentlab/.env` 或 shell 中设置对应的非空值，并重新启动。该检查不会阻止无 key 启动或打开配置菜单，`fake` 也不需要真实 key。
 
 `apiKeyEnv` 和 `baseURL` 只配置 JSON 中 `provider` 对应的内置适配器。审批插件等若实际调用另一个内置 provider，它仍使用自己的默认 key 变量与端点，不会继承主 provider 的自定义 key。显式为 Anthropic 设置 `apiKeyEnv` 时，只发送该 key，不会同时附带默认 `ANTHROPIC_AUTH_TOKEN`；省略 `apiKeyEnv` 时保留 SDK 原有默认认证行为。
 
@@ -124,7 +161,7 @@ MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范�
 
 ### 可选：自动审批
 
-`auto` 模式默认使用当前主模型审核未命中规则的写入与执行操作，无需另配审批模型；已完整验证的项目内只读操作直接放行：普通文件读取（含不存在的文件、目录路径，结果由工具自身报错；AGENTS.md / CLAUDE.md / agent.config.json / `plugins/` 下的文件）以及内置 grep/glob 项目搜索（含指向项目内的绝对路径 pattern，枚举时跳过无权限目录）。`.env*`、密钥/凭据、mcp.json、`.git` 元数据、已配置插件入口、项目外路径、链接逃逸与多硬链接文件（包括 pnpm 默认以硬链接安装的 `node_modules` 文件；可用 `package-import-method=copy` 避免）仍需人工确认。原生 Windows 上上述只读放行同样适用；Windows 写入只有精确目标规则能直接放行，`writeRoots`、通配规则与 yolo 默认都改为交给审批模型。搜索排除敏感文件与链接，遵守项目及嵌套 `.gitignore`；明确 ask/deny 规则仍优先。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
+`ask` 默认由人工处理未授权操作；`auto` 使用当前主模型审核完整普通写入与已验证隔离内的执行操作，未知无隔离程序仍人工。已有范围授权在各模式下生效；已完整验证的项目内只读操作直接放行：普通文件读取（含不存在的文件、目录路径，结果由工具自身报错；AGENTS.md / CLAUDE.md / agent.config.json / `plugins/` 下的文件）以及内置 grep/glob 项目搜索（含指向项目内的绝对路径 pattern，枚举时跳过无权限目录）。`.env*`、密钥/凭据、mcp.json、`.git` 元数据、已配置插件入口、项目外路径、链接逃逸与多硬链接文件（包括 pnpm 默认以硬链接安装的 `node_modules` 文件；可用 `package-import-method=copy` 避免）仍需人工确认。原生 Windows 上上述只读放行同样适用；Windows 写入只有精确目标规则能直接放行，`writeRoots`、通配规则与 yolo 默认都改为交给审批模型。搜索排除敏感文件与链接，遵守项目及嵌套 `.gitignore`；明确 ask/deny 规则仍优先。审批失败或不确定时会询问，deny、危险检测与明确的 ask 规则继续优先生效。
 
 可用 `judgeModel` 指定兼容同一 provider / endpoint 的独立审批模型。项目未写该字段时继承全局配置，最终未指定时跟随当前模型；`"judgeModel": ""` 则明确跟随当前模型并覆盖全局指定值。跟随模式会随 `/model` 和恢复会话更新，显式指定的审批模型保持不变。`/permissions` 可查看实际加载的审批模型及来源；需要未命中规则的操作都询问时使用 `ask` 模式。
 
@@ -152,7 +189,7 @@ MCP 插件的 `pluginConfig["agentlab.mcp"].maxInlineChars` 默认 24000，范�
 - 只有明确进入“全局”才修改全局文件。全局值仍可能被项目值覆盖，界面显示有效模式和覆盖关系；项目模式选择“继承”会删除本层覆盖并应用继承后的模式。不会把合并后的规则或项目授权复制进全局。`writeRoots` 仍仅支持项目层。
 - 写入错误或配置被外部修改时明确报错，不显示虚假成功，也不先修改当前模式。修复问题后重新打开设置重做选择。
 
-恢复当前格式的已保存会话可能还原该会话保存的模型、思考等级、模式与会话规则。SDK 的 `agent.paths`、`agent.configSources` 和 `loadConfigWithSources()` 可诊断真实路径和字段来源；配置来源描述启动时读取的快照，设置菜单显示当前保存目标。
+恢复会话可以还原模型、思考等级、较严格的模式与限制规则；临时允许和 Grant 不随聊天历史恢复。旧 v2 策略会话须先通过 `/permissions migrate-session <id>` 查看并显式迁移。SDK 的 `agent.paths`、`agent.configSources` 和 `loadConfigWithSources()` 可诊断真实路径和字段来源；配置来源描述启动时读取的快照，设置菜单显示当前保存目标。
 
 API key 仍通过 `apiKeyEnv` 指定环境变量（或 provider 默认变量）；插件声明的敏感字段只接受 `env:NAME` 引用。配置编辑器不会把环境变量值展开后保存。MCP 的 `env`/`headers` 仍是 MCP 独立配置内容，请不要将密钥写进共享的项目文件。本实现未增加 XDG、`AGENT_HOME`、`--config` 或 `--cwd` 开关。
 
@@ -249,3 +286,11 @@ pnpm build        # tsup → dist/
 Linux 真 PTY 专项需要系统自带或安装 `util-linux`（提供 `script`）；Linux 缺少该工具会明确失败，非 Linux 明确跳过该专项，不代表 macOS/Windows 已通过实机验收。其他 TypeScript 设置、搜索与运行时测试照常执行。
 
 PTY 测试在隔离 HOME/项目中复制仓库原样的 package.json、启动源码及已安装依赖，校验源码哈希，直接执行原定义的 `pnpm dev`，通过键盘验证单选即保存、取消、重启、只读 shell 与 grep/glob、失败及中断后的恢复。模型为本地离线替身，不使用真实 key 或 API。只增加一个共享 Node PTY helper，不引入额外 npm 依赖或终端模拟器；无需 Python 测试脚本。
+
+### 权限 v3 的使用
+
+首次激活项目提供的插件、MCP、端点和权限配置时，CLI 使用 `pnpm dev --trust` 审查后输入 yes；App 会显示启动信任面板。SDK 的 `approveStartup(request)` 应连接真实宿主确认。后续配置范围不变时复用对应信任记录。
+
+工具审批可选择一次、任务、会话或项目授权。完整调用授权绑定所有参数；需要连续修改多个文件时可授予任务子目录或在设置中配置 writeRoots。`/permissions` 查看授权，`/permissions revoke <id>` 撤销；App 提供“活动授权与撤销”。“拒绝此操作”允许继续其他安全工作，“停止整个任务”取消整个任务树。
+
+可选 `capabilities.execution: "project-snapshot"` 启用 Linux 项目副本执行，实际隔离探针成功后才运行；副本修改不回写项目，不复制依赖目录或凭据。默认关闭，其他平台或隔离不可用时不会自动降级执行。完整说明见 [权限策略](docs/POLICY.md)。

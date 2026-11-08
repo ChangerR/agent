@@ -118,6 +118,8 @@ export class PlanController {
   private calls = new Map<string, string>();
   private epoch = 0;
   private denialEpoch = 0;
+  /** 仅当前真实用户轮次可恢复旧的普通阻塞；不持久化，也不等同工具批准。 */
+  private userContinuation = false;
   mode: PlanningMode = 'auto';
   force = false;
   preparing = false;
@@ -136,6 +138,30 @@ export class PlanController {
   }
   get denialReason(): string | undefined {
     return this.value?.denialReason;
+  }
+  get canResume(): boolean {
+    return (
+      this.userContinuation &&
+      !!this.value &&
+      !this.denialReason &&
+      !['paused', 'cancelled', 'completed'].includes(this.value.phase) &&
+      (['blocked', 'interrupted'].includes(this.value.phase) ||
+        this.value.steps.some((step) => ['blocked', 'interrupted'].includes(step.status))) &&
+      this.calls.size === 0 &&
+      !this.value.steps.some((step) =>
+        step.children.some((child) => ['queued', 'running', 'cancelling'].includes(child.status)),
+      )
+    );
+  }
+  /** 开启恢复入口但不恢复步骤；模型仍须结合新方向显式更新计划，状态问答不会启动工作。 */
+  beginTurn(realUserInput: boolean) {
+    const p = this.value;
+    this.userContinuation = Boolean(
+      realUserInput &&
+      p &&
+      (['blocked', 'interrupted'].includes(p.phase) ||
+        p.steps.some((step) => ['blocked', 'interrupted'].includes(step.status))),
+    );
   }
   /** 拒绝与显式解锁均递增，避免旧审批跨 false→true→false 边界复用。 */
   get denialGeneration(): number {
@@ -195,6 +221,7 @@ export class PlanController {
     });
     if (this.denialReason) this.denialEpoch++;
     this.value = plan;
+    this.userContinuation = false;
     this.successful.clear();
     this.calls.clear();
     this.changed();
@@ -202,15 +229,16 @@ export class PlanController {
   restore(raw?: Plan) {
     this.denialEpoch++;
     this.value = raw ? PlanSchema.parse(raw) : undefined;
+    this.userContinuation = false;
     this.successful.clear();
     this.calls.clear();
     if (
       this.value &&
       !this.value.denialReason &&
-      !['completed', 'cancelled', 'ready'].includes(this.value.phase)
+      !['completed', 'paused', 'cancelled', 'ready'].includes(this.value.phase)
     ) {
       this.value.phase = 'interrupted';
-      this.value.reason = '会话恢复：执行已中断，需显式继续，不会重放工具';
+      this.value.reason = '会话恢复：执行已中断，收到新的用户方向后可继续，不会重放工具';
       for (const step of this.value.steps)
         if (step.status === 'running') step.status = 'interrupted';
     }
@@ -230,6 +258,7 @@ export class PlanController {
   clear() {
     if (this.denialReason) this.denialEpoch++;
     this.value = undefined;
+    this.userContinuation = false;
     this.successful.clear();
     this.calls.clear();
     this.changed();
@@ -253,7 +282,10 @@ export class PlanController {
       throw new Error('plan_stale: refresh plan_status before updating');
     if (p.denialReason)
       throw new Error(`plan_denied: explicit user continuation required: ${p.denialReason}`);
-    if (['paused', 'cancelled', 'interrupted', 'completed'].includes(p.phase))
+    if (
+      ['paused', 'cancelled', 'completed'].includes(p.phase) ||
+      (p.phase === 'interrupted' && !this.canResume)
+    )
       throw new Error('Plan requires explicit user continuation');
     // 切换条件先全部校验，失败不得提交当前步骤的完成证据或改变 revision。
     const nextStep = p.steps.find((step) => step.id === input.nextStepId);
@@ -344,6 +376,8 @@ export class PlanController {
         if (references.length) s.evidenceStepIds = [...new Set(references)];
       }
       if (input.status === 'running') {
+        if (s.status === 'interrupted' && !this.canResume)
+          throw new Error('Plan requires a new user direction before resuming a blocked step');
         const other = p.steps.find(
           (x) => x.id !== s.id && x.status === 'running' && !x.children.length,
         );
@@ -353,6 +387,7 @@ export class PlanController {
       if (input.status === 'blocked' && !input.reason?.trim())
         throw new Error('Blocked steps require a reason');
       s.status = input.status;
+      if (input.status === 'blocked') this.userContinuation = false;
       s.reason = input.status === 'blocked' ? input.reason : undefined;
       if (nextStep) {
         nextStep.status = 'running';
@@ -372,6 +407,7 @@ export class PlanController {
   stop(phase: 'paused' | 'cancelled' | 'interrupted' | 'blocked', reason: string) {
     if (!this.value || this.value.phase === 'completed') return;
     this.value.phase = phase;
+    this.userContinuation = false;
     this.value.reason = reason;
     this.value.activeStepId = undefined;
     for (const s of this.value.steps)
@@ -392,6 +428,7 @@ export class PlanController {
     if (!this.value) throw new Error('No plan to continue');
     if (this.value.phase === 'completed') throw new Error('Plan is already complete');
     if (this.denialReason) this.denialEpoch++;
+    this.userContinuation = false;
     this.value.denialReason = undefined;
     this.value.phase = this.readOnly ? 'planning' : 'executing';
     this.value.reason = undefined;
@@ -412,6 +449,7 @@ export class PlanController {
     this.changed();
   }
   finish(reason: LoopEndReason) {
+    this.userContinuation = false;
     if (!this.value || ['paused', 'cancelled', 'completed'].includes(this.value.phase)) return;
     if (this.value.denialReason) return;
     if (reason === 'completed' && this.readOnly) {
@@ -427,8 +465,6 @@ export class PlanController {
   restrict(operation: PolicyInput, strategy?: PlanningStrategy): string | undefined {
     if (this.preparing) return 'plan_preparing: wait for the published plan';
     const p = this.value;
-    if (p && ['paused', 'cancelled', 'interrupted'].includes(p.phase))
-      return 'Plan is paused/cancelled/interrupted';
     const match = (list: readonly { name: string; ownerPlugin: string }[] = []) =>
       list.some(
         (t) => t.name === operation.tool.name && t.ownerPlugin === operation.tool.ownerPlugin,
@@ -436,6 +472,13 @@ export class PlanController {
     const control = strategy?.controlTools.find(
       (t) => t.name === operation.tool.name && t.ownerPlugin === operation.tool.ownerPlugin,
     );
+    if (
+      p &&
+      (['paused', 'cancelled'].includes(p.phase) ||
+        (p.phase === 'interrupted' &&
+          !(this.canResume && control && control.planningSafe !== false)))
+    )
+      return 'Plan is paused/cancelled/interrupted';
     if (control && (!this.readOnly || control.planningSafe !== false)) return;
     if (p?.denialReason)
       return `plan_denied: explicit user continuation required: ${p.denialReason}`;
@@ -491,6 +534,7 @@ export class PlanController {
     const s = this.value?.steps.find((s) => s.id === stepId);
     if (!s) return;
     if (error) {
+      this.userContinuation = false;
       this.successful.delete(s.id);
       if (['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)) return;
       s.status = 'blocked';
@@ -569,6 +613,7 @@ export class PlanController {
       return;
     }
     if (failed && !['paused', 'cancelled', 'interrupted'].includes(this.value!.phase)) {
+      this.userContinuation = false;
       step.status = 'blocked';
       step.reason =
         failed.agentId === agentId

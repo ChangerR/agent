@@ -1,6 +1,6 @@
 /** 通用 runtime 装配；默认实现由入口传入 preset，不导入 builtin/CLI。 */
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -27,20 +27,44 @@ import { PluginHost, observationSnapshot } from './plugin-host.js';
 import { inspectPlugins } from './plugin-inspection.js';
 import { CommandRegistry, settingsRecords } from './commands.js';
 import type { Agent } from './agent.js';
-import { loadProjectEnv } from './environment.js';
+import { loadUserEnv } from './environment.js';
 import { AgentSupervisor, type SubagentLimits } from './subagents.js';
 import { ChildEventBus } from './child-events.js';
 import { ToolScheduler } from '../core/tool-scheduler.js';
 import type { SubagentRecord } from '../core/agents.js';
 import { RequestPermissionGuard } from '../core/permission/request-scope.js';
 import { usageCountKeys } from '../core/protocol/types.js';
+import {
+  authorizeStartup,
+  inspectStartupTrust,
+  StartupTrustRequired,
+  type StartupTrustRequest,
+} from './startup-trust.js';
 export interface CreateAgentOptions {
+  /** 可信宿主的显式启动审批；不接受模型/仓库提供的自动批准。 */
+  approveStartup?: (request: StartupTrustRequest) => Promise<boolean> | boolean;
   resolveCredential?: (reference: string, identity?: string) => string;
   lifecycleTimeoutMs?: number;
   autoSaveSessions?: boolean;
   plugins?: readonly Plugin[];
   preset?: (input: PresetContext) => Preset;
   config?: AgentConfigOverrides;
+}
+// Node 按 URL 缓存 ESM；同一进程内入口变化必须重启，不能批准新内容却运行旧实现。
+const importedPluginEntries = new Map<
+  string,
+  { digest: string; module: Promise<{ default: Plugin }> }
+>();
+function importPluginEntry(path: string): Promise<{ default: Plugin }> {
+  const url = pathToFileURL(realpathSync(path)).href;
+  const digest = createHash('sha256').update(readFileSync(path)).digest('hex');
+  const previous = importedPluginEntries.get(url);
+  if (previous && previous.digest !== digest)
+    throw new Error('plugin_changed_restart_required: 插件入口已变化，请退出并重新启动进程');
+  if (previous) return previous.module;
+  const module = import(url) as Promise<{ default: Plugin }>;
+  importedPluginEntries.set(url, { digest, module });
+  return module;
 }
 function unavailableController(config: AgentConfig): PermissionController {
   const unavailable = () => {
@@ -81,7 +105,18 @@ export async function createRuntime(
   const { config, paths, sources: configSources } = loaded;
   // 同项目启动使用同一工具/权限/上下文基准；原始启动位置保留在 paths.cwd。
   cwd = paths.projectRoot;
-  loadProjectEnv(cwd);
+  await authorizeStartup(loaded, options.config ?? {}, options.approveStartup);
+  let mcpConfigSnapshot: string;
+  try {
+    mcpConfigSnapshot = readFileSync(config.mcpConfig, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+      throw new Error('startup_config_unreadable: 无法读取 MCP 启动配置');
+    mcpConfigSnapshot = '{"mcpServers":{}}';
+  }
+  const pendingTrust = inspectStartupTrust(loaded);
+  if (pendingTrust.entries.length) throw new StartupTrustRequired(pendingTrust);
+  loadUserEnv();
   const endpoint =
     config.baseURL ?? (config.provider === 'openai' ? process.env.OPENAI_BASE_URL : undefined);
   const endpointURL = config.provider === 'openai' ? endpoint || undefined : endpoint;
@@ -167,6 +202,7 @@ export async function createRuntime(
   };
   let pluginDefinitions: readonly Plugin[] = [];
   const preset = (options.preset ?? presetFactory)({
+    mcpConfigSnapshot,
     resolveCredential: options.resolveCredential,
     pluginDefinitions: () => pluginDefinitions,
     cwd,
@@ -180,6 +216,7 @@ export async function createRuntime(
       Object.fromEntries(
         (
           [
+            'execution',
             'policy',
             'reviewer',
             'compactor',
@@ -207,7 +244,7 @@ export async function createRuntime(
   for (const entry of config.pluginEntries) {
     if (typeof entry !== 'string' && !entry.enabled) continue;
     const path = typeof entry === 'string' ? entry : entry.entry;
-    const imported = (await import(pathToFileURL(path).href)) as { default: Plugin };
+    const imported = await importPluginEntry(path);
     const plugin = imported.default;
     if (!plugin?.manifest || typeof plugin.setup !== 'function')
       throw new Error(`Invalid SDK plugin: ${path}`);
@@ -301,6 +338,7 @@ export async function createRuntime(
       policy,
       policyIdentity: { id: policyRecord.capabilityId, version: policyRecord.version },
       reviewer,
+      execution: host.selected('execution'),
       analyzer: policy.analyzer,
       reviewTimeoutMs:
         selections.reviewer === 'model' &&
@@ -404,6 +442,10 @@ export async function createRuntime(
           configRevision: () => `${configRevision()}:root-denial=${loop.plan.denialGeneration}`,
           context: new ContextManager({ compactThreshold: config.compactThreshold, compactor }),
           onPermissionDenied: (reason, permissionScope) => {
+            if (!permissionScope || permissionScope === loop.requestPermissionScope) {
+              loop.abort_current();
+              supervisor?.cancelAll();
+            }
             const step = loop.plan.snapshot?.steps.find((s) =>
               s.children.some((c) => c.agentId === record.agentId),
             );

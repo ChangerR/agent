@@ -63,7 +63,7 @@ export function runtimeSettingsSections(
     'configuration-model-catalog',
     modelSettingsSection(input.cwd, input.settingsGlobalOnly),
   );
-  register('configuration-project-environment', environmentSettingsSection(input.cwd));
+  register('configuration-environment', environmentSettingsSection());
   register(
     'configuration-mcp-servers',
     mcpSettingsSection(input.cwd, input.config?.mcpConfig, input.settingsGlobalOnly),
@@ -94,7 +94,7 @@ export function runtimeSettingsSections(
             {
               anyOf: [
                 { type: 'string', enum: choice.available },
-                ...(['reviewer', 'cacheStrategy'].includes(kind)
+                ...(['execution', 'reviewer', 'cacheStrategy'].includes(kind)
                   ? [{ type: 'boolean', const: false }]
                   : []),
               ],
@@ -122,7 +122,7 @@ export function runtimeSettingsSections(
       for (const [kind, selected] of Object.entries(value)) {
         if (!choices[kind]) throw new Error(`未知能力类别: ${kind}`);
         if (selected === false) {
-          if (!['reviewer', 'cacheStrategy'].includes(kind))
+          if (!['execution', 'reviewer', 'cacheStrategy'].includes(kind))
             throw new Error(`${kind} 是必需能力，不能关闭。`);
         } else if (typeof selected !== 'string' || !choices[kind].available.includes(selected))
           throw new Error(`未加载的 ${kind} 实现: ${String(selected)}`);

@@ -1,9 +1,9 @@
 import { dirname, resolve } from 'node:path';
 import { definePlugin } from '../sdk/index.js';
 import { McpClientManager } from '../mcp/plugin.js';
-import { loadMcpConfig } from '../mcp/config.js';
+import { loadMcpConfig, McpConfigSchema } from '../mcp/config.js';
 import { McpResultConfig } from '../mcp/results.js';
-export function builtinMcpPlugin(configPath: string, cwd?: string) {
+export function builtinMcpPlugin(configPath: string, cwd?: string, snapshot?: string) {
   return definePlugin({
     manifest: { id: 'agentlab.mcp', version: '1.0.0', apiVersion: 1 },
     config: {
@@ -19,11 +19,15 @@ export function builtinMcpPlugin(configPath: string, cwd?: string) {
       applyMode: 'newSession',
     },
     async setup(ctx) {
+      const approved =
+        snapshot === undefined
+          ? loadMcpConfig(configPath)
+          : McpConfigSchema.parse(JSON.parse(snapshot));
       const manager = new McpClientManager(McpResultConfig.parse(ctx.config.value));
       ctx.onDispose(() => manager.closeAll());
       if (cwd) await manager.maintain(cwd);
       const states: Record<string, string> = {};
-      for (const [name, config] of Object.entries(loadMcpConfig(configPath).mcpServers)) {
+      for (const [name, config] of Object.entries(approved.mcpServers)) {
         let client: Awaited<ReturnType<McpClientManager['connect']>> | undefined;
         try {
           client = await manager.connect(name, config, { cwd: dirname(resolve(configPath)) });

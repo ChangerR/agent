@@ -61,33 +61,35 @@ const request = (action) =>
     child.send({ id, action });
   });
 const control = (s) =>
-  s.writeOnly
-    ? '安全密码输入 / 保留 / 替换 / 清除'
-    : s['x-rule']
-      ? '工具与目标规则构建器'
-      : s.anyOf
-        ? '类型选择 + 对应结构化控件'
-        : s.const !== undefined
-          ? '固定值选择 / 显式覆盖'
-          : s.enum
-            ? '枚举下拉'
-            : Array.isArray(s.type)
-              ? '类型选择'
-              : s.type === 'object'
-                ? s.properties
-                  ? '分组字段'
-                  : '键值行 / 列表详情 / 增删改名'
-                : s.type === 'array'
-                  ? '列表增删排序'
-                  : s.type === 'boolean'
-                    ? '启用/关闭下拉'
-                    : ['number', 'integer'].includes(s.type)
-                      ? '数值输入'
-                      : s.type === 'string'
-                        ? '文本 / 候选输入'
-                        : s.type === 'null'
-                          ? '空值选择'
-                          : '明确类型选择 + 递归控件';
+  s.readOnly
+    ? '只读展示；通过授权管理入口撤销'
+    : s.writeOnly
+      ? '安全密码输入 / 保留 / 替换 / 清除'
+      : s['x-rule']
+        ? '工具与目标规则构建器'
+        : s.anyOf
+          ? '类型选择 + 对应结构化控件'
+          : s.const !== undefined
+            ? '固定值选择 / 显式覆盖'
+            : s.enum
+              ? '枚举下拉'
+              : Array.isArray(s.type)
+                ? '类型选择'
+                : s.type === 'object'
+                  ? s.properties
+                    ? '分组字段'
+                    : '键值行 / 列表详情 / 增删改名'
+                  : s.type === 'array'
+                    ? '列表增删排序'
+                    : s.type === 'boolean'
+                      ? '启用/关闭下拉'
+                      : ['number', 'integer'].includes(s.type)
+                        ? '数值输入'
+                        : s.type === 'string'
+                          ? '文本 / 候选输入'
+                          : s.type === 'null'
+                            ? '空值选择'
+                            : '明确类型选择 + 递归控件';
 const rows = [];
 function walk(section, s, path) {
   rows.push({
@@ -121,6 +123,15 @@ function walk(section, s, path) {
 try {
   await ready;
   await request({ type: 'init', cwd: project, demo: false, generation: randomUUID() });
+  // 本脚本只批准上方自行创建的离线测试配置，不读取用户项目或凭据。
+  if (snapshot.startupTrust)
+    await request({
+      type: 'trust-startup',
+      generation: snapshot.generation,
+      sessionId: snapshot.sessionId,
+      fingerprint: snapshot.startupTrust.fingerprint,
+      allow: true,
+    });
   const sections = snapshot.settings.filter((s) => s.editable);
   for (const section of sections) {
     const schema = section.schema;

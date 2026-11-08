@@ -140,7 +140,7 @@ import { mkdtempProject } from './helpers/project.js';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { createModelCatalog } from '../src/builtin/model-catalog/index.js';
 const signal = () => new AbortController().signal;
 const request = (extra: Partial<ChatRequest> = {}): ChatRequest => ({

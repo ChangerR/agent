@@ -146,7 +146,7 @@ describe('ToolExecutor 唯一授权门', () => {
   it.each(['allow', 'ask', 'review'] as const)(
     '%s 不能借 invocation 范围绕过最终拒绝',
     async (kind) => {
-      const approval = vi.fn(async () => ({ allow: false }));
+      const approval = vi.fn(async () => ({ allow: false, stopTask: true }));
       const f = fixture({
         policy: {
           ...allow,
@@ -173,7 +173,7 @@ describe('ToolExecutor 唯一授权门', () => {
       ...allow,
       decide: (input) =>
         input.input.path === 'deny'
-          ? { kind: 'deny', source: 'config', reason: 'explicit deny' }
+          ? { kind: 'deny', denialScope: 'request', source: 'config', reason: 'explicit deny' }
           : allow.decide(input, new AbortController().signal),
     };
     const f = fixture({ policy });
@@ -221,7 +221,7 @@ describe('ToolExecutor 唯一授权门', () => {
     const first = f.run({ path: 'deny' }, 'deny');
     const late = f.run({ path: 'late' }, 'late');
     await vi.waitFor(() => expect(pending).toHaveLength(2));
-    pending[0]({ allow: false });
+    pending[0]({ allow: false, stopTask: true });
     expect((await first).isError).toBe(true);
     expect(
       (
@@ -257,7 +257,7 @@ describe('ToolExecutor 唯一授权门', () => {
           ...review,
           decide: (input) =>
             input.input.path === 'deny'
-              ? { kind: 'deny', source: 'config', reason: 'explicit deny' }
+              ? { kind: 'deny', denialScope: 'request', source: 'config', reason: 'explicit deny' }
               : { kind: 'review', source: 'mode', reason: 'review' },
         },
       });
@@ -461,11 +461,11 @@ describe('ToolExecutor 唯一授权门', () => {
       'Permission denied',
     );
     expect((await f.executor.invokeTool('write', { path: 'direct' }, f.context)).content).toContain(
-      'request_permission_denied',
+      'Permission denied',
     );
     expect(f.execute).not.toHaveBeenCalled();
-    expect(f.audits.filter((e) => e.phase === 'policy')).toHaveLength(2);
-    expect(f.audits.filter((e) => e.reasonCode === 'request_permission_denied')).toHaveLength(1);
+    expect(f.audits.filter((e) => e.phase === 'policy')).toHaveLength(3);
+    expect(f.audits.filter((e) => e.decision === 'deny' && e.phase === 'policy')).toHaveLength(2);
   });
 
   it.each(['unknown', 'invalid', 'error', 'timeout'] as const)(
@@ -580,7 +580,7 @@ describe('ToolExecutor 唯一授权门', () => {
   it('人工响应在 resolve 后被改写不改变已结算的拒绝', async () => {
     const f = fixture({ policy: ask });
     f.events.on('permission_request', ({ resolve }) => {
-      const response: { allow: boolean } = { allow: false };
+      const response: { allow: boolean; stopTask?: boolean } = { allow: false, stopTask: true };
       resolve(response as UserDecision);
       response.allow = true;
     });
@@ -661,7 +661,7 @@ describe('ToolExecutor 唯一授权门', () => {
         revision = 2;
         return { allow: true } as const;
       }
-      return { allow: false } as const;
+      return { allow: false, stopTask: true } as const;
     });
     const f = fixture({
       policy: ask,
@@ -686,7 +686,7 @@ describe('ToolExecutor 唯一授权门', () => {
         f.tool.version = '2';
         f.tool.execute = replacement;
         event.resolve({ allow: true });
-      } else event.resolve({ allow: false });
+      } else event.resolve({ allow: false, stopTask: true });
     });
     await f.run();
     expect(requests).toBe(2);
@@ -705,7 +705,7 @@ describe('ToolExecutor 唯一授权门', () => {
           session = 'session-b';
           return { allow: true };
         }
-        return { allow: false };
+        return { allow: false, stopTask: true };
       },
     });
     expect((await f.run()).content).toContain('approval_stale');
@@ -735,7 +735,7 @@ describe('ToolExecutor 唯一授权门', () => {
           version = '2';
           return { allow: true };
         }
-        return { allow: false };
+        return { allow: false, stopTask: true };
       },
     });
     await g.run();
@@ -853,7 +853,7 @@ describe('ToolExecutor 唯一授权门', () => {
           await writeFile(join(cwd, 'test.js'), 'changed script');
           return { allow: true };
         }
-        return { allow: false };
+        return { allow: false, stopTask: true };
       },
     });
     f.tool.inputSchema = { type: 'object' };
@@ -883,7 +883,7 @@ describe('ToolExecutor 唯一授权门', () => {
           await symlink('b', join(cwd, 'link'));
           return { allow: true };
         }
-        return { allow: false };
+        return { allow: false, stopTask: true };
       },
     });
     expect((await f.run({ path: 'link' })).content).toContain('User denied');
@@ -1018,7 +1018,7 @@ describe('ToolExecutor 唯一授权门', () => {
         revision = 2;
         return { allow: true } as const;
       }
-      return { allow: false } as const;
+      return { allow: false, stopTask: true } as const;
     });
     const execute = vi.fn(async () => ({ content: 'wrote' }));
     const tools = new ToolRegistry();
@@ -1078,7 +1078,7 @@ describe('ToolExecutor 唯一授权门', () => {
     const asks: string[] = [];
     events.on('permission_request', (event) => {
       asks.push(event.request.toolName);
-      event.resolve({ allow: false });
+      event.resolve({ allow: false, stopTask: true });
     });
     const tools = new ToolRegistry();
     tools.register({ ...bashTool, ownerPlugin: 'agentlab.local-tools', version: '1.0.0' });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { ModelBroker } from '../desktop/remote/broker.js';
 import { BridgeProvider, type BridgeTransport } from '../src/providers/bridge.js';
@@ -8,6 +8,12 @@ import type { Provider, ChatRequest } from '../src/core/provider.js';
 import { providerSemantics, type ProviderDescription } from '../src/providers/semantics.js';
 import { OpenAIProvider } from '../src/providers/openai.js';
 import { AnthropicProvider } from '../src/providers/anthropic.js';
+import { EventBus } from '../src/core/events.js';
+import { HookRunner } from '../src/core/hooks.js';
+import { ToolRegistry } from '../src/core/registry.js';
+import { AgentLoop } from '../src/core/loop.js';
+import { ContextManager } from '../src/core/context/coordinator.js';
+import { SummaryCompactor } from '../src/builtin/compaction-summary/index.js';
 
 const req: ChatRequest = {
   model: 'test-model',
@@ -33,6 +39,122 @@ function setup(provider: Provider) {
   return { broker, provider: new BridgeProvider(transport, d), d };
 }
 describe('本地 Broker 与规范化 Provider 代理', () => {
+  it.each(['denied', 'error'] as const)(
+    '真实 loop 的 %s 结果经 Broker 回填后继续安全操作，下一用户轮次仍可使用历史',
+    async (status) => {
+      const fake = new FakeProvider([
+        toolUseResponse([
+          { id: 'denied', name: 'write_fixture', input: status === 'error' ? [] : {} },
+        ]),
+        toolUseResponse([{ id: 'safe', name: 'read_fixture', input: {} }]),
+        textResponse('安全工作已完成'),
+        textResponse('历史仍可继续'),
+      ]);
+      const s = setup(fake),
+        tools = new ToolRegistry();
+      const write = vi.fn(async () => ({ content: '不应执行' }));
+      const read = vi.fn(async () => ({ content: '安全读取' }));
+      for (const [name, risk, execute] of [
+        ['write_fixture', 'write', write],
+        ['read_fixture', 'read', read],
+      ] as const)
+        tools.register({ name, risk, description: name, inputSchema: {}, execute });
+      const loop = new AgentLoop({
+        provider: s.provider,
+        model: 'test-model',
+        tools,
+        policy: {
+          decide: ({ tool }) =>
+            tool.name === 'write_fixture' && status === 'denied'
+              ? {
+                  kind: 'deny',
+                  source: 'builtin',
+                  reason: '拒绝当前操作',
+                  denialScope: 'invocation',
+                }
+              : { kind: 'allow', source: 'builtin', reason: '安全读取' },
+        },
+        hooks: new HookRunner(),
+        events: new EventBus(),
+        context: new ContextManager({
+          compactor: new SummaryCompactor(),
+          compactThreshold: 1000000,
+        }),
+        systemPrompt: 'test',
+        maxTurns: 6,
+        maxTokens: 64,
+        cwd: process.cwd(),
+      });
+      try {
+        expect((await loop.run('处理任务')).reason).toBe('completed');
+        expect(write).not.toHaveBeenCalled();
+        expect(read).toHaveBeenCalledOnce();
+        const result = fake.requests[1].messages.find(
+          (message) => message.role === 'user' && Array.isArray(message.content),
+        );
+        expect(result?.content).toEqual([
+          expect.objectContaining({
+            type: 'tool_result',
+            toolUseId: 'denied',
+            isError: true,
+            permission: expect.objectContaining({ status, requiresUser: status === 'denied' }),
+          }),
+        ]);
+        expect((await loop.run('继续')).reason).toBe('completed');
+        expect(fake.requests).toHaveLength(4);
+        expect(read).toHaveBeenCalledOnce();
+      } finally {
+        s.broker.close();
+      }
+    },
+  );
+
+  it('权限结果元数据仍严格校验，畸形状态与未知字段不启动 Provider', async () => {
+    const fake = new FakeProvider([textResponse('不应调用')]),
+      s = setup(fake);
+    const valid = {
+      status: 'denied',
+      reasonCode: 'deny_rule',
+      retryable: false,
+      requiresUser: true,
+    };
+    try {
+      for (const permission of [
+        { ...valid, status: 'allowed' },
+        { ...valid, requiresUser: 'yes' },
+        { ...valid, execute: true },
+        { status: 'denied' },
+      ])
+        await expect(
+          s.broker.handle('model.open', {
+            callId: randomUUID(),
+            handle: s.d.handle,
+            request: {
+              ...req,
+              messages: [
+                {
+                  role: 'user',
+                  source: 'tool',
+                  content: [
+                    {
+                      type: 'tool_result',
+                      toolUseId: 'denied',
+                      content: 'denied',
+                      isError: true,
+                      permission,
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        ).rejects.toThrow();
+      expect(fake.requests).toHaveLength(0);
+    } finally {
+      s.broker.close();
+    }
+  });
+
   it('文本、完整工具参数、来源和尾随 usage 经过代理保持原语义', async () => {
     const fake = new FakeProvider([
       toolUseResponse([{ id: 'tool-1', name: 'read_file', input: { path: '中文.md' } }]),

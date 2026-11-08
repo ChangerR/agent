@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { DesktopController } from '../desktop/worker/controller.js';
+import { DesktopController } from './helpers/desktop-controller.js';
 import { gitEnvironment, resolveGitExecutable } from '../desktop/worker/git-executable.js';
-import { createAgent, type Agent } from '../src/index.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 import { definePlugin, type TypedHookHandler } from '../src/sdk/index.js';
 
 vi.mock('node:child_process', async (importOriginal) => ({

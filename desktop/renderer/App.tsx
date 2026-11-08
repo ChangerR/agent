@@ -62,7 +62,7 @@ function ApprovalCard({
 }: {
   approval: Approval;
   disabled: boolean;
-  respond: (allow: boolean, feedback: string) => void;
+  respond: (allow: boolean, feedback: string, actionId?: string) => void;
 }) {
   const [feedback, setFeedback] = useState('');
   return (
@@ -87,12 +87,38 @@ function ApprovalCard({
         onChange={(e) => setFeedback(e.target.value)}
       />
       <div className="actions">
-        <button disabled={disabled} className="outline" onClick={() => respond(false, feedback)}>
-          拒绝
-        </button>
-        <button disabled={disabled} className="primary" onClick={() => respond(true, feedback)}>
-          仅允许本次
-        </button>
+        {approval.actions?.length ? (
+          approval.actions.map((action) => (
+            <button
+              key={action.id}
+              disabled={disabled}
+              title={action.description}
+              className={action.kind === 'allow_once' ? 'primary' : 'outline'}
+              onClick={() =>
+                respond(
+                  action.kind === 'allow_once' || action.kind === 'grant',
+                  feedback,
+                  action.id,
+                )
+              }
+            >
+              {action.label}
+            </button>
+          ))
+        ) : (
+          <>
+            <button
+              disabled={disabled}
+              className="outline"
+              onClick={() => respond(false, feedback)}
+            >
+              拒绝此操作
+            </button>
+            <button disabled={disabled} className="primary" onClick={() => respond(true, feedback)}>
+              仅允许本次
+            </button>
+          </>
+        )}
       </div>
     </section>
   );
@@ -954,19 +980,74 @@ export default function App() {
                 </div>
               )}
             </div>
+            {runtime?.startupTrust && (
+              <section className="approval" aria-label="项目启动信任">
+                <strong>项目请求激活以下能力</strong>
+                <p>{runtime.startupTrust.cwd}</p>
+                <ul>
+                  {runtime.startupTrust.entries.map((entry) => (
+                    <li key={entry.id}>
+                      {entry.summary}
+                      {entry.details !== undefined && (
+                        <details>
+                          <summary>查看请求范围</summary>
+                          <pre>{JSON.stringify(entry.details, null, 2)}</pre>
+                        </details>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p className="small">
+                  插件拥有宿主代码权限；此决定只绑定当前列出的入口与配置，变更后重新审查。
+                </p>
+                <div className="actions">
+                  <button
+                    disabled={pending || disconnected}
+                    className="outline"
+                    onClick={() =>
+                      void perform(() =>
+                        action({
+                          type: 'trust-startup',
+                          fingerprint: runtime.startupTrust!.fingerprint,
+                          allow: false,
+                        }),
+                      )
+                    }
+                  >
+                    取消启动
+                  </button>
+                  <button
+                    disabled={pending || disconnected}
+                    className="primary"
+                    onClick={() =>
+                      void perform(() =>
+                        action({
+                          type: 'trust-startup',
+                          fingerprint: runtime.startupTrust!.fingerprint,
+                          allow: true,
+                        }),
+                      )
+                    }
+                  >
+                    信任并激活以上能力
+                  </button>
+                </div>
+              </section>
+            )}
             {runtime?.approvals[0] && (
               <div className="approval-dock">
                 <ApprovalCard
                   key={runtime.approvals[0].id}
                   approval={runtime.approvals[0]}
                   disabled={pending || disconnected}
-                  respond={(allow, feedback) =>
+                  respond={(allow, feedback, actionId) =>
                     void perform(() =>
                       action({
                         type: 'approve',
                         approvalId: runtime.approvals[0].id,
                         allow,
                         feedback,
+                        actionId,
                       }),
                     )
                   }

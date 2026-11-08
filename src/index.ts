@@ -5,6 +5,9 @@ export type { Agent } from './runtime/agent.js';
 export type { CreateAgentOptions } from './runtime/create-agent.js';
 export { definePlugin } from './sdk/index.js';
 export { PluginHost } from './runtime/plugin-host.js';
+export { StartupTrustRequired, inspectStartupTrust } from './runtime/startup-trust.js';
+export type { StartupTrustRequest } from './runtime/startup-trust.js';
+export * from './core/permission/grants.js';
 export async function createAgent(cwd: string, options?: CreateAgentOptions) {
   return createRuntime(cwd, defaultPreset, options);
 }

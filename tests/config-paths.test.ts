@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, loadConfigWithSources } from '../src/core/config.js';
 import { getGlobalConfigPath, resolveAgentPaths } from '../src/core/paths.js';
-import { createAgent, sessionPath, saveSession, type Agent } from '../src/index.js';
+import { createAgent, sessionPath, saveSession, type Agent } from './helpers/trusted-agent.js';
 
 const osFixture = vi.hoisted(() => ({ temporaryDirectory: undefined as string | undefined }));
 vi.mock('node:os', async (importOriginal) => {

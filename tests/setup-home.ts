@@ -12,6 +12,16 @@ process.env.ANTHROPIC_API_KEY = 'test-only-never-sent';
 process.env.OPENAI_API_KEY = 'test-only-never-sent';
 delete process.env.ANTHROPIC_AUTH_TOKEN;
 delete process.env.OPENAI_BASE_URL;
+// 代理回归自行显式设置假地址；其余测试不能继承宿主网络配置。
+for (const name of [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+])
+  delete process.env[name];
 afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });

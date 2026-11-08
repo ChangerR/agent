@@ -9,7 +9,7 @@ import {
   visibleWidth,
   type Terminal,
 } from '@earendil-works/pi-tui';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { definePlugin } from '../src/sdk/index.js';
 import { startTui } from '../src/cli/app.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';

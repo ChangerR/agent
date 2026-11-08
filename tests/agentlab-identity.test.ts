@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { loadConfigWithSources } from '../src/core/config.js';
 import { resolveAgentPaths } from '../src/core/paths.js';
 import { SkillLoader } from '../src/skills/loader.js';
-import { createAgent, type Agent } from '../src/index.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 let root: string, home: string, project: string, agent: Agent | undefined;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'agentlab-identity-'));

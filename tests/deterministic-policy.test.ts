@@ -162,13 +162,13 @@ describe('deterministic policy', () => {
     }
   });
 
-  it('精确普通文件目标授权可放行，宽 allow 不能放行不确定写入', async () => {
+  it('精确与目录普通文件授权生效，仍需完整分析', async () => {
     const input = operation(write, { path: 'src/new.ts', content: 'x' });
     expect(
       await policy('auto', { allow: ['write_file(="src/new.ts")'] }).decide(input, signal()),
     ).toMatchObject({ kind: 'allow', reasonCode: 'exact_allow' });
     expect((await policy('auto', { allow: ['write_file'] }).decide(input, signal())).kind).toBe(
-      'review',
+      'allow',
     );
     expect(
       (await policy('ask', { allow: ['write_file(src/new.ts)'] }).decide(input, signal())).kind,
@@ -204,7 +204,7 @@ describe('deterministic policy', () => {
     );
 
     it.each(['config', 'session'] as const)(
-      '只有 %s 宽规则时仍不能确定性放行写入',
+      '只有 %s 范围规则时可授权完整普通写入',
       async (source) => {
         const broad = ['write_file', 'write_file(src/**)'];
         const value = policy(mode, { allow: source === 'config' ? broad : [] });
@@ -214,8 +214,8 @@ describe('deterministic policy', () => {
           await value.decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
         ).toMatchObject(
           process.platform === 'win32'
-            ? { kind: 'review', reasonCode: 'platform_write_review' }
-            : { kind: 'review', reasonCode: 'review_uncertain' },
+            ? { kind: mode === 'ask' ? 'ask' : 'review' }
+            : { kind: 'allow', reasonCode: 'scoped_allow' },
         );
       },
     );
@@ -272,7 +272,10 @@ describe('deterministic policy', () => {
           operation({ ...write, ownerPlugin: 'third-party' }, { path: 'src/new.ts', content: 'x' }),
           signal(),
         ),
-      ).toMatchObject({ kind: 'review', reasonCode: 'review_uncertain' });
+      ).toMatchObject({
+        kind: 'ask',
+        reasonCode: mode === 'ask' ? 'ask_mode' : 'unknown_operation',
+      });
     });
   });
 
@@ -382,7 +385,7 @@ describe('deterministic policy', () => {
       { ...read, version: '2.0.0' },
       { ...read, name: 'mcp__files__read', ownerPlugin: 'agentlab.mcp' },
     ]) {
-      expect((await policy().decide(operation(tool), signal())).kind).toBe('review');
+      expect((await policy().decide(operation(tool), signal())).kind).toBe('ask');
       expect((await policy('yolo').decide(operation(tool), signal())).kind).toBe('ask');
     }
   });
@@ -481,8 +484,8 @@ describe('deterministic policy', () => {
       await policy('ask').decide(operation(write, { path: 'src/new.ts', content: 'x' }), signal()),
     ).toMatchObject(
       process.platform === 'win32'
-        ? { kind: 'review', reasonCode: 'platform_write_review' }
-        : { kind: 'review', reasonCode: 'review_uncertain' },
+        ? { kind: 'ask', reasonCode: 'platform_write_ask' }
+        : { kind: 'ask', reasonCode: 'ask_mode' },
     );
   });
 
@@ -518,7 +521,7 @@ describe('deterministic policy', () => {
         ).toMatchObject(
           process.platform === 'win32'
             ? { kind: 'ask', reasonCode: 'powershell_unknown' }
-            : { kind: 'review', reasonCode: 'review_uncertain' },
+            : { kind: 'ask', reasonCode: mode === 'ask' ? 'ask_mode' : 'unknown_operation' },
         );
   });
 
@@ -634,7 +637,7 @@ describe('deterministic policy', () => {
           signal(),
         )
       ).kind,
-    ).toBe('review');
+    ).toBe('ask');
     const ask = createDeterministicPolicy({
       cwd,
       mode: 'ask',
@@ -645,8 +648,8 @@ describe('deterministic policy', () => {
       await ask.decide(operation(write, { path: 'src/generated.ts', content: 'x' }), signal()),
     ).toMatchObject(
       process.platform === 'win32'
-        ? { kind: 'review', reasonCode: 'platform_write_review' }
-        : { kind: 'review', reasonCode: 'review_uncertain' },
+        ? { kind: 'ask', reasonCode: 'platform_write_ask' }
+        : { kind: 'allow', reasonCode: 'scoped_write' },
     );
   });
 
@@ -831,7 +834,7 @@ describe('deterministic policy', () => {
     expect((await executor.invokeTool('bash', { command: 'npm test' }, context)).content).toContain(
       'approval_required',
     );
-    const reviews = process.platform === 'win32' ? 0 : 1;
+    const reviews = 0;
     expect(reviewer.review).toHaveBeenCalledTimes(reviews);
     await executor.invokeTool('read_file', { path: '.env' }, context);
     expect(reviewer.review).toHaveBeenCalledTimes(reviews);

@@ -390,9 +390,7 @@ describe('原生 Windows 端到端：项目内只读不经过 reviewer', () => {
     // 路由拒绝不是用户拒绝：同请求可改专用工具，但仍重新检查其目标。
     expect((await run('read_file', { path: 'src/a.ts' })).content).toContain('needle');
     expect((await run('read_file', { path: '.env' })).content).not.toContain('TOKEN');
-    expect((await run('read_file', { path: 'src/a.ts' })).content).toContain(
-      'request_permission_denied',
-    );
+    expect((await run('read_file', { path: 'src/a.ts' })).content).toContain('needle');
     await run('write_file', { path: 'AGENTS.md', content: 'x' }, 'new-sensitive-write-request');
     expect(reviews).toHaveLength(0);
     expect(humanRequests).toHaveLength(2);

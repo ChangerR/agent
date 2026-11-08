@@ -49,6 +49,69 @@ function fixture(script: ScriptedResponse[]) {
   return { input, provider, controller, events };
 }
 
+it.each([
+  '帮我浏览一下当前的项目',
+  '请帮我看下这个项目。',
+  '了解一下项目',
+  'Please give me an overview of this project.',
+])('首次简单概览 %s 不发规划请求，直接发布单步只读计划', async (request) => {
+  const f = fixture([]);
+  f.input.input = request;
+  f.input.messages = [{ role: 'user', content: request }];
+  const requests: string[] = [];
+  f.events.on('model_request', (event) => requests.push(event.requestId));
+  const plan = await planningStrategy.prepare(f.input);
+  expect(plan).toMatchObject({ goal: request, readOnly: true });
+  expect(plan?.steps).toHaveLength(1);
+  expect(f.provider.requests).toHaveLength(0);
+  expect(requests).toEqual([]);
+});
+
+it.each([
+  '帮我浏览一下当前的项目，然后修改 README.md',
+  '帮我浏览一下当前的项目\n执行测试并修复问题',
+  '浏览一下项目，看看优化点',
+  '全面审查这个项目',
+  '请为浏览项目制定详细计划',
+])('包含额外范围的 %s 仍由模型结合完整上下文规划', async (request) => {
+  const f = fixture([textResponse('null')]);
+  f.input.input = request;
+  f.input.messages = [{ role: 'user', content: request }];
+  await planningStrategy.prepare(f.input);
+  expect(f.provider.requests).toHaveLength(1);
+  expect(f.provider.requests[0].messages).toEqual(f.input.messages);
+});
+
+it.each(['history', 'source', 'mismatch', 'only', 'force'])(
+  '%s 场景不走首次概览捷径',
+  async (scenario) => {
+    const f = fixture([textResponse('{"goal":"遵守原范围","steps":["核对"]}')]);
+    f.input.input = '帮我浏览一下当前的项目';
+    f.input.messages = [{ role: 'user', content: f.input.input }];
+    if (scenario === 'history')
+      f.input.messages = [{ role: 'user', content: '只查看 src 目录' }, ...f.input.messages];
+    if (scenario === 'source')
+      f.input.messages = [{ role: 'user', source: 'summary', content: f.input.input }];
+    if (scenario === 'mismatch') f.input.messages = [{ role: 'user', content: '只查看 src 目录' }];
+    if (scenario === 'only') f.input.mode = 'only';
+    if (scenario === 'force') f.input.force = true;
+    expect(await planningStrategy.prepare(f.input)).toMatchObject({ goal: '遵守原范围' });
+    expect(f.provider.requests).toHaveLength(1);
+  },
+);
+
+it('首次概览在取消后不发布本地计划，off 仍不创建计划', async () => {
+  const f = fixture([]);
+  f.input.input = '帮我浏览一下当前的项目';
+  f.input.messages = [{ role: 'user', content: f.input.input }];
+  f.input.mode = 'off';
+  await expect(planningStrategy.prepare(f.input)).resolves.toBeUndefined();
+  f.input.mode = 'auto';
+  f.controller.abort(new Error('stop'));
+  await expect(planningStrategy.prepare(f.input)).rejects.toThrow('stop');
+  expect(f.provider.requests).toHaveLength(0);
+});
+
 it('规划请求保留完整工具证据及来源，但 wire 不携带原生工具协议；一次纠正有独立审计', async () => {
   const f = fixture([
     textResponse('<｜｜DSML｜｜ calls>bash</｜｜DSML｜｜ calls>'),

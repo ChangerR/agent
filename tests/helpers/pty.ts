@@ -58,6 +58,19 @@ export function createPtyProject() {
     launch(size = { rows: 40, cols: 140 }) {
       if (![size.rows, size.cols].every((n) => Number.isSafeInteger(n) && n >= 8 && n <= 500))
         throw new Error('Invalid PTY size');
+      // UI 专项夹具预先明确批准测试作者生成的启动配置；CLI 原命令保持不变。
+      const trust = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          "import { loadConfigWithSources } from './src/core/config.ts'; import { authorizeStartup } from './src/runtime/startup-trust.ts'; await authorizeStartup(loadConfigWithSources(process.cwd()), {}, () => true);",
+        ],
+        { cwd: project, env, encoding: 'utf8' },
+      );
+      if (trust.status !== 0) throw new Error('测试项目启动信任准备失败: ' + trust.stderr);
       // stty 只设窗口大小；被测命令确实是当前项目原样的 pnpm dev。
       const child = spawn(
         'script',

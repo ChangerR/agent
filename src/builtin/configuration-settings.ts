@@ -5,6 +5,11 @@ import { AgentConfigSchema, loadConfigWithSources } from '../core/config.js';
 import type { Plugin, SettingsScope, SettingsSection } from '../sdk/index.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import { validatePermissionRule } from './policy/config.js';
+import {
+  forgetStartupApproval,
+  rememberStartupApproval,
+  startupTrustEntry,
+} from '../runtime/startup-trust.js';
 
 type Shape = Record<string, z.ZodTypeAny>;
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -436,6 +441,33 @@ export function configurationSections(
           : store.commitFields(saved.base, saved.patch);
         drafts.delete(draft as object);
         bases.set(scope, next);
+        if (scope === 'project' && id === 'configuration-permissions') {
+          try {
+            const entries = [];
+            if (next.value.permissionMode !== undefined)
+              entries.push(
+                startupTrustEntry(
+                  'config:permissionMode',
+                  next.value.permissionMode,
+                  '用户保存的权限模式',
+                ),
+              );
+            else forgetStartupApproval(cwd, ['config:permissionMode']);
+            const permissions = next.value.permissions as { allow?: string[] } | undefined;
+            entries.push(
+              startupTrustEntry(
+                'permission-allow',
+                permissions?.allow ?? [],
+                '用户保存的 allow 规则',
+              ),
+            );
+            rememberStartupApproval(cwd, entries);
+          } catch {
+            throw Object.assign(new Error('启动信任记录保存失败'), {
+              code: 'startup_trust_save_failed',
+            });
+          }
+        }
       },
     };
     const properties = section.schema.properties as Record<string, Record<string, unknown>>;

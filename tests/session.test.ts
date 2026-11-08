@@ -73,7 +73,7 @@ function buildFile(cwd: string, patch: Partial<SessionFile> = {}): SessionFile {
   return {
     schemaVersion: 2,
     runtime: { schemaVersion: 1 },
-    policy: { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 },
+    policy: { id: 'deterministic', version: '3.0.0', stateSchemaVersion: 1 },
     pluginStates: {},
     revision: 0,
     id: 'sess-test',
@@ -144,7 +144,7 @@ function makeHarness(
   const manager = new SessionManager({
     store: fileSessionStore,
     restoreRequirements: {
-      policy: { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 },
+      policy: { id: 'deterministic', version: '3.0.0', stateSchemaVersion: 1 },
     },
     cwd: tmp,
     loop,
@@ -642,11 +642,11 @@ describe('权限与标题', () => {
     await saveSession(file);
     await manager.resume('rules1');
     expect(permission.getSessionRules()).toEqual({
-      allow: ['read_file'],
+      allow: [],
       ask: ['write_file'],
       deny: ['bash'],
     });
-    expect(await decide(readFileTool, { path: 'a.ts' })).toMatchObject({ kind: 'review' });
+    expect(await decide(readFileTool, { path: 'a.ts' })).toMatchObject({ kind: 'ask' });
     expect(await decide(bashTool, { command: 'ls' })).toMatchObject({
       kind: 'deny',
       source: 'session',

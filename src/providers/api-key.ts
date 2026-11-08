@@ -37,7 +37,7 @@ export function resolveApiKey(
   if (typeof key !== 'string' || !key.trim()) {
     // apiKeyEnv 本身也可能被误填为 key，故变量名和变量值都不回显。
     throw new Error(
-      '配置项 apiKeyEnv 指定的环境变量未设置或为空；请核对 agent.config.json 或 ~/.agentlab/config.json 中的变量名，在项目根 .env 或 shell 环境中设置非空 key，然后重新启动。已有 shell 变量（包括空值）优先于 .env。',
+      '配置项 apiKeyEnv 指定的环境变量未设置或为空；请核对 ~/.agentlab/config.json 或显式项目配置中的变量名，在 ~/.agentlab/.env 或 shell 环境中设置非空 key，然后重新启动。已有 shell 变量（包括空值）优先于用户 .env；项目 .env 不会加载。',
     );
   }
   return key;

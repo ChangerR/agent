@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type Agent } from '../src/index.js';
+import { type Agent } from './helpers/trusted-agent.js';
 import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import { STRICT_REVIEWER_SYSTEM } from '../src/builtin/reviewer-model/index.js';
 import type { PermissionMode } from '../src/core/config.js';
@@ -212,10 +212,11 @@ describe('默认 runtime：注入 Windows 策略分支，使用真实宿主文�
       expect(h.humanRequests[0]).toMatchObject({ decisionSource: 'judge', toolName: 'write_file' });
       expect(h.reviews()).toHaveLength(1);
       const remembered = exactRule('src/remembered.txt');
-      expect(h.agent.permission.getSessionRules().allow).toEqual([remembered]);
+      expect(h.agent.permission.getSessionRules().allow).toEqual([]);
+      expect(h.agent.permission.listGrants!()).toHaveLength(1);
 
-      expect((await h.write('src/remembered.txt', 'second')).isError).toBeFalsy();
-      expect(await readFile(join(cwd, 'src/remembered.txt'), 'utf8')).toBe('second');
+      expect((await h.write('src/remembered.txt', 'first')).isError).toBeFalsy();
+      expect(await readFile(join(cwd, 'src/remembered.txt'), 'utf8')).toBe('first');
       expect(h.humanRequests).toHaveLength(1);
       expect(h.reviews()).toHaveLength(1);
       expect(h.events).toContainEqual(
@@ -224,9 +225,8 @@ describe('默认 runtime：注入 Windows 策略分支，使用真实宿主文�
           phase: 'pipeline',
           decision: expect.objectContaining({
             kind: 'allow',
-            reasonCode: 'exact_allow',
-            source: 'session',
-            matchedRule: remembered,
+            reasonCode: 'grant_allow',
+            source: 'user',
           }),
         }),
       );
@@ -237,18 +237,18 @@ describe('默认 runtime：注入 Windows 策略分支，使用真实宿主文�
       await expect(readFile(join(cwd, 'src/other.txt'), 'utf8')).rejects.toMatchObject({
         code: 'ENOENT',
       });
-      expect(await readFile(projectConfig, 'utf8')).toBe(before);
+      if (remember === 'session') expect(await readFile(projectConfig, 'utf8')).toBe(before);
+      else
+        expect(
+          JSON.parse(await readFile(projectConfig, 'utf8')).pluginConfig['agentlab.policy'].grants,
+        ).toHaveLength(1);
       const persistenceNotices = h.events.filter(
         (event) => event.type === 'notice' && event.text.includes('permissions.allow'),
       );
-      expect(persistenceNotices).toHaveLength(remember === 'project' ? 1 : 0);
-      if (remember === 'project')
-        expect(persistenceNotices[0]).toMatchObject({
-          text: expect.stringContaining('要持久化到项目'),
-        });
+      expect(persistenceNotices).toHaveLength(0);
       await h.dispose();
 
-      // 新建 runtime 不恢复旧会话；“项目记住”目前只提示手动持久化，不自动改配置。
+      // 新建 runtime 不恢复旧会话；项目授权只覆盖已批准的完整参数。
       const restarted = await runtime({ review: 'ask' });
       expect(restarted.agent.permission.getSessionRules().allow).toEqual([]);
       expect((await restarted.write('src/remembered.txt', 'must not replace second')).isError).toBe(
@@ -256,8 +256,12 @@ describe('默认 runtime：注入 Windows 策略分支，使用真实宿主文�
       );
       expect(restarted.reviews()).toHaveLength(1);
       expect(restarted.humanRequests).toHaveLength(1);
-      expect(await readFile(join(cwd, 'src/remembered.txt'), 'utf8')).toBe('second');
-      expect(await readFile(projectConfig, 'utf8')).toBe(before);
+      expect(await readFile(join(cwd, 'src/remembered.txt'), 'utf8')).toBe('first');
+      if (remember === 'session') expect(await readFile(projectConfig, 'utf8')).toBe(before);
+      else
+        expect(
+          JSON.parse(await readFile(projectConfig, 'utf8')).pluginConfig['agentlab.policy'].grants,
+        ).toHaveLength(1);
     },
   );
 

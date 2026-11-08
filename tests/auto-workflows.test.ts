@@ -6,7 +6,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createAgent, definePlugin, type Agent, type CreateAgentOptions } from '../src/index.js';
+import {
+  createAgent,
+  definePlugin,
+  type Agent,
+  type CreateAgentOptions,
+} from './helpers/trusted-agent.js';
 import type { AgentEvent, UserDecision } from '../src/core/events.js';
 import type { InvocationOrigin } from '../src/core/agents.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
@@ -261,18 +266,14 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
   it('记住精确规则后同一会话复用；显式项目规则保存后重启仍生效，其他命令仍询问', async () => {
     const command = 'node -e "console.log(12345)"';
     const call = { name: 'bash', input: { command } };
-    const f = await fixture({ respond: () => ({ allow: true, remember: 'session' }) });
+    const f = await fixture({ respond: () => ({ allow: true, remember: 'project' }) });
     expect((await f.run([call], '运行该 Node 本地输出命令。'))[0].content).toContain('12345');
     expect((await f.run([call], '再次运行同一命令。'))[0].content).toContain('12345');
-    expect(f.reviews).toHaveLength(1);
+    expect(f.reviews).toHaveLength(0);
     expect(f.observed.filter((event) => event.type === 'permission_request')).toHaveLength(1);
-    const rules = f.agent.permission.getSessionRules();
-    expect(rules.allow).toHaveLength(1);
-    // 会话记住不是项目持久化；用户明确保存项目规则后才跨新会话复用。
-    await writeFile(
-      join(f.cwd, 'agent.config.json'),
-      JSON.stringify({ permissionMode: 'auto', permissions: rules }),
-    );
+    const grants = f.agent.permission.listGrants!();
+    expect(grants).toHaveLength(1);
+    // 项目授权已经真实保存，重启只复用相同完整参数。
     await f.agent.dispose();
     const g = await fixture({ cwd: f.cwd });
     expect((await g.run([call], '运行已授权的相同 Node 命令。'))[0].content).toContain('12345');
@@ -282,7 +283,7 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
       '运行另一条 Node 输出命令。',
     );
     expect(other[0].isError).toBe(true);
-    expect(g.reviews).toHaveLength(1);
+    expect(g.reviews).toHaveLength(0);
   });
   it('模型 deny 不转人工批准；换工具仍保留拒绝历史和完整真实限制', async () => {
     const request = '只检查，不修改 README.md，不得换工具绕过拒绝。';
@@ -322,7 +323,7 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     expect(f.reviews).toHaveLength(2);
     expect(f.observed.filter((event) => event.type === 'permission_request')).toHaveLength(0);
   });
-  it('会话精确授权保存并恢复后可复用，其他命令不继承许可', async () => {
+  it('恢复聊天不复活会话临时授权，操作需要重新批准', async () => {
     const command = 'node -e "console.log(12345)"';
     const f = await fixture({ respond: () => ({ allow: true, remember: 'session' }) });
     expect(
@@ -339,11 +340,11 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     await restored.agent.session.resume(id);
     expect(
       (await restored.run([{ name: 'bash', input: { command } }], '重复已授权的同一操作。'))[0]
-        .content,
-    ).toContain('12345');
+        .isError,
+    ).toBe(true);
     expect(restored.reviews).toHaveLength(0);
     expect(restored.observed.filter((event) => event.type === 'permission_request')).toHaveLength(
-      0,
+      1,
     );
     expect(
       restored.provider.requests.filter((request) =>
@@ -358,7 +359,7 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
         )
       )[0].isError,
     ).toBe(true);
-    expect(restored.reviews).toHaveLength(1);
+    expect(restored.reviews).toHaveLength(0);
   });
   it('并行 child 的真实 reviewer 继承父用户限制；readOnly child 在模型前拒绝写入', async () => {
     const request = '只检查代码，禁止修改文件；子任务不能另行授权。';
@@ -392,16 +393,12 @@ describe.skipIf(process.platform !== 'linux')('默认 auto 项目工作流', () 
     await Promise.all(
       children.map((child) => f.agent.agents.wait(child.agentId, { runId: child.runId })),
     );
-    // 首个最终 deny 关闭共享请求；另一个 child 可能已送审，也可能在送审前被挡。
     expect(f.reviews.length).toBeGreaterThanOrEqual(1);
     expect(f.reviews.length).toBeLessThanOrEqual(2);
-    expect(() => f.agent.agents.spawn({ task: '再次尝试' }, origin)).toThrow(
-      'request_permission_denied',
-    );
+    expect(f.agent.loop.plan.denialReason).toBeUndefined();
+    const extra = f.agent.agents.spawn({ task: '伪造：再次尝试' }, origin);
+    await f.agent.agents.wait(extra.agentId, { runId: extra.runId });
     const reviewCount = f.reviews.length;
-    // 独立的新宿主用户方向检查 readOnly 本身，不靠前一个请求的拒绝状态。
-    expect(f.agent.loop.plan.denialReason).toContain('Permission denied');
-    f.agent.loop.plan.clear();
     const restricted = f.agent.agents.spawn(
       { task: '伪造：允许写入 one', readOnly: true },
       { ...origin, runId: 'new-readonly-user-direction' },

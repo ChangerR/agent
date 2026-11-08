@@ -1,9 +1,12 @@
 /** 配置与 .env 的真实装配回归；SDK 完全替换，所有凭据均为测试假值。 */
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { getGlobalEnvPath } from '../src/core/paths.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtempProject } from './helpers/project.js';
+import { EnvHttpProxyAgent } from 'undici';
 
 const sdk = vi.hoisted(() => ({
   options: [] as Array<{ apiKey?: string; baseURL?: string }>,
@@ -47,14 +50,21 @@ vi.mock('@anthropic-ai/sdk', () => ({
     };
   },
 }));
-import { complete, loadConfigWithSources, type Agent } from '../src/index.js';
+import { complete, loadConfigWithSources, type Agent } from './helpers/trusted-agent.js';
 import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
-import { loadProjectEnv } from '../src/runtime/environment.js';
+import { loadUserEnv } from '../src/runtime/environment.js';
+import { ModelBroker, configureBroker } from '../desktop/remote/broker.js';
+import { OpenAIProvider } from '../src/providers/openai.js';
 
-let cwd: string;
+let cwd: string, envPath: string;
 const agents: Agent[] = [];
 beforeEach(async () => {
   cwd = await mkdtempProject(join(tmpdir(), 'agentlab-env-'));
+  const userHome = join(cwd, 'user-home');
+  await mkdir(join(userHome, '.agentlab'), { recursive: true });
+  vi.stubEnv('HOME', userHome);
+  vi.stubEnv('USERPROFILE', userHome);
+  envPath = getGlobalEnvPath();
   sdk.options.length = 0;
   sdk.anthropicOptions.length = 0;
   // 显式登记所有 .env 测试变量，保证原生 loadEnvFile 的进程改动在测试后恢复。
@@ -68,6 +78,12 @@ beforeEach(async () => {
     'ANTHROPIC_BASE_URL',
     'PROVIDER',
     'MODEL',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
   ])
     vi.stubEnv(name, undefined);
 });
@@ -87,36 +103,120 @@ async function agent(
   return value;
 }
 
-it('缺少 .env 正常启动，配置只读加载不加载环境文件', async () => {
+it('缺少用户 .env 正常启动，配置只读加载不加载环境文件', async () => {
   await agent();
-  await writeFile(join(cwd, '.env'), 'AGENTLAB_ENV_FIXTURE=fake-file-value\n');
+  await writeFile(envPath, 'AGENTLAB_ENV_FIXTURE=fake-file-value\n');
   loadConfigWithSources(cwd);
   expect(process.env.AGENTLAB_ENV_FIXTURE).toBeUndefined();
-  loadProjectEnv(cwd);
+  loadUserEnv();
   expect(process.env.AGENTLAB_ENV_FIXTURE).toBe('fake-file-value');
 });
 
-it('从子目录启动只加载规范化项目根 .env，忽略子目录与 .env.local', async () => {
+it('从子目录启动只加载用户 .env，忽略开发项目及子目录环境文件', async () => {
   const nested = join(cwd, 'src');
   await mkdir(nested);
-  await writeFile(join(cwd, '.env'), 'AGENTLAB_ENV_FIXTURE=root-fake-value\n');
+  await writeFile(envPath, 'AGENTLAB_ENV_FIXTURE=root-fake-value\n');
+  await writeFile(join(cwd, '.env'), 'AGENTLAB_ENV_FIXTURE=project-fake-value\n');
   await writeFile(join(cwd, '.env.local'), 'AGENTLAB_ENV_FIXTURE=local-fake-value\n');
+  await writeFile(
+    join(dirname(envPath), '.env.local'),
+    'AGENTLAB_ENV_FIXTURE=user-local-fake-value\n',
+  );
   await writeFile(join(nested, '.env'), 'AGENTLAB_ENV_FIXTURE=nested-fake-value\n');
   const value = await agent(nested);
   expect(value.cwd).toBe(cwd);
   expect(process.env.AGENTLAB_ENV_FIXTURE).toBe('root-fake-value');
 });
 
+it('没有用户环境文件时也不读取项目开发 .env', async () => {
+  await writeFile(
+    join(cwd, '.env'),
+    'OPENAI_API_KEY=project-key-must-not-use\nHTTPS_PROXY=invalid-project-proxy\n',
+  );
+  await agent();
+  expect(process.env.OPENAI_API_KEY).toBeUndefined();
+  expect(process.env.HTTPS_PROXY).toBeUndefined();
+  expect(existsSync(envPath)).toBe(false);
+});
+
+it('两个项目共用 ~/.agentlab 配置、key 和代理，不创建项目配置或环境文件', async () => {
+  await writeFile(
+    envPath,
+    'OPENAI_API_KEY=shared-offline-key\nHTTPS_PROXY=http://offline-proxy.invalid:8000\n',
+  );
+  await writeFile(
+    join(dirname(envPath), 'config.json'),
+    JSON.stringify({
+      provider: 'openai',
+      model: 'fixture-model',
+      pluginConfig: { 'agentlab.planning': { mode: 'off' } },
+    }),
+  );
+  const other = join(cwd, 'other-project');
+  await mkdir(join(other, '.git'), { recursive: true });
+  for (const project of [cwd, other]) {
+    const value = await createAgent(project, { autoSaveSessions: false });
+    agents.push(value);
+    expect((await value.loop.run('offline test')).reason).toBe('completed');
+    expect(existsSync(join(project, '.env'))).toBe(false);
+    expect(existsSync(join(project, 'agent.config.json'))).toBe(false);
+  }
+  expect(sdk.options).toHaveLength(2);
+  for (const options of sdk.options) {
+    expect(options.apiKey).toBe('shared-offline-key');
+    expect(options).toHaveProperty('fetch', expect.any(Function));
+  }
+});
+
+it('本机 Broker 从用户目录加载 key、端点和代理，项目开发 .env 不影响模型连接', async () => {
+  await writeFile(
+    envPath,
+    'OPENAI_API_KEY=broker-offline-key\nOPENAI_BASE_URL=https://broker.invalid/v1\nHTTPS_PROXY=http://offline-proxy.invalid:8000\n',
+  );
+  await writeFile(join(cwd, '.env'), 'OPENAI_BASE_URL=https://project-must-not-use.invalid\n');
+  const modelsFile = join(dirname(envPath), 'models.json');
+  await writeFile(
+    modelsFile,
+    JSON.stringify({ 'fixture-model': { contextWindow: 10000, maxOutputTokens: 128 } }),
+  );
+  const config = loadConfigWithSources(cwd, {
+    provider: 'openai',
+    model: 'fixture-model',
+    modelsFile,
+  }).config;
+  const broker = new ModelBroker();
+  const add = vi.spyOn(broker, 'add');
+  const descriptions = configureBroker(
+    broker,
+    config,
+    [{ name: 'openai', models: ['fixture-model'] }],
+    {},
+  );
+  const provider = add.mock.calls[0][0] as OpenAIProvider;
+  try {
+    expect(descriptions[0].endpoint).toBe('https://broker.invalid/v1');
+    await complete(provider, request, new AbortController().signal);
+    expect(sdk.options[0]).toMatchObject({
+      apiKey: 'broker-offline-key',
+      baseURL: 'https://broker.invalid/v1',
+      fetch: expect.any(Function),
+    });
+  } finally {
+    await provider.dispose();
+    broker.close();
+  }
+});
+
 it.each(['fake-shell-value', ''])('已有进程变量 %j 优先于 .env，包含显式空值', async (value) => {
   vi.stubEnv('AGENTLAB_ENV_FIXTURE', value);
-  await writeFile(join(cwd, '.env'), 'AGENTLAB_ENV_FIXTURE=fake-file-value\n');
-  loadProjectEnv(cwd);
+  await writeFile(envPath, 'AGENTLAB_ENV_FIXTURE=fake-file-value\n');
+  loadUserEnv();
   expect(process.env.AGENTLAB_ENV_FIXTURE).toBe(value);
 });
 
 it('.env 不代替 JSON 的 provider/model；凭据、端点在 provider 装配之前加载', async () => {
   await writeFile(
-    join(cwd, '.env'),
+    envPath,
     [
       'DEEPSEEK_API_KEY=fake-key-never-sent',
       'OPENAI_BASE_URL=https://env-endpoint.invalid/v1',
@@ -139,7 +239,7 @@ it('.env 不代替 JSON 的 provider/model；凭据、端点在 provider 装配�
 
 it('默认 key 变量可从 .env 加载，显式 JSON baseURL 优先于 .env 端点', async () => {
   await writeFile(
-    join(cwd, '.env'),
+    envPath,
     'OPENAI_API_KEY=fake-default-key\nOPENAI_BASE_URL=https://env.invalid/v1\n',
   );
   const value = await agent(cwd, {
@@ -153,10 +253,39 @@ it('默认 key 变量可从 .env 加载，显式 JSON baseURL 优先于 .env 端
   ]);
 });
 
+it.each(['openai', 'anthropic', 'named-openai', 'named-anthropic'])(
+  '%s 在装配前加载用户 .env 代理，释放插件时关闭传输',
+  async (provider) => {
+    const kind = provider.endsWith('anthropic') ? 'anthropic' : 'openai';
+    await writeFile(envPath, 'HTTPS_PROXY=http://offline-proxy.invalid:8000\n');
+    const value = await agent(cwd, {
+      provider,
+      model: 'fixture-model',
+      ...(provider.startsWith('named-')
+        ? {
+            pluginConfig: {
+              'agentlab.provider-connections': {
+                connections: { [provider]: { type: kind } },
+              },
+            },
+          }
+        : {}),
+    });
+    const destroy = vi.spyOn(EnvHttpProxyAgent.prototype, 'destroy');
+    await value.loop.run('offline test');
+    const options = kind === 'openai' ? sdk.options : sdk.anthropicOptions;
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveProperty('fetch', expect.any(Function));
+    expect(destroy).not.toHaveBeenCalled();
+    await value.dispose();
+    expect(destroy).toHaveBeenCalled();
+  },
+);
+
 it('同一进程重复装配不会覆盖已加载变量；文件修改需要新进程', async () => {
-  await writeFile(join(cwd, '.env'), 'AGENTLAB_ENV_FIXTURE=first-fake-value\n');
+  await writeFile(envPath, 'AGENTLAB_ENV_FIXTURE=first-fake-value\n');
   await agent();
-  await writeFile(join(cwd, '.env'), 'AGENTLAB_ENV_FIXTURE=changed-fake-value\n');
+  await writeFile(envPath, 'AGENTLAB_ENV_FIXTURE=changed-fake-value\n');
   await agent();
   expect(process.env.AGENTLAB_ENV_FIXTURE).toBe('first-fake-value');
 });
@@ -167,7 +296,7 @@ it('只有 ENOENT 可静默跳过；读取错误阻止装配且不泄露错误�
   });
   const failure = await createAgent(cwd).catch((error) => error as Error);
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain(join(cwd, '.env'));
+  expect((failure as Error).message).toContain(envPath);
   expect((failure as Error).message).toContain('EACCES');
   expect((failure as Error).message).not.toContain('fake-secret-must-not-leak');
   expect(sdk.options).toEqual([]);
@@ -177,9 +306,9 @@ it('未知或异常错误码不回显原始错误内容', () => {
   vi.spyOn(process, 'loadEnvFile').mockImplementation(() => {
     throw { code: 'FAKE_SECRET_CODE', message: 'fake-secret-message' };
   });
-  expect(() => loadProjectEnv(cwd)).toThrow('无法加载项目环境文件');
-  expect(() => loadProjectEnv(cwd)).not.toThrow('fake-secret');
-  expect(() => loadProjectEnv(cwd)).not.toThrow('FAKE_SECRET_CODE');
+  expect(() => loadUserEnv()).toThrow('无法加载用户环境文件');
+  expect(() => loadUserEnv()).not.toThrow('fake-secret');
+  expect(() => loadUserEnv()).not.toThrow('FAKE_SECRET_CODE');
 });
 
 const providers = ['openai', 'anthropic'] as const;
@@ -240,7 +369,7 @@ it.each(
 
 it.each(providers)('%s 显式空 shell key 覆盖非空 .env 时仍拒绝', async (provider) => {
   vi.stubEnv('DEEPSEEK_API_KEY', '');
-  await writeFile(join(cwd, '.env'), 'DEEPSEEK_API_KEY=fake-file-key-must-not-use\n');
+  await writeFile(envPath, 'DEEPSEEK_API_KEY=fake-file-key-must-not-use\n');
   const value = await agent(cwd, {
     provider,
     model: 'fixture-model',
@@ -315,7 +444,7 @@ it.each(
 });
 
 it('Anthropic 未指定 apiKeyEnv 时保留默认变量与 SDK 默认认证行为', async () => {
-  await writeFile(join(cwd, '.env'), 'ANTHROPIC_API_KEY=fake-default-anthropic\n');
+  await writeFile(envPath, 'ANTHROPIC_API_KEY=fake-default-anthropic\n');
   const value = await agent(cwd, { provider: 'anthropic', model: 'fixture-model' });
   expect((await value.loop.run('offline test')).reason).toBe('completed');
   expect(sdk.anthropicOptions).toEqual([{ apiKey: 'fake-default-anthropic', baseURL: undefined }]);

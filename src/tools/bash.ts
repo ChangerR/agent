@@ -12,6 +12,7 @@ import type { Tool } from '../core/registry.js';
 import { envWithRg } from './grep.js';
 import { parsePowerShell } from './powershell.js';
 import { openShellBindings } from './shell-bound.js';
+import { processEnvironment } from '../runtime/process-environment.js';
 import {
   analyzeReadOnlyShell,
   readOnlyShellEnvironment,
@@ -84,8 +85,10 @@ export const bashTool: Tool = {
   async execute(input, ctx) {
     const command = String(input.command);
     const timeout = Number(input.timeout ?? DEFAULT_TIMEOUT_MS);
+    if (ctx.executeProcess && !ctx.analysis?.environment?.['$shellContract'])
+      return ctx.executeProcess({ ...shellInvocation(command), cwd: ctx.cwd, timeoutMs: timeout });
     let invocation = shellInvocation(command);
-    let env = envWithRg(process.env);
+    let env = envWithRg(processEnvironment(['HOME', 'USERPROFILE']));
     let bound: Awaited<ReturnType<typeof openShellBindings>> | undefined;
     const powerShellCommand = ctx.analysis?.environment?.['$powershellCommand'];
     if (powerShellCommand) {

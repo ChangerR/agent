@@ -59,6 +59,8 @@ export function settingsErrorMessage(error: unknown): string {
     return '配置已变化或另一个设置正在保存，请重新打开设置。';
   if (error instanceof SyntaxError) return '配置不是合法 JSON，请修正后重试。';
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === 'startup_trust_save_failed')
+    return '设置已保存，但启动信任记录未保存；请重新打开设置核对，重启时需重新审查。';
   if (typeof code === 'string' && Object.hasOwn(constants.errno, code))
     return `配置读写失败（${code}）。`;
   return '设置验证或保存失败，请检查配置格式、字段和值后重试。';

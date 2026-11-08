@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { definePlugin } from '../src/sdk/index.js';
 it('实际宿主只读审批观察者不算 responder；无交互端立即返回 approval_required', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'plugin-observer-'));

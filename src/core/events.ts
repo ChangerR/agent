@@ -23,9 +23,12 @@ import type { RequestEstimate } from './context/request-budget.js';
 import type { Decision } from './permission/contracts.js';
 import type { SubagentProgress } from './agents.js';
 import { bounded } from './permission/async.js';
+import type { ApprovalAction } from './permission/grants.js';
 
 /** 权限询问的请求与回传 */
 export interface PermissionRequest {
+  /** 后端生成并绑定当前操作的动作；前端不推导授权范围。 */
+  actions?: readonly ApprovalAction[];
   agentId?: string;
   agentName?: string;
   task?: string;
@@ -51,7 +54,9 @@ export interface PermissionRequest {
 }
 
 export type UserDecision =
-  { allow: true; remember?: 'session' | 'project' } | { allow: false; feedback?: string };
+  | { actionId: string; feedback?: string }
+  | { allow: true; remember?: 'task' | 'session' | 'project' }
+  | { allow: false; feedback?: string; stopTask?: boolean };
 
 export type LoopEndReason = 'completed' | 'max_turns' | 'max_tokens' | 'aborted' | 'error';
 
@@ -131,7 +136,7 @@ export type AgentEvent =
       /** 执行器提供的范围；不接受 reviewer 或工具参数降低拒绝强度。 */
       permissionScope?: string;
       rootPermissionScope?: string;
-      denialScope?: 'invocation';
+      denialScope?: 'invocation' | 'request';
       runId?: string;
       requestId?: string;
       toolUseId: string;

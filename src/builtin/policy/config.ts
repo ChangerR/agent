@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { AgentConfigSchema, PermissionModeSchema, type PermissionMode } from '../../core/config.js';
 import { getGlobalConfigPath, resolveAgentPaths } from '../../core/paths.js';
 import { parseRule, type SessionRules } from './controller.js';
+import { rememberStartupApproval, startupTrustEntry } from '../../runtime/startup-trust.js';
 
 export interface PermissionConfigDraft {
   /** undefined 表示继承全局/内置默认。 */
@@ -270,6 +271,16 @@ export function savePermissionConfig(
     fd = undefined;
     // 锁串行化本程序的设置保存；外部编辑器不遵守此锁，重读只能尽量缩小竞争窗口。
     assertUnchanged(snapshot.path, original.state);
+    if (snapshot.scope === 'project') {
+      const entries = [
+        startupTrustEntry('permission-allow', draft.permissions.allow, '用户保存的 allow 规则'),
+      ];
+      if (draft.permissionMode !== undefined)
+        entries.push(
+          startupTrustEntry('config:permissionMode', draft.permissionMode, '用户保存的权限模式'),
+        );
+      rememberStartupApproval(dirname(snapshot.path), entries);
+    }
     fs.renameSync(tmp, snapshot.path);
     created = false;
     // 提交后无需再次读取；避免磁盘已提交却因后续读取失败误报保存失败。

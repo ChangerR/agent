@@ -16,6 +16,7 @@ import {
   savePermissionConfig,
 } from './policy/config.js';
 import { createScopedConfigStores, settingsErrorMessage } from '../runtime/config-store.js';
+import { migrateSessionPermissions } from './policy/migration.js';
 export type BuiltinCommandServices = Pick<
   import('../runtime/services.js').RuntimeServices,
   | 'model'
@@ -173,7 +174,23 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
       });
       ctx.provide.command('permissions', {
         description: '权限设置与决策日志',
-        handler(input) {
+        async handler(input, context) {
+          const line = args(input);
+          if (line.startsWith('migrate-session ')) {
+            const [, id, action, ...extra] = line.split(/\s+/);
+            if (!id || extra.length || (action !== undefined && action !== 'apply'))
+              throw new Error('用法: /permissions migrate-session <id> [apply]');
+            if (id === services.session().id) throw new Error('请在另一新会话中迁移旧会话');
+            return {
+              type: 'data',
+              data: await migrateSessionPermissions(cwd, id, action === 'apply', context.signal),
+            };
+          }
+          if (line.startsWith('revoke ')) {
+            const id = line.slice(7).trim();
+            if (!services.permission().revokeGrant?.(id)) throw new Error('授权不存在或已撤销');
+            return { type: 'text', text: `已撤销授权 ${id}；后续调用重新判定。` };
+          }
           return args(input) === 'audit'
             ? { type: 'data', data: services.permission().getAuditLog() }
             : {
@@ -181,6 +198,7 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
                 data: {
                   mode: services.permission().mode,
                   sessionRules: services.permission().getSessionRules(),
+                  grants: services.permission().listGrants?.() ?? [],
                 },
               };
         },

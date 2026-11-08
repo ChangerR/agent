@@ -4,6 +4,8 @@ import type { Provider } from '../core/provider.js';
 import type { CapabilitySelections, Plugin } from '../sdk/index.js';
 import type { RuntimeServices } from './services.js';
 export interface PresetContext {
+  /** 启动信任通过时冻结的 MCP 配置字节；setup 不重新读取可变文件。 */
+  mcpConfigSnapshot?: string;
   cwd: string;
   paths: AgentPaths;
   configSources: ConfigSources;

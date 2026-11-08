@@ -634,6 +634,7 @@ function validateImplementation(kind: CapabilityKind, id: string, value: unknown
     analyzer: ['analyze'],
     policy: ['decide'],
     reviewer: ['review'],
+    execution: ['supports', 'status', 'execute'],
     contextSource: ['getContext'],
     compactor: ['compact'],
     cacheStrategy: ['build'],

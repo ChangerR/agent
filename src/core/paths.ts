@@ -24,6 +24,11 @@ export function getGlobalConfigPath(): string {
   return join(homedir(), '.agentlab', 'config.json');
 }
 
+/** 运行环境属于用户安装，不从待处理项目加载开发用环境文件。 */
+export function getGlobalEnvPath(): string {
+  return join(dirname(getGlobalConfigPath()), '.env');
+}
+
 /** 尚未创建的路径按最近存在的父目录规范化，不吞掉权限等真实 I/O 错误。 */
 export function canonicalPath(path: string): string {
   const absolute = resolve(path);

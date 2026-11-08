@@ -11,6 +11,7 @@ import type {
   Reviewer,
   ToolAnalysis,
   ToolAnalyzer,
+  ProcessExecution,
 } from '../sdk/capabilities.js';
 import { EventBus, type AgentEvent, type PermissionRequest, type UserDecision } from './events.js';
 import type { HookRunner } from './hooks.js';
@@ -18,6 +19,8 @@ import type { Decision, JudgeStatus, ReviewHistoryStore } from './permission/con
 import { jsonInput } from './permission/input-validation.js';
 import { CapabilityTimeout } from './permission/async.js';
 import { RequestPermissionGuard } from './permission/request-scope.js';
+import type { ApprovalAction, GrantOption, PermissionGrant } from './permission/grants.js';
+import { hasPrivateArguments, permissionDisplay } from './permission/display.js';
 import type { Message, ToolResult, ToolResultBlock, ToolUseBlock } from './protocol/types.js';
 import type { Tool, ToolRegistry } from './registry.js';
 import type { InvocationOrigin } from './agents.js';
@@ -51,6 +54,7 @@ export interface ToolInvocationContext {
   readonly lease?: ToolLease;
 }
 export interface ToolExecutorOptions {
+  execution?: ProcessExecution;
   tools: ToolRegistry;
   hooks: HookRunner;
   events: EventBus;
@@ -85,6 +89,9 @@ export interface ToolExecutorOptions {
   task?: () => string;
 }
 interface Binding {
+  execution: ProcessExecution | undefined;
+  executionHandler: ProcessExecution['execute'] | undefined;
+  executionStatus: ProcessExecution['status'] | undefined;
   sessionId: string;
   runId: string;
   toolCallId: string;
@@ -110,6 +117,7 @@ export class ToolExecutor {
   private readonly history?: ReviewHistoryStore;
   private readonly used = new Map<string, Set<string>>();
   private readonly pending = new Set<Promise<ToolResultBlock>>();
+  private readonly taskScopes = new Map<string, string>();
   readonly requestPermission: RequestPermissionGuard;
 
   constructor(private readonly opts: ToolExecutorOptions) {
@@ -121,9 +129,13 @@ export class ToolExecutor {
   clear(): void {
     this.history?.clear();
     this.used.clear();
+    this.opts.policy.controller?.clearTemporaryGrants?.(this.sessionId());
   }
   finishRun(runId: string): void {
     this.used.delete(runId);
+    const scope = this.taskScopes.get(runId);
+    if (scope) this.opts.policy.controller?.finishTask?.(scope, this.sessionId());
+    this.taskScopes.delete(runId);
   }
   get hasPendingActivity(): boolean {
     return this.pending.size > 0 || this.opts.events.hasPendingActivity;
@@ -143,7 +155,11 @@ export class ToolExecutor {
     context: ToolInvocationContext,
   ): Promise<ToolResult> {
     const result = await this.execute({ type: 'tool_use', id: randomUUID(), name, input }, context);
-    return { content: result.content, isError: result.isError };
+    return {
+      content: result.content,
+      isError: result.isError,
+      ...(result.permission ? { permission: result.permission } : {}),
+    };
   }
 
   execute(toolUse: ToolUseBlock, context: ToolInvocationContext): Promise<ToolResultBlock> {
@@ -164,10 +180,12 @@ export class ToolExecutor {
     const permissionScope =
       context.origin?.permissionScope ??
       `${String(safeMetadata(() => this.sessionId()))}:${context.runId}`;
+    this.taskScopes.set(context.runId, permissionScope);
     let tool = tools.get(toolUse.name);
     let input: Record<string, unknown> = {};
     let resultEmitted = false;
     let lease: ToolLease | undefined;
+    let lastReason = 'execution_error';
     const finish = (result: ToolResult): ToolResultBlock => {
       if (!resultEmitted) {
         resultEmitted = true;
@@ -183,9 +201,37 @@ export class ToolExecutor {
         toolUseId: toolUse.id,
         content: result.content,
         isError: result.isError,
+        ...(result.permission ? { permission: result.permission } : {}),
       };
     };
-    const fail = (content: string) => finish({ content, isError: true });
+    const fail = (content: string) => {
+      const reasonCode = content.startsWith('approval_required:')
+        ? 'approval_required'
+        : content.startsWith('operation_previously_denied:')
+          ? 'operation_previously_denied'
+          : lastReason;
+      const status = /sandbox_unavailable/.test(reasonCode)
+        ? 'boundary_unavailable'
+        : /cancelled/.test(reasonCode)
+          ? 'cancelled'
+          : /stale|changed/.test(reasonCode)
+            ? 'stale'
+            : reasonCode === 'approval_required'
+              ? 'approval_required'
+              : /denied|deny|restriction/.test(reasonCode)
+                ? 'denied'
+                : 'error';
+      return finish({
+        content,
+        isError: true,
+        permission: {
+          status,
+          reasonCode,
+          retryable: status === 'stale',
+          requiresUser: status === 'approval_required' || status === 'denied',
+        },
+      });
+    };
     const audit = (
       phase: 'validation' | 'analysis' | 'policy' | 'reviewer' | 'human' | 'execution',
       reasonCode: string,
@@ -193,6 +239,7 @@ export class ToolExecutor {
       binding?: Binding,
       durationMs?: number,
     ) => {
+      lastReason = reasonCode;
       events.emit({
         type: 'tool_execution',
         runId: context.runId,
@@ -227,7 +274,7 @@ export class ToolExecutor {
         requestId,
         toolUseId: toolUse.id,
         toolName: toolUse.name,
-        input: structuredClone(input),
+        input: permissionDisplay(input) as Record<string, unknown>,
         phase: 'pipeline',
         decision: { kind: 'deny', source: 'builtin', reasonCode, reason },
       });
@@ -239,7 +286,9 @@ export class ToolExecutor {
       return fail('Tool cancelled');
     };
     const requestDenied = () =>
-      this.requestPermission.isDenied(permissionScope) &&
+      (this.requestPermission.isDenied(permissionScope) ||
+        (!!context.origin?.rootPermissionScope &&
+          this.requestPermission.isDenied(context.origin.rootPermissionScope))) &&
       !(tool && this.opts.isDenialExemptTool?.(tool));
     const stopped = () => {
       audit('execution', 'request_permission_denied', 'deny');
@@ -294,7 +343,9 @@ export class ToolExecutor {
             sessionId: string;
             configRevision: string | number;
             analysisFingerprint: string;
-            remember?: 'session' | 'project';
+            constraintHash: string;
+            boundaryHash: string;
+            grant?: PermissionGrant;
           }
         | undefined = undefined;
       // 配置或环境在询问期间改变时重新评估，绝不复用之前的一次性批准。
@@ -349,11 +400,29 @@ export class ToolExecutor {
           context.userRequest,
           context.messages,
         );
+        const execution = this.opts.execution?.supports(descriptor)
+          ? this.opts.execution
+          : undefined;
+        const executionBoundary = execution
+          ? await events.bounded(
+              (s) => execution.status(s),
+              signal,
+              this.opts.capabilityTimeoutMs ?? 30_000,
+            )
+          : undefined;
+        if (executionBoundary && !executionBoundary.available) {
+          audit('execution', 'sandbox_unavailable', 'deny', binding);
+          return fail(
+            'sandbox_unavailable: 所选执行隔离不可用，命令未执行；请在设置中核对执行能力',
+          );
+        }
         const operation: PolicyInput = freeze({
+          executionBoundary,
           tool: descriptor,
           input,
           cwd,
           analysis,
+          permissionScope,
           context: reviewContext,
           sessionId: binding.sessionId,
           runId: context.runId,
@@ -363,6 +432,16 @@ export class ToolExecutor {
         });
         const restricted = this.opts.restrict?.(operation);
         if (restricted) return restrictedResult(restricted, binding);
+        const operationDenied = () =>
+          this.requestPermission.operationDenied(permissionScope, operation) ||
+          (!!context.origin?.rootPermissionScope &&
+            this.requestPermission.operationDenied(context.origin.rootPermissionScope, operation));
+        if (operationDenied()) {
+          audit('policy', 'operation_previously_denied', 'deny', binding);
+          return fail(
+            'operation_previously_denied: 用户已拒绝此操作或资源，请继续其他安全工作，不能换工具重试',
+          );
+        }
         let policyDecision: PolicyDecision;
         try {
           policyDecision = structuredClone(
@@ -400,19 +479,16 @@ export class ToolExecutor {
             type: 'permission_decision',
             permissionScope: context.origin?.permissionScope,
             rootPermissionScope: context.origin?.rootPermissionScope,
-            ...(policyDecision.kind === 'deny' && policyDecision.denialScope === 'invocation'
-              ? { denialScope: 'invocation' as const }
-              : {}),
+            denialScope: policyDecision.denialScope ?? 'invocation',
             runId: context.runId,
             requestId,
             toolUseId: toolUse.id,
             toolName: tool!.name,
-            input: structuredClone(input),
+            input: permissionDisplay(input) as Record<string, unknown>,
             phase,
-            decision: structuredClone(decision),
+            decision: permissionDisplay(decision) as Decision,
           });
-        const invocationOnlyDenial =
-          policyDecision.kind === 'deny' && policyDecision.denialScope === 'invocation';
+        const invocationOnlyDenial = policyDecision.denialScope !== 'request';
         if (policyDecision.kind === 'deny' && !invocationOnlyDenial)
           this.requestPermission.deny(permissionScope);
         emitDecision('pipeline');
@@ -423,7 +499,7 @@ export class ToolExecutor {
           binding,
         );
 
-        let remember: 'session' | 'project' | undefined;
+        let selectedGrant: PermissionGrant | undefined;
         const approvalReused =
           humanApproval !== undefined &&
           (policyDecision.kind === 'ask' || policyDecision.kind === 'review') &&
@@ -432,6 +508,12 @@ export class ToolExecutor {
           humanApproval.toolIdentityHash === binding.toolIdentityHash &&
           humanApproval.sessionId === binding.sessionId &&
           humanApproval.configRevision === binding.configRevision &&
+          humanApproval.constraintHash ===
+            fingerprint({
+              reasonCode: policyDecision.reasonCode,
+              matchedRule: policyDecision.matchedRule,
+            }) &&
+          humanApproval.boundaryHash === fingerprint(executionBoundary ?? null) &&
           humanApproval.analysisFingerprint === approvalAnalysisFingerprint(analysis);
         if (approvalReused && humanApproval) {
           decision = {
@@ -440,7 +522,7 @@ export class ToolExecutor {
             reason: '用户确认本次操作',
             reasonCode: 'user_allow',
           };
-          remember = humanApproval.remember;
+          selectedGrant = humanApproval.grant;
           this.recordDecision(descriptor, input, decision);
           emitDecision('user');
           audit('human', 'user_allow_reused', 'allow', binding);
@@ -452,7 +534,6 @@ export class ToolExecutor {
           decision = await this.review(operation, policyDecision, context, signal, requestId);
           if (signal.aborted) return cancelled();
           if (requestDenied()) return stopped();
-          if (decision.kind === 'deny') this.requestPermission.deny(permissionScope);
           this.recordDecision(descriptor, input, decision);
           emitDecision('judge');
           audit(
@@ -466,6 +547,8 @@ export class ToolExecutor {
 
         if (decision.kind === 'deny') {
           if (!invocationOnlyDenial) this.requestPermission.deny(permissionScope);
+          if (decision.source === 'judge')
+            this.requestPermission.denyOperation(permissionScope, operation);
           this.history?.record(
             descriptor,
             input,
@@ -479,7 +562,44 @@ export class ToolExecutor {
         if (decision.kind === 'ask') {
           const summary =
             analysis?.summary ?? descriptor.analyzeInput?.(input).summary ?? tool.name;
+          const options =
+            context.origin && context.origin.agentId !== 'root'
+              ? []
+              : (this.opts.policy.approvalOptions?.(operation, policyDecision) ?? []);
+          const grantOptions = new Map<string, GrantOption>();
+          const actions: ApprovalAction[] = [
+            {
+              id: randomUUID(),
+              kind: 'allow_once',
+              label: '允许一次',
+              description: '只批准当前完整调用，不新增授权。',
+            },
+            ...options.map((option) => {
+              const id = randomUUID();
+              grantOptions.set(id, structuredClone(option));
+              return {
+                id,
+                kind: 'grant' as const,
+                label: option.label,
+                description: option.description,
+                scope: option.grant.scope,
+              };
+            }),
+            {
+              id: randomUUID(),
+              kind: 'deny',
+              label: '拒绝此操作',
+              description: '阻止此操作及可识别的同义重试，其他安全工作可以继续。',
+            },
+            {
+              id: randomUUID(),
+              kind: 'stop',
+              label: '停止整个任务',
+              description: '停止当前请求及其委派，已有副作用无法撤销。',
+            },
+          ];
           const request = freeze({
+            actions,
             ...(context.origin?.agentId !== 'root' && context.origin
               ? {
                   agentId: context.origin.agentId,
@@ -496,16 +616,21 @@ export class ToolExecutor {
             ...(decision.reasonCode ? { reasonCode: decision.reasonCode } : {}),
             ...(policyDecision.reasonCode ? { policyReasonCode: policyDecision.reasonCode } : {}),
             ...(analysis?.reasonCode ? { analysisReasonCode: analysis.reasonCode } : {}),
-            matchedRule: decision.matchedRule,
+            matchedRule:
+              decision.matchedRule === undefined
+                ? undefined
+                : String(permissionDisplay(decision.matchedRule)),
             cwd,
-            input: structuredClone(input),
-            summary,
-            reason: decision.reason,
+            input: permissionDisplay(input),
+            summary: hasPrivateArguments(input)
+              ? '工具参数包含敏感值，请查看脱敏参数'
+              : String(permissionDisplay(summary)),
+            reason: String(permissionDisplay(decision.reason)),
           });
-          const userDecision = await this.ask(request, signal);
+          const response = await this.ask(request, signal);
           if (signal.aborted) return cancelled();
           if (requestDenied()) return stopped();
-          if (!userDecision) {
+          if (!response) {
             audit('human', 'approval_required', 'ask', binding);
             this.history?.record(
               descriptor,
@@ -516,6 +641,29 @@ export class ToolExecutor {
             );
             return fail('approval_required: this operation requires an approval responder');
           }
+          // SDK 一次性回应和不透明动作均在同一个门内核对。
+          const action =
+            'actionId' in response
+              ? actions.find((action) => action.id === response.actionId)
+              : response.allow
+                ? response.remember
+                  ? actions.find(
+                      (action) => action.kind === 'grant' && action.scope === response.remember,
+                    )
+                  : actions.find((action) => action.kind === 'allow_once')
+                : actions.find((action) => action.kind === (response.stopTask ? 'stop' : 'deny'));
+          if (!action) return fail('invalid_approval_action: 审批动作不存在或不适用于当前操作');
+          const userDecision = {
+            allow: action.kind === 'allow_once' || action.kind === 'grant',
+            feedback: 'feedback' in response ? response.feedback : undefined,
+          };
+          if (action.kind === 'grant') selectedGrant = grantOptions.get(action.id)!.grant;
+          if (action.kind === 'stop') {
+            this.requestPermission.deny(permissionScope);
+            if (context.origin?.rootPermissionScope)
+              this.requestPermission.deny(context.origin.rootPermissionScope);
+            policyDecision = { ...policyDecision, denialScope: 'request' };
+          }
           decision = {
             kind: userDecision.allow ? 'allow' : 'deny',
             source: 'user',
@@ -524,7 +672,7 @@ export class ToolExecutor {
               : `用户拒绝本次操作${userDecision.feedback ? `：${userDecision.feedback}` : ''}`,
             reasonCode: userDecision.allow ? 'user_allow' : 'user_deny',
           };
-          if (!userDecision.allow) this.requestPermission.deny(permissionScope);
+          if (!userDecision.allow) this.requestPermission.denyOperation(permissionScope, operation);
           this.recordDecision(descriptor, input, decision);
           emitDecision('user');
           audit('human', decision.reasonCode!, decision.kind, binding);
@@ -536,11 +684,15 @@ export class ToolExecutor {
               sessionId: binding.sessionId,
               configRevision: binding.configRevision,
               analysisFingerprint: approvalAnalysisFingerprint(analysis),
-              ...(userDecision.remember ? { remember: userDecision.remember } : {}),
+              constraintHash: fingerprint({
+                reasonCode: policyDecision.reasonCode,
+                matchedRule: policyDecision.matchedRule,
+              }),
+              boundaryHash: fingerprint(executionBoundary ?? null),
+              ...(selectedGrant ? { grant: selectedGrant } : {}),
             };
           }
           if (!userDecision.allow) {
-            this.requestPermission.deny(permissionScope);
             this.history?.record(
               descriptor,
               input,
@@ -552,12 +704,12 @@ export class ToolExecutor {
               `User denied this action.${userDecision.feedback ? ` Feedback: ${userDecision.feedback}` : ''}`,
             );
           }
-          remember = userDecision.remember;
         }
 
         if (signal.aborted) return cancelled();
         if (requestDenied()) return stopped();
         const control = this.opts.isControlTool?.(tool) === true;
+        if (operationDenied()) return fail('operation_previously_denied: 操作在审批期间已被拒绝');
         if (control && context.lease)
           return fail('Control tools cannot run inside a workspace tool lease');
         if (!control && this.opts.scheduler) {
@@ -568,9 +720,19 @@ export class ToolExecutor {
           lease = await this.opts.scheduler.acquire(read ? 'read' : 'write', signal, context.lease);
         }
         let environmentValid = true;
+        if (execution) {
+          const currentBoundary = await events.bounded(
+            (s) => execution.status(s),
+            signal,
+            this.opts.capabilityTimeoutMs ?? 30_000,
+          );
+          environmentValid =
+            currentBoundary.available && currentBoundary.revision === executionBoundary?.revision;
+        }
         if (analyzer && analysis) {
           try {
             environmentValid =
+              environmentValid &&
               (await this.opts.events.bounded(
                 async (s) =>
                   analyzer.revalidate
@@ -616,9 +778,28 @@ export class ToolExecutor {
         }
         // 从最终重验到 execute 不再 await；记忆规则是本次有效人工批准的附带结果。
         // child 的人工批准只绑定此次调用；不能把规则写进共享父控制器。
-        if (context.origin && context.origin.agentId !== 'root') remember = undefined;
-        if (remember) this.remember(descriptor, input, remember);
-        const expectedRevision = remember ? this.policyRevision() : binding.policyRevision;
+        if (operationDenied()) return fail('operation_previously_denied: 排队期间已撤销此操作');
+        if (context.origin && context.origin.agentId !== 'root') selectedGrant = undefined;
+        if (selectedGrant?.scope === 'project') {
+          try {
+            if (!this.opts.policy.saveGrant)
+              throw new Error('Project grant persistence unavailable');
+            await this.opts.policy.saveGrant(selectedGrant, signal);
+          } catch {
+            audit('human', 'grant_save_failed', 'ask', binding);
+            return fail(
+              'grant_save_failed: 项目授权保存或激活未完整完成，工具未执行；请重新读取配置后重试或选择允许一次',
+            );
+          }
+          if (signal.aborted || requestDenied() || operationDenied()) return cancelled();
+          this.opts.policy.controller?.addGrant?.(selectedGrant);
+          selectedGrant = undefined;
+          lease?.release();
+          lease = undefined;
+          continue;
+        }
+        if (selectedGrant) this.opts.policy.controller?.addGrant?.(selectedGrant);
+        const expectedRevision = selectedGrant ? this.policyRevision() : binding.policyRevision;
         const reviewRecord = this.history?.record(
           descriptor,
           input,
@@ -626,7 +807,10 @@ export class ToolExecutor {
           context.userRequest,
           structuredClone(decision),
         );
-        events.emit({ type: 'tool_call', toolUse: { ...toolUse, input: structuredClone(input) } });
+        events.emit({
+          type: 'tool_call',
+          toolUse: { ...toolUse, input: permissionDisplay(input) as Record<string, unknown> },
+        });
         // 观测者可能同步取消或更新配置，所以 tool_call 后还须检查一次绑定。
         if (signal.aborted) return cancelled();
         if (requestDenied()) return stopped();
@@ -644,6 +828,7 @@ export class ToolExecutor {
             cwd,
             signal,
             analysis,
+            executeProcess: execution ? (request) => execution.execute(request, signal) : undefined,
             invocation: context.origin,
             resultBudgetTokens: context.resultBudgetTokens,
             invokeTool: (name, childInput) =>
@@ -813,12 +998,17 @@ export class ToolExecutor {
         const valid =
           value &&
           typeof value === 'object' &&
-          typeof value.allow === 'boolean' &&
-          (value.allow
-            ? value.remember === undefined ||
-              value.remember === 'session' ||
-              value.remember === 'project'
-            : value.feedback === undefined || typeof value.feedback === 'string');
+          ('actionId' in value
+            ? typeof value.actionId === 'string' &&
+              (value.feedback === undefined || typeof value.feedback === 'string')
+            : typeof value.allow === 'boolean' &&
+              (value.allow
+                ? value.remember === undefined ||
+                  value.remember === 'task' ||
+                  value.remember === 'session' ||
+                  value.remember === 'project'
+                : (value.feedback === undefined || typeof value.feedback === 'string') &&
+                  (value.stopTask === undefined || typeof value.stopTask === 'boolean')));
         resolve(valid ? freeze(value) : { allow: false, feedback: 'Invalid approval response' });
       };
       const cancel = () => finish({ allow: false, feedback: 'Tool cancelled' });
@@ -859,6 +1049,9 @@ export class ToolExecutor {
   ): Binding {
     const identity = this.opts.toolIdentity?.(tool.name);
     return Object.freeze({
+      execution: this.opts.execution,
+      executionHandler: this.opts.execution?.execute,
+      executionStatus: this.opts.execution?.status,
       sessionId: this.sessionId(),
       runId: context.runId,
       toolCallId,
@@ -881,6 +1074,9 @@ export class ToolExecutor {
   }
   private bindingValid(binding: Binding, name: string, input: Record<string, unknown>): boolean {
     return (
+      this.opts.execution === binding.execution &&
+      this.opts.execution?.execute === binding.executionHandler &&
+      this.opts.execution?.status === binding.executionStatus &&
       !binding.signal.aborted &&
       this.sessionId() === binding.sessionId &&
       this.configRevision() === binding.configRevision &&
@@ -913,22 +1109,6 @@ export class ToolExecutor {
   ): void {
     this.opts.policy.controller?.recordDecision(tool, input, structuredClone(decision));
   }
-  private remember(
-    tool: AnalysisInput['tool'],
-    input: Record<string, unknown>,
-    remember: 'session' | 'project',
-  ): void {
-    const controller = this.opts.policy.controller;
-    if (!controller) return;
-    const target = tool.analyzeInput?.(input).patternTarget;
-    const rule = target !== undefined ? `${tool.name}(=${JSON.stringify(target)})` : tool.name;
-    controller.addSessionRule('allow', rule);
-    if (remember === 'project')
-      this.opts.events.emit({
-        type: 'notice',
-        text: `已加入会话规则。要持久化到项目，请把 "${rule}" 加入 agent.config.json 的 permissions.allow`,
-      });
-  }
 }
 
 function approvalTool(tool: Tool): AnalysisInput['tool'] {
@@ -936,6 +1116,7 @@ function approvalTool(tool: Tool): AnalysisInput['tool'] {
     name: tool.name,
     version: tool.version,
     ownerPlugin: tool.ownerPlugin,
+    permissionIdentity: tool.permissionIdentity,
     description: tool.description,
     inputSchema: structuredClone(tool.inputSchema),
     risk: tool.risk,
@@ -948,6 +1129,7 @@ function definitionHash(tool: Tool): string {
     name: tool.name,
     version: tool.version ?? 'unversioned',
     ownerPlugin: tool.ownerPlugin,
+    permissionIdentity: tool.permissionIdentity,
     description: tool.description,
     risk: tool.risk,
     inputSchema: tool.inputSchema,
@@ -987,7 +1169,9 @@ function validDecision(value: unknown): value is PolicyDecision {
     ['allow', 'ask', 'deny', 'review'].includes(value.kind) &&
     (!('denialScope' in value) ||
       value.denialScope === undefined ||
-      (value.kind === 'deny' && value.denialScope === 'invocation')) &&
+      (value.kind === 'deny' &&
+        typeof value.denialScope === 'string' &&
+        ['invocation', 'request'].includes(value.denialScope))) &&
     'reason' in value &&
     typeof value.reason === 'string' &&
     'source' in value &&

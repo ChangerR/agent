@@ -66,6 +66,39 @@ const fixture = () => ({
 });
 
 describe('独立全局设置与安全凭据', () => {
+  it('无项目时可编辑全局代理环境，不回显凭据或更改当前进程', async () => {
+    const envPath = join(home, '.agentlab', '.env');
+    writeFileSync(envPath, '# keep\nHTTPS_PROXY=http://old-user:old-secret@proxy.invalid:8000\n');
+    let snapshot!: SettingsSnapshot;
+    const controller = new GlobalSettingsController((value) => {
+      snapshot = value;
+    });
+    const generation = '11111111-1111-4111-8111-111111111111';
+    const before = process.env.HTTPS_PROXY;
+    try {
+      await controller.initialize(generation);
+      const section = snapshot.settings.find((value) => value.id === 'configuration-environment');
+      expect(section?.scopes).toEqual([{ scope: 'global', path: envPath }]);
+      await controller.handle({ type: 'read', generation, sectionId: 'configuration-environment' });
+      expect(JSON.stringify(snapshot)).not.toContain('old-secret');
+      await controller.handle({
+        type: 'commit',
+        generation,
+        editorId: snapshot.settingsEditor!.id,
+        json: JSON.stringify({
+          variables: { HTTPS_PROXY: 'http://proxy.invalid:9000', NO_PROXY: 'localhost,127.0.0.1' },
+        }),
+      });
+      expect(snapshot.settingsEditor!.saved).toBe(true);
+      expect(readFileSync(envPath, 'utf8')).toContain('http://proxy.invalid:9000');
+      expect(readFileSync(envPath, 'utf8')).toContain('# keep');
+      expect(process.env.HTTPS_PROXY).toBe(before);
+      expect(existsSync(config)).toBe(false);
+      expect(existsSync(join(home, '.agentlab/state'))).toBe(false);
+    } finally {
+      await controller.dispose();
+    }
+  });
   it('CLI 原有环境变量方式保留，缺少解密宿主和端点身份错误不回退其他 key', () => {
     vi.stubEnv('OPENAI_API_KEY', 'fictional-environment-key');
     expect(resolveApiKey({}, 'OPENAI_API_KEY')).toBe('fictional-environment-key');

@@ -6,7 +6,7 @@ import { definePlugin } from '../sdk/index.js';
 import { OpenAIProvider } from '../providers/openai.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
 import { FakeProvider, textResponse } from '../providers/fake.js';
-import { ProviderModelsSchema } from './provider-config.js';
+import { ProviderModelsSchema, OpenAIAPISchema } from './provider-config.js';
 import { storedApiKey, credentialBinding } from '../providers/api-key.js';
 export const CONNECTIONS_PLUGIN = 'agentlab.provider-connections';
 const name = z
@@ -48,6 +48,7 @@ export const ProviderConnectionSchema = z.discriminatedUnion('type', [
       ...common,
       ...network,
       dialect: z.enum(['auto', 'generic', 'deepseek', 'kimi']).default('auto'),
+      api: OpenAIAPISchema,
     })
     .describe('OpenAI 兼容连接'),
   z.object({ type: z.literal('anthropic'), ...common, ...network }).describe('Anthropic 连接'),
@@ -133,6 +134,7 @@ export function providerConnectionsPlugin(
                   apiKeyEnv: item.apiKeyEnv,
                   models: item.models,
                   dialect: item.dialect,
+                  api: item.api,
                 })
               : new AnthropicProvider({
                   apiKeyResolver: item.apiKeyRef
@@ -148,6 +150,7 @@ export function providerConnectionsPlugin(
                   models: item.models,
                   cacheControl: config.cache.enabled,
                 });
+        if ('dispose' in base) ctx.onDispose(() => base.dispose());
         ctx.provide.provider(id, namedProvider(id, base));
       }
     },

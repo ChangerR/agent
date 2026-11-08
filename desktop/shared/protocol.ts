@@ -1,7 +1,16 @@
 import { z } from 'zod';
+import type { ApprovalAction } from '../../src/core/permission/grants.js';
 export const PROTOCOL_VERSION = 1 as const;
 const binding = { generation: z.string().uuid(), sessionId: z.string().min(1).max(64) };
 export const actionSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('trust-startup'),
+      ...binding,
+      fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+      allow: z.boolean(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('debug-read'),
@@ -72,7 +81,8 @@ export const actionSchema = z.discriminatedUnion('type', [
       type: z.literal('approve'),
       ...binding,
       approvalId: z.string().uuid(),
-      allow: z.boolean(),
+      allow: z.boolean().optional(),
+      actionId: z.string().uuid().optional(),
       feedback: z.string().max(4000).optional(),
     })
     .strict(),
@@ -138,6 +148,7 @@ export interface Row {
   durationMs?: number;
 }
 export interface Approval {
+  actions?: readonly ApprovalAction[];
   id: string;
   summary: string;
   reason: string;
@@ -156,6 +167,7 @@ export interface Interaction {
   choices?: Array<{ id: string; label: string; description?: string }>;
 }
 export interface RuntimeSnapshot {
+  startupTrust?: import('../../src/runtime/startup-trust.js').StartupTrustRequest;
   projectId?: string;
   remote?: { target: string; path: string; connected: boolean };
   debug?: import('./debug.js').DebugSnapshot;

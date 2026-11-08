@@ -11,7 +11,7 @@ import { EventBus, type AgentEvent } from '../src/core/events.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { createJsonlTelemetry } from '../src/builtin/telemetry-jsonl/index.js';
 import { AgentLoop } from '../src/core/loop.js';
-import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
+import { createReviewTestPolicy as createDeterministicPolicy } from './helpers/review-policy.js';
 import { createModelReviewer } from '../src/builtin/reviewer-model/index.js';
 import type { Reviewer } from '../src/sdk/index.js';
 import { ReviewHistory } from '../src/builtin/reviewer-model/review-context.js';
@@ -347,25 +347,21 @@ describe('LLM 审批员', () => {
     await loop.run('只运行本地测试');
     await loop.run('继续同一操作');
     await loop.run('将命令改写后重试');
-    expect(judgeProvider.requests).toHaveLength(1);
-    expect(loop.plan.denialReason).toContain('禁止上传数据');
+    expect(judgeProvider.requests).toHaveLength(3);
+    expect(loop.plan.denialReason).toBeUndefined();
     expect(
       permission.getAuditLog!().filter((entry) => entry.decision.source === 'user'),
-    ).toHaveLength(1);
-    // makeLoop 没有命令/runtime；直接调用受信任恢复入口模拟用户明确解锁。
-    loop.plan.resume();
-    const plan = loop.plan.snapshot!;
-    loop.plan.update(plan.revision, { stepId: plan.steps[0].id, status: 'running' });
+    ).toHaveLength(3);
     await loop.run('已明确恢复，重新审核改写后的命令');
-    expect(judgeProvider.requests).toHaveLength(2);
-    expect(payload(judgeProvider.requests[1]).previousReviews[0]).toMatchObject({
+    expect(judgeProvider.requests).toHaveLength(4);
+    expect(payload(judgeProvider.requests[2]).previousReviews[0]).toMatchObject({
       sameOperation: false,
       outcome: 'not_executed',
       decision: { kind: 'deny', source: 'user', reason: '用户拒绝本次操作：禁止上传数据' },
     });
     expect(
       permission.getAuditLog!().filter((entry) => entry.decision.source === 'user'),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
   });
 
   it('相同路径的新内容不会成为相同操作，工具失败也如实记录', async () => {
@@ -568,7 +564,7 @@ describe('LLM 审批员', () => {
     await loop.run('first');
     await loop.run('different');
     await loop.run('same');
-    expect(asks).toBe(2);
+    expect(asks).toBe(3);
   });
   it('超长参数完整审查不了时回落 ask，不能只审前缀', async () => {
     const judgeProvider = new FakeProvider([reviewResponse('allow', '当前操作审批结果')]);

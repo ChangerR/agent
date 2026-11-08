@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DesktopController } from '../desktop/worker/controller.js';
-import { createAgent, type Agent } from '../src/index.js';
+import { DesktopController } from './helpers/desktop-controller.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 import { defaultPreset } from '../src/builtin/default-preset.js';
 import { definePlugin } from '../src/sdk/index.js';
 import { FakeProvider, textResponse } from '../src/providers/fake.js';
@@ -121,7 +121,7 @@ const expected: Record<string, string[]> = {
     'maxOutputTokens',
     'prefixCache',
   ],
-  'configuration-agentlab.provider-openai': ['dialect', 'models', 'apiKeyRef', 'apiKeyEnv'],
+  'configuration-agentlab.provider-openai': ['dialect', 'api', 'models', 'apiKeyRef', 'apiKeyEnv'],
   'configuration-agentlab.provider-anthropic': ['models', 'apiKeyRef', 'apiKeyEnv'],
   'configuration-agentlab.mcp': [
     'maxInlineChars',

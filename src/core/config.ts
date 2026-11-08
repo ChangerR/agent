@@ -151,16 +151,23 @@ export function loadConfigWithSources(
   const merged = {
     ...globalCfg,
     ...projectCfg,
+    ...sessionCfg,
     permissions: Object.fromEntries(
       ['allow', 'ask', 'deny'].map((kind) => [
         kind,
         [
-          ...((globalCfg.permissions as Record<string, string[]>)?.[kind] ?? []),
-          ...((projectCfg.permissions as Record<string, string[]>)?.[kind] ?? []),
+          ...new Set([
+            ...(kind === 'allow' && sessionCfg.permissions
+              ? []
+              : [
+                  ...((globalCfg.permissions as Record<string, string[]>)?.[kind] ?? []),
+                  ...((projectCfg.permissions as Record<string, string[]>)?.[kind] ?? []),
+                ]),
+            ...(sessionCfg.permissions?.[kind as 'allow' | 'ask' | 'deny'] ?? []),
+          ]),
         ],
       ]),
     ),
-    ...sessionCfg,
     cache: mergeConfigObject(globalCfg.cache, projectCfg.cache, sessionCfg.cache),
     capabilities: {
       ...((globalCfg.capabilities as object) ?? {}),
@@ -186,8 +193,7 @@ export function loadConfigWithSources(
       );
       const source: ConfigValueSource = scopeSources[scopes.at(-1) ?? 'default'];
       const contributors =
-        ['capabilities', 'pluginConfig', 'cache'].includes(key) ||
-        (key === 'permissions' && !Object.hasOwn(sessionCfg, key))
+        ['capabilities', 'pluginConfig', 'cache'].includes(key) || key === 'permissions'
           ? scopes.map((scope) => scopeSources[scope])
           : undefined;
       return [
