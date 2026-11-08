@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createReviewTestPolicy } from './helpers/review-policy.js';
 import { createDeterministicPolicy } from '../src/builtin/policy/index.js';
 import { createModelReviewer } from '../src/builtin/reviewer-model/model.js';
 import { shellReviewEvidence } from '../src/builtin/reviewer-model/shell-evidence.js';
@@ -43,8 +44,13 @@ async function project(count = 1) {
 function chain(
   cwd: string,
   rules = { allow: [] as string[], ask: [] as string[], deny: [] as string[] },
+  reviewEvidenceOnly = false,
 ) {
-  const policy = createDeterministicPolicy({ cwd, mode: 'auto', rules });
+  const policy = (reviewEvidenceOnly ? createReviewTestPolicy : createDeterministicPolicy)({
+    cwd,
+    mode: 'auto',
+    rules,
+  });
   const tools = new ToolRegistry();
   tools.register(bash);
   const provider = new FakeProvider([
@@ -539,7 +545,7 @@ describe.skipIf(process.platform !== 'linux')('Bash 普通读取与受约束替�
 describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准绑定', () => {
   it('find/xargs 的未支持 cat 选项，带规划历史仍保留证据并进入默认预算审批', async () => {
     const { cwd } = await project(220);
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     const command =
       "echo '--- ts count ---'; find . -type f -name '*.ts' | wc -l; echo '--- total lines ---'; find . -type f -name '*.ts' -print0 | xargs -0 cat -n 2>/dev/null | wc -l";
     const messages: Message[] = Array.from({ length: 5 }, (_, index) => ({
@@ -573,7 +579,7 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
     const { cwd } = await project(220);
     await writeFile(join(cwd, 'src', 'unsafe space.ts'), 'fixture');
     const command = original(cwd);
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     const input = { command };
     const analysis = await state.policy.analyzer!.analyze({ tool: bash, input, cwd }, signal());
     expect(byteSize(analysis)).toBeGreaterThan(82_000);
@@ -636,7 +642,7 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
   it('证据过大时不省略路径或尾部限制，维持原32KiB硬预算并拒绝发送', async () => {
     const { cwd } = await project(220);
     const command = `ls -la && ${lines} && echo $UNVERIFIED`;
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     const userRequest = '只查看。'.repeat(1300) + '禁止网络或读取凭据';
     const result = await state.run(command, userRequest);
     expect(result.isError).toBe(true);
@@ -660,7 +666,7 @@ describe.skipIf(process.platform !== 'linux')('紧凑审查证据和完整批准
     const outside = join(root, 'outside');
     await mkdir(outside);
     await symlink(outside, join(cwd, 'src', 'external-link'));
-    const analysis = await chain(cwd).policy.analyzer!.analyze(
+    const analysis = await chain(cwd, undefined, true).policy.analyzer!.analyze(
       { tool: bash, input: { command: "find src -type f -name '*.ts' && echo $(pwd)" }, cwd },
       signal(),
     );
@@ -708,7 +714,7 @@ describe.skipIf(process.platform !== 'linux')('递归列举与末级 glob 绑定
     await mkdir(join(root, 'external'));
     await writeFile(join(root, 'external', 'SECRET'), 'outside');
     await symlink(join(root, 'external'), join(cwd, 'src', 'link-out'));
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     const actual = await state.run(command);
     expect(actual.isError).toBeFalsy();
     expect(actual.content).toBe(await reference(cwd, command));
@@ -734,7 +740,7 @@ describe.skipIf(process.platform !== 'linux')('递归列举与末级 glob 绑定
       '.hidden.ts',
     ].entries())
       await writeFile(join(cwd, 'src', name), `${i}\n`);
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     const actual = await state.run(command);
     expect(actual.isError).toBeFalsy();
     expect(actual.content).toBe(await reference(cwd, command));
@@ -777,14 +783,14 @@ describe.skipIf(process.platform !== 'linux')('递归列举与末级 glob 绑定
     const { cwd } = await project();
     if (command.startsWith('cat')) await writeFile(join(cwd, 'src', 'credentials.ts'), 'SENSITIVE');
     else await mkdir(join(cwd, 'src', 'secrets'));
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     expect((await state.run(command)).isError).toBe(true);
     expect(state.provider.requests).toHaveLength(0);
     expect(state.human).toHaveBeenCalledTimes(1);
   });
   it('glob 候选在分析后新增时执行重新分析拒绝旧授权', async () => {
     const { cwd } = await project();
-    const state = chain(cwd);
+    const state = chain(cwd, undefined, true);
     const command = 'cat src/*.ts';
     const analysis = await state.policy.analyzer!.analyze(
       { tool: bash, input: { command }, cwd },
@@ -814,7 +820,7 @@ it.skipIf(process.platform !== 'linux')(
     for (const name of ['-R', '--recursive']) {
       await mkdir(join(cwd, name, 'nested'), { recursive: true });
       const command = `cd . && ls -- ${name}`;
-      const state = chain(cwd);
+      const state = chain(cwd, undefined, true);
       expect((await state.run(command)).content).toBe(await reference(cwd, command));
       expect(state.provider.requests).toHaveLength(0);
       expect(state.human).not.toHaveBeenCalled();

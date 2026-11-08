@@ -1,7 +1,6 @@
-/** 用户明确提交的项目 .env 编辑；不装载进程环境、不返回已保存值、不触发账户授权。 */
-import { join } from 'node:path';
+/** 用户明确提交的全局 .env 编辑；不装载进程环境、不返回已保存值、不触发账户授权。 */
 import { parseEnv } from 'node:util';
-import { resolveAgentPaths } from '../core/paths.js';
+import { getGlobalEnvPath } from '../core/paths.js';
 import { TextConfigStore } from '../runtime/text-config-store.js';
 import type { SettingsSection } from '../sdk/index.js';
 import { SettingsSecrets } from './settings-secrets.js';
@@ -34,27 +33,27 @@ export function patchEnvironment(text: string, next: Record<string, string>): st
     throw new Error('环境文件无法无损更新；未保存。');
   return output;
 }
-export function environmentSettingsSection(cwd: string): SettingsSection {
-  const store = new TextConfigStore(join(resolveAgentPaths(cwd).projectRoot, '.env'));
+export function environmentSettingsSection(): SettingsSection {
+  const store = new TextConfigStore(getGlobalEnvPath());
   let base: object | undefined,
     secrets = new SettingsSecrets();
   const drafts = new WeakMap<object, { base: object; text: string }>();
   return {
-    title: '连接密钥与项目环境',
+    title: '连接密钥与全局环境',
     order: 12,
     applyMode: 'newSession',
     description:
-      '仅由你手动添加、替换或清除项目 .env 值；已保存内容不会返回界面。API key 环境变量名在连接页配置。保存不会登录、请求模型或更改进程变量；退出 App 后重启采用，已存在的进程环境变量仍优先。当前 CLI 不加载用户目录 .env，因此此页只提供项目层。',
+      '手动添加、替换或清除 ~/.agentlab/.env 中的 API key、HTTP_PROXY、HTTPS_PROXY、NO_PROXY 等变量，对所有项目生效；项目 .env 仅供开发，不会加载或写入。已保存值不返回界面。保存不请求模型或更改当前进程环境；退出 App 或 CLI 后重启采用，已有进程变量（包括空值）仍优先。',
     schema: {
       type: 'object',
       properties: {
         variables: { type: 'object', additionalProperties: { type: 'string', writeOnly: true } },
       },
     },
-    scopeTargets: [{ scope: 'project', path: store.path }],
-    read(signal, scope = 'project') {
+    scopeTargets: [{ scope: 'global', path: store.path }],
+    read(signal, scope = 'global') {
       signal.throwIfAborted();
-      if (scope !== 'project') throw new Error('只支持项目环境变量。');
+      if (scope !== 'global') throw new Error('运行环境只支持 ~/.agentlab/.env 全局配置。');
       base = store.read();
       secrets = new SettingsSecrets();
       return {
@@ -66,10 +65,10 @@ export function environmentSettingsSection(cwd: string): SettingsSection {
         ),
       };
     },
-    draft(raw, signal, scope = 'project') {
+    draft(raw, signal, scope = 'global') {
       signal.throwIfAborted();
       if (
-        scope !== 'project' ||
+        scope !== 'global' ||
         !base ||
         !record(raw) ||
         Object.keys(raw).some((k) => k !== 'variables') ||
@@ -92,10 +91,10 @@ export function environmentSettingsSection(cwd: string): SettingsSection {
       drafts.set(draft, { base, text: patchEnvironment(store.text(base), strings) });
       return draft;
     },
-    commit(draft, signal, scope = 'project') {
+    commit(draft, signal, scope = 'global') {
       signal.throwIfAborted();
       const saved = record(draft) ? drafts.get(draft) : undefined;
-      if (scope !== 'project' || !saved) throw new Error('环境变量草稿已失效。');
+      if (scope !== 'global' || !saved) throw new Error('环境变量草稿已失效。');
       store.commit(saved.base, saved.text);
       drafts.delete(draft as object);
     },

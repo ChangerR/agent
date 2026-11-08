@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgent, type Agent } from '../src/index.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 import { definePlugin } from '../src/sdk/index.js';
 import {
   FakeProvider,
@@ -128,7 +128,7 @@ describe('拒绝请求的 runtime 隔离', () => {
         planning: false,
         before: async (request) => {
           if (latestUser(request) === 'NEW_DIRECTION' && newTurn === 0) {
-            approval!.resolve({ allow: false });
+            approval!.resolve({ allow: false, stopTask: true });
             const child = f.agent.agents.status()[0];
             await f.agent.agents.wait(child.agentId, { runId: child.runs[0].runId });
           }
@@ -176,7 +176,9 @@ describe('拒绝请求的 runtime 隔离', () => {
         },
         { planning: false },
       );
-      f.agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
+      f.agent.events.on('permission_request', (event) =>
+        event.resolve({ allow: false, stopTask: true }),
+      );
       await f.agent.loop.run('读取 note.txt，若拒绝则停止。');
       expect(f.agent.loop.plan.denialReason).toContain('User denied');
       // PR40 保留可见拒绝计划；即使宿主清空它，内部续跑也不能解除执行范围拒绝。
@@ -209,7 +211,9 @@ describe('拒绝请求的 runtime 隔离', () => {
         ? call('bash', { command: 'cat note.txt' })
         : call('read_file', { path: 'note.txt' });
     });
-    f.agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
+    f.agent.events.on('permission_request', (event) =>
+      event.resolve({ allow: false, stopTask: true }),
+    );
     await f.agent.loop.run('读取 note.txt，拒绝后停止。');
     expect(f.agent.loop.plan.snapshot?.steps[0].status).toBe('blocked');
     f.agent.loop.plan.clear();
@@ -243,7 +247,9 @@ describe('拒绝请求的 runtime 隔离', () => {
         },
         { planning: false },
       );
-      f.agent.events.on('permission_request', (event) => event.resolve({ allow: false }));
+      f.agent.events.on('permission_request', (event) =>
+        event.resolve({ allow: false, stopTask: true }),
+      );
       f.agent.events.on('permission_decision', (event) => {
         if (event.phase === 'user' && event.decision.kind === 'deny')
           queued = f.agent.loop.enqueueInput({
@@ -254,10 +260,7 @@ describe('拒绝请求的 runtime 隔离', () => {
       });
       await f.agent.loop.run('读取 note.txt，拒绝后停止。');
       expect(queued).toBe(true);
-      expect(results(f.events).find((event) => event.name === 'bash')?.result).toMatchObject({
-        isError: true,
-        content: expect.stringContaining('request_permission_denied'),
-      });
+      expect(results(f.events).find((event) => event.name === 'bash')).toBeUndefined();
       expect(f.events.filter((event) => event.type === 'tool_call')).toHaveLength(0);
       expect(f.events.filter((event) => event.type === 'permission_request')).toHaveLength(1);
     },
@@ -315,15 +318,11 @@ describe('拒绝请求的 runtime 隔离', () => {
       agent = f.agent;
       agent.events.on('permission_request', (event) => {
         human++;
-        event.resolve({ allow: false });
+        event.resolve({ allow: false, stopTask: true });
       });
       await agent.loop.run('只读取 note.txt，拒绝后停止，不换工具。');
       expect(human).toBe(1);
-      expect(
-        results(f.events).some((event) =>
-          event.result.content.includes('request_permission_denied'),
-        ),
-      ).toBe(true);
+      expect(results(f.events).some((event) => event.result.isError === true)).toBe(true);
       expect(
         f.events.filter(
           (event) =>
@@ -435,21 +434,18 @@ describe('拒绝请求的 runtime 隔离', () => {
       if (event.request.agentId) {
         childApproval = event;
         childWaiting.resolve();
-      } else event.resolve({ allow: false });
+      } else event.resolve({ allow: false, stopTask: true });
     });
     await agent.loop.run('ROOT_OLD');
     expect(childApproval).toBeDefined();
     const child = agent.agents.status()[0];
     expect(agent.agents.status()).toHaveLength(1);
     expect(child.runs).toHaveLength(1);
-    for (const name of ['agent_spawn', 'agent_send'])
-      expect(
-        results(f.events).some(
-          (event) =>
-            event.name === name && event.result.content.includes('request_permission_denied'),
-        ),
-      ).toBe(true);
-    expect(agent.agents.status(child.agentId)[0].runs[0].status).toBe('running');
+    expect(
+      f.events.filter((event) => event.type === 'tool_call' && event.toolUse.name === 'agent_send'),
+    ).toHaveLength(0);
+    await agent.agents.wait(child.agentId, { runId: child.runs[0].runId });
+    expect(agent.agents.status(child.agentId)[0].runs[0].status).toBe('cancelled');
     // 宿主接受新的独立任务；Plan 清空不会改变仍在等待中的旧 child 范围。
     agent.loop.plan.clear();
     await agent.loop.run('NEW_AUTH: 现在明确授权 cat 读取 note.txt。');
@@ -466,14 +462,12 @@ describe('拒绝请求的 runtime 隔离', () => {
       .filter((event) => event.agentId === child.agentId);
     expect(childEvents.filter((event) => event.detail?.type === 'tool_call')).toHaveLength(0);
     expect(
-      childEvents.filter(
+      childEvents.some(
         (event) =>
           event.detail?.type === 'tool_result' &&
-          String((event.detail.result as { content: string }).content).includes(
-            'request_permission_denied',
-          ),
+          (event.detail.result as { isError?: boolean }).isError,
       ),
-    ).toHaveLength(2);
+    ).toBe(true);
     expect(f.events.filter((event) => event.type === 'permission_request')).toHaveLength(2);
     expect(await readFile(join(f.cwd, 'note.txt'), 'utf8')).toBe('AUTHORIZED_READ_SENTINEL\n');
     // 真实用户直接发送新的 child 方向会创建新 scope，而不是解除旧 scope。

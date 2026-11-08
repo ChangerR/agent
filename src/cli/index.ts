@@ -2,6 +2,7 @@
 import { parseArgs } from 'node:util';
 import { createAgent } from '../index.js';
 import { initializeCliHome } from './initialize.js';
+import { createInterface } from 'node:readline/promises';
 
 const help = `agentlab
 
@@ -11,6 +12,7 @@ const help = `agentlab
   --json            --command 的结果输出 JSON
   --resume <id>     启动后恢复指定会话，id 为 latest 时恢复最近一次
   --sessions        列出本项目已保存的会话后退出
+  --trust           审查项目启动入口和授权后，在终端明确确认
   -h, --help        显示帮助
 `;
 
@@ -19,6 +21,7 @@ let values: {
   json?: boolean;
   resume?: string;
   sessions?: boolean;
+  trust?: boolean;
   help?: boolean;
 };
 try {
@@ -28,6 +31,7 @@ try {
       json: { type: 'boolean', default: false },
       resume: { type: 'string' },
       sessions: { type: 'boolean', default: false },
+      trust: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: false,
@@ -55,7 +59,24 @@ try {
   );
   process.exit(1);
 }
-const agent = await createAgent(process.cwd());
+const agent = await createAgent(process.cwd(), {
+  approveStartup:
+    values.trust && process.stdin.isTTY
+      ? async (request) => {
+          console.log(`项目启动信任: ${request.cwd}`);
+          for (const entry of request.entries) {
+            console.log(`- ${entry.summary.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')}`);
+            if (entry.details) console.log(JSON.stringify(entry.details, null, 2));
+          }
+          const prompt = createInterface({ input: process.stdin, output: process.stdout });
+          try {
+            return (await prompt.question('激活以上入口与授权？输入 yes 确认: ')).trim() === 'yes';
+          } finally {
+            prompt.close();
+          }
+        }
+      : undefined,
+});
 if (values.command !== undefined) {
   const controller = new AbortController();
   const abort = () => controller.abort();

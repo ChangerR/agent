@@ -1,7 +1,115 @@
 {
-  "sections": 20,
-  "nodes": 173,
+  "sections": 22,
+  "nodes": 224,
   "fields": [
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[]",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].id",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].action",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "allow, ask, deny"
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].effects",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].effects[]",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "read, write"
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].resource",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].resource.kind",
+      "control": "固定值选择 / 显式覆盖",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].resource.glob",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].tools",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-resource-rules",
+      "title": "跨工具资源规则",
+      "path": "resourceRules[].tools[]",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-grants",
+      "title": "活动授权与撤销",
+      "path": "revokeId",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "immediate",
+      "constraints": ""
+    },
     {
       "section": "policy-deterministic-config",
       "title": "明确写入目录授权",
@@ -15,6 +123,312 @@
       "section": "policy-deterministic-config",
       "title": "明确写入目录授权",
       "path": "writeRoots[]",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants",
+      "control": "只读展示；通过授权管理入口撤销",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[]",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].id",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].scope",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "task, session, project"
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].cwd",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].sessionId",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].permissionScope",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].ownerPlugin",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].toolVersion",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].boundary",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].tools",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].tools[]",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].createdAt",
+      "control": "数值输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "min 0"
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [1]",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [1].kind",
+      "control": "固定值选择 / 显式覆盖",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [1].inputHash",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [1].definitionHash",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [2]",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [2].kind",
+      "control": "固定值选择 / 显式覆盖",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [2].root",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [2].effects",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "grants[].selector [2].effects[]",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "read, write"
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules",
+      "control": "只读展示；通过授权管理入口撤销",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[]",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].id",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].action",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "allow, ask, deny"
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].effects",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].effects[]",
+      "control": "枚举下拉",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": "read, write"
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].resource",
+      "control": "分组字段",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].resource.kind",
+      "control": "固定值选择 / 显式覆盖",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].resource.glob",
+      "control": "文本 / 候选输入",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].tools",
+      "control": "列表增删排序",
+      "scope": "project",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "policy-deterministic-config",
+      "title": "明确写入目录授权",
+      "path": "resourceRules[].tools[]",
       "control": "文本 / 候选输入",
       "scope": "project",
       "effect": "newSession",
@@ -342,7 +756,7 @@
       "control": "枚举下拉",
       "scope": "project / global",
       "effect": "newSession",
-      "constraints": "chat-completions, messages, generic"
+      "constraints": "chat-completions, responses, messages, generic"
     },
     {
       "section": "configuration-agentlab.provider-anthropic",
@@ -432,7 +846,16 @@
       "control": "枚举下拉",
       "scope": "project / global",
       "effect": "newSession",
-      "constraints": "auto, generic, deepseek"
+      "constraints": "auto, generic, deepseek, kimi"
+    },
+    {
+      "section": "configuration-agentlab.provider-openai",
+      "title": "OpenAI 兼容协议",
+      "path": "api",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "chat-completions, responses"
     },
     {
       "section": "configuration-agentlab.provider-openai",
@@ -459,7 +882,7 @@
       "control": "枚举下拉",
       "scope": "project / global",
       "effect": "newSession",
-      "constraints": "chat-completions, messages, generic"
+      "constraints": "chat-completions, responses, messages, generic"
     },
     {
       "section": "configuration-agentlab.provider-openai",
@@ -648,7 +1071,7 @@
       "control": "枚举下拉",
       "scope": "project / global",
       "effect": "newSession",
-      "constraints": "chat-completions, messages, generic"
+      "constraints": "chat-completions, responses, messages, generic"
     },
     {
       "section": "configuration-agentlab.provider-connections",
@@ -720,7 +1143,16 @@
       "control": "枚举下拉",
       "scope": "project / global",
       "effect": "newSession",
-      "constraints": "auto, generic, deepseek"
+      "constraints": "auto, generic, deepseek, kimi"
+    },
+    {
+      "section": "configuration-agentlab.provider-connections",
+      "title": "Provider 连接",
+      "path": "connections.* [OpenAI 兼容连接].api",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "chat-completions, responses"
     },
     {
       "section": "configuration-agentlab.provider-connections",
@@ -810,7 +1242,7 @@
       "control": "枚举下拉",
       "scope": "project / global",
       "effect": "newSession",
-      "constraints": "chat-completions, messages, generic"
+      "constraints": "chat-completions, responses, messages, generic"
     },
     {
       "section": "configuration-agentlab.provider-connections",
@@ -1308,20 +1740,20 @@
       "constraints": "min 1"
     },
     {
-      "section": "configuration-project-environment",
-      "title": "连接密钥与项目环境",
+      "section": "configuration-environment",
+      "title": "连接密钥与全局环境",
       "path": "variables",
       "control": "键值行 / 列表详情 / 增删改名",
-      "scope": "project",
+      "scope": "global",
       "effect": "newSession",
       "constraints": ""
     },
     {
-      "section": "configuration-project-environment",
-      "title": "连接密钥与项目环境",
+      "section": "configuration-environment",
+      "title": "连接密钥与全局环境",
       "path": "variables.*",
       "control": "安全密码输入 / 保留 / 替换 / 清除",
-      "scope": "project",
+      "scope": "global",
       "effect": "newSession",
       "constraints": ""
     },
@@ -1429,6 +1861,33 @@
       "title": "MCP 服务器配置",
       "path": "mcpServers.* [远程 HTTP（SDK 自动协商）].headers.*",
       "control": "安全密码输入 / 保留 / 替换 / 清除",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "execution",
+      "control": "类型选择 + 对应结构化控件",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": ""
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "execution [1]",
+      "control": "枚举下拉",
+      "scope": "project / global",
+      "effect": "newSession",
+      "constraints": "project-snapshot"
+    },
+    {
+      "section": "capability-selection",
+      "title": "插件实现与权限策略",
+      "path": "execution [2]",
+      "control": "固定值选择 / 显式覆盖",
       "scope": "project / global",
       "effect": "newSession",
       "constraints": ""

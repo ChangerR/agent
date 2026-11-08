@@ -179,14 +179,26 @@ function validateStreamEvent(
     text_delta: ['type', 'text'],
     thinking_delta: ['type', 'text'],
     signature_delta: ['type', 'signature'],
-    redacted_thinking: ['type', 'data'],
-    usage: ['type', ...USAGE_FIELDS],
+    redacted_thinking: ['type', 'data', 'source'],
+    usage: ['type', ...USAGE_FIELDS, 'cacheWriteTokensByTtl'],
   };
   if (
     !Object.hasOwn(fields, event.type) ||
     Object.keys(event).some((key) => !fields[event.type as string]!.includes(key))
   )
     throw new InvalidResponseError();
+  if (event.type === 'redacted_thinking' && event.source !== undefined) {
+    const source = event.source as Record<string, unknown>;
+    if (
+      !source ||
+      typeof source !== 'object' ||
+      Array.isArray(source) ||
+      Object.keys(source).some((key) => !['routeId', 'model'].includes(key)) ||
+      typeof source.routeId !== 'string' ||
+      typeof source.model !== 'string'
+    )
+      throw new InvalidResponseError();
+  }
   if (event.type === 'message_start') {
     if (started || ended) throw new InvalidResponseError();
   } else {
@@ -206,6 +218,23 @@ function validateStreamEvent(
             (event[key] as number) < 0)
         )
           throw new InvalidResponseError();
+      if (event.cacheWriteTokensByTtl !== undefined) {
+        const buckets = event.cacheWriteTokensByTtl;
+        if (
+          !buckets ||
+          typeof buckets !== 'object' ||
+          Array.isArray(buckets) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(buckets)) ||
+          Object.entries(buckets).some(
+            ([ttl, count]) =>
+              !['5m', '1h', '30m', '12h'].includes(ttl) ||
+              typeof count !== 'number' ||
+              !Number.isSafeInteger(count) ||
+              count < 0,
+          )
+        )
+          throw new InvalidResponseError();
+      }
     } else {
       const key =
         event.type === 'signature_delta'

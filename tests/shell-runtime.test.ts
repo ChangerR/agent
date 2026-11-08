@@ -5,7 +5,12 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { definePlugin, type Agent, type PermissionMode, type SessionRules } from '../src/index.js';
+import {
+  definePlugin,
+  type Agent,
+  type PermissionMode,
+  type SessionRules,
+} from './helpers/trusted-agent.js';
 import type { AgentEvent } from '../src/core/events.js';
 import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fake.js';
 import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
@@ -211,6 +216,10 @@ describe.skipIf(process.platform === 'win32')('只读 shell 命令矩阵', () =>
       { command: 'git ls-files', has: 'README.md' },
       { command: 'git ls-files --stage -- README.md', has: 'README.md' },
       { command: 'git diff -- README.md', has: '+needle first' },
+      { command: "git log -10 --date=short --format='%h | %ad | %s'", has: ' | fixture' },
+      { command: 'git log --oneline -n 10', has: 'fixture' },
+      { command: 'git --no-pager log --max-count=10 --pretty=fuller HEAD', has: 'Offline Fixture' },
+      { command: 'git log -n1 --graph --decorate=short', has: 'fixture' },
       { command: 'cat package.json && echo done', has: '\ndone\n' },
       { command: 'grep absent README.md || echo fallback', exact: 'fallback\n' },
       { command: 'echo first; echo second', exact: 'first\nsecond\n' },
@@ -257,6 +266,20 @@ describe.skipIf(process.platform === 'win32')('只读 shell 命令矩阵', () =>
     'grep -f .env README.md',
     'git -c alias.scan="!touch mutated.txt" scan',
     'git diff --output=mutated.txt',
+    'git log --output=mutated.txt',
+    'git log -p',
+    'git log --stat',
+    'git log --show-signature',
+    "git log --format='%G?'",
+    "git log --pretty='format:%aN <%aE>'",
+    "git log --format='%N'",
+    'git log --format=unverified-template',
+    'git log --pretty=format:%(trailers)',
+    'git log --ext-diff',
+    'git log --textconv',
+    'git log -- .env',
+    'git log HEAD:.env',
+    'git log -10 && touch mutated.txt',
     'git -c diff.external=./preprocess.sh diff',
     "git ls-files --format='%(objectname)'",
     'git ls-files --recurse-submodules',
@@ -315,10 +338,10 @@ describe.skipIf(process.platform === 'win32')('只读 shell 命令矩阵', () =>
     expect(result.results[0].isError).toBe(true);
   });
 
-  it('未知 npm 命令确实进入 reviewer 与人工审批，计数器不是空壳', async () => {
+  it('未知 npm 命令无隔离时直接进入人工审批，计数器不是空壳', async () => {
     const f = await fixture();
     const result = await f.run(['npm test']);
-    expect(result).toMatchObject({ judge: 1, human: 1, executed: 0 });
+    expect(result).toMatchObject({ judge: 0, human: 1, executed: 0 });
   });
 
   it('注入 ENV、函数、搜索预处理器、PATH 与 Git 配置不能改变已证明的只读执行', async () => {
@@ -355,6 +378,7 @@ describe.skipIf(process.platform === 'win32')('只读 shell 命令矩阵', () =>
       'rg -n needle README.md',
       'git status --short',
       'git diff -- README.md',
+      "git log -10 --date=short --format='%h | %ad | %s'",
     ]) {
       const result = await f.run([command]);
       expect(result, command).toMatchObject({ judge: 0, human: 0, executed: 1 });
@@ -402,7 +426,7 @@ describe.skipIf(process.platform === 'win32')('shell 目标与规则的真实身
 
   it('未知命令在 ask 模式仍需人工确认，yolo 仍尊重 deny 与危险检测', async () => {
     const ask = await fixture({ mode: 'ask' });
-    expect(await ask.run(['npm test'])).toMatchObject({ judge: 1, human: 1, executed: 0 });
+    expect(await ask.run(['npm test'])).toMatchObject({ judge: 0, human: 1, executed: 0 });
     const yolo = await fixture({ mode: 'yolo', rules: { deny: ['bash(cat *)'] } });
     expect(await yolo.run(['cat package.json'])).toMatchObject({ judge: 0, human: 0, executed: 0 });
     expect(await yolo.run(['sudo cat package.json'])).toMatchObject({
@@ -533,7 +557,7 @@ it.skipIf(process.platform === 'win32')(
     const f = await fixture();
     const command = ['echo a\\', 'b'].join('\n');
     const result = await f.run([command]);
-    expect(result).toMatchObject({ judge: 1, human: 1, executed: 0 });
+    expect(result).toMatchObject({ judge: 0, human: 1, executed: 0 });
     expect(result.results[0].isError).toBe(true);
   },
 );
@@ -590,5 +614,39 @@ it.skipIf(process.platform === 'win32')(
         /SHELL_TRACKED_SECRET|SHELL_TRACKED_AGENT_SENTINEL/,
       );
     }
+    const history = await f.run(["git log -10 --date=short --format='%h | %ad | %s'"]);
+    expect(history).toMatchObject({ judge: 0, human: 0, executed: 1 });
+    expect(history.results[0].content).toContain('tracked metadata fixture');
+    expect(history.results[0].content).not.toMatch(
+      /SHELL_TRACKED_SECRET|SHELL_TRACKED_AGENT_SENTINEL/,
+    );
+  },
+);
+
+it.skipIf(process.platform === 'win32').each(['shallow', 'info/grafts'])(
+  'git log 的 %s 元数据不能通过符号链接读取项目外文件',
+  async (name) => {
+    const f = await fixture({
+      prepare: async (cwd, root) => {
+        const outside = join(root, 'outside-metadata');
+        await writeFile(outside, 'OUTSIDE_GIT_LOG_METADATA');
+        await symlink(outside, join(cwd, '.git', name));
+      },
+    });
+    const result = await f.run(['git log -10 --oneline']);
+    expect(result).toMatchObject({ human: 1, executed: 0 });
+    expect(result.results[0].isError).toBe(true);
+    expect(result.results[0].content).not.toContain('OUTSIDE_GIT_LOG_METADATA');
+  },
+);
+
+it.skipIf(process.platform === 'win32').each(['ask', 'deny'] as const)(
+  '已验证的 git log 仍遵守显式 %s 规则',
+  async (kind) => {
+    const command = "git log -10 --date=short --format='%h | %ad | %s'";
+    const f = await fixture({ rules: { [kind]: [`bash(=${JSON.stringify(command)})`] } });
+    const result = await f.run([command]);
+    expect(result).toMatchObject({ judge: 0, human: kind === 'ask' ? 1 : 0, executed: 0 });
+    expect(result.results[0].isError).toBe(true);
   },
 );

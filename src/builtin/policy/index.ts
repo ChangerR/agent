@@ -15,6 +15,16 @@ import { isPlanControl } from '../planning/identity.js';
 import { isSubagentControl } from '../subagents/identity.js';
 import { PluginConfigStore, type ConfigSnapshot } from '../../runtime/config-store.js';
 import { resolveAgentPaths } from '../../core/paths.js';
+import { grantOptions, PermissionGrantSchema } from './grants.js';
+import type { PermissionGrant } from '../../core/permission/grants.js';
+import {
+  forgetStartupApproval,
+  rememberStartupApproval,
+  startupTrustEntry,
+} from '../../runtime/startup-trust.js';
+import { settingsJsonSchema } from '../configuration-settings.js';
+import { hasPrivateArguments } from '../../core/permission/display.js';
+import { ResourceRuleSchema, resourceRuleMatch, type ResourceRule } from './resource-rules.js';
 import {
   ANALYZER_ID,
   ANALYZER_VERSION,
@@ -40,12 +50,21 @@ export interface DeterministicPolicyOptions {
   writeRoots?: readonly string[];
   /** 平台判断注入点，默认 process.platform。 */
   platform?: NodeJS.Platform;
+  grants?: readonly PermissionGrant[];
+  saveGrant?: Policy['saveGrant'];
+  revokeGrant?: (grant: PermissionGrant) => void;
+  resourceRules?: readonly ResourceRule[];
 }
 export function createDeterministicPolicy(options: DeterministicPolicyOptions): Policy {
   const writeRoots = Object.freeze([...(options.writeRoots ?? [])]);
   const pluginEntries = Object.freeze([...(options.pluginEntries ?? [])]);
+  const resourceRules = Object.freeze(
+    (options.resourceRules ?? []).map((rule) => ResourceRuleSchema.parse(rule)),
+  );
   const platform = options.platform ?? process.platform;
   const controller = new PermissionController({ mode: options.mode, rules: options.rules });
+  controller.onRevokeGrant = options.revokeGrant;
+  for (const grant of options.grants ?? []) controller.addGrant(grant);
   const analyzer = createDeterministicAnalyzer({
     pluginEntries,
     writeRoots,
@@ -53,11 +72,13 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
   });
   return {
     id: 'deterministic',
-    version: '2.0.0',
+    version: '3.0.0',
     controller,
     analyzer,
+    saveGrant: options.saveGrant,
+    approvalOptions: (input, decision) => grantOptions(input, decision, !!options.saveGrant),
     get revision() {
-      return `policy:${hash({ rules: controller.revision, writeRoots, pluginEntries })}`;
+      return `policy:${hash({ rules: controller.revision, writeRoots, pluginEntries, resourceRules })}`;
     },
     async decide(input, signal) {
       signal.throwIfAborted();
@@ -143,6 +164,18 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
             : await analyzer.analyze(input, signal);
       } catch {
         signal.throwIfAborted();
+        if (
+          resourceRules.some(
+            (rule) =>
+              rule.action === 'deny' && (!rule.tools || rule.tools.includes(input.tool.name)),
+          )
+        )
+          return decision(
+            'deny',
+            'resource_unverified',
+            '分析失败，不能证明操作不访问已禁止的资源',
+            'config',
+          );
         return decision('ask', 'analysis_error', '无法完整验证操作与环境，需人工确认');
       }
       signal.throwIfAborted();
@@ -169,6 +202,24 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           `真实目标命中 deny 规则 "${canonicalDeny.raw}"`,
           canonicalDeny.source,
           canonicalDeny.raw,
+        );
+      const deniedResource = resourceRules.find(
+        (rule) =>
+          rule.action === 'deny' && resourceRuleMatch(rule, input, analysis, false, platform),
+      );
+      if (deniedResource)
+        return decision(
+          'deny',
+          'resource_deny',
+          `命中资源 deny 规则 ${deniedResource.id}`,
+          'config',
+          deniedResource.id,
+        );
+      if (hasPrivateArguments(input.input))
+        return decision(
+          'ask',
+          'sensitive_arguments',
+          '参数包含凭据或敏感环境值，需要人工确认；展示已脱敏',
         );
       if (analysis.reasonCode === 'windows_shell_dedicated_tool')
         return {
@@ -229,10 +280,33 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           'powershell_unknown',
           'PowerShell 的参数、路径或副作用未完整解析，必须人工确认',
         );
+      const askedResource = resourceRules.find(
+        (rule) =>
+          rule.action === 'ask' && resourceRuleMatch(rule, input, analysis, false, platform),
+      );
+      if (askedResource)
+        return decision(
+          'ask',
+          'explicit_ask',
+          `命中资源 ask 规则 ${askedResource.id}`,
+          'config',
+          askedResource.id,
+        );
       if (isPlanControl(input.tool) && analysis.reasonCode === 'agent_control')
         return decision('allow', 'plan_control', '更新会话计划；真实工具另行审批');
       if (isSubagentControl(input.tool) && analysis.reasonCode === 'agent_control')
         return decision('allow', 'agent_control', '仅管理当前会话的子任务；真实工具另行审批');
+      const granted = controller.grants.match(
+        { ...input, analysis },
+        (grant) =>
+          grant.selector.kind === 'call' ||
+          (input.tool.ownerPlugin === 'agentlab.local-tools' &&
+            input.tool.version === '1.0.0' &&
+            ['read_file', 'write_file', 'edit_file'].includes(input.tool.name) &&
+            analysis.reasonCode !== 'native_windows_write_unverified'),
+      );
+      if (granted)
+        return decision('allow', 'grant_allow', `命中 ${granted.scope} 授权 ${granted.id}`, 'user');
       // 精确调用：只接受 ToolExecutor.remember() 生成的等于引号 JSON 规则。
       // 内置 bash，以及副作用未知的 MCP / 工具语义。字面量模式和通配规则没有资格。
       // 第三方同名文件工具（unverified_tool_implementation）不进入。
@@ -283,8 +357,12 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
             exact.raw,
           );
         return decision(
-          'review',
-          windowsShellWrite ? 'powershell_write_review' : 'platform_write_review',
+          controller.mode === 'ask' ? 'ask' : 'review',
+          controller.mode === 'ask'
+            ? 'platform_write_ask'
+            : windowsShellWrite
+              ? 'powershell_write_review'
+              : 'platform_write_review',
           'Windows 平台未做文件系统校验：项目内普通文件写入已完成通用分析并排除敏感/写保护/项目外目标，且未命中精确目标规则，委托 reviewer 判断当前完整操作',
           'mode',
         );
@@ -294,6 +372,20 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
         analysis.effects.length > 0 &&
         analysis.effects.every(
           (effect) => effect.scope === 'project' && ['read', 'write'].includes(effect.kind),
+        );
+      const allowedResource =
+        complete &&
+        resourceRules.find(
+          (rule) =>
+            rule.action === 'allow' && resourceRuleMatch(rule, input, analysis, true, platform),
+        );
+      if (allowedResource)
+        return decision(
+          'allow',
+          'resource_allow',
+          `全部效果命中资源 allow 规则 ${allowedResource.id}`,
+          'config',
+          allowedResource.id,
         );
       // 宽规则没有放行资格，也不能遮挡同来源或后续来源的精确目标授权。
       const literalSearch = analysis.environment?.['$searchLiteral'];
@@ -309,27 +401,19 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
       const allowed =
         input.tool.name === 'grep' || (input.tool.name === 'glob' && !literalSearch)
           ? undefined
-          : matched('allow', allowTargets, (rule) => literalTarget(rule) !== undefined);
+          : (matched('allow', allowTargets, (rule) => literalTarget(rule) !== undefined) ??
+            matched('allow', allowTargets, () => input.tool.name !== 'bash'));
       if (allowed && complete) {
         return decision(
           'allow',
-          'exact_allow',
-          `命中精确目标 allow 规则 "${allowed.raw}"`,
+          literalTarget(allowed.rule) !== undefined ? 'exact_allow' : 'scoped_allow',
+          `命中目标 allow 规则 "${allowed.raw}"`,
           allowed.source,
           allowed.raw,
         );
       }
       if (complete && analysis.effects.every((effect) => effect.kind === 'read'))
         return decision('allow', 'safe_read', '已验证为项目边界内的完整只读操作');
-      // ask 的兜底与 auto 相同：交给审批模型。必须放在 writeRoots 之前，避免目录授权在 ask 模式直接放行。
-      // 明确 ask、危险命令、敏感和项目外目标已在前面返回人工；模型失败或要求确认时才回到人工。
-      if (controller.mode === 'ask')
-        return decision(
-          'review',
-          'review_uncertain',
-          '确定性分析未给出授权，委托一次 reviewer 判断当前完整操作',
-          'mode',
-        );
       if (
         complete &&
         writeRoots.length &&
@@ -353,8 +437,10 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
           );
         }
       }
+      if (controller.mode === 'ask')
+        return decision('ask', 'ask_mode', '当前操作未获授权，ask 模式需要人工确认', 'mode');
       if (controller.mode === 'yolo')
-        return complete
+        return complete || input.executionBoundary?.available
           ? decision(
               'allow',
               'yolo_complete',
@@ -367,6 +453,13 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
               'yolo 不跳过未知、动态 Shell 或不完整副作用，需人工确认',
               'mode',
             );
+      if (!complete && analysis.completeness !== 'complete' && !input.executionBoundary?.available)
+        return decision(
+          'ask',
+          'unknown_operation',
+          '操作副作用不完整且没有可验证的执行隔离，需要人工确认',
+          'mode',
+        );
       return decision(
         'review',
         'review_uncertain',
@@ -412,10 +505,28 @@ function contained(root: string, path: string): boolean {
 export function describeWriteRootsSettings(platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32'
     ? 'writeRoots 仅限本项目，默认空。Windows 上目录授权不能直接放行写入；通过安全检查的精确目标规则可以放行，否则 auto/yolo 交给模型审查，无法确定、出错或不可用时回到人工确认。deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。'
-    : 'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次 auto 会话自动写入其中普通文件；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。';
+    : 'writeRoots 仅限本项目，默认空。保存 src 等目录即明确授权下次会话自动写入其中普通文件，ask/auto/yolo 均采用已有授权；deny/ask、敏感文件、外部路径与未知工具仍不会放行。仅新会话生效。';
 }
 
 const schema = z.object({ writeRoots: z.array(z.string().min(1).max(4096)).max(32).default([]) });
+const policySchema = schema.extend({
+  grants: z
+    .array(PermissionGrantSchema.refine((grant) => grant.scope === 'project', '仅项目授权可持久化'))
+    .max(256)
+    .refine(
+      (values) => new Set(values.map((value) => value.id)).size === values.length,
+      '授权 ID 不能重复',
+    )
+    .default([]),
+  resourceRules: z
+    .array(ResourceRuleSchema)
+    .max(256)
+    .refine(
+      (values) => new Set(values.map((value) => value.id)).size === values.length,
+      '资源规则 ID 不能重复',
+    )
+    .default([]),
+});
 
 export function createDeterministicPolicyPlugin({
   config,
@@ -428,16 +539,18 @@ export function createDeterministicPolicyPlugin({
     .filter((entry) => typeof entry === 'string' || entry.enabled)
     .map((entry) => (typeof entry === 'string' ? entry : entry.entry));
   return definePlugin({
-    manifest: { id: 'agentlab.policy', version: '2.0.0', apiVersion: 1 },
+    manifest: { id: 'agentlab.policy', version: '3.0.0', apiVersion: 1 },
     config: {
-      schema,
+      schema: policySchema,
       defaults: { writeRoots: [] },
-      ownedFields: ['writeRoots'],
+      ownedFields: ['writeRoots', 'grants', 'resourceRules'],
       scopes: ['project', 'session', 'cli'],
       applyMode: 'newSession',
     },
     async setup(ctx) {
-      const value = schema.parse(ctx.config.value);
+      const value = policySchema.parse(ctx.config.value);
+      const grantStore = new PluginConfigStore(resolveAgentPaths(cwd).projectConfigPath);
+      const grantDrafts = new Map<string, ConfigSnapshot>();
       await validateWriteRoots(cwd, value.writeRoots, entries);
       const policy = createDeterministicPolicy({
         cwd,
@@ -445,9 +558,151 @@ export function createDeterministicPolicyPlugin({
         rules: config.permissions,
         pluginEntries: entries,
         writeRoots: value.writeRoots,
+        grants: value.grants,
+        resourceRules: value.resourceRules,
+        revokeGrant(grant) {
+          if (grant.scope !== 'project') return;
+          const snapshot = grantStore.read('agentlab.policy');
+          const current = policySchema.parse(snapshot.value);
+          forgetStartupApproval(cwd, [`grant:${grant.id}`]);
+          grantStore.commit(
+            'agentlab.policy',
+            snapshot,
+            { grants: current.grants.filter((value) => value.id !== grant.id) },
+            { schema: policySchema, ownedFields: ['grants'] },
+          );
+        },
+        saveGrant(grant, signal) {
+          signal.throwIfAborted();
+          const snapshot = grantDrafts.get(grant.id);
+          if (!snapshot) throw new Error('无效或过期项目授权');
+          const previous = policySchema.parse(snapshot.value);
+          grantStore.commit(
+            'agentlab.policy',
+            snapshot,
+            { grants: [...previous.grants, grant] },
+            {
+              schema: policySchema,
+              ownedFields: ['grants'],
+            },
+          );
+          rememberStartupApproval(cwd, [
+            startupTrustEntry(`grant:${grant.id}`, grant, `项目授权 ${grant.id}`),
+          ]);
+          grantDrafts.delete(grant.id);
+        },
+      });
+      const originalOptions = policy.approvalOptions!;
+      policy.approvalOptions = (input, decision) => {
+        const choices = originalOptions(input, decision);
+        const snapshot = grantStore.read('agentlab.policy');
+        for (const choice of choices)
+          if (choice.grant.scope === 'project') {
+            if (grantDrafts.size > 128) grantDrafts.delete(grantDrafts.keys().next().value!);
+            grantDrafts.set(choice.grant.id, snapshot);
+          }
+        return choices;
+      };
+      const resourceSchema = z.object({
+        resourceRules: z.array(ResourceRuleSchema).max(256).default([]),
+      });
+      let resourceBase: ConfigSnapshot | undefined;
+      const resourceDrafts = new WeakMap<object, ConfigSnapshot>();
+      ctx.provide.settings('policy-resource-rules', {
+        title: '跨工具资源规则',
+        description:
+          '按项目相对路径和读写效果定义 allow/ask/deny；未知程序不能证明避开 deny 范围时拒绝。修改后重启生效。',
+        schema: settingsJsonSchema(resourceSchema),
+        applyMode: 'newSession',
+        scopeTargets: [{ scope: 'project', path: grantStore.path }],
+        read(signal) {
+          signal.throwIfAborted();
+          resourceBase = grantStore.read('agentlab.policy');
+          return { resourceRules: resourceBase.value.resourceRules ?? [] };
+        },
+        draft(raw, signal) {
+          signal.throwIfAborted();
+          if (!resourceBase) throw new Error('请先打开资源规则');
+          const draft = Object.freeze(resourceSchema.parse(raw));
+          if (
+            new Set(draft.resourceRules.map((rule) => rule.id)).size !== draft.resourceRules.length
+          )
+            throw new Error('资源规则 ID 不能重复');
+          resourceDrafts.set(draft, resourceBase);
+          return draft;
+        },
+        commit(raw, signal) {
+          signal.throwIfAborted();
+          if (!raw || typeof raw !== 'object' || !resourceDrafts.has(raw))
+            throw new Error('资源规则草稿已失效');
+          const draft = resourceSchema.parse(raw),
+            base = resourceDrafts.get(raw)!;
+          const previous = resourceSchema.parse(base.value);
+          forgetStartupApproval(
+            cwd,
+            previous.resourceRules
+              .filter((rule) => rule.action === 'allow')
+              .map((rule) => `resource-rule:${rule.id}`),
+          );
+          rememberStartupApproval(
+            cwd,
+            draft.resourceRules
+              .filter((rule) => rule.action === 'allow')
+              .map((rule) =>
+                startupTrustEntry(
+                  `resource-rule:${rule.id}`,
+                  rule,
+                  `用户保存的资源授权 ${rule.id}`,
+                ),
+              ),
+          );
+          grantStore.commit('agentlab.policy', base, draft, {
+            schema: resourceSchema,
+            ownedFields: ['resourceRules'],
+          });
+          resourceDrafts.delete(raw);
+        },
+      });
+      let grantRevision: string | number | undefined;
+      const revokeSchema = () => ({
+        type: 'object',
+        properties: {
+          revokeId: {
+            type: 'string',
+            title: '撤销授权',
+            enum: ['', ...policy.controller!.listGrants!().map((grant) => grant.id)],
+          },
+        },
+      });
+      ctx.provide.settings('policy-grants', {
+        title: '活动授权与撤销',
+        description:
+          '任务授权结束时失效；会话授权不随历史恢复。选择授权 ID 即撤销，项目授权同步从配置删除。',
+        schema: revokeSchema(),
+        getSchema: revokeSchema,
+        applyMode: 'immediate',
+        scopeTargets: [{ scope: 'project', path: grantStore.path }],
+        read: () => {
+          grantRevision = policy.revision;
+          return { revokeId: '' };
+        },
+        draft: (raw) => {
+          const value = z.object({ revokeId: z.string() }).parse(raw);
+          if (
+            value.revokeId &&
+            !policy.controller!.listGrants!().some((grant) => grant.id === value.revokeId)
+          )
+            throw new Error('授权已变化');
+          return value;
+        },
+        commit: (raw) => {
+          if (policy.revision !== grantRevision) throw new Error('授权已变化，请重新打开');
+          const value = z.object({ revokeId: z.string() }).parse(raw);
+          if (value.revokeId) policy.controller!.revokeGrant!(value.revokeId);
+        },
       });
       ctx.provide.analyzer('deterministic', policy.analyzer!, { version: ANALYZER_VERSION });
-      ctx.provide.policy('deterministic', policy, { version: '2.0.0' });
+      ctx.provide.policy('deterministic', policy, { version: '3.0.0' });
       ctx.provide.settings('policy-deterministic', {
         title: '确定性策略',
         description: 'ask 优先于 allow；未知 Shell/MCP 不会因 risk 声明放行。选择后新会话生效。',
@@ -468,8 +723,20 @@ export function createDeterministicPolicyPlugin({
         title: '明确写入目录授权',
         description: describeWriteRootsSettings(),
         schema: {
-          type: 'object',
-          properties: { writeRoots: { type: 'array', items: { type: 'string' } } },
+          ...settingsJsonSchema(policySchema),
+          properties: {
+            writeRoots: { type: 'array', items: { type: 'string' } },
+            grants: {
+              ...settingsJsonSchema(z.array(PermissionGrantSchema)),
+              readOnly: true,
+              description: '已保存授权只读；请在活动授权与撤销中管理。',
+            },
+            resourceRules: {
+              ...settingsJsonSchema(z.array(ResourceRuleSchema)),
+              readOnly: true,
+              description: '跨工具资源规则；修改配置并重启后生效。',
+            },
+          },
         },
         applyMode: 'newSession',
         scopeTargets: [{ scope: 'project', path: store.path }],
@@ -477,9 +744,15 @@ export function createDeterministicPolicyPlugin({
           signal.throwIfAborted();
           assertScope(scope);
           base = store.read('agentlab.policy');
-          return structuredClone(
-            Object.hasOwn(base.value, 'writeRoots') ? { writeRoots: base.value.writeRoots } : {},
-          );
+          return structuredClone({
+            ...(Object.hasOwn(base.value, 'writeRoots')
+              ? { writeRoots: base.value.writeRoots }
+              : {}),
+            ...(Object.hasOwn(base.value, 'grants') ? { grants: base.value.grants } : {}),
+            ...(Object.hasOwn(base.value, 'resourceRules')
+              ? { resourceRules: base.value.resourceRules }
+              : {}),
+          });
         },
         async draft(raw, signal, scope = 'project') {
           signal.throwIfAborted();
@@ -500,6 +773,9 @@ export function createDeterministicPolicyPlugin({
           const parsed = schema.parse(draft);
           await validateWriteRoots(cwd, parsed.writeRoots, entries, signal);
           signal.throwIfAborted();
+          rememberStartupApproval(cwd, [
+            startupTrustEntry('write-roots', parsed.writeRoots, '用户保存的目录授权'),
+          ]);
           base = store.commit('agentlab.policy', drafts.get(draft)!, parsed, {
             schema,
             ownedFields: ['writeRoots'],

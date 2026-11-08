@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { HookRunner } from '../src/core/hooks.js';
 import { ToolRegistry } from '../src/core/registry.js';
 import { PluginHost } from '../src/runtime/plugin-host.js';

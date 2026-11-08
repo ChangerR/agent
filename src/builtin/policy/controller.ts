@@ -2,6 +2,7 @@ import { minimatch } from 'minimatch';
 import { createHash } from 'node:crypto';
 import type { Tool } from '../../core/registry.js';
 import type { PermissionMode } from '../../core/config.js';
+import { PermissionGrantStore, type PermissionGrant } from '../../core/permission/grants.js';
 
 import type {
   Decision,
@@ -46,6 +47,26 @@ export function matchRule(
 }
 
 export class PermissionController {
+  readonly grants = new PermissionGrantStore();
+  onRevokeGrant?: (grant: PermissionGrant) => void;
+  listGrants(): PermissionGrant[] {
+    return this.grants.list();
+  }
+  addGrant(grant: PermissionGrant): void {
+    this.grants.add(grant);
+  }
+  revokeGrant(id: string): boolean {
+    const grant = this.grants.list().find((grant) => grant.id === id);
+    if (!grant) return false;
+    this.onRevokeGrant?.(grant);
+    return this.grants.revoke(id);
+  }
+  finishTask(scope: string, sessionId?: string): void {
+    this.grants.finishTask(scope, sessionId);
+  }
+  clearTemporaryGrants(sessionId?: string): void {
+    this.grants.clearTemporary(sessionId);
+  }
   private sessionRules: SessionRules = { allow: [], ask: [], deny: [] };
   private auditLog: AuditEntry[] = [];
 
@@ -64,7 +85,13 @@ export class PermissionController {
   /** 每次执行批准绑定有效规则与模式；外部配置对象的变动也会失效。 */
   get revision(): string {
     return createHash('sha256')
-      .update(JSON.stringify({ ...this.options, sessionRules: this.sessionRules }))
+      .update(
+        JSON.stringify({
+          ...this.options,
+          sessionRules: this.sessionRules,
+          grants: this.grants.revision,
+        }),
+      )
       .digest('hex');
   }
 

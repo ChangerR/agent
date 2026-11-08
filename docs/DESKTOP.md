@@ -34,7 +34,7 @@
 
 原生选目录 → 后端规范化项目根 → 读取配置与装配 runtime → 返回能力和配置来源。项目列表是桌面外壳偏好，不改变 agent 配置格式。
 
-把 provider、model、baseURL、apiKeyEnv 作为连接身份整体展示。apiKeyEnv 明确为变量名。首版不新增凭证保险库，key 继续通过进程环境或项目 .env 提供；renderer 不接收 key、环境变量或 .env 正文。缺凭证时提示配置步骤，不自动发送探测请求。错误只展示路径、安全错误码和可采取动作。
+把 provider、model、baseURL、apiKeyEnv 作为连接身份整体展示。apiKeyEnv 明确为变量名。首版不新增凭证保险库，key 继续通过进程环境或 ~/.agentlab/.env 提供；renderer 不接收 key、环境变量或 .env 正文。缺凭证时提示配置步骤，不自动发送探测请求。错误只展示路径、安全错误码和可采取动作。
 
 ### 任务、停止与会话切换
 

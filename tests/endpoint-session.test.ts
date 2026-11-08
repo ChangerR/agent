@@ -21,7 +21,7 @@ vi.mock('openai', () => ({
     };
   },
 }));
-import { createAgent, loadSession, sessionPath, type Agent } from '../src/index.js';
+import { createAgent, loadSession, sessionPath, type Agent } from './helpers/trusted-agent.js';
 let cwd: string;
 const agents: Agent[] = [];
 beforeEach(async () => {

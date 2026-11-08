@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { definePlugin } from '../src/sdk/index.js';
 import { fileSessionStore } from '../src/builtin/session-file/index.js';
 it('未结束的实际工具调用令退出报告故障，真实结束前不释放插件', async () => {

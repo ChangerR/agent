@@ -4,7 +4,9 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type Agent } from '../src/index.js';
+import { createReviewTestPolicy } from './helpers/review-policy.js';
+import { loadConfig } from '../src/core/config.js';
+import { type Agent } from './helpers/trusted-agent.js';
 import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import type { AgentConfig } from '../src/core/config.js';
 import type { AgentEvent } from '../src/core/events.js';
@@ -77,12 +79,22 @@ async function assembled(
     }),
   );
   const execute = vi.fn(commandTool.execute);
+  const loaded = loadConfig(tmp);
   agent = await createAgent(tmp, {
     autoSaveSessions: false,
+    config: { capabilities: { policy: 'test-review' } },
     plugins: [
       {
         manifest: { id: 'test.command', version: '1.0.0', apiVersion: 1 },
         setup(ctx) {
+          ctx.provide.policy(
+            'test-review',
+            createReviewTestPolicy({
+              cwd: tmp,
+              mode: loaded.permissionMode,
+              rules: loaded.permissions,
+            }),
+          );
           ctx.provide.tool(commandTool.name, { ...commandTool, ...toolOverrides, execute });
         },
       },
@@ -210,20 +222,17 @@ describe('createAgent 的当前模型审批兜底', () => {
     ]);
   });
 
-  it('ask 与切到 auto 后都交给审批模型，无需重启装配', async () => {
+  it('ask 人工、切到 auto 后才委托模型，无需重启装配', async () => {
     const fixture = await assembled({ permissionMode: 'ask' });
     await fixture.agent.loop.run('ask 模式检查');
-    expect(judgeRequests(fixture.fake).map((request) => request.model)).toEqual(['current-a']);
-    expect(fixture.execute).toHaveBeenCalledTimes(1);
-    expect(fixture.requests).toHaveLength(0);
+    expect(judgeRequests(fixture.fake)).toHaveLength(0);
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.requests).toHaveLength(1);
     fixture.agent.permission.setMode('auto');
     await fixture.agent.loop.run('auto 模式检查');
-    expect(judgeRequests(fixture.fake).map((request) => request.model)).toEqual([
-      'current-a',
-      'current-a',
-    ]);
-    expect(fixture.execute).toHaveBeenCalledTimes(2);
-    expect(fixture.requests).toHaveLength(0);
+    expect(judgeRequests(fixture.fake).map((request) => request.model)).toEqual(['current-a']);
+    expect(fixture.execute).toHaveBeenCalledTimes(1);
+    expect(fixture.requests).toHaveLength(1);
   });
 });
 
@@ -457,7 +466,7 @@ describe('模型规格与完整请求预算', () => {
     expect(verdict.decision).toBe('allow');
     expect(fake.requests[0].maxTokens).toBe(128);
     expect(fake.requests[0].tools).toEqual([]);
-    expect(fake.requests[0].thinking).toBeUndefined();
+    expect(fake.requests[0].thinking).toBe('off');
     expect(fake.requests[0].cache).toBeUndefined();
     const payload = JSON.parse(fake.requests[0].messages[0].content as string);
     expect(payload.operation.input).toEqual(input);
@@ -606,17 +615,16 @@ describe('默认加载审批员不改变确定性权限优先级', () => {
     expect(fixture.requests).toHaveLength(asks);
   });
 
-  it('ask 模式的未知操作交给审批模型，模型放行后不再人工确认', async () => {
+  it('ask 的未知操作人工确认且不调用模型', async () => {
     const fixture = await assembled({ permissionMode: 'ask' });
     await fixture.agent.loop.run('检查');
-    expect(judgeRequests(fixture.fake)).toHaveLength(1);
+    expect(judgeRequests(fixture.fake)).toHaveLength(0);
     expect(fixture.decisions.find((event) => event.phase === 'pipeline')?.decision).toMatchObject({
-      reasonCode: 'review_uncertain',
+      reasonCode: 'ask_mode',
       source: 'mode',
     });
-    expect(fixture.decisions.find((event) => event.phase === 'judge')?.decision.kind).toBe('allow');
-    expect(fixture.execute).toHaveBeenCalledTimes(1);
-    expect(fixture.requests).toHaveLength(0);
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.requests).toHaveLength(1);
   });
 
   it.each([

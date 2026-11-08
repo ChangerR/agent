@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TuiAltScreen, stripTerminalSequences, type Terminal } from '@earendil-works/pi-tui';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { startTui } from '../src/cli/app.js';
 import { PluginToolMessage } from '../src/cli/plugin-renderers.js';
 import { definePlugin, type Plugin } from '../src/sdk/index.js';

@@ -642,6 +642,28 @@ describe('TUI 审批模型运行状态', () => {
   });
 });
 
+const backendApprovalActions = [
+  {
+    id: 'once-action',
+    kind: 'allow_once' as const,
+    label: '允许一次',
+    description: '只批准当前调用。',
+  },
+  {
+    id: 'session-action',
+    kind: 'grant' as const,
+    scope: 'session' as const,
+    label: '本会话允许相同完整调用',
+    description: '绑定完整参数和工具身份；不随历史恢复。拒绝规则与危险检测仍优先。',
+  },
+  {
+    id: 'deny-action',
+    kind: 'deny' as const,
+    label: '拒绝此操作',
+    description: '其他安全工作可以继续。',
+  },
+];
+
 describe('真实 TUI 离线交互', () => {
   it('权限默认打开本项目，模式一次选择即自动保存并应用，浏览取消不改文件', async () => {
     const ui = await mountTui();
@@ -807,6 +829,7 @@ describe('真实 TUI 离线交互', () => {
         resolve: vi.fn(),
         request: {
           toolName: 'custom_plugin',
+          actions: backendApprovalActions,
           reasonCode: 'ask_mode',
           policyReasonCode: 'ask_mode',
           input: {},
@@ -818,7 +841,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b[B');
       ui.terminal.input?.('\t');
       await vi.waitFor(() =>
-        expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('custom_plugin的所有调用'),
+        expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('完整参数和工具身份'),
       );
       expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('拒绝规则与危险检测仍优先');
     } finally {
@@ -866,6 +889,7 @@ describe('真实 TUI 离线交互', () => {
         resolve,
         request: {
           toolName: 'read_file',
+          actions: backendApprovalActions,
           reasonCode: 'ask_mode',
           policyReasonCode: 'ask_mode',
           input: { path: 'note.txt' },
@@ -879,9 +903,9 @@ describe('真实 TUI 离线交互', () => {
       expect(resolve).not.toHaveBeenCalled();
       ui.terminal.input?.('\x1b[B');
       ui.terminal.input?.('\x1b[B');
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('相同匹配目标'));
-      expect(ui.screen().join('\n')).toContain('其他参数可能不同');
-      expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('会话保存和恢复');
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('完整参数'));
+      expect(ui.screen().join('\n')).toContain('工具身份');
+      expect(ui.screen().join('').replace(/[\s│]/g, '')).toContain('不随历史恢复');
       await snapshot('permission-remember-scope', ui.screen());
       ui.terminal.input?.('\t');
       ui.terminal.input?.('\r');
@@ -892,7 +916,7 @@ describe('真实 TUI 离线交互', () => {
       ui.terminal.input?.('\x1b[B');
       ui.terminal.input?.('\r');
       expect(resolve).toHaveBeenCalledTimes(1);
-      expect(resolve).toHaveBeenCalledWith({ allow: true, remember: 'session' });
+      expect(resolve).toHaveBeenCalledWith({ actionId: 'session-action' });
     } finally {
       controller.abort();
       await ui.dispose();
@@ -1008,31 +1032,16 @@ describe('真实 TUI 离线交互', () => {
     }
   });
 
-  it('canRememberPermission 只对可生效的询问原因显示记住', () => {
-    expect(
-      canRememberPermission({
-        reasonCode: 'ask_mode',
-        analysisReasonCode: 'powershell_bounded',
-        toolName: 'bash',
-      }),
-    ).toBe(true);
-    expect(
-      canRememberPermission({
-        reasonCode: 'model_ask',
-        policyReasonCode: 'powershell_write_review',
-        analysisReasonCode: 'powershell_file_operation',
-        toolName: 'bash',
-      }),
-    ).toBe(true);
-    expect(canRememberPermission({ reasonCode: 'explicit_ask', toolName: 'write_file' })).toBe(
-      false,
+  it('记住选项完全由后端动作决定，前端不根据原因码猜测', () => {
+    expect(canRememberPermission({ actions: backendApprovalActions })).toBe(true);
+    expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash' })).toBe(false);
+    expect(canRememberPermission({ reasonCode: 'timeout', actions: backendApprovalActions })).toBe(
+      true,
     );
     expect(
-      canRememberPermission({ policyReasonCode: 'sensitive_target', toolName: 'read_file' }),
-    ).toBe(false);
-    expect(canRememberPermission({ reasonCode: 'ask_mode', toolName: 'grep' })).toBe(false);
-    expect(
-      canRememberPermission({ reasonCode: 'ask_mode', toolName: 'bash', agentId: 'child-1' }),
+      canRememberPermission({
+        actions: backendApprovalActions.filter((action) => action.kind !== 'grant'),
+      }),
     ).toBe(false);
   });
 
@@ -1109,6 +1118,7 @@ describe('真实 TUI 离线交互', () => {
         resolve,
         request: {
           toolName: 'bash',
+          actions: backendApprovalActions,
           reasonCode: 'ask_mode',
           policyReasonCode: 'ask_mode',
           summary: `发布 ${'很长的命令 '.repeat(200)}`,
@@ -1119,7 +1129,7 @@ describe('真实 TUI 离线交互', () => {
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('请求权限'));
       expect(ui.renderer().hasOverlay()).toBe(false);
       expect(ui.screen().slice(-16).join('\n')).toContain('允许一次');
-      expect(ui.screen().slice(-16).join('\n')).toContain('允许并记住此规则');
+      expect(ui.screen().slice(-16).join('\n')).toContain('本会话允许相同完整调用');
       expect(ui.screen().slice(-16).join('\n')).toContain('Enter 确认');
       await snapshot('permission', ui.screen());
       ui.terminal.columns = 32;
@@ -1394,7 +1404,7 @@ describe('真实 TUI 离线交互', () => {
       await saveSession({
         schemaVersion: 2,
         runtime: { schemaVersion: 1 },
-        policy: { id: 'deterministic', version: '2.0.0', stateSchemaVersion: 1 },
+        policy: { id: 'deterministic', version: '3.0.0', stateSchemaVersion: 1 },
         pluginStates: {},
         revision: 0,
         id: 'resumecli01',

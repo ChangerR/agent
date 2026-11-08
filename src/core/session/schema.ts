@@ -26,6 +26,7 @@ const RedactedThinkingBlockSchema = z
   .object({
     type: z.literal('redacted_thinking'),
     data: z.string(),
+    source: z.object({ routeId: z.string(), model: z.string() }).strict().optional(),
   })
   .passthrough();
 

@@ -79,25 +79,8 @@ AGENTLAB_SCREEN=main 使用终端原生滚动历史；AGENTLAB_FULL_REDRAW=1 关
 /save 保存 · /sessions 会话 · /agents 子任务列表、详情、补充与取消。`;
 
 /** 原因码分阶段保留：reviewer 的结果不能掩盖原策略禁止规则放行的条件。 */
-export function canRememberPermission(
-  request: Pick<
-    PermissionRequest,
-    'reasonCode' | 'policyReasonCode' | 'analysisReasonCode' | 'agentId' | 'toolName'
-  >,
-): boolean {
-  const policyReason = request.policyReasonCode ?? request.reasonCode;
-  return (
-    !request.agentId &&
-    (policyReason === 'ask_mode' ||
-      policyReason === 'review_uncertain' ||
-      policyReason === 'platform_write_review' ||
-      policyReason === 'powershell_write_review') &&
-    request.analysisReasonCode !== 'native_windows_unverified' &&
-    request.analysisReasonCode !== 'powershell_unresolved' &&
-    request.analysisReasonCode !== 'unverified_tool_implementation' &&
-    request.toolName !== 'grep' &&
-    request.toolName !== 'glob'
-  );
+export function canRememberPermission(request: Partial<PermissionRequest>): boolean {
+  return request.actions?.some((action) => action.kind === 'grant') ?? false;
 }
 
 function subagentAction(detail: Record<string, unknown> | undefined) {
@@ -478,7 +461,6 @@ export function startTui(
       request.input && typeof request.input === 'object' && !Array.isArray(request.input)
         ? (request.input as Record<string, unknown>)
         : {};
-    const target = agent.tools.get(request.toolName)?.analyzeInput?.(input).patternTarget;
     const origin = request.decisionSource
       ? {
           mode: '权限模式',
@@ -490,38 +472,15 @@ export function startTui(
           user: '用户',
         }[request.decisionSource]
       : '权限检查';
-    const dangerNotice = '拒绝规则与危险检测仍优先';
-    const rememberedScope =
-      target === undefined
-        ? `${request.toolName} 的所有调用`
-        : `${request.toolName} 的相同匹配目标: ${JSON.stringify(target)}`;
-    // Windows 只读即使 reviewer 回退，精确规则仍不能跳过平台检查；普通写入的精确规则则保留。
-    const rememberIneffective = !canRememberPermission(request);
-    const options: Array<{ label: string; description: string; decision: UserDecision }> = [
-      {
-        label: '允许一次',
-        description: request.agentId
-          ? '仅批准该 child 当前 run 的本次操作，不复制给兄弟或后续任务。'
-          : rememberIneffective
-            ? '只允许这一次调用。该操作未经 Windows 平台校验；记住规则不能跳过后续审核。'
-            : '只允许这一次调用，不新增规则。',
-        decision: { allow: true },
-      },
-      ...(rememberIneffective
-        ? []
-        : [
-            {
-              label: '允许并记住此规则',
-              description: `记录 ${rememberedScope} 的允许规则；实际放行仍由策略安全约束决定。其他参数可能不同。规则随会话保存和恢复；${dangerNotice}。`,
-              decision: { allow: true, remember: 'session' } as UserDecision,
-            },
-          ]),
-      {
-        label: '拒绝',
-        description: '拒绝这一次调用，Agent 会收到拒绝结果。',
-        decision: { allow: false },
-      },
-    ];
+    const options: Array<{ label: string; description: string; decision: UserDecision }> =
+      request.actions?.map((action) => ({
+        label: action.label,
+        description: action.description,
+        decision: { actionId: action.id },
+      })) ?? [
+        { label: '允许一次', description: '只批准当前调用。', decision: { allow: true } },
+        { label: '拒绝此操作', description: '其他安全工作可以继续。', decision: { allow: false } },
+      ];
     let settled = false;
     const done = (decision: UserDecision, confirmedByEnter = false) => {
       if (settled) return;
@@ -757,14 +716,15 @@ export function startTui(
         ...e,
         resolve: (decision) => {
           e.signal.removeEventListener('abort', cancelRecord);
+          const selected =
+            'actionId' in decision
+              ? e.request.actions?.find((action) => action.id === decision.actionId)
+              : undefined;
           comp.finish(
             e.signal.aborted
               ? '已中断'
-              : decision.allow
-                ? decision.remember
-                  ? '已允许并记住'
-                  : '已允许一次'
-                : '已拒绝',
+              : (selected?.label ??
+                  ('allow' in decision && decision.allow ? '已允许一次' : '已拒绝')),
           );
           e.resolve(decision);
           render();

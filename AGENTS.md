@@ -28,21 +28,22 @@ pnpm build      # tsup → dist/
 
 ## 本机模型配置
 
-- 使用 Node.js 22.19.0+（当前 TUI 依赖的最低要求）。先复制 `.env.example` 为 `.env`、`agent.config.example.json` 为
-  `agent.config.json`；已有配置只做必要字段修改，不覆盖整份文件。配套步骤见 README 的“快速开始”。
-- `.env` 只保存 key 等环境变量。`provider`、`model`、`baseURL`、`apiKeyEnv` 写在 JSON；
+- 使用 Node.js 22.19.0+（当前 TUI 依赖的最低要求）。先复制 `.env.example` 到 `~/.agentlab/.env`、`agent.config.example.json` 到
+  `~/.agentlab/config.json`；已有配置只做必要字段修改，不覆盖整份文件。配套步骤见 README 的“快速开始”。
+- 运行配置与凭据默认保存在 `~/.agentlab`，仓库内仅保留开发文件和配置示例。用户 `.env` 保存 key、代理等环境变量。`provider`、`model`、`baseURL`、`apiKeyEnv` 写在 JSON；
   `apiKeyEnv` 是变量名，不是 key。默认 Anthropic 读 `ANTHROPIC_API_KEY`，OpenAI 兼容
   适配器读 `OPENAI_API_KEY`。DeepSeek 可使用 `provider: "openai"`、
   `baseURL: "https://api.deepseek.com"`、`apiKeyEnv: "DEEPSEEK_API_KEY"`，
   搭配 `.env` 的 `DEEPSEEK_API_KEY`。模型 ID 按对应官方文档/账户确认，不从“Flash”等简称猜测。
 - JSON 字段优先级：内置默认 < `~/.agentlab/config.json` < 项目 `agent.config.json` < SDK 会话覆盖。
   字段逐项继承；切换 provider 要同时核对 model、baseURL、apiKeyEnv，避免继承另一厂商的设置。
-- runtime 装配 provider 前，只加载规范化项目根 `.env`；不加载子目录 `.env`、`.env.local` 或
-  `~/.agentlab/.env`。已有进程变量优先，空字符串也会覆盖文件值。显式 JSON baseURL 优先于
+- runtime 装配 provider 前，只加载 `~/.agentlab/.env`；不加载开发项目根/子目录 `.env` 或任何
+  `.env.local`。本机模型 Broker 同样加载本机用户环境；远程 HTTP MCP 使用远程用户环境。已有进程变量优先，空字符串也会覆盖文件值。显式 JSON baseURL 优先于
   对应 provider 的 `*_BASE_URL` 环境变量。纯 `loadConfigWithSources()` 不加载 `.env`。
 - `.env` 缺省正常；其他读取错误应明确报告路径/安全错误码，不吞掉，也不输出原始内容或 key。
   修改环境变量或 provider/key/端点配置后必须退出进程重新启动；`/model` 只切换当前 provider 的模型 ID，并自动保存项目模型默认值。
 - CLI 设置默认操作项目层；App 设置默认全局层，无项目/会话也能配置。项目覆盖须显式选择。
+  环境变量页固定为全局，只编辑 `~/.agentlab/.env`，不提供项目层环境文件写入。
   App 可直接输入 API key，经系统 safeStorage 加密后写入 ~/.agentlab/credentials.enc.json，配置仅存 apiKeyRef；
   basic_text/不可用后端拒绝保存。CLI 环境变量方式保留，不在 Node CLI 中加载 Electron；App 密钥引用无解密宿主时明确失败，不回退其他 key。
   模式选择自动保存并即时应用，不设置 Save 页面或二次确认。
@@ -80,6 +81,9 @@ pnpm build      # tsup → dist/
 - 权限判定走 `src/builtin/policy/index.ts` 的管线：deny 规则与危险命令检测优先级最高，
   yolo 也不能逾越，明确 ask 优先于 allow；新增放行路径要经唯一 ToolExecutor，不要绕开它。
 - 默认能力为 `deterministic` 策略与 `model` 审批员，模式默认 `ask`，保留 `auto` / `yolo`。
+  权限 v3：ask 的未授权操作人工；auto 仅委托已验证普通操作或实际隔离内执行；未知无隔离操作人工。
+  Grant 区分任务/会话/项目，完整调用绑定全部参数；加载聊天不恢复临时允许。普通拒绝与显式停止任务分开。
+  项目执行入口装配前必须建立启动信任；execution 默认关闭，隔离失败禁止自动回退宿主执行。
   插件只用 SDK 的 manifest/setup，配置入口只用 `pluginEntries`；不增加历史兼容层或配置别名。
 - 模型规格（`contextWindow` / `maxOutputTokens`）声明在 `models.json` + 内置 `MODEL_PRESETS`，
   `loop.setModel()` 时联动压缩阈值和 `maxTokens`。

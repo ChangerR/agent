@@ -112,27 +112,17 @@ Provider 可通过通用 `ProviderTrace` 回调补充 `model_transport`：实际
 
 ## 5. 权限策略与唯一执行门
 
-`src/core/tool-executor.ts` 是所有受支持工具调用的唯一入口；`src/builtin/policy/` 实现默认确定性策略，`src/builtin/reviewer-model/` 实现严格模型审批。默认能力 ID 为 `deterministic` / `model`，默认模式是 `ask`。
+`src/core/tool-executor.ts` 保持唯一执行入口，`src/builtin/policy/` 提供 v3 默认策略。core 只处理通用生命周期与协议；具体工具分析、资源规则、模型审批和执行隔离均经 manifest/setup 注册。
 
-审批按顺序处理 deny、不可降级约束、明确 ask、精确调用或完整验证的精确目标授权、已验证项目内只读，再应用模式默认。ask 对完整项目内只读直接放行，尚未确定性授权且不属于不可降级约束的写入、执行与未知操作交给 reviewer，模型失败或要求确认时才询问；auto 还可对显式 writeRoots 范围写入确定性放行，其余符合委托条件的操作交给 reviewer；yolo 仅跳过完整验证的普通项目文件写入。敏感/写保护、项目外、歧义路径、特殊文件、硬链接、危险操作和未完整解析的 PowerShell 不会被模型降级。Bash 与未知 MCP 的等于引号精确调用可免审批员；未知 PowerShell 不能凭精确规则放行。
+管线先验证最终参数与实际资源，依次处理 deny、敏感/危险/越界和明确 ask，再匹配 Grant、工具规则及安全读取，最后应用模式。ask 的未授权操作人工确认；auto 仅将可验证的普通操作或已有实际隔离的程序交 reviewer；yolo 自动执行边界内普通操作。Windows 的额外限制继续保留。
 
-Windows 的 read_file/glob/grep 在通用检查通过后于 ask/auto/yolo 直接放行。write_file/edit_file 与已完整分类的 PowerShell 项目内写入保留精确目标规则直接授权，未命中时 ask/auto/yolo 都委托模型；通配规则与 writeRoots 不直接放行这些写入。PowerShell 使用独立 AST 和字面参数绑定，先复用通用路径检查，再决定是否完整；未知 PowerShell 直接人工。纯文件读、列目录与搜索 Shell 仍拒绝并引导专用工具。批准执行的完整 cmdlet 按模块限定名、完整参数名和单引号字面值重新构造，避免默认别名或引号在审批后换义。能力边界见 [POLICY.md](POLICY.md)。
+`core/permission/grants.ts` 定义任务、会话和项目 Grant。完整调用授权绑定全部参数、工具与连接身份、项目和执行环境；目录授权逐次重新检查实际路径。任务授权结束时撤销，会话授权不随历史恢复，项目授权使用 CAS 真正保存。`resourceRules` 按文件路径和 effect 提供跨工具 allow/ask/deny，未知操作不能绕过资源 deny。
 
-reviewer 的明确 deny 终止本次调用；ask/unknown、非法输出、失败、超时或不可用才回到人工。审批摘要标明实际解释器 PowerShell；已完整分类的调用可记住精确规则，未知 PowerShell、敏感/外部目标、歧义路径、明确 ask 与未验证实现隐藏无效的“允许并记住此规则”。同一次调用中，仅 policyRevision 因其他记住规则改变且输入、工具、配置、会话与分析指纹未变时，可复用用户的本次批准；deny 或分析/环境变化仍重新拒绝或询问。
+后端为每次审批提供不透明 actionId 和范围描述，CLI/App 只渲染动作。普通拒绝约束当前操作与资源；显式停止才取消根任务和后代。一次性批准在调度后重验，绑定变化、配置变化、取消或新约束均可能使它失效。
 
-Bash 的语法与授权分开：`tree-sitter-bash` 解析命令、逻辑连接、管道、重定向和展开等完整 Bash 语法；`tools/shell-readonly.ts` 对可证明的字面量命令逐项验证选项和真实文件路径。`&&`、`||`、`;` 和只读管道必须整条表达式都满足只读合约，不能因首个命令叫 `ls` 就放行后面的写入。动态展开、替换、脚本执行及未支持参数保留明确的不确定原因，交给原审批链；语法树不是任意程序副作用的证明。
+runtime 在解析凭据、导入插件或 setup 之前建立项目启动信任，MCP 使用已批准的配置快照和最小子进程环境。外部插件仍是受信任的同进程代码。可选 execution 能力由 `agentlab.execution` 提供 Linux 项目副本隔离；实际探针失败就拒绝执行，不回退为宿主进程。副本不回写项目，不能把它当作直接可写工作区沙箱。
 
-确定性放行的 Bash 使用固定可信系统工具、禁用启动配置/继承函数的非交互解释器与受控环境；Git/rg 的可执行配置另外禁用。分析记录经过验证的执行计划，ToolExecutor 最终重验后，Bash 工具还要确认实际计划未扩大，才执行同一计划。未知命令经原有审批授权后仍走普通执行路径。已安装的系统工具是可信依赖，本实现不是 OS 沙箱，不声称能防住恶意宿主二进制或并发文件替换的全部竞态。
-
-规则支持 `tool(glob)` 与 `tool(="字面量目标")`；宽泛 allow 不能替代完整的精确授权。bash 与未知 MCP 只接受等于引号形式才能放行该次调用。会话规则只在同一 action 类别内先于配置规则，不越过 deny/ask。文件目标同时匹配真实绝对路径与项目相对路径。完整分析、环境重验和版本绑定详见 [POLICY.md](POLICY.md)。
-
-只有 policy 返回 `review` 才会调用模型。审批员只接受完整、严格的 `decision` / `reasonCode` / `reason` JSON；无效输出、超时、取消、未知结果与缺失审批员都保守询问。完整参数与当前真实用户要求不能被截断后提交。模型结果不缓存，历史批准不成为新授权。预算、独立 provider 和前缀缓存详见 [REVIEWER.md](REVIEWER.md)。
-
-顶层 `judgeModel` 缺省继承，最终未指定或空字符串跟随当前主模型，非空固定模型。插件参数可明确指定 provider/model；状态界面显示实际来源。跟随模式随 `/model` 和有效会话恢复更新。要关闭 reviewer，明确设置 `capabilities.reviewer=false`。
-
-人工请求携带本次调用的取消信号和一次性 resolve；没有 responder 时立即返回 `approval_required`。最终批准绑定工具身份、最终参数、会话、策略与配置 revision，执行前重验环境，取消或迟到批准不执行工具。后台审批在状态栏显示进度，审计记录通过运行/工具/request ID 关联。
-
-审批历史保留用户决定和执行结果的来源，只为当前判断提供背景；工具输出、摘要和模型声称的“用户已允许”不能成为用户授权。它不随普通历史压缩丢失，也不写入会话文件；恢复会话时清空。
+规则、模式、迁移、平台边界和回归入口见 [POLICY.md](POLICY.md)。原设计和本次实现范围见 [PERMISSIONS-REDESIGN.md](PERMISSIONS-REDESIGN.md)。
 
 ## 6. 钩子系统 `src/core/hooks.ts`
 
@@ -203,7 +193,7 @@ MCP 调用传入当前轮次的 `AbortSignal`；连接失败会关闭已创建�
 
 历史有两条硬约束：`tool_use.id` 与 `tool_result.toolUseId` 必须成对；思考签名和打码 data 原样往返。`[早期对话摘要]` 开头的摘要消息原样读写。保存前 `trimToSafeTail` 裁掉未完成的工具调用和头部孤儿结果，空历史不落盘。校验失败不碰磁盘。
 
-写入是同目录临时文件再 `rename` 覆盖；失败删掉临时文件，旧文件保持原样。同一路径的写入串行。加载先校验再改内存：目录对不上、配对失败、规则语法不合法时，loop 和权限引擎都保持原样。会话规则照原样恢复。权限模式只在保存值不比当前更宽时才 `setMode`（ask < auto < yolo），避免重启后自动放宽。恢复后的调用仍走唯一 ToolExecutor 与当前选定策略。
+写入是同目录临时文件再 `rename` 覆盖；失败删掉临时文件，旧文件保持原样。同一路径的写入串行。加载先校验再改内存：目录对不上、配对失败、规则语法不合法时，loop 和权限引擎都保持原样。会话 ask/deny 恢复，临时 allow 和 Grant 不因加载聊天恢复。权限模式只在保存值不比当前更宽时才 `setMode`（ask < auto < yolo），避免重启后自动放宽。恢复后的调用仍走唯一 ToolExecutor 与当前选定策略。
 
 `AgentLoop` 只提供 `exportSession` / `importSession`，不认识磁盘。`SessionManager` 订阅 `loop_end` 做自动保存——回调发出时 `running` 仍为 true，自动保存不能因此被拒绝。TUI 的 `/save`、`/sessions`、`/resume` 只跟 manager 和事件打交道；恢复后用 `renderHistory` 重画，不重放工具。
 

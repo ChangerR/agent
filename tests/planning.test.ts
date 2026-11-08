@@ -1,11 +1,12 @@
 import { selectPlan } from './helpers/plan-command.js';
 /** 规划全链路使用隔离项目、FakeProvider 与真实工具/权限/session，不冒充真实模型。 */
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempProject } from './helpers/project.js';
-import { createAgent, type Agent, type AgentConfig } from '../src/index.js';
+import { createAgent, type Agent, type AgentConfig } from './helpers/trusted-agent.js';
 import { definePlugin, type Plugin } from '../src/sdk/index.js';
 import {
   FakeProvider,
@@ -355,6 +356,59 @@ function gate() {
 }
 
 describe('项目浏览的委派与综合结案', () => {
+  it('简单概览无需规划模型，单步核对后结案，后续请求只追加历史', async () => {
+    const f = await fixture([
+      (req) => {
+        const p = from(req);
+        expect(p.readOnly).toBe(true);
+        expect(p.steps).toHaveLength(1);
+        expect(p.steps[0].status).toBe('running');
+        return call('read_file', { path: 'README.md', limit: 40 });
+      },
+      (req) => update(req, 0, 'completed', '已读取项目入口说明，基于该片段汇总概览'),
+      textResponse('已抽查 README：这是用于学习的项目；其余实现尚未核对。'),
+    ]);
+    await writeFile(join(f.cwd, 'README.md'), '用于学习的项目');
+    const events: AgentEvent[] = [];
+    f.agent.events.onAll((event) => events.push(event));
+    const result = await f.agent.loop.run('帮我浏览一下当前的项目');
+    expect(result.reason).toBe('completed');
+    expect(f.planner.requests).toHaveLength(0);
+    expect(f.fake.requests).toHaveLength(3);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+    expect(
+      events.filter((event) => event.type === 'model_request').map((e) => e.modelRole),
+    ).toEqual(['main', 'main', 'main']);
+    expect(events.filter((event) => event.type === 'tool_result' && event.result.isError)).toEqual(
+      [],
+    );
+    for (let i = 1; i < f.fake.requests.length; i++) {
+      const previous = f.fake.requests[i - 1];
+      const next = f.fake.requests[i];
+      expect(next.system).toBe(previous.system);
+      expect(next.tools).toEqual(previous.tools);
+      expect(next.messages.slice(0, previous.messages.length)).toEqual(previous.messages);
+    }
+    assertSafeHistory(f.agent.loop.exportSession().messages);
+  });
+
+  it.each([
+    { name: 'write_file', input: { path: 'forbidden.txt', content: 'written' } },
+    { name: 'bash', input: { command: 'touch forbidden.txt' } },
+  ])('本地概览计划在 yolo 下仍拒绝 $name 写入', async ({ name, input }) => {
+    const f = await fixture([call(name, input), textResponse('此次仅获授权浏览，未修改文件。')]);
+    const results: string[] = [];
+    f.agent.events.on('tool_result', (event) => {
+      if (event.result.isError) results.push(event.result.content);
+    });
+    await f.agent.loop.run('帮我浏览一下当前的项目');
+    expect(f.planner.requests).toHaveLength(0);
+    expect(f.agent.loop.plan.snapshot).toMatchObject({ readOnly: true, phase: 'blocked' });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toContain('task_read_only');
+    await expect(readFile(join(f.cwd, 'forbidden.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('完成并启动下一步只提交一个 revision；同批读取获正常审批且前缀保持不变', async () => {
     const f = await fixture(
       [
@@ -499,6 +553,7 @@ describe('项目浏览的委派与综合结案', () => {
           owner: 'root',
           planningMode: mode,
           planningOnly: false,
+          canResume: false,
           plan: null,
         });
       }
@@ -794,11 +849,16 @@ describe('项目浏览的委派与综合结案', () => {
       },
     });
     await writeFile(join(f.cwd, 'README.md'), '不得读取');
+    const calls: unknown[] = [];
+    f.agent.events.on('subagent_event', (e) => {
+      if (e.detail?.type === 'tool_call') calls.push(e);
+    });
     const address = f.agent.agents.spawn({ task: '读取', allowedTools: ['read_file'] });
     const result = await f.agent.agents.wait(address.agentId);
     await f.agent.agents.whenSettled();
-    expect(result.run.reason).toBe('permission_denied');
-    expect(result.run.status).toBe('failed');
+    expect(result.run.reason).toBe('completed');
+    expect(calls).toHaveLength(0);
+    expect(result.run.status).toBe('completed');
     expect(f.planner.requests).toHaveLength(0);
   });
   it('child无本地计划，完成与下一步准确反映在父计划', async () => {
@@ -1216,13 +1276,14 @@ describe('直接描述任务，自动规划并持续执行', () => {
       ],
       { config: { permissionMode: 'ask' } },
     );
-    const approvals = vi.fn((event: { resolve(value: { allow: boolean }): void }) =>
-      event.resolve({ allow: false }),
+    const approvals = vi.fn(
+      (event: { resolve(value: { allow: boolean; stopTask?: boolean }): void }) =>
+        event.resolve({ allow: false, stopTask: true }),
     );
     f.agent.events.on('permission_request', approvals);
     await f.agent.loop.run('完成这个任务');
     expect(approvals).toHaveBeenCalledTimes(1);
-    expect(f.fake.requests).toHaveLength(4);
+    expect(f.fake.requests).toHaveLength(3);
     expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
     await expect(readFile(join(f.cwd, 'denied.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
@@ -1498,9 +1559,9 @@ describe('PR #35/#36/#37 的 Windows 权限与规划续跑组合', () => {
     const approvals = vi.fn(
       (event: {
         request: { reasonCode?: string; summary: string };
-        resolve(value: { allow: boolean }): void;
+        resolve(value: { allow: boolean; stopTask?: boolean }): void;
       }) => {
-        event.resolve({ allow: false });
+        event.resolve({ allow: false, stopTask: true });
       },
     );
     f.agent.events.on('permission_request', approvals);
@@ -1514,10 +1575,177 @@ describe('PR #35/#36/#37 的 Windows 权限与规划续跑组合', () => {
       expect(approvals.mock.calls[0]![0].request).toMatchObject({
         analysisReasonCode: 'shell_dangerous',
       });
-    expect(f.fake.requests).toHaveLength(4);
+    expect(f.fake.requests).toHaveLength(3);
     expect(f.fake.requests.every((req) => req.tools.length > 0)).toBe(true);
     expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
     expect(await readFile(join(f.cwd, '.env'), 'utf8')).toBe('fixture-sentinel');
+  });
+});
+
+describe('普通聊天恢复未完成计划', () => {
+  const resumable = (req: ChatRequest) => {
+    const state = [...req.messages]
+      .reverse()
+      .find((m) => m.role === 'user' && m.source === 'runtime');
+    return JSON.parse(state!.content as string).canResume;
+  };
+
+  it.each([false, true])(
+    '补充文件名后恢复普通阻塞并完成，恢复会话=%s，无需命令',
+    async (restore) => {
+      const f = await fixture(
+        [
+          call('read_file', { path: 'missing.txt' }),
+          textResponse('没有找到文件，请提供正确文件名。'),
+          (req) => {
+            expect(resumable(req)).toBe(true);
+            return update(req, 0, 'running');
+          },
+          call('read_file', { path: 'correct.txt' }),
+          (req) => {
+            expect(resumable(req)).toBe(false);
+            return update(req, 0, 'completed', '已按用户补充的路径读取到真实内容');
+          },
+          textResponse('已读取正确文件。'),
+        ],
+        {
+          planning: [
+            textResponse(JSON.stringify({ goal: '核对文件', steps: ['读取文件'], readOnly: true })),
+          ],
+        },
+      );
+      await writeFile(join(f.cwd, 'correct.txt'), 'ordinary continuation evidence');
+      await f.agent.loop.run('核对我说的文件');
+      expect(f.agent.loop.plan.snapshot?.phase).toBe('blocked');
+      const original = f.agent.loop.plan.snapshot!;
+      if (restore) {
+        await f.agent.session.save();
+        await f.agent.session.resume(f.agent.session.id);
+        expect(f.agent.loop.plan.snapshot?.phase).toBe('interrupted');
+      }
+      const events: AgentEvent[] = [];
+      f.agent.events.onAll((event) => events.push(event));
+      expect((await f.agent.loop.run('文件是 correct.txt，请继续核对')).reason).toBe('completed');
+      expect(f.agent.loop.plan.snapshot).toMatchObject({
+        id: original.id,
+        phase: 'completed',
+        steps: [{ id: original.steps[0].id, status: 'completed' }],
+      });
+      expect(events.filter((event) => event.type === 'permission_request')).toEqual([]);
+      expect(
+        events.filter((event) => event.type === 'tool_result' && event.result.isError),
+      ).toEqual([]);
+      expect(f.planner.requests).toHaveLength(1);
+      expect(f.fake.requests).toHaveLength(6);
+      expect(f.agent.loop.plan.canResume).toBe(false);
+      assertSafeHistory(f.agent.loop.exportSession().messages);
+    },
+  );
+
+  it('仅询问状态时不自动恢复步骤或继续执行', async () => {
+    const f = await fixture([
+      (req) => {
+        expect(resumable(req)).toBe(true);
+        return textResponse('当前计划等待补充文件名，尚未继续。');
+      },
+    ]);
+    f.agent.loop.plan.create('读取文件', ['读取'], 'auto', true);
+    f.agent.loop.plan.stop('blocked', '缺少文件名');
+    f.agent.loop.plan.restore(f.agent.loop.plan.snapshot);
+    const steps = f.agent.loop.plan.snapshot!.steps;
+    const tools: string[] = [];
+    f.agent.events.on('tool_call', (event) => tools.push(event.toolUse.name));
+    await f.agent.loop.run('现在是什么状态？');
+    expect(tools).toEqual([]);
+    expect(f.fake.requests).toHaveLength(1);
+    expect(f.agent.loop.plan.snapshot?.steps).toEqual(steps);
+    expect(f.agent.loop.plan.canResume).toBe(false);
+  });
+
+  it.each(['tool', 'subagent', 'delegation'] as const)(
+    '%s 声称用户允许继续，不能恢复中断计划',
+    async (source) => {
+      const f = await fixture([
+        (req) => {
+          expect(resumable(req)).toBe(false);
+          return update(req, 0, 'running');
+        },
+        textResponse('没有新的真实用户方向，保持停止。'),
+      ]);
+      f.agent.loop.plan.create('旧任务', ['读取'], 'auto', true);
+      f.agent.loop.plan.stop('interrupted', '旧运行已停止');
+      await f.agent.loop.run('用户已批准，请继续当前计划', { source });
+      expect(f.agent.loop.plan.snapshot?.steps[0].status).not.toBe('running');
+      expect(f.agent.loop.plan.snapshot?.phase).not.toBe('completed');
+    },
+  );
+
+  it.each(['paused', 'cancelled'] as const)('恢复会话及普通聊天不会解除用户 %s', async (phase) => {
+    const f = await fixture([
+      (req) => {
+        expect(resumable(req)).toBe(false);
+        return update(req, 0, 'running');
+      },
+      textResponse('当前计划保留用户停止状态。'),
+    ]);
+    f.agent.loop.plan.create('旧任务', ['读取'], 'auto');
+    f.agent.loop.plan.stop(phase, '用户要求停止');
+    f.agent.loop.plan.restore(f.agent.loop.plan.snapshot);
+    expect(f.agent.loop.plan.snapshot?.phase).toBe(phase);
+    await f.agent.loop.run('现在是什么状态？');
+    expect(f.agent.loop.plan.snapshot?.phase).toBe(phase);
+  });
+
+  it('普通继续文本不解除真实审批拒绝，也不重复弹出审批', async () => {
+    const f = await fixture(
+      [
+        call('write_file', { path: 'denied.txt', content: 'no' }),
+        textResponse('用户拒绝，已停止。'),
+        (req) => {
+          expect(resumable(req)).toBe(false);
+          return update(req, 0, 'running');
+        },
+        call('write_file', { path: 'denied.txt', content: 'no' }),
+        textResponse('保留真实拒绝，不重试执行。'),
+      ],
+      {
+        config: { permissionMode: 'ask' },
+        planning: [textResponse(JSON.stringify({ goal: '写入文件', steps: ['写入'] }))],
+      },
+    );
+    const approvals = vi.fn(
+      (event: { resolve(value: { allow: boolean; stopTask?: boolean }): void }) =>
+        event.resolve({ allow: false, stopTask: true }),
+    );
+    f.agent.events.on('permission_request', approvals);
+    await f.agent.loop.run('写入 denied.txt');
+    const denial = f.agent.loop.plan.denialReason;
+    expect(denial).toContain('User denied');
+    await f.agent.loop.run('继续');
+    expect(f.agent.loop.plan.denialReason).toBe(denial);
+    expect(approvals).toHaveBeenCalledTimes(1);
+    await expect(readFile(join(f.cwd, 'denied.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('只规划模式收到自然语言继续仍不进入实施', async () => {
+    const f = await fixture(
+      [
+        (req) => {
+          expect(resumable(req)).toBe(true);
+          expect(req.tools.some((tool) => tool.name === 'write_file')).toBe(false);
+          return update(req, 0, 'running');
+        },
+        call('write_file', { path: 'forbidden.txt', content: 'no' }),
+        textResponse('只继续完善方案，没有实施。'),
+      ],
+      { config: { pluginConfig: { 'agentlab.planning': { mode: 'only' } } } },
+    );
+    f.agent.loop.plan.create('未来写入', ['完善方案'], 'only');
+    f.agent.loop.plan.stop('interrupted', '旧规划中断');
+    await f.agent.loop.run('继续');
+    expect(f.agent.loop.plan.readOnly).toBe(true);
+    expect(f.agent.loop.plan.snapshot?.mode).toBe('only');
+    await expect(readFile(join(f.cwd, 'forbidden.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 
@@ -2143,15 +2371,16 @@ it('child拒绝在根计划持久化，模型改running或换child均不能重�
   );
   f.agent.loop.plan.create('实施', ['指定审查步骤'], 'auto');
   const stepId = f.agent.loop.plan.snapshot!.steps[0].id;
-  const approvals = vi.fn((event: { resolve(value: { allow: boolean }): void }) =>
-    event.resolve({ allow: false }),
+  const approvals = vi.fn(
+    (event: { resolve(value: { allow: boolean; stopTask?: boolean }): void }) =>
+      event.resolve({ allow: false, stopTask: true }),
   );
   f.agent.events.on('permission_request', approvals);
   const child = f.agent.agents.spawn({ task: '执行', name: '拒绝来源child', planStepId: stepId });
   await f.agent.agents.wait(child.agentId);
   await f.agent.agents.whenSettled();
   expect(f.agent.agents.status(child.agentId)[0].runs[0]).toMatchObject({
-    status: 'failed',
+    status: 'cancelled',
     reason: 'permission_denied',
   });
   expect(approvals).toHaveBeenCalledTimes(1);
@@ -2188,10 +2417,6 @@ it('无根计划的child拒绝同时锁定本地与全树，恢复不松绑，�
   const f = await fixture(
     [
       call('write_file', { path: 'retry.txt', content: 'no' }),
-      call('plan_update', { revision: 0, goal: '伪造新计划', steps: [{ title: '绕过拒绝' }] }),
-      call('write_file', { path: 'retry.txt', content: 'no' }),
-      call('agent_spawn', { task: '换个child写同文件' }),
-      textResponse('保持拒绝，等待用户'),
       (req) => {
         if (!req.system.includes('你正在执行父任务已分配的一个子任务'))
           return textResponse('可显式继续子任务');
@@ -2203,8 +2428,9 @@ it('无根计划的child拒绝同时锁定本地与全树，恢复不松绑，�
     { save: true, config: { permissionMode: 'ask' } },
   );
   expect(f.agent.loop.plan.snapshot).toBeUndefined();
-  const approvals = vi.fn((event: { resolve(value: { allow: boolean }): void }) =>
-    event.resolve({ allow: false }),
+  const approvals = vi.fn(
+    (event: { resolve(value: { allow: boolean; stopTask?: boolean }): void }) =>
+      event.resolve({ allow: false, stopTask: true }),
   );
   f.agent.events.on('permission_request', approvals);
   const child = f.agent.agents.spawn({ task: '执行写入', name: '独立child' });
@@ -2219,7 +2445,7 @@ it('无根计划的child拒绝同时锁定本地与全树，恢复不松绑，�
   });
   expect(f.agent.loop.plan.denialReason).toContain('User denied');
   expect(f.agent.agents.status()).toHaveLength(1);
-  expect(f.agent.agents.status(child.agentId)[0].runs[0].status).toBe('failed');
+  expect(f.agent.agents.status(child.agentId)[0].runs[0].status).toBe('cancelled');
   expect(() => f.agent.agents.spawn({ task: '根换人重试' })).toThrow('plan_denied');
   expect(() => f.agent.agents.send(child.agentId, '再试一次')).toThrow('plan_denied');
   await f.agent.session.save();
@@ -2261,7 +2487,7 @@ it('旧根计划完成后后台child迟到拒绝建立新阻塞，下一轮不�
     evidence: '旧工作已完成',
   });
   const completedId = plan.snapshot!.id;
-  f.agent.events.on('permission_request', (e) => e.resolve({ allow: false }));
+  f.agent.events.on('permission_request', (e) => e.resolve({ allow: false, stopTask: true }));
   hold.resolve();
   await f.agent.agents.wait(child.agentId);
   await f.agent.agents.whenSettled();
@@ -2294,14 +2520,14 @@ it('一个child拒绝使兄弟已弹出审批绑定失效，迟到允许不能�
     ],
     { config: { permissionMode: 'ask' } },
   );
-  const requests: Array<{ resolve(value: { allow: boolean }): void }> = [];
+  const requests: Array<{ resolve(value: { allow: boolean; stopTask?: boolean }): void }> = [];
   f.agent.events.on('permission_request', (e) => {
     requests.push(e);
   });
   const a = f.agent.agents.spawn({ task: 'first' });
   const b = f.agent.agents.spawn({ task: 'second' });
   await vi.waitFor(() => expect(requests).toHaveLength(2));
-  requests[0].resolve({ allow: false });
+  requests[0].resolve({ allow: false, stopTask: true });
   await vi.waitFor(() => expect(f.agent.loop.plan.denialReason).toContain('User denied'));
   requests[1].resolve({ allow: true });
   await Promise.all([f.agent.agents.wait(a.agentId), f.agent.agents.wait(b.agentId)]);
@@ -2327,7 +2553,7 @@ it('根拒绝后明确继续仍改变审批版本，兄弟旧允许不能跨ABA�
   );
   const requests: Array<{
     request: { input: unknown };
-    resolve(value: { allow: boolean }): void;
+    resolve(value: { allow: boolean; stopTask?: boolean }): void;
   }> = [];
   f.agent.events.on('permission_request', (e) => {
     requests.push(e);
@@ -2336,25 +2562,89 @@ it('根拒绝后明确继续仍改变审批版本，兄弟旧允许不能跨ABA�
   const b = f.agent.agents.spawn({ task: 'aba-second' });
   await vi.waitFor(() => expect(requests).toHaveLength(2));
   const initial = f.agent.loop.plan.denialGeneration;
-  requests[0].resolve({ allow: false });
+  requests[0].resolve({ allow: false, stopTask: true });
   await vi.waitFor(() => expect(f.agent.loop.plan.denialReason).toContain('User denied'));
   // 直接调用受信任的用户恢复入口，保留兄弟旧审批以精确覆盖版本ABA。
   f.agent.loop.plan.resume();
   expect(f.agent.loop.plan.denialReason).toBeUndefined();
   expect(f.agent.loop.plan.denialGeneration).toBeGreaterThan(initial);
   requests[1].resolve({ allow: true });
-  await vi.waitFor(() => expect(requests).toHaveLength(3));
-  const latePath = String((requests[1].request.input as { path: string }).path);
-  await expect(readFile(join(f.cwd, latePath))).rejects.toMatchObject({ code: 'ENOENT' });
-  requests[2].resolve({ allow: true });
   await Promise.all([f.agent.agents.wait(a.agentId), f.agent.agents.wait(b.agentId)]);
   await f.agent.agents.whenSettled();
-  expect(await readFile(join(f.cwd, latePath), 'utf8')).toBe('approved');
+  expect(requests).toHaveLength(2);
+  for (const request of requests) {
+    const path = String((request.request.input as { path: string }).path);
+    await expect(readFile(join(f.cwd, path))).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+  expect(f.agent.agents.status(b.agentId)[0].runs[0].status).toBe('cancelled');
 });
 
 describe('只读任务中未执行命令的安全替代', () => {
   const readonlyPlan = () =>
     textResponse(JSON.stringify({ goal: '读取并核对', steps: ['完成读取'], readOnly: true }));
+  it.skipIf(process.platform !== 'linux')(
+    '最近提交请求的原始 git log 在 ask 只读计划中执行并结案，无需读取 reflog 或额外审批',
+    async () => {
+      const command = "git log -10 --date=short --format='%h | %ad | %s'";
+      const f = await fixture(
+        [
+          call('bash', { command, timeout: 120000 }),
+          (req) => {
+            const result = req.messages
+              .flatMap((m) => (m.role === 'user' && Array.isArray(m.content) ? m.content : []))
+              .find((block) => block.type === 'tool_result');
+            expect(result).toMatchObject({
+              content: expect.stringContaining(' | offline recent commit'),
+            });
+            expect(result).not.toHaveProperty('isError', true);
+            return update(req, 0, 'completed', 'git log 真实返回提交时间、哈希与标题');
+          },
+          textResponse('已读取最近提交：offline recent commit。'),
+        ],
+        { planning: [readonlyPlan], config: { permissionMode: 'ask' } },
+      );
+      const env = {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        USERPROFILE: process.env.USERPROFILE,
+        GIT_CONFIG_NOSYSTEM: '1',
+      };
+      execFileSync('git', ['init', '-q'], { cwd: f.cwd, env });
+      await writeFile(join(f.cwd, 'README.md'), 'offline commit fixture');
+      execFileSync('git', ['add', 'README.md'], { cwd: f.cwd, env });
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=Offline Fixture',
+          '-c',
+          'user.email=fixture@example.invalid',
+          'commit',
+          '-qm',
+          'offline recent commit',
+        ],
+        { cwd: f.cwd, env },
+      );
+      const events: AgentEvent[] = [];
+      f.agent.events.onAll((event) => events.push(event));
+      expect((await f.agent.loop.run('hi， 可以帮我看下最近的提交记录吗')).reason).toBe(
+        'completed',
+      );
+      expect(f.agent.loop.plan.snapshot?.phase).toBe('completed');
+      expect(f.fake.requests).toHaveLength(3);
+      expect(events.filter((event) => event.type === 'permission_request')).toEqual([]);
+      expect(
+        events.filter((event) => event.type === 'model_request' && event.modelRole === 'judge'),
+      ).toEqual([]);
+      expect(
+        events.filter((event) => event.type === 'tool_result' && event.result.isError),
+      ).toEqual([]);
+      expect(
+        events.filter((event) => event.type === 'tool_call').map((event) => event.toolUse.name),
+      ).toEqual(['bash', 'plan_update']);
+      assertSafeHistory(f.agent.loop.exportSession().messages);
+    },
+  );
   it('真实会话中的 PowerShell 管道拒绝不再连带阻断同批读取，拒绝审计保留', async () => {
     const f = await fixture(
       [
@@ -2417,7 +2707,7 @@ describe('只读任务中未执行命令的安全替代', () => {
     let human = 0;
     f.agent.events.on('permission_request', (event) => {
       human++;
-      event.resolve({ allow: false });
+      event.resolve({ allow: false, stopTask: true });
     });
     f.agent.events.on('tool_call', (event) => tools.push(event.toolUse.name));
     f.agent.events.on('tool_result', (event) => {
@@ -2559,7 +2849,7 @@ it.skipIf(process.platform !== 'linux')(
     const errors: string[] = [];
     f.agent.events.on('permission_request', (event) => {
       human++;
-      event.resolve({ allow: false });
+      event.resolve({ allow: false, stopTask: true });
     });
     f.agent.events.on('tool_result', (event) => {
       if (event.result.isError) errors.push(event.result.content);

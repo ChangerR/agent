@@ -11,7 +11,7 @@ import {
   createPermissionSettings,
   type PermissionSettingsPicker,
 } from '../src/builtin/policy/tui.js';
-import { createAgent, type Agent } from '../src/index.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 
 const exec = promisify(execFile);
 const cliPath = fileURLToPath(new URL('../src/cli/index.ts', import.meta.url));

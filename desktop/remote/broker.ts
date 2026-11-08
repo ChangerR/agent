@@ -13,6 +13,7 @@ import { ProviderConnectionsSchema } from '../../src/builtin/provider-connection
 import { createModelCatalog } from '../../src/builtin/model-catalog/index.js';
 import { loadModelsFile } from '../../src/core/config.js';
 import { chatSchema } from './protocol.js';
+import { loadUserEnv } from '../../src/runtime/environment.js';
 import type { ProviderDescription } from '../../src/providers/semantics.js';
 
 interface Route {
@@ -254,6 +255,7 @@ export function configureBroker(
   mappings: Record<string, string>,
   resolveCredential?: (ref: string, identity?: string) => string,
 ): ProviderDescription[] {
+  loadUserEnv();
   const connections = ProviderConnectionsSchema.parse(
     config.pluginConfig['agentlab.provider-connections'] ?? {},
   ).connections;
@@ -304,6 +306,7 @@ export function configureBroker(
       kind === 'openai'
         ? new OpenAIProvider({
             ...options,
+            api: item.api as ProviderDescription['api'],
             dialect: item.dialect as 'auto' | 'generic' | 'deepseek' | 'kimi' | undefined,
           })
         : kind === 'anthropic'
@@ -323,6 +326,7 @@ export function configureBroker(
       ),
       cacheControl: config.cache.enabled,
       dialect: item.dialect as ProviderDescription['dialect'],
+      api: item.api as ProviderDescription['api'],
     });
   });
 }

@@ -5,6 +5,7 @@
  * 转换函数单独导出，便于脱离网络做单元测试。
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { EnvironmentProxyTransport } from '../runtime/http-proxy.js';
 import { TransportCapture, observeSDKFetch } from './transport-trace.js';
 import type { ProviderTrace } from '../core/protocol/transport.js';
 import { resolveApiKey, type ApiKeyOptions } from './api-key.js';
@@ -58,21 +59,23 @@ export function toAnthropicMessages(
   return messages.map((m, index) => {
     const mark = breakpoints?.has(index) ?? false;
     if (m.role === 'assistant') {
-      const content = m.content.map((b) => {
-        switch (b.type) {
-          case 'text':
-            return { type: 'text', text: b.text };
-          case 'thinking':
-            // 有签名才能作为 thinking 块回填；没有签名的（例如 OpenAI reasoning）过不了校验
-            if (b.signature)
-              return { type: 'thinking' as const, thinking: b.thinking, signature: b.signature };
-            return { type: 'text' as const, text: `<thinking>${b.thinking}</thinking>` };
-          case 'redacted_thinking':
-            return { type: 'redacted_thinking' as const, data: b.data };
-          case 'tool_use':
-            return { type: 'tool_use' as const, id: b.id, name: b.name, input: b.input };
-        }
-      });
+      const content = m.content
+        .filter((b) => b.type !== 'redacted_thinking' || !b.source)
+        .map((b) => {
+          switch (b.type) {
+            case 'text':
+              return { type: 'text', text: b.text };
+            case 'thinking':
+              // 有签名才能作为 thinking 块回填；没有签名的（例如 OpenAI reasoning）过不了校验
+              if (b.signature)
+                return { type: 'thinking' as const, thinking: b.thinking, signature: b.signature };
+              return { type: 'text' as const, text: `<thinking>${b.thinking}</thinking>` };
+            case 'redacted_thinking':
+              return { type: 'redacted_thinking' as const, data: b.data };
+            case 'tool_use':
+              return { type: 'tool_use' as const, id: b.id, name: b.name, input: b.input };
+          }
+        });
       const blocks = content as Array<Record<string, unknown>>;
       if (mark) markLastCacheable(blocks, ttl);
       // 当前 SDK 类型还没有 thinking / redacted_thinking，线上格式本身支持
@@ -355,6 +358,7 @@ export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
   readonly capabilities = { thinking: true, streaming: true };
   private client: Anthropic | null = null;
+  private readonly proxy = new EnvironmentProxyTransport();
 
   /** 兼容端点拒绝 cache_control 之后，本会话不再发送 */
   private cacheDisabled = false;
@@ -367,7 +371,9 @@ export class AnthropicProvider implements Provider {
     } = {},
   ) {}
   /** 跨进程同步下一次请求构建状态；不披露凭据。 */
-  get cacheControlEnabled() { return this.opts.cacheControl !== false && !this.cacheDisabled; }
+  get cacheControlEnabled() {
+    return this.opts.cacheControl !== false && !this.cacheDisabled;
+  }
   get routeId() {
     return routeIdentity('anthropic', this.opts.baseURL ?? 'https://api.anthropic.com');
   }
@@ -416,6 +422,7 @@ export class AnthropicProvider implements Provider {
   private getClient(): Anthropic {
     if (!this.client) {
       this.client = new Anthropic({
+        ...this.proxy.options(),
         apiKey: resolveApiKey(
           this.opts,
           'ANTHROPIC_API_KEY',
@@ -430,6 +437,10 @@ export class AnthropicProvider implements Provider {
       observeSDKFetch(this.client);
     }
     return this.client;
+  }
+
+  dispose(): Promise<void> {
+    return this.proxy.dispose();
   }
 
   async *stream(

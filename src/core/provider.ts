@@ -56,7 +56,7 @@ export interface ChatRequest {
 }
 
 export interface ModelCapabilities {
-  api: 'chat-completions' | 'messages' | 'generic';
+  api: 'chat-completions' | 'responses' | 'messages' | 'generic';
   thinkingLevels?: readonly ThinkingLevel[];
   rawToolArguments?: boolean;
   prefixCompaction?: boolean;

@@ -345,7 +345,7 @@ describe('AgentLoop', () => {
     events.on('permission_request', (e) => {
       expect(e.request).toMatchObject({
         toolUseId: 't1',
-        decisionSource: 'judge',
+        decisionSource: 'mode',
         cwd: tmp,
         toolName: 'write_file',
       });
@@ -356,7 +356,7 @@ describe('AgentLoop', () => {
   });
 
   it.each([undefined, 'linux', 'win32'] as const)(
-    '"本次会话始终允许"：第二次同类调用不再询问（平台 %s）',
+    '"本次会话始终允许"：同一路径参数变化仍询问（平台 %s）',
     async (platform) => {
       const events = new EventBus();
       const { loop } = makeLoop({
@@ -379,7 +379,7 @@ describe('AgentLoop', () => {
         e.resolve({ allow: true, remember: 'session' });
       });
       await loop.run('write twice');
-      expect(askCount).toBe(1); // 第二次命中会话级规则，静默放行
+      expect(askCount).toBe(2); // 相同路径的新内容是新的完整调用，必须重新授权
       expect(await readFile(join(tmp, 'a.txt'), 'utf-8')).toBe('2');
     },
   );

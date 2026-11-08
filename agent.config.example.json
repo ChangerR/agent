@@ -3,6 +3,7 @@
   "model": "claude-sonnet-4-5",
   "permissionMode": "ask",
   "judgeModel": "",
+  "capabilities": { "execution": false },
   "permissions": {
     "allow": [],
     "ask": [],
@@ -19,8 +20,10 @@
   "mcpConfig": "./mcp.json",
   "pluginEntries": [],
   "pluginConfig": {
+    "agentlab.policy": { "writeRoots": [], "resourceRules": [] },
     "agentlab.provider-openai": {
-      "dialect": "auto"
+      "dialect": "auto",
+      "api": "chat-completions"
     },
     "agentlab.mcp": {
       "maxInlineChars": 24000,

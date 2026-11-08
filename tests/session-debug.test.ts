@@ -19,7 +19,7 @@ import { FakeProvider, textResponse, toolUseResponse } from '../src/providers/fa
 import { collectStreamAsync } from '../src/core/protocol/types.js';
 import { redactedEvent } from '../src/builtin/telemetry-jsonl/index.js';
 import { SessionDebugTrace, redactDebug } from '../desktop/worker/debug-trace.js';
-import { DesktopController } from '../desktop/worker/controller.js';
+import { DesktopController } from './helpers/desktop-controller.js';
 let root: string, stateRoot: string;
 const controllers: DesktopController[] = [];
 beforeEach(() => {

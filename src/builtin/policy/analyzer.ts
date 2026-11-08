@@ -47,7 +47,16 @@ export { validateWriteRoots } from './analyzer-paths.js';
 function parseOperation(input: AnalysisInput): ParsedOperation {
   const data = input.input;
   if (input.tool.ownerPlugin !== 'agentlab.local-tools' || input.tool.version !== '1.0.0')
-    return { kind: 'unknown', reasonCode: 'unverified_tool_implementation' };
+    return {
+      kind: 'unknown',
+      reasonCode: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash'].includes(
+        input.tool.name,
+      )
+        ? 'unverified_tool_implementation'
+        : input.tool.name.startsWith('mcp__')
+          ? 'mcp_effects_unknown'
+          : 'tool_semantics_unknown',
+    };
   if (
     ['read_file', 'write_file', 'edit_file'].includes(input.tool.name) &&
     typeof data.path === 'string' &&

@@ -3,9 +3,9 @@ import { mkdtemp, mkdir, readFile, writeFile, access, rm, symlink } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DesktopController } from '../desktop/worker/controller.js';
+import { DesktopController } from './helpers/desktop-controller.js';
 import { actionSchema } from '../desktop/shared/protocol.js';
-import { createAgent, type Agent } from '../src/index.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 import { desktopMenu, platformWindowOptions } from '../desktop/main/platform.js';
 
 let root: string, cwd: string, home: string, controller: DesktopController, agent: Agent;

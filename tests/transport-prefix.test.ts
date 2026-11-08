@@ -31,7 +31,7 @@ vi.mock('openai', async (load) => {
 import { rm, writeFile, readFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createAgent, type AgentConfig } from '../src/index.js';
+import { createAgent, type AgentConfig } from './helpers/trusted-agent.js';
 import { definePlugin, type Plugin } from '../src/sdk/index.js';
 import type { ChatRequest } from '../src/core/provider.js';
 import type { AgentEvent } from '../src/core/events.js';

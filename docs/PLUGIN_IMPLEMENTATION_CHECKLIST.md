@@ -12,7 +12,7 @@
 - context、compactor、cache、model catalog、SessionStore 和 UI 通过契约替换，内核负责历史校验。
 - 会话只接受当前 schema 和完整身份，保留锁/CAS、版本检查、原子写及删除/重建约束。
 - reviewer 严格验证输出、预算、取消和用量关联，不缓存 allow。
-- `.env` 只加载项目根，显式 key 配置严格检查，不泄露密钥；设置默认项目层并自动保存。
+- 运行环境只加载 `~/.agentlab/.env`，项目开发 `.env` 不加载或写入；环境页仅全局可用，显式 key 配置严格检查，不泄露密钥。
 - provider 协议适配和跨平台工具执行继续保留，真实身份与版本检查不得删掉。
 
 ## 验收

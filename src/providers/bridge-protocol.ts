@@ -6,7 +6,7 @@ import type { ProviderDescription } from './semantics.js';
 
 const caps = z
   .object({
-    api: z.enum(['chat-completions', 'messages', 'generic']),
+    api: z.enum(['chat-completions', 'responses', 'messages', 'generic']),
     thinkingLevels: z.array(z.enum(['off', 'low', 'medium', 'high'])).optional(),
     rawToolArguments: z.boolean().optional(),
     prefixCompaction: z.boolean().optional(),
@@ -24,6 +24,7 @@ export const descriptionSchema: z.ZodType<ProviderDescription, z.ZodTypeDef, unk
     routeId: z.string().min(1).max(300),
     endpoint: z.string().max(1000),
     dialect: z.enum(['auto', 'generic', 'deepseek', 'kimi']).optional(),
+    api: z.enum(['chat-completions', 'responses']).optional(),
     cacheControl: z.boolean().optional(),
     models: z.record(ModelInfoSchema),
     capabilities: z.record(caps),
@@ -43,7 +44,13 @@ const assistantBlock = z.discriminatedUnion('type', [
   z
     .object({ type: z.literal('thinking'), thinking: z.string(), signature: z.string().optional() })
     .strict(),
-  z.object({ type: z.literal('redacted_thinking'), data: z.string() }).strict(),
+  z
+    .object({
+      type: z.literal('redacted_thinking'),
+      data: z.string(),
+      source: z.object({ routeId: z.string(), model: z.string() }).strict().optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('tool_use'),
@@ -119,7 +126,13 @@ export const streamSchema: z.ZodType<StreamEvent> = z.discriminatedUnion('type',
   z.object({ type: z.literal('text_delta'), text: z.string() }).strict(),
   z.object({ type: z.literal('thinking_delta'), text: z.string() }).strict(),
   z.object({ type: z.literal('signature_delta'), signature: z.string() }).strict(),
-  z.object({ type: z.literal('redacted_thinking'), data: z.string() }).strict(),
+  z
+    .object({
+      type: z.literal('redacted_thinking'),
+      data: z.string(),
+      source: z.object({ routeId: z.string(), model: z.string() }).strict().optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('tool_use_start'),

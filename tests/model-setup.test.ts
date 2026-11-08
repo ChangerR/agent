@@ -8,7 +8,7 @@ import { ModelSetupSettings } from '../desktop/main/model-setup.js';
 import { CredentialVault, type SecureStorage } from '../desktop/main/credentials.js';
 import { MODEL_SERVICES, type ModelService } from '../desktop/shared/model-setup.js';
 import { loadConfigWithSources } from '../src/core/config.js';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 let root: string, config: string, vault: CredentialVault, settings: ModelSetupSettings;
 const key = 'fictional-model-setup-key';
 const read = () => JSON.parse(readFileSync(config, 'utf8'));

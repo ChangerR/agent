@@ -10,6 +10,13 @@ import type {
   ReviewHistoryStore,
 } from '../core/permission/contracts.js';
 import type { Provider } from '../core/provider.js';
+import type { GrantOption, PermissionGrant } from '../core/permission/grants.js';
+export type {
+  ApprovalAction,
+  GrantOption,
+  PermissionGrant,
+  GrantScope,
+} from '../core/permission/grants.js';
 import type { Tool, ToolResult } from './protocol.js';
 import type {
   ContextSource,
@@ -64,6 +71,8 @@ export interface ToolAnalyzer {
   ): MaybePromise<boolean>;
 }
 export interface PolicyInput extends AnalysisInput {
+  readonly permissionScope?: string;
+  readonly executionBoundary?: ExecutionBoundary;
   readonly sessionId?: string;
   readonly runId?: string;
   readonly toolCallId?: string;
@@ -72,9 +81,24 @@ export interface PolicyInput extends AnalysisInput {
   readonly configRevision?: string | number;
   readonly policyRevision?: string | number;
 }
+export interface ExecutionBoundary {
+  id: string;
+  revision: string;
+  available: boolean;
+  reasonCode?: string;
+  description: string;
+}
+export interface ProcessExecution {
+  supports(tool: ApprovalTool): boolean;
+  status(signal: AbortSignal): MaybePromise<ExecutionBoundary>;
+  execute(
+    request: { file: string; args: readonly string[]; cwd: string; timeoutMs: number },
+    signal: AbortSignal,
+  ): Promise<ToolResult>;
+}
 export type PolicyDecision = Omit<Decision, 'kind'> & {
-  /** 仅用于工具路由等可重试的拒绝；缺省 deny 终止当前用户请求。模型/人工拒绝不可缩小范围。 */
-  denialScope?: 'invocation';
+  /** 普通拒绝仅影响操作；停止请求必须明确声明。 */
+  denialScope?: 'invocation' | 'request';
   kind: 'allow' | 'ask' | 'deny' | 'review';
   reasonCode?: string;
   reviewEligible?: boolean;
@@ -88,11 +112,15 @@ export interface PermissionController {
   addSessionRule(kind: 'allow' | 'ask' | 'deny', rule: string): void;
   getSessionRules(): SessionRules;
   validateSessionRules?(rules: Partial<SessionRules>): void;
-  validateMode?(mode: PermissionMode): void;
   setSessionRules(rules: Partial<SessionRules>): void;
   clearSessionRules(): void;
   getAuditLog(): readonly AuditEntry[];
   recordDecision(tool: ApprovalTool, input: Record<string, unknown>, decision: Decision): void;
+  listGrants?(): PermissionGrant[];
+  addGrant?(grant: PermissionGrant): void;
+  revokeGrant?(id: string): boolean;
+  finishTask?(scope: string, sessionId?: string): void;
+  clearTemporaryGrants?(sessionId?: string): void;
 }
 export interface Policy {
   readonly id?: string;
@@ -101,6 +129,8 @@ export interface Policy {
   readonly controller?: PermissionController;
   readonly analyzer?: ToolAnalyzer;
   decide(input: PolicyInput, signal: AbortSignal): MaybePromise<PolicyDecision>;
+  approvalOptions?(input: PolicyInput, decision: PolicyDecision): readonly GrantOption[];
+  saveGrant?(grant: PermissionGrant, signal: AbortSignal): MaybePromise<void>;
 }
 export type PermissionPolicy = Policy;
 export interface ReviewInput extends PolicyInput {
@@ -220,6 +250,7 @@ export interface TuiDescriptor {
   title?: string;
 }
 export interface CapabilityMap {
+  execution: ProcessExecution;
   provider: Provider;
   tool: Tool;
   analyzer: ToolAnalyzer;
@@ -238,6 +269,7 @@ export interface CapabilityMap {
 }
 export type CapabilityKind = keyof CapabilityMap;
 export const CAPABILITY_KINDS = [
+  'execution',
   'provider',
   'tool',
   'analyzer',
@@ -255,6 +287,7 @@ export const CAPABILITY_KINDS = [
   'tui',
 ] as const satisfies readonly CapabilityKind[];
 export const SINGLETON_CAPABILITY_KINDS = [
+  'execution',
   'policy',
   'reviewer',
   'compactor',

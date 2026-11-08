@@ -144,6 +144,7 @@ function setup(
     cwd,
     tools,
     policy,
+    sessionId: () => 'ps-session',
     reviewer,
     events,
     hooks: new HookRunner(),
@@ -156,7 +157,13 @@ function setup(
       messages: [],
     });
   const analyze = async (command: string) => {
-    const operation = { cwd, tool: shell, input: { command } };
+    const operation = {
+      cwd,
+      tool: shell,
+      input: { command },
+      sessionId: 'ps-session',
+      permissionScope: 'ps-session:powershell-chain',
+    };
     const analysis = await policy.analyzer!.analyze(operation, signal());
     return { analysis, decision: await policy.decide({ ...operation, analysis }, signal()) };
   };
@@ -332,10 +339,10 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
       expect(canRememberPermission(h.requests[0]!)).toBe(true);
       expect((await h.run(command)).isError).toBeFalsy();
       expect(h.requests).toHaveLength(1);
-      expect((await h.analyze(command)).decision.reasonCode).toBe('exact_call_allow');
+      expect((await h.analyze(command)).decision.reasonCode).toBe('grant_allow');
       await h.run('echo DIFFERENT_CALL');
       expect(h.requests).toHaveLength(2);
-      expect(h.provider.requests).toHaveLength(2);
+      expect(h.provider.requests).toHaveLength(0);
       expect(h.execute).toHaveBeenCalledTimes(3);
     },
   );
@@ -385,7 +392,7 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
     expect(h.execute).toHaveBeenCalledOnce();
     expect((await h.run('sc src/ordinary.txt ok')).isError).toBeFalsy();
     expect(h.requests).toHaveLength(2);
-    expect(h.provider.requests).toHaveLength(2);
+    expect(h.provider.requests).toHaveLength(0);
   });
   it('人工批准时目标换成外部链接，审批复用不能掩盖分析变化', async () => {
     const path = join(cwd, 'src/human-rebind.txt');
@@ -403,10 +410,10 @@ describe('PR #36 的精确记住与审批复用不降低 PowerShell 约束', () 
     });
     expect((await h.run('sc src/human-rebind.txt x')).isError).toBe(true);
     expect(h.requests.map((request) => request.reasonCode)).toEqual([
-      'model_ask',
+      'platform_write_ask',
       'external_target',
     ]);
-    expect(h.provider.requests).toHaveLength(1);
+    expect(h.provider.requests).toHaveLength(0);
     expect(h.execute).not.toHaveBeenCalled();
     expect(await readFile(join(outside, 'sentinel.txt'), 'utf8')).toBe('outside-sentinel');
   });
@@ -485,7 +492,7 @@ describe('完整分析可以真正使用内置 ModelReviewer，协议结果仍�
       const h = setup({ mode, unavailable: true });
       await h.run('echo ok');
       expect(h.requests[0]).toMatchObject({
-        reasonCode: 'reviewer_unavailable',
+        reasonCode: mode === 'ask' ? 'ask_mode' : 'reviewer_unavailable',
         summary: 'PowerShell: echo ok',
       });
       expect(h.execute).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 /** 按具体模型覆盖 adapter 能力，不从代理模型名推断实际厂商。 */
 import { z } from 'zod';
 export const ModelCapabilitiesSchema = z.object({
-  api: z.enum(['chat-completions', 'messages', 'generic']),
+  api: z.enum(['chat-completions', 'responses', 'messages', 'generic']),
   thinkingLevels: z.array(z.enum(['off', 'low', 'medium', 'high'])).optional(),
   rawToolArguments: z.boolean().optional(),
   prefixCompaction: z.boolean().optional(),
@@ -10,3 +10,7 @@ export const ModelCapabilitiesSchema = z.object({
   offEffort: z.literal('none').optional(),
 });
 export const ProviderModelsSchema = z.record(ModelCapabilitiesSchema).default({});
+
+export const OpenAIAPISchema = z
+  .enum(['chat-completions', 'responses'])
+  .default('chat-completions');

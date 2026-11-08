@@ -21,6 +21,7 @@ export function reviewEvidence(input: ReviewInput, userRequest: string) {
   return {
     currentUserRequest: { source: 'runtime_user_request', text: userRequest },
     operation: {
+      executionBoundary: input.executionBoundary,
       toolName: input.tool.name,
       toolVersion: input.tool.version ?? 'unversioned',
       ownerPlugin: input.tool.ownerPlugin ?? null,

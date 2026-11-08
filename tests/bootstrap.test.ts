@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
-import { createAgent, loadSession, type Agent } from '../src/index.js';
+import { createAgent, loadSession, type Agent } from './helpers/trusted-agent.js';
 
 let tmp: string;
 let agent: Agent | undefined;

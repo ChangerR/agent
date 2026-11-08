@@ -93,7 +93,7 @@ it('初始化不把项目权限、插件授权、相对路径或环境配置提�
       modelsFile: './private-models.json',
     }),
   );
-  expect(f.run('--command', '/permissions', '--json')).toContain('"mode":"yolo"');
+  expect(() => f.run('--command', '/permissions', '--json')).toThrow();
   expect(JSON.parse(readFileSync(f.config, 'utf8'))).toEqual(AgentConfigSchema.parse({}));
 });
 it('help 和无效参数不初始化，已有无效用户配置不会被覆盖', () => {

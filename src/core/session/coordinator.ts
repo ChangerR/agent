@@ -277,10 +277,11 @@ export class SessionManager {
     assertSafeHistory(file.messages);
     if (file.agents?.owner && this.opts.restorePermissions !== false)
       throw new SessionError('invariant', '这是子 agent 会话，请从所属根会话的 /agents 查看。');
-    const rules = structuredClone(file.sessionRules);
+    // 历史中的临时允许不是当前宿主授权；限制仍可恢复。
+    const rules = { ...structuredClone(file.sessionRules), allow: [] };
     try {
-      if (this.opts.validateSessionRules) this.opts.validateSessionRules(rules);
-      else this.opts.permission.validateSessionRules?.(rules);
+      if (this.opts.validateSessionRules) this.opts.validateSessionRules(file.sessionRules);
+      else this.opts.permission.validateSessionRules?.(file.sessionRules);
     } catch (err) {
       const path = this.opts.store.path(this.opts.cwd, resolved);
       const detail = err instanceof Error ? err.message : String(err);

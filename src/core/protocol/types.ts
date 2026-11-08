@@ -30,6 +30,8 @@ export interface ThinkingBlock {
 export interface RedactedThinkingBlock {
   type: 'redacted_thinking';
   data: string;
+  /** 厂商不透明状态的回放范围；省略时保持原有签名协议语义。 */
+  source?: { routeId: string; model: string };
 }
 
 export interface ToolUseBlock {
@@ -65,6 +67,7 @@ export interface ToolResultBlock {
   toolUseId: string;
   content: string;
   isError?: boolean;
+  permission?: PermissionOutcome;
 }
 
 export interface UserMessage {
@@ -168,7 +171,7 @@ export type StreamEvent =
   /** 思考块签名的增量，拼完后挂到对应的 ThinkingBlock.signature 上 */
   | { type: 'signature_delta'; signature: string }
   /** 打码思考块在 content_block_start 时一次到齐 */
-  | { type: 'redacted_thinking'; data: string }
+  | RedactedThinkingBlock
   | {
       type: 'tool_use_start';
       id: string;
@@ -199,6 +202,14 @@ export interface ToolDefinition {
 export interface ToolResult {
   content: string;
   isError?: boolean;
+  permission?: PermissionOutcome;
+}
+/** 供宿主消费的稳定终态；不依赖解析展示文本。 */
+export interface PermissionOutcome {
+  status: 'denied' | 'approval_required' | 'cancelled' | 'stale' | 'boundary_unavailable' | 'error';
+  reasonCode: string;
+  retryable: boolean;
+  requiresUser: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +294,7 @@ export async function collectStreamAsync(events: AsyncIterable<StreamEvent>): Pr
         break;
       case 'redacted_thinking':
         flush();
-        blocks.push({ type: 'redacted_thinking', data: ev.data });
+        blocks.push({ ...ev });
         break;
       case 'tool_use_start':
         flush();

@@ -15,6 +15,8 @@ const StdioServerSchema = z.object({
   command: z.string(),
   args: z.array(z.string()).default([]),
   env: z.record(z.string()).optional(),
+  /** 仅显式列出的变量从宿主继承，值不进入审批与日志。 */
+  inheritEnv: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
 });
 
 const HttpServerSchema = z.object({

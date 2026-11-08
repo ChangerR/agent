@@ -65,6 +65,13 @@ export class ProviderRegistry {
 export type ToolRisk = 'read' | 'write' | 'execute';
 
 export interface ToolContext {
+  /** 由执行门按实际工具身份注入；失败不能自动回退为宿主进程。 */
+  executeProcess?: (request: {
+    file: string;
+    args: readonly string[];
+    cwd: string;
+    timeoutMs: number;
+  }) => Promise<ToolResult>;
   /** 执行门绑定的调用来源；模型参数不能覆盖。 */
   invocation?: InvocationOrigin;
   cwd: string;
@@ -82,6 +89,8 @@ export interface Tool {
   version?: string;
   /** 宿主装配时填写的来源；工具自行声明不能覆盖实际所有者。 */
   ownerPlugin?: string;
+  /** MCP 等连接型工具绑定实际服务配置的非敏感指纹。 */
+  permissionIdentity?: string;
   description: string;
   /** JSON Schema */
   inputSchema: Record<string, unknown>;

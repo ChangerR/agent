@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 import { definePlugin, type InteractionRequest } from '../src/sdk/index.js';
 import { OpenAIProvider } from '../src/providers/openai.js';
 import { ConfigConflictError, settingsErrorMessage } from '../src/runtime/config-store.js';

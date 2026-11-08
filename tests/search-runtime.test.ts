@@ -4,7 +4,12 @@ import { symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { definePlugin, type Agent, type PermissionMode, type SessionRules } from '../src/index.js';
+import {
+  definePlugin,
+  type Agent,
+  type PermissionMode,
+  type SessionRules,
+} from './helpers/trusted-agent.js';
 import type { AgentEvent } from '../src/core/events.js';
 import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import type { ToolResult } from '../src/core/protocol/types.js';
@@ -648,13 +653,13 @@ describe.skipIf(process.platform === 'win32')('默认 auto 真实搜索链路', 
     },
   );
 
-  it('对照：未知 shell 仍实际调用一次 reviewer，再进行人工审批，计数器不是空壳', async () => {
+  it('对照：未知 shell 无隔离时直接人工审批，计数器不是空壳', async () => {
     const f = await fixture();
     const result = await f.run([{ name: 'bash', input: { command: 'npm test' } }]);
-    expect(result).toMatchObject({ judge: 1, human: 1, executed: 0 });
+    expect(result).toMatchObject({ judge: 0, human: 1, executed: 0 });
     expect(result.results[0]!.isError).toBe(true);
     expect(
-      result.events.some((event) => event.type === 'tool_execution' && event.phase === 'reviewer'),
+      result.events.some((event) => event.type === 'tool_execution' && event.phase === 'human'),
     ).toBe(true);
   });
 });

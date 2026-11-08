@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { createAgent, type Agent } from '../src/index.js';
+import { createAgent, type Agent } from './helpers/trusted-agent.js';
 import { AgentConfigSchema, loadConfigWithSources } from '../src/core/config.js';
 import { mcpSettingsSection } from '../src/builtin/mcp-settings.js';
 import { modelSettingsSection } from '../src/builtin/model-settings.js';
@@ -17,7 +17,7 @@ import {
   CONNECTIONS_PLUGIN,
 } from '../src/builtin/provider-connections.js';
 import { configurationSections } from '../src/builtin/configuration-settings.js';
-import { DesktopController } from '../desktop/worker/controller.js';
+import { DesktopController } from './helpers/desktop-controller.js';
 import { parseEnv } from 'node:util';
 import { defaultPreset } from '../src/builtin/default-preset.js';
 import type { Plugin } from '../src/sdk/index.js';
@@ -94,11 +94,13 @@ it('MCP 可新增、重命名、重排、替换与清除凭据，原文不回传
   expect(await json(file)).toEqual({ external: true });
 });
 
-it('项目 .env 只在手动提交时写入，保留注释、多行和未知行，掩码/取消/CAS 不泄露', async () => {
-  const file = join(cwd, '.env'),
+it('全局 .env 只在手动提交时写入，保留注释、多行和未知行，掩码/取消/CAS 不泄露', async () => {
+  const file = join(home, '.agentlab', '.env'),
     before = '# keep comment\nUNCHANGED=`line 1\nline 2`\nKEY=old-private\n# tail\nUNPARSED LINE\n';
   await writeFile(file, before);
-  const section = environmentSettingsSection(cwd);
+  const section = environmentSettingsSection();
+  expect(section.scopeTargets).toEqual([{ scope: 'global', path: file }]);
+  expect(() => section.read!(signal(), 'project')).toThrow('全局配置');
   const raw = (await section.read!(signal())) as any;
   expect(JSON.stringify(raw)).not.toContain('old-private');
   expect(await readFile(file, 'utf8')).toBe(before);
@@ -125,6 +127,7 @@ it('项目 .env 只在手动提交时写入，保留注释、多行和未知行�
   await writeFile(file, 'EXTERNAL=1\n');
   expect(() => section.commit!(stale, signal())).toThrow();
   expect(await readFile(file, 'utf8')).toBe('EXTERNAL=1\n');
+  await expect(readFile(join(cwd, '.env'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   expect(patchEnvironment('A=one\nA=two\n# c\n', { B: 'literal\\nvalue' })).toContain('# c');
 });
 
@@ -291,7 +294,7 @@ it('全部真实顶层字段和实际插件字段覆盖可渲染 schema，没有
       if (!['pluginConfig', 'capabilities'].includes(key)) expect(covered.has(key), key).toBe(true);
     for (const id of [
       'configuration-model-catalog',
-      'configuration-project-environment',
+      'configuration-environment',
       'configuration-mcp-servers',
       'configuration-' + CONNECTIONS_PLUGIN,
       'capability-selection',

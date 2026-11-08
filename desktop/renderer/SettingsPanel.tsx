@@ -142,16 +142,16 @@ export function SettingsPanel({
       ? '清空此文件的自定义模型'
       : selected === 'configuration-mcp-servers'
         ? '清空此文件的服务器'
-        : selected === 'configuration-project-environment'
-          ? '清空项目环境变量'
+        : selected === 'configuration-environment'
+          ? '清空全局环境变量'
           : '清除此节的本层覆盖';
   const resetHelp =
     selected === 'configuration-model-catalog'
       ? '清空只改草稿；提交后删除此文件的模型条目及其附加元数据，恢复内置规格，保留 modelsFile 引用。要恢复另一层文件引用，请在“配置文件与插件装配”取消 modelsFile 覆盖。'
       : selected === 'configuration-mcp-servers'
         ? '清空只改草稿；提交后删除此文件的服务器条目及其附加元数据，保留文件其他字段和 mcpConfig 引用。要恢复另一层引用，请在“配置文件与插件装配”取消 mcpConfig 覆盖。'
-        : selected === 'configuration-project-environment'
-          ? '清空只改草稿；提交后移除已识别变量（含凭据），保留注释与未识别行。当前进程环境不变，重新装配后采用。'
+        : selected === 'configuration-environment'
+          ? '清空只改草稿；提交后移除 ~/.agentlab/.env 中已识别变量（含凭据），保留注释与未识别行。当前进程环境不变，退出并重启后采用。'
           : '清除只修改草稿；提交后删除此节已知覆盖，保留未知字段。未勾选的字段不会被默认值回填。Esc 放弃未保存更改。';
   const formId = useId();
   const supportsQuickModel = !!getBridge().readModelSetup;

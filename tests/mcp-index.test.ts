@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { McpResultStore } from '../src/mcp/results.js';
 import { resolveAgentPaths } from '../src/core/paths.js';
 import { mkdtempProject } from './helpers/project.js';
-import { createAgent } from '../src/index.js';
+import { createAgent } from './helpers/trusted-agent.js';
 
 let cwd: string;
 const stores: McpResultStore[] = [];
