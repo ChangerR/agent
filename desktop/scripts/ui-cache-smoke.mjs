@@ -40,31 +40,32 @@ try {
   await expect(page.getByLabel('输入任务', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '打开应用设置', exact: true }).click();
   await expect(page.locator('.settings-scope-bar')).toHaveCount(0);
+  const form = page.locator('.configuration-editor form');
   const choose = async (title) => {
     const button = page.getByRole('button', { name: title, exact: true });
     if (!(await button.isVisible())) await page.locator('.settings-advanced-nav > summary').click();
     await button.click();
     await expect(page.getByRole('button', { name: '重新读取', exact: true })).toBeVisible();
   };
-  const override = async (label) => {
+  const override = async (label, scope = form) => {
     await expect
       .poll(async () => (await readState()).globalSettings.settingsEditor?.scope)
       .toBe('global');
-    await expect(page.locator('.configuration-editor form')).toBeVisible();
-    const checkbox = page.getByRole('checkbox', { name: '覆盖 ' + label, exact: true });
+    await expect(form).toBeVisible();
+    const checkbox = scope.getByRole('checkbox', { name: '覆盖 ' + label, exact: true });
     if (await checkbox.count()) await checkbox.check();
   };
   const text = async (label, value) => {
     await override(label);
-    await page.getByLabel(label, { exact: true }).fill(value);
+    await form.getByLabel(label, { exact: true }).fill(value);
   };
-  const select = async (label, value) => {
-    await override(label);
-    await page.getByRole('combobox', { name: label, exact: true }).selectOption(value);
+  const select = async (label, value, scope = form) => {
+    await override(label, scope);
+    await scope.getByRole('combobox', { name: label, exact: true }).selectOption(value);
   };
   const number = async (label, value) => {
     await override(label);
-    await page.getByRole('spinbutton', { name: label, exact: true }).fill(String(value));
+    await form.getByRole('spinbutton', { name: label, exact: true }).fill(String(value));
   };
   const readState = async () => {
     const response = await page.request.post(origin + '/api/snapshot', {
@@ -87,6 +88,7 @@ try {
     return (await readState()).globalSettings.settingsEditor.value;
   };
   await choose('上下文与缓存预算');
+  await override('缓存');
   await select('启用', 'false');
   await select('TTL', '5m');
   assert.deepEqual(await save(), { cache: { enabled: false, ttl: '5m' } });
@@ -120,11 +122,17 @@ try {
   ]) {
     await choose(title);
     await override('模型 API 能力');
-    await page.getByRole('button', { name: '新增 模型 API 能力', exact: true }).click();
-    await page.getByRole('textbox', { name: '模型 API 能力 名称 1', exact: true }).fill('fixture');
-    await select('API 类型', api);
-    await select('支持原始参数回放', 'false');
-    assert.equal((await save()).models.fixture.api, api);
+    const models = form.getByRole('group', { name: '模型 API 能力', exact: true });
+    await models.getByRole('button', { name: '新增 模型 API 能力', exact: true }).click();
+    await models
+      .getByRole('textbox', { name: '模型 API 能力 名称 1', exact: true })
+      .fill('fixture');
+    await select('API 类型', api, models);
+    await select('支持原始参数回放', 'false', models);
+    const value = await save();
+    assert.equal(value.models.fixture.api, api);
+    assert.equal(value.models.fixture.rawToolArguments, false);
+    assert(!Object.hasOwn(value, 'api'));
   }
   await choose('MCP 结果预算');
   await number('MCP 结果保留天数（0 关闭）', age);
