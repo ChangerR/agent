@@ -89,3 +89,9 @@ pnpm build      # tsup → dist/
   `loop.setModel()` 时联动压缩阈值和 `maxTokens`。
 - `agent.config.json` / `mcp.json` / `.env` 在 `.gitignore` 里（是本机配置），
   改配置示例请改对应的 `*.example.*`。
+
+## Cursor Cloud specific instructions
+
+- 登录 shell 会加载 `~/.nvm` 中的 Node.js 22.23.4，满足 `engines.node`（>=22.19.0）。PATH 上的 `pnpm` 使用 `npm install -g pnpm@10.33.4` 安装的独立命令。PTY 回归把 `HOME` 指到临时目录并设置 `COREPACK_ENABLE_NETWORK=0`；Corepack shim 在这种环境下会因为访问 registry 失败而让 `pnpm dev` 直接退出。
+- 安装命令是 `pnpm install --frozen-lockfile`，重复执行应保持已是最新。提交前至少跑 `pnpm typecheck`、`pnpm test` 和 `pnpm build`。
+- 离线闭环不需要 API key。项目里的 fake provider 或非默认 `permissionMode` 会要求启动信任：CLI 使用 `--trust` 并输入 yes，SDK 传入 `approveStartup: () => true`。临时目录放入 `{"provider":"fake","model":"demo","permissionMode":"auto"}` 与 `demo.txt` 后，再批准启动信任即可跑通 `read_file`。图形工作台用 `pnpm desktop:web`，只监听 `127.0.0.1:4175`。不要向真实模型端点发请求。
