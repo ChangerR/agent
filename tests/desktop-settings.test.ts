@@ -1,3 +1,5 @@
+import { GlobalSettingsController } from '../desktop/worker/global-settings.js';
+import type { SettingsSnapshot } from '../desktop/shared/protocol.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, writeFile, access, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -43,7 +45,7 @@ afterEach(async () => {
 });
 
 describe('App 设置协议 / worker 与真实 runtime', () => {
-  it('简单选择项应答前完成项目持久化并应用，不需要第二次提交', async () => {
+  it('简单选择项应答前保存到对应作用域并应用，不需要第二次提交', async () => {
     await send({ type: 'setting', field: 'think', value: 'low' });
     expect(latest().busy).toBe(false);
     expect(latest().thinking).toBe('low');
@@ -52,8 +54,38 @@ describe('App 设置协议 / worker 与真实 runtime', () => {
     expect(latest().settingsEditor!.value).toMatchObject({ thinking: 'low' });
     await send({ type: 'setting', field: 'mode', value: 'auto' });
     expect(latest().mode).toBe('auto');
-    expect(JSON.parse(await readFile(file(), 'utf8')).permissionMode).toBe('auto');
+    expect(JSON.parse(await readFile(file(), 'utf8'))).not.toHaveProperty('permissionMode');
+    expect(
+      JSON.parse(await readFile(join(home, '.agentlab/config.json'), 'utf8')).permissionMode,
+    ).toBe('auto');
+    expect(latest().sources.mode).toBe('global');
   });
+  it('独立全局设置可保存权限模式，活动项目刷新后显示同一选择', async () => {
+    let settings!: SettingsSnapshot;
+    const global = new GlobalSettingsController((snapshot) => {
+      settings = snapshot;
+    });
+    const generation = randomUUID();
+    try {
+      await global.initialize(generation);
+      await global.handle({ type: 'read', generation, sectionId: 'configuration-permission-mode' });
+      await global.handle({
+        type: 'commit',
+        generation,
+        editorId: settings.settingsEditor!.id,
+        json: JSON.stringify({ permissionMode: 'yolo' }),
+      });
+      expect(settings.settingsEditor!.saved).toBe(true);
+      await send({ type: 'refresh-mode' });
+      expect(latest().mode).toBe('yolo');
+      expect(latest().sources.mode).toBe('global');
+      expect(agent.permission.mode).toBe('yolo');
+      await expect(access(file())).rejects.toThrow();
+    } finally {
+      await global.dispose();
+    }
+  });
+
   it('只读打开不写默认；保存用户层不复制项目层、当前运行值不被启动默认覆盖', async () => {
     await readSettings();
     expect(latest().settingsEditor!.value).toEqual({});

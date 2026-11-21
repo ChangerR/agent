@@ -132,7 +132,7 @@ describe('TUI 权限自动保存', () => {
       expect(h.picker.requireSelection).not.toBe(true);
       expect(readFileSync(h.path, 'utf8')).toBe(before);
       h.pick(mode);
-      expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe(mode);
+      expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe(mode);
       expect(h.permission.mode).toBe(mode);
       expect(h.onModeChange).toHaveBeenCalledOnce();
       expect(h.picker.title).toContain('本项目权限设置');
@@ -184,7 +184,7 @@ describe('TUI 权限自动保存', () => {
 
   it('直接打开本项目，选择一次模式就保存并应用，没有 Save 或二次确认', () => {
     const h = setup();
-    const before = readFileSync(h.globalConfigPath, 'utf8');
+    const before = readFileSync(h.path, 'utf8');
     h.settings.open();
     expect(h.picker.title).toContain('本项目权限设置');
     expect(h.picker.items.map((item) => item.value)).not.toContain('save');
@@ -193,28 +193,28 @@ describe('TUI 权限自动保存', () => {
     h.pick('auto');
     expect(h.permission.mode).toBe('auto');
     expect(h.onModeChange).toHaveBeenCalledOnce();
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('auto');
-    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(before);
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('auto');
+    expect(readFileSync(h.path, 'utf8')).toBe(before);
     expect(h.picker.title).toContain('本项目权限设置');
     expect(h.picker.requireSelection).not.toBe(true);
     expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已保存'));
   });
 
-  it('直接模式命令与模式选择都写项目配置，已有审批不被处理', () => {
+  it('直接模式命令与模式选择都写全局配置，已有审批不被处理', () => {
     const h = setup();
     const back = vi.fn();
     h.settings.openModes(back);
     h.pick('yolo');
     expect(h.permission.mode).toBe('yolo');
     expect(back).toHaveBeenCalledOnce();
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('yolo');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('yolo');
     h.settings.requestMode('auto');
     expect(h.permission.mode).toBe('auto');
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('auto');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('auto');
     expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('已有审批仍需处理'));
   });
 
-  it('全局编辑保留项目覆盖，应用合并后的有效模式', () => {
+  it('全局编辑忽略旧项目模式', () => {
     const h = setup();
     writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask' }));
     const before = readFileSync(h.path, 'utf8');
@@ -223,31 +223,27 @@ describe('TUI 权限自动保存', () => {
     h.pick('global');
     h.pick('mode');
     h.pick('yolo');
-    expect(h.permission.mode).toBe('ask');
+    expect(h.permission.mode).toBe('yolo');
     expect(readFileSync(h.path, 'utf8')).toBe(before);
     expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('yolo');
-    expect(h.picker.body?.()).toContain('全局默认 yolo 被本项目 ask 覆盖');
+    expect(h.picker.body?.()).toContain('全局权限模式: yolo');
   });
 
-  it('项目恢复继承立即保存并应用全局模式', () => {
+  it('模式选择器只有三种全局选项', () => {
     const h = setup();
-    writeFileSync(h.globalConfigPath, JSON.stringify({ permissionMode: 'auto' }));
-    writeFileSync(h.path, JSON.stringify({ permissionMode: 'ask' }));
     h.settings.open();
     h.pick('mode');
-    h.pick('inherit');
-    expect(h.permission.mode).toBe('auto');
-    const raw = JSON.parse(readFileSync(h.path, 'utf8'));
-    expect(raw).not.toHaveProperty('permissionMode');
+    expect(h.picker.title).toBe('全局权限模式');
+    expect(h.picker.items.map((item) => item.value)).toEqual(['ask', 'auto', 'yolo']);
   });
 
   it('自动保存冲突不覆盖外部文件、不改当前模式或误报成功', () => {
     const h = setup();
     h.settings.open();
     h.pick('mode');
-    writeFileSync(h.path, '{"custom":"external"}');
+    writeFileSync(h.globalConfigPath, '{"custom":"external"}');
     h.pick('auto');
-    expect(readFileSync(h.path, 'utf8')).toBe('{"custom":"external"}');
+    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe('{"custom":"external"}');
     expect(h.permission.mode).toBe('ask');
     expect(h.onModeChange).not.toHaveBeenCalled();
     expect(h.notify).toHaveBeenCalledWith(expect.any(String), true);
@@ -256,50 +252,49 @@ describe('TUI 权限自动保存', () => {
 
   it('保存锁阻止写入，模式保持不变', () => {
     const h = setup();
-    const before = readFileSync(h.path, 'utf8');
-    writeFileSync(`${h.path}.settings.lock`, '');
+    const before = readFileSync(h.globalConfigPath, 'utf8');
+    writeFileSync(`${h.globalConfigPath}.settings.lock`, '');
     h.settings.requestMode('auto');
-    expect(readFileSync(h.path, 'utf8')).toBe(before);
+    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(before);
     expect(h.permission.mode).toBe('ask');
     expect(h.onModeChange).not.toHaveBeenCalled();
     expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('保存锁'), true);
   });
 
-  it('继承层在模式选择期间变化时不应用旧显示值，也不写入', () => {
+  it('全局文件在模式选择期间变化时不应用旧显示值，也不写入', () => {
     const h = setup();
     writeFileSync(h.globalConfigPath, '{"permissionMode":"auto"}');
-    const before = readFileSync(h.path, 'utf8');
     h.settings.open();
     h.pick('mode');
     writeFileSync(h.globalConfigPath, '{"permissionMode":"yolo"}');
-    h.pick('inherit');
-    expect(readFileSync(h.path, 'utf8')).toBe(before);
+    h.pick('auto');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('yolo');
     expect(h.permission.mode).toBe('ask');
     expect(h.notify).toHaveBeenCalledWith(expect.any(String), true);
   });
 
   it.each(['session', 'mode'])('陈旧 %s 选择不会写入或影响新会话', (change) => {
     const h = setup();
-    const before = readFileSync(h.path, 'utf8');
+    const before = readFileSync(h.globalConfigPath, 'utf8');
     h.settings.open();
     h.pick('mode');
     if (change === 'session') h.session.id = 'session-two';
     else h.permission.setMode('yolo');
     h.pick('auto');
-    expect(readFileSync(h.path, 'utf8')).toBe(before);
+    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(before);
     expect(h.onModeChange).not.toHaveBeenCalled();
     expect(h.permission.mode).toBe(change === 'session' ? 'ask' : 'yolo');
   });
 
   it('取消、重复或先前面板的回调失效', () => {
     const h = setup();
-    const before = readFileSync(h.path, 'utf8');
+    const before = readFileSync(h.globalConfigPath, 'utf8');
     h.settings.open();
     h.pick('mode');
     const cancelled = h.picker;
     cancelled.onCancel();
     cancelled.onPick('yolo');
-    expect(readFileSync(h.path, 'utf8')).toBe(before);
+    expect(readFileSync(h.globalConfigPath, 'utf8')).toBe(before);
     h.pick('mode');
     const selected = h.picker;
     h.pick('auto');
@@ -396,19 +391,19 @@ describe('TUI 权限自动保存', () => {
     expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('重启'));
   });
 
-  it('全局打开、取消和继承无更改时不创建目录，真正修改才写原始层', () => {
+  it('全局打开与取消时不创建目录，真正修改才写原始层', () => {
     const h = setup({ missingGlobal: true });
     h.settings.open();
     h.pick('global');
     h.pick('mode');
-    h.pick('inherit');
+    h.picker.onCancel();
     expect(existsSync(h.globalConfigPath)).toBe(false);
     h.pick('mode');
     h.pick('auto');
     expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8'))).toEqual({
       permissionMode: 'auto',
     });
-    expect(h.permission.mode).toBe('ask');
+    expect(h.permission.mode).toBe('auto');
   });
 
   it('会话规则一次选择移除，陈旧规则集合不被覆盖', () => {
@@ -476,7 +471,7 @@ describe('TUI 权限自动保存', () => {
     h.settings.open();
     h.pick('mode');
     expect(() => h.pick('auto')).not.toThrow();
-    expect(JSON.parse(readFileSync(h.path, 'utf8')).permissionMode).toBe('auto');
+    expect(JSON.parse(readFileSync(h.globalConfigPath, 'utf8')).permissionMode).toBe('auto');
     expect(h.permission.mode).toBe('ask');
     expect(h.notify).toHaveBeenCalledWith(
       expect.stringContaining('已保存，但当前策略应用失败'),

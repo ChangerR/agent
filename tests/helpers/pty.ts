@@ -1,12 +1,12 @@
 /** Linux 真实 PTY：util-linux script 负责终端，Node 只收发字节，不模拟终端。 */
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
-export function createPtyProject() {
+export function createPtyProject(mode: 'ask' | 'auto' | 'yolo' = 'ask') {
   const version = spawnSync('script', ['--version'], { encoding: 'utf8' });
   if (version.status !== 0 || !version.stdout.includes('util-linux')) {
     throw new Error(
@@ -18,7 +18,8 @@ export function createPtyProject() {
   const home = join(root, 'home');
   const project = join(root, 'project');
   try {
-    mkdirSync(home);
+    mkdirSync(join(home, '.agentlab'), { recursive: true });
+    writeFileSync(join(home, '.agentlab/config.json'), JSON.stringify({ permissionMode: mode }));
     mkdirSync(project);
     mkdirSync(join(project, '.git'));
     // 复制实际启动文件，不生成另一份 dev 定义、不使用 tsx 内部 loader。

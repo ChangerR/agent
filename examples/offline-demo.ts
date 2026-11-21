@@ -2,7 +2,7 @@
  * 离线演示：无需 API key，用 fake provider 跑完整 agent loop。
  *
  * 运行：npx tsx examples/offline-demo.ts [工作目录]
- * 工作目录需有 agent.config.json: { "provider": "fake", "permissionMode": "auto" }
+ * 工作目录需有 agent.config.json: { "provider": "fake" }
  */
 import { createAgent } from '../src/index.js';
 

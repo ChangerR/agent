@@ -193,7 +193,7 @@ MCP 调用传入当前轮次的 `AbortSignal`；连接失败会关闭已创建�
 
 历史有两条硬约束：`tool_use.id` 与 `tool_result.toolUseId` 必须成对；思考签名和打码 data 原样往返。`[早期对话摘要]` 开头的摘要消息原样读写。保存前 `trimToSafeTail` 裁掉未完成的工具调用和头部孤儿结果，空历史不落盘。校验失败不碰磁盘。
 
-写入是同目录临时文件再 `rename` 覆盖；失败删掉临时文件，旧文件保持原样。同一路径的写入串行。加载先校验再改内存：目录对不上、配对失败、规则语法不合法时，loop 和权限引擎都保持原样。会话 ask/deny 恢复，临时 allow 和 Grant 不因加载聊天恢复。权限模式只在保存值不比当前更宽时才 `setMode`（ask < auto < yolo），避免重启后自动放宽。恢复后的调用仍走唯一 ToolExecutor 与当前选定策略。
+写入是同目录临时文件再 `rename` 覆盖；失败删掉临时文件，旧文件保持原样。同一路径的写入串行。加载先校验再改内存：目录对不上、配对失败、规则语法不合法时，loop 和权限引擎都保持原样。会话 ask/deny 恢复，临时 allow 和 Grant 不因加载聊天恢复。恢复时忽略快照中的权限模式，使用当前全局模式。恢复后的调用仍走唯一 ToolExecutor 与当前选定策略。
 
 `AgentLoop` 只提供 `exportSession` / `importSession`，不认识磁盘。`SessionManager` 订阅 `loop_end` 做自动保存——回调发出时 `running` 仍为 true，自动保存不能因此被拒绝。TUI 的 `/save`、`/sessions`、`/resume` 只跟 manager 和事件打交道；恢复后用 `renderHistory` 重画，不重放工具。
 

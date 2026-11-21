@@ -47,9 +47,9 @@ pnpm build      # tsup → dist/
   App 可直接输入 API key，经系统 safeStorage 加密后写入 ~/.agentlab/credentials.enc.json，配置仅存 apiKeyRef；
   basic_text/不可用后端拒绝保存。CLI 环境变量方式保留，不在 Node CLI 中加载 Electron；App 密钥引用无解密宿主时明确失败，不回退其他 key。
   模式选择自动保存并即时应用，不设置 Save 页面或二次确认。
-  `/mode`、`/model`、`/think` 同样持久化到项目；文本/JSON 一次提交，Esc 未提交不写。
+  `/mode` 只持久化到全局，所有项目共用；`/model` 和 `/think` 持久化到项目；文本/JSON 一次提交，Esc 未提交不写。
   只在保存成功后应用当前模式，保留原子写/CAS/未知字段与安全错误信息。
-  全局入口明确范围，按项目覆盖后的有效模式应用；规则、审批模型和插件实现需重启时必须明示。
+  全局入口明确范围，权限检查使用最新全局模式；规则、审批模型和插件实现需重启时必须明示。
   真正工具审批、deny 与危险检测继续保留；切换模式不自动处理已经弹出的审批。
 - 回归使用隔离 HOME、临时项目、固定假 key 和 mock SDK；绝不探测用户真实 key 或发送真实模型请求。
   `.env` 加载回归见 `tests/environment.test.ts`，启动和端点身份回归见对应测试文件。
@@ -94,4 +94,4 @@ pnpm build      # tsup → dist/
 
 - 登录 shell 会加载 `~/.nvm` 中的 Node.js 22.23.4，满足 `engines.node`（>=22.19.0）。PATH 上的 `pnpm` 使用 `npm install -g pnpm@10.33.4` 安装的独立命令。PTY 回归把 `HOME` 指到临时目录并设置 `COREPACK_ENABLE_NETWORK=0`；Corepack shim 在这种环境下会因为访问 registry 失败而让 `pnpm dev` 直接退出。
 - 安装命令是 `pnpm install --frozen-lockfile`，重复执行应保持已是最新。提交前至少跑 `pnpm typecheck`、`pnpm test` 和 `pnpm build`。
-- 离线闭环不需要 API key。项目里的 fake provider 或非默认 `permissionMode` 会要求启动信任：CLI 使用 `--trust` 并输入 yes，SDK 传入 `approveStartup: () => true`。临时目录放入 `{"provider":"fake","model":"demo","permissionMode":"auto"}` 与 `demo.txt` 后，再批准启动信任即可跑通 `read_file`。图形工作台用 `pnpm desktop:web`，只监听 `127.0.0.1:4175`。不要向真实模型端点发请求。
+- 离线闭环不需要 API key。项目里的 fake provider 会要求启动信任：CLI 使用 `--trust` 并输入 yes，SDK 传入 `approveStartup: () => true`。临时目录放入 `{"provider":"fake","model":"demo"}` 与 `demo.txt` 后，再批准启动信任即可跑通 `read_file`。图形工作台用 `pnpm desktop:web`，只监听 `127.0.0.1:4175`。不要向真实模型端点发请求。

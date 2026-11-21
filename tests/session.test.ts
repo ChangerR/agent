@@ -678,7 +678,7 @@ describe('权限与标题', () => {
     expect(permission.getSessionRules()).toEqual(beforeRules);
   });
 
-  it('更宽的保存模式不会自动放宽，更窄的会收紧', async () => {
+  it('恢复更宽或更窄的历史模式都保持当前模式', async () => {
     const notices: string[] = [];
     const events = new EventBus();
     events.on('notice', (event) => notices.push(event.text));
@@ -692,7 +692,7 @@ describe('权限与标题', () => {
     );
     await manager.resume('wide1');
     expect(permission.mode).toBe('ask');
-    expect(notices.some((text) => text.includes('yolo') && text.includes('ask'))).toBe(true);
+    expect(notices.some((text) => text.includes('权限模式'))).toBe(false);
 
     const { permission: wide, manager: wideManager } = makeHarness({
       mode: 'yolo',
@@ -706,7 +706,7 @@ describe('权限与标题', () => {
       }),
     );
     await wideManager.resume('narrow1');
-    expect(wide.mode).toBe('ask');
+    expect(wide.mode).toBe('yolo');
   });
 
   it('标题按码点截断、折叠空白、跳过摘要，并且一旦生成就粘住', () => {

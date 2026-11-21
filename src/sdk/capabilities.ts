@@ -108,7 +108,8 @@ export interface PermissionController {
   readonly mode: PermissionMode;
   readonly revision?: string | number;
   validateMode?(mode: PermissionMode): void;
-  setMode(mode: PermissionMode): void;
+  /** 已持久化的切换只同步控制器，不能重复覆盖并发写入。 */
+  setMode(mode: PermissionMode, options?: { persisted: boolean }): void;
   addSessionRule(kind: 'allow' | 'ask' | 'deny', rule: string): void;
   getSessionRules(): SessionRules;
   validateSessionRules?(rules: Partial<SessionRules>): void;

@@ -73,9 +73,16 @@ describe('权限配置的安全草稿保存', () => {
     const snapshot = readProjectPermissionConfig(alias);
     expect(snapshot.path).toBe(path);
     const draft = copyPermissionDraft(snapshot);
+    expect(snapshot.permissionMode).toBeUndefined();
     draft.permissionMode = 'auto';
+    expect(() => savePermissionConfig(snapshot, draft)).toThrow('只能保存到全局');
+    draft.permissionMode = undefined;
+    draft.judgeModel = 'reviewer';
     savePermissionConfig(snapshot, draft);
-    expect(JSON.parse(readFileSync(path, 'utf8')).permissionMode).toBe('auto');
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+      permissionMode: 'ask',
+      judgeModel: 'reviewer',
+    });
     expect(existsSync(join(nested, 'agent.config.json'))).toBe(false);
   });
 
@@ -182,7 +189,7 @@ describe('权限配置的安全草稿保存', () => {
       }),
     );
     chmodSync(path, 0o640);
-    const snapshot = readProjectPermissionConfig(dir);
+    const snapshot = readGlobalPermissionConfig(path);
     expect(JSON.stringify(snapshot)).not.toContain('never-display-me');
     const draft = copyPermissionDraft(snapshot);
     draft.permissionMode = 'auto';
@@ -206,9 +213,9 @@ describe('权限配置的安全草稿保存', () => {
     expect(savePermissionConfig(saved, second).permissionMode).toBe('yolo');
   });
 
-  it('新文件默认 0600，删除项目覆盖表示继承，空审批模型可明确关闭', () => {
+  it('新文件默认 0600，删除全局模式使用内置默认，空审批模型可明确关闭', () => {
     const { dir, path } = project();
-    const snapshot = readProjectPermissionConfig(dir);
+    const snapshot = readGlobalPermissionConfig(path);
     expect(snapshot.exists).toBe(false);
     const draft = copyPermissionDraft(snapshot);
     draft.permissionMode = 'auto';
@@ -219,15 +226,13 @@ describe('权限配置的安全草稿保存', () => {
     next.permissionMode = undefined;
     next.judgeModel = undefined;
     savePermissionConfig(saved, next);
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
-      permissions: { allow: [], ask: [], deny: [] },
-    });
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({});
   });
 
   it('检测外部字节变更、文件新建、删除与另一保存锁，不覆盖外部文件', () => {
     const { dir, path } = project();
     writeFileSync(path, '{}');
-    const snapshot = readProjectPermissionConfig(dir);
+    const snapshot = readGlobalPermissionConfig(path);
     const draft = copyPermissionDraft(snapshot);
     draft.permissionMode = 'yolo';
     writeFileSync(path, '{ "provider": "fake" }');
@@ -235,11 +240,11 @@ describe('权限配置的安全草稿保存', () => {
     expect(readFileSync(path, 'utf8')).toBe('{ "provider": "fake" }');
     rmSync(path);
     expect(() => savePermissionConfig(snapshot, draft)).toThrow('其他程序修改');
-    const missing = readProjectPermissionConfig(dir);
+    const missing = readGlobalPermissionConfig(path);
     writeFileSync(path, '{}');
     expect(() => savePermissionConfig(missing, draft)).toThrow('其他程序修改');
     writeFileSync(`${path}.settings.lock`, '');
-    expect(() => savePermissionConfig(readProjectPermissionConfig(dir), draft)).toThrow('保存锁');
+    expect(() => savePermissionConfig(readGlobalPermissionConfig(path), draft)).toThrow('保存锁');
     expect(readFileSync(path, 'utf8')).toBe('{}');
   });
 
@@ -268,7 +273,7 @@ describe('权限配置的安全草稿保存', () => {
   it('rename 或 fsync 失败时原始字节不变，清理临时文件/锁，保留可重试的草稿', () => {
     const { dir, path } = project();
     writeFileSync(path, '{ "permissionMode": "ask" }');
-    const snapshot = readProjectPermissionConfig(dir);
+    const snapshot = readGlobalPermissionConfig(path);
     const draft = copyPermissionDraft(snapshot);
     draft.permissionMode = 'auto';
     vi.mocked(fs.renameSync).mockImplementationOnce(() => {

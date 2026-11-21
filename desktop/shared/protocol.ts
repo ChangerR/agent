@@ -76,6 +76,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('settings-close'), ...binding }).strict(),
+  z.object({ type: z.literal('refresh-mode'), ...binding }).strict(),
   z
     .object({
       type: z.literal('approve'),

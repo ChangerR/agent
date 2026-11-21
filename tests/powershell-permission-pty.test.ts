@@ -51,7 +51,7 @@ type Row = {
 it.skipIf(process.platform !== 'linux')(
   '原样 pnpm dev：PowerShell 摘要、敏感/未知人工、真实 reviewer ask 与普通读取',
   async () => {
-    const fixture = createPtyProject();
+    const fixture = createPtyProject('auto');
     const logPath = join(fixture.home, 'ps-events.jsonl');
     const rows = (): Row[] =>
       existsSync(logPath)
@@ -76,7 +76,6 @@ it.skipIf(process.platform !== 'linux')(
         JSON.stringify({
           provider: 'offline-ps-pty',
           model: 'controlled-pty',
-          permissionMode: 'auto',
           pluginConfig: { 'agentlab.planning': { mode: 'off' } },
           pluginEntries: ['./offline.mjs'],
           capabilities: { policy: 'windows-pty', reviewer: 'model' },

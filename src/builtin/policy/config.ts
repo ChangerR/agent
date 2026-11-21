@@ -9,7 +9,7 @@ import { parseRule, type SessionRules } from './controller.js';
 import { rememberStartupApproval, startupTrustEntry } from '../../runtime/startup-trust.js';
 
 export interface PermissionConfigDraft {
-  /** undefined 表示继承全局/内置默认。 */
+  /** 仅全局配置可设置模式，缺省采用内置 ask。 */
   permissionMode?: PermissionMode;
   /** undefined 继承全局；空字符串明确跟随当前主模型。 */
   judgeModel?: string;
@@ -85,13 +85,16 @@ function readFileState(path: string): FileState | undefined {
   }
 }
 
-function decode(state: FileState | undefined): Record<string, unknown> {
+function decode(
+  state: FileState | undefined,
+  scope: PermissionConfigScope,
+): Record<string, unknown> {
   if (!state) return {};
   try {
     const value: unknown = JSON.parse(state.bytes.toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
     const raw = value as Record<string, unknown>;
-    const permissionMode = raw.permissionMode;
+    const permissionMode = scope === 'global' ? raw.permissionMode : undefined;
     const judgeModel = raw.judgeModel;
     const permissions = raw.permissions;
     AgentConfigSchema.parse({ ...raw, permissionMode, judgeModel, permissions });
@@ -114,13 +117,14 @@ export function readPermissionConfig(
 ): PermissionConfigSnapshot {
   path = resolve(path);
   const state = readFileState(path);
-  const raw = decode(state);
+  const raw = decode(state, scope);
   const rules = raw.permissions as Partial<SessionRules> | undefined;
   const snapshot: PermissionConfigSnapshot = Object.freeze({
     path,
     exists: state !== undefined,
     scope,
-    permissionMode: raw.permissionMode as PermissionMode | undefined,
+    permissionMode:
+      scope === 'global' ? (raw.permissionMode as PermissionMode | undefined) : undefined,
     judgeModel: raw.judgeModel as string | undefined,
     permissions: {
       allow: [...(rules?.allow ?? [])],
@@ -200,6 +204,8 @@ export function savePermissionConfig(
     throw new PermissionConfigError('invalid', '配置快照无效，请重新打开对应范围的设置。');
   const next = { ...original.raw };
   if (draft.permissionMode !== undefined) {
+    if (snapshot.scope !== 'global')
+      throw new PermissionConfigError('invalid', '权限模式只能保存到全局配置。');
     const parsed = PermissionModeSchema.safeParse(draft.permissionMode);
     if (!parsed.success) throw new PermissionConfigError('invalid', '权限模式无效，未修改文件。');
   }
@@ -227,7 +233,7 @@ export function savePermissionConfig(
           ? { ...((next[field] as object) ?? {}), ...(value as object) }
           : value;
   };
-  writeField('permissionMode', draft.permissionMode);
+  if (snapshot.scope === 'global') writeField('permissionMode', draft.permissionMode);
   writeField('judgeModel', draft.judgeModel);
   // 全局首次编辑只保存用户实际设置的规则，不把空默认列表提升成全局配置。
   if (snapshot.scope === 'project' || !isDeepStrictEqual(draft.permissions, snapshot.permissions))
@@ -272,14 +278,9 @@ export function savePermissionConfig(
     // 锁串行化本程序的设置保存；外部编辑器不遵守此锁，重读只能尽量缩小竞争窗口。
     assertUnchanged(snapshot.path, original.state);
     if (snapshot.scope === 'project') {
-      const entries = [
+      rememberStartupApproval(dirname(snapshot.path), [
         startupTrustEntry('permission-allow', draft.permissions.allow, '用户保存的 allow 规则'),
-      ];
-      if (draft.permissionMode !== undefined)
-        entries.push(
-          startupTrustEntry('config:permissionMode', draft.permissionMode, '用户保存的权限模式'),
-        );
-      rememberStartupApproval(dirname(snapshot.path), entries);
+      ]);
     }
     fs.renameSync(tmp, snapshot.path);
     created = false;

@@ -90,27 +90,27 @@ async function editor() {
 }
 
 describe('权限模式自动保存后跨进程重启', () => {
-  it('帮助与无参数选择说明本项目自动保存，不执行额外确认', async () => {
+  it('帮助与无参数选择说明全局自动保存，不执行额外确认', async () => {
     const h = await editor();
     expect(h.agent.commands.list().find((command) => command.id === 'mode')?.description).toContain(
       '自动保存',
     );
     expect(await h.agent.dispatchCommand('/mode')).toMatchObject({
       type: 'interaction',
-      prompt: '选择本项目权限模式 · 自动保存并应用',
+      prompt: '选择全局权限模式 · 自动保存并应用',
     });
     expect(h.agent.permission.mode).toBe('ask');
     expect(readFileSync(projectPath, 'utf8')).toBe('{}');
   });
 
-  it('/mode auto 保存到项目，新进程为 auto，全局不变', async () => {
-    const globalBefore = readFileSync(globalPath, 'utf8');
+  it('/mode auto 保存到全局，新进程为 auto，项目不变', async () => {
+    const projectBefore = readFileSync(projectPath, 'utf8');
     expect(await runCli('/mode auto')).toMatchObject({
       type: 'text',
-      text: expect.stringContaining('已保存本项目'),
+      text: expect.stringContaining('已保存到全局配置'),
     });
-    expect(readFileSync(globalPath, 'utf8')).toBe(globalBefore);
-    expect(JSON.parse(readFileSync(projectPath, 'utf8')).permissionMode).toBe('auto');
+    expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore);
+    expect(JSON.parse(readFileSync(globalPath, 'utf8')).permissionMode).toBe('auto');
     expect(await runCli()).toMatchObject({ type: 'data', data: { mode: 'auto' } });
   });
 
@@ -127,24 +127,23 @@ describe('权限模式自动保存后跨进程重启', () => {
     await h.agent.dispatchCommand('/mode', { interact });
     expect(interact).toHaveBeenCalledOnce();
     expect(h.agent.permission.mode).toBe('auto');
-    const before = readFileSync(projectPath, 'utf8');
+    const before = readFileSync(globalPath, 'utf8');
     await h.agent.dispatchCommand('/mode', { interact: async () => undefined });
-    expect(readFileSync(projectPath, 'utf8')).toBe(before);
+    expect(readFileSync(globalPath, 'utf8')).toBe(before);
     await expect(
       h.agent.dispatchCommand('/mode', {
         interact: async () => {
-          json(projectPath, { permissionMode: 'ask' });
+          json(globalPath, { permissionMode: 'ask' });
           return 'yolo';
         },
       }),
-    ).rejects.toThrow(/其他程序修改/);
-    expect(h.agent.permission.mode).toBe('auto');
-    expect(JSON.parse(readFileSync(projectPath, 'utf8')).permissionMode).toBe('ask');
+    ).rejects.toThrow(/其他程序修改|当前会话已变化/);
+    expect(h.agent.permission.mode).toBe('ask');
+    expect(JSON.parse(readFileSync(globalPath, 'utf8')).permissionMode).toBe('ask');
   });
 
   it('headless 选择期间会话模式变化使回调失效', async () => {
     const h = await editor();
-    const before = readFileSync(projectPath, 'utf8');
     await expect(
       h.agent.dispatchCommand('/mode', {
         interact: async () => {
@@ -154,7 +153,7 @@ describe('权限模式自动保存后跨进程重启', () => {
       }),
     ).rejects.toThrow(/会话已变化/);
     expect(h.agent.permission.mode).toBe('yolo');
-    expect(readFileSync(projectPath, 'utf8')).toBe(before);
+    expect(JSON.parse(readFileSync(globalPath, 'utf8')).permissionMode).toBe('yolo');
   });
 
   it('模式控制器提交后抛错，headless 准确报告已保存但未应用', async () => {
@@ -165,11 +164,11 @@ describe('权限模式自动保存后跨进程重启', () => {
     await expect(h.agent.dispatchCommand('/mode auto')).rejects.toThrow(
       '已保存，但当前策略应用失败',
     );
-    expect(JSON.parse(readFileSync(projectPath, 'utf8')).permissionMode).toBe('auto');
-    expect(h.agent.permission.mode).toBe('ask');
+    expect(JSON.parse(readFileSync(globalPath, 'utf8')).permissionMode).toBe('auto');
+    expect(h.agent.permission.mode).toBe('auto');
   });
 
-  it('本项目直接选 auto 后立即生效，子目录重启仍为 auto，其他项目保持 ask', async () => {
+  it('本项目直接选 auto 后立即生效，子目录重启仍为 auto，其他项目同样为 auto', async () => {
     const h = await editor();
     h.settings.open();
     h.pick('mode');
@@ -180,11 +179,14 @@ describe('权限模式自动保存后跨进程重启', () => {
     expect(await runCli('/permissions', nested)).toMatchObject({ data: { mode: 'auto' } });
     const other = join(fixture, 'other-project');
     mkdirSync(join(other, '.git'), { recursive: true });
-    expect(await runCli('/permissions', other)).toMatchObject({ data: { mode: 'ask' } });
-    expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({ provider: 'fake' });
+    expect(await runCli('/permissions', other)).toMatchObject({ data: { mode: 'auto' } });
+    expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({
+      provider: 'fake',
+      permissionMode: 'auto',
+    });
   });
 
-  it('全局 auto 被项目 ask 覆盖，当前与重启都采用项目值', async () => {
+  it('项目旧 ask 不影响全局 auto，当前与重启都采用全局值', async () => {
     json(projectPath, { permissionMode: 'ask' });
     const projectBefore = readFileSync(projectPath, 'utf8');
     const h = await editor();
@@ -193,31 +195,21 @@ describe('权限模式自动保存后跨进程重启', () => {
     h.pick('mode');
     h.pick('auto');
     expect(readFileSync(projectPath, 'utf8')).toBe(projectBefore);
-    expect(h.agent.permission.mode).toBe('ask');
-    expect(await runCli()).toMatchObject({ data: { mode: 'ask' } });
-    expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({
-      provider: 'fake',
-      permissionMode: 'auto',
-    });
-  });
-
-  // 每例只启动一个有独立 10 秒上限的 CLI；不把两个子进程叠在默认 15 秒用例预算内。
-  it('项目恢复继承后立即与重启都采用全局 auto', async () => {
-    json(projectPath, { permissionMode: 'ask' });
-    const h = await editor();
-    h.settings.open();
-    h.pick('global');
-    h.pick('mode');
-    h.pick('auto');
-    expect(h.agent.permission.mode).toBe('ask');
-    h.pick('back');
-    h.pick('mode');
-    h.pick('inherit');
     expect(h.agent.permission.mode).toBe('auto');
     expect(await runCli()).toMatchObject({ data: { mode: 'auto' } });
     expect(JSON.parse(readFileSync(globalPath, 'utf8'))).toEqual({
       provider: 'fake',
       permissionMode: 'auto',
     });
+  });
+
+  it('已打开的其他项目在下一次权限检查时也使用最新全局模式', async () => {
+    const other = join(fixture, 'other');
+    mkdirSync(join(other, '.git'), { recursive: true });
+    const a = await createAgent(other);
+    agents.push(a);
+    expect(a.permission.mode).toBe('ask');
+    await runCli('/mode auto');
+    expect(a.permission.mode).toBe('auto');
   });
 });

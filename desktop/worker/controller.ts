@@ -528,6 +528,15 @@ export class DesktopController {
     if (!s || !a || this.disposed || this.disposal) throw new Error('运行时不可用');
     if (action.generation !== s.generation || action.sessionId !== a.session.id)
       throw new Error('会话已变化，请刷新后重试');
+    if (action.type === 'refresh-mode') {
+      s.sources.mode = loadConfigWithSources(
+        a.cwd,
+        {},
+        { globalOnly: true },
+      ).sources.permissionMode.scope;
+      this.emit(true);
+      return;
+    }
     if (
       action.type === 'debug-read' ||
       action.type === 'debug-export' ||
@@ -745,7 +754,8 @@ export class DesktopController {
             signal: controller.signal,
           });
           if (result?.type === 'text') this.row('notice', result.text);
-          s.sources[action.field === 'think' ? 'thinking' : action.field] = 'project';
+          s.sources[action.field === 'think' ? 'thinking' : action.field] =
+            action.field === 'mode' ? 'global' : 'project';
         } else if (action.type === 'resume') {
           await a.session.resume(action.id);
         } else if (action.type === 'session-save') {

@@ -5,11 +5,7 @@ import { AgentConfigSchema, loadConfigWithSources } from '../core/config.js';
 import type { Plugin, SettingsScope, SettingsSection } from '../sdk/index.js';
 import { createScopedConfigStores, type ConfigSnapshot } from '../runtime/config-store.js';
 import { validatePermissionRule } from './policy/config.js';
-import {
-  forgetStartupApproval,
-  rememberStartupApproval,
-  startupTrustEntry,
-} from '../runtime/startup-trust.js';
+import { rememberStartupApproval, startupTrustEntry } from '../runtime/startup-trust.js';
 
 type Shape = Record<string, z.ZodTypeAny>;
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -272,7 +268,8 @@ const baseGroups = [
     ['provider', 'model', 'baseURL', 'apiKeyEnv', 'thinking', 'judgeModel'],
   ],
   ['budgets', '上下文与缓存预算', ['maxTurns', 'compactThreshold', 'cache']],
-  ['permissions', '权限与审批默认值', ['permissionMode', 'permissions']],
+  ['permission-mode', '全局权限模式', ['permissionMode']],
+  ['permissions', '权限与审批默认值', ['permissions']],
   ['files', '配置文件与插件装配', ['modelsFile', 'mcpConfig', 'pluginEntries', 'disabledPlugins']],
 ] as const;
 
@@ -292,15 +289,20 @@ export function configurationSections(
       object,
       { base: ConfigSnapshot; scope: SettingsScope; patch: Record<string, unknown> }
     >();
+    const modeSection = id === 'configuration-permission-mode';
+    const defaultScope: SettingsScope = modeSection || globalOnly ? 'global' : 'project';
     const targets = stores.scopeTargets.filter(
-      (target) => !definition?.scopes || definition.scopes.includes(target.scope),
+      (target) =>
+        (!(globalOnly || modeSection) || target.scope === 'global') &&
+        (!definition?.scopes || definition.scopes.includes(target.scope)),
     );
     const section: SettingsSection = {
       title,
       order: 20 + result.length,
-      applyMode: 'newSession',
-      description:
-        '只编辑所选层的原始覆盖值，省略字段恢复继承。Enter 一次提交；Esc 放弃未提交草稿。保存后需重启 App/CLI，已有会话与审批不改变。API key 在 App 全局安全存储页直接输入；环境变量引用为高级方式。',
+      applyMode: modeSection ? 'immediate' : 'newSession',
+      description: modeSection
+        ? '所有项目共用此权限模式。清除后使用 ask；保存后用于后续权限检查，已有审批仍需处理。'
+        : '只编辑所选层的原始覆盖值，省略字段恢复继承。Enter 一次提交；Esc 放弃未提交草稿。保存后需重启 App/CLI，已有会话与审批不改变。API key 在 App 全局安全存储页直接输入；环境变量引用为高级方式。',
       schema: settingsJsonSchema(z.object(shape)),
       scopeTargets: targets,
       readEffective(signal) {
@@ -315,7 +317,7 @@ export function configurationSections(
           if (Object.hasOwn(value, key)) value[key] = MASKED_SETTING;
         return value;
       },
-      read(signal, scope = 'project') {
+      read(signal, scope = defaultScope) {
         signal.throwIfAborted();
         if (!targets.some((target) => target.scope === scope)) throw new Error('不支持此作用域。');
         const store = stores.store(scope);
@@ -328,7 +330,7 @@ export function configurationSections(
           if (Object.hasOwn(value, key)) value[key] = MASKED_SETTING;
         return value;
       },
-      draft(value, signal, scope = 'project') {
+      draft(value, signal, scope = defaultScope) {
         signal.throwIfAborted();
         const base = bases.get(scope);
         if (!base || !targets.some((target) => target.scope === scope))
@@ -428,7 +430,7 @@ export function configurationSections(
         drafts.set(draft, { base, scope, patch: structuredClone(patch) });
         return draft;
       },
-      commit(draft, signal, scope = 'project') {
+      commit(draft, signal, scope = defaultScope) {
         signal.throwIfAborted();
         const saved = record(draft) ? drafts.get(draft) : undefined;
         if (!saved || saved.scope !== scope) throw new Error('草稿作用域不匹配或已经提交。');
@@ -443,25 +445,14 @@ export function configurationSections(
         bases.set(scope, next);
         if (scope === 'project' && id === 'configuration-permissions') {
           try {
-            const entries = [];
-            if (next.value.permissionMode !== undefined)
-              entries.push(
-                startupTrustEntry(
-                  'config:permissionMode',
-                  next.value.permissionMode,
-                  '用户保存的权限模式',
-                ),
-              );
-            else forgetStartupApproval(cwd, ['config:permissionMode']);
             const permissions = next.value.permissions as { allow?: string[] } | undefined;
-            entries.push(
+            rememberStartupApproval(cwd, [
               startupTrustEntry(
                 'permission-allow',
                 permissions?.allow ?? [],
                 '用户保存的 allow 规则',
               ),
-            );
-            rememberStartupApproval(cwd, entries);
+            ]);
           } catch {
             throw Object.assign(new Error('启动信任记录保存失败'), {
               code: 'startup_trust_save_failed',

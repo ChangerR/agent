@@ -81,7 +81,9 @@ export const AgentConfigSchema = z.object({
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
-export type AgentConfigOverrides = Omit<Partial<AgentConfig>, 'cache'> & {
+export type AgentConfigOverrides = Omit<Partial<AgentConfig>, 'cache' | 'permissionMode'> & {
+  /** @deprecated 权限模式只读取用户全局配置，旧调用中的此字段不生效。 */
+  permissionMode?: PermissionMode;
   cache?: Partial<AgentConfig['cache']>;
 };
 
@@ -146,8 +148,9 @@ export function loadConfigWithSources(
   const globalRaw = readJson(paths.globalConfigPath);
   const projectRaw = options.globalOnly ? {} : readJson(paths.projectConfigPath);
   const globalCfg = globalRaw;
-  const projectCfg = projectRaw;
-  const sessionCfg = overrides;
+  // 历史项目可能仍含权限模式；项目无权改变用户选择的全局模式。
+  const { permissionMode: _legacyMode, ...projectCfg } = projectRaw;
+  const { permissionMode: _legacySessionMode, ...sessionCfg } = overrides;
   const merged = {
     ...globalCfg,
     ...projectCfg,

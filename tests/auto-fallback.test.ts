@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createReviewTestPolicy } from './helpers/review-policy.js';
 import { loadConfig } from '../src/core/config.js';
-import { type Agent } from './helpers/trusted-agent.js';
+import { type Agent, setFixturePermissionMode } from './helpers/trusted-agent.js';
 import { createExecutionAgent as createAgent } from './helpers/execution-agent.js';
 import type { AgentConfig } from '../src/core/config.js';
 import type { AgentEvent } from '../src/core/events.js';
@@ -69,12 +69,12 @@ async function assembled(
   judgeResponse: ScriptedResponse = reviewResponse('allow', '本地检查'),
   toolOverrides: Partial<Tool> = {},
 ) {
+  setFixturePermissionMode(config.permissionMode ?? 'auto');
   await writeFile(
     join(tmp, 'agent.config.json'),
     JSON.stringify({
       provider: 'fake',
       model: 'current-a',
-      permissionMode: 'auto',
       ...config,
     }),
   );

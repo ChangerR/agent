@@ -1103,6 +1103,7 @@ export default function App() {
                     </select>
                     <select
                       aria-label="权限模式"
+                      title="全局权限模式"
                       disabled={disabled || !runtime}
                       value={runtime?.mode ?? 'ask'}
                       onChange={(e) => setting('mode', e.target.value)}
@@ -1383,14 +1384,22 @@ export default function App() {
             globalRequest={async (payload) => {
               if (!bridge.globalSettingsRequest || !state.globalSettings)
                 throw new Error('全局设置尚未就绪，请重新打开 App。');
-              const action =
+              const globalAction =
                 payload.type === 'settings-read'
                   ? { type: 'read', sectionId: payload.sectionId }
                   : { type: 'commit', editorId: payload.editorId, json: payload.json };
               await bridge.globalSettingsRequest({
-                ...action,
+                ...globalAction,
                 generation: state.globalSettings.generation,
               } as import('../shared/protocol.js').GlobalSettingsAction);
+              if (
+                runtime &&
+                !runtime.startupTrust &&
+                globalAction.type === 'commit' &&
+                state.globalSettings.settingsEditor?.sectionId === 'configuration-permission-mode'
+              ) {
+                await action({ type: 'refresh-mode' });
+              }
             }}
             request={action}
             dirtyChanged={dirtyChanged}
