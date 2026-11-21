@@ -55,8 +55,6 @@ const rulesCount = (rules: SessionRules) =>
   kinds.reduce((sum, kind) => sum + rules[kind].length, 0);
 const sameRules = (left: SessionRules, right: SessionRules) =>
   kinds.every((kind) => JSON.stringify(left[kind]) === JSON.stringify(right[kind]));
-const modeLabel = (mode?: PermissionMode, scope: PermissionConfigScope = 'project') =>
-  mode ?? (scope === 'global' ? '内置默认 ask' : '继承全局 / 内置 ask');
 const judgeLabel = (model?: string, scope: PermissionConfigScope = 'project') =>
   model === undefined
     ? scope === 'global'
@@ -68,7 +66,7 @@ const judgeLabel = (model?: string, scope: PermissionConfigScope = 'project') =>
         : '跟随当前模型（覆盖全局）'
       : safeText(model.trim());
 const restartNotice =
-  '选择或 Enter 后自动保存。规则和审批模型重启后生效；模式立即应用到后续检查，已有审批仍需处理。恢复已保存会话时可能还原它保存的模式与会话规则。';
+  '选择或 Enter 后自动保存。规则和审批模型重启后生效；模式立即应用到后续检查，已有审批仍需处理。';
 
 /** 显示已装配的运行状态，不能从配置字段推断审批员是否存在。 */
 export function describeJudgeStatus(status: ReturnType<Agent['loop']['getJudgeStatus']>): string {
@@ -206,11 +204,10 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
   }
 
   let rootBack: () => void = () => {};
-  let modeBack: () => void = () => {};
   const reopenRoot = () => openScope('project');
-  const modeSaved = (scope: PermissionConfigScope, mode: PermissionMode) => {
+  const modeSaved = (mode: PermissionMode) => {
     try {
-      agent.permission.setMode(mode);
+      agent.permission.setMode(mode, { persisted: true });
     } catch {
       notify(
         `权限配置已保存，但当前策略应用失败；当前模式为 ${agent.permission.mode}。请重新选择或重启后核对。`,
@@ -220,38 +217,38 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     }
     options.onModeChange(mode);
     notify(
-      `${scope === 'project' ? '本项目' : '全局'}权限模式已保存；当前会话模式为 ${mode}。后续权限检查生效，已有审批仍需处理。${!isDeterministic() ? '通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。' : ''}`,
+      `全局权限模式已保存；当前会话模式为 ${mode}。后续权限检查生效，已有审批仍需处理。${!isDeterministic() ? '通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。' : ''}`,
     );
   };
 
-  function reopenModes(): void {
+  function reopenModes(back: () => void): void {
     let snapshot: PermissionConfigSnapshot;
     try {
-      snapshot = readPermissionConfig(paths.projectConfigPath, 'project');
+      snapshot = readGlobalPermissionConfig(globalPath);
     } catch (error) {
       reportError(error);
-      modeBack();
+      back();
       return;
     }
     showPicker({
-      title: '本项目权限模式',
+      title: '全局权限模式',
       initialValue: agent.permission.mode,
       context: `当前: ${agent.permission.mode} · 选择即保存并应用`,
       items: modes.map((mode) => ({
         value: mode,
         label: mode,
         current: mode === agent.permission.mode,
-        description: `${modeDescription(mode)}\n${guard()}\n自动保存到本项目，并应用到后续权限检查；已有审批仍需处理。`,
+        description: `${modeDescription(mode)}\n${guard()}\n自动保存到全局配置，并应用到后续权限检查；已有审批仍需处理。`,
       })),
       onPick: (value) => {
-        persistProjectMode(snapshot, value as PermissionMode);
-        modeBack();
+        persistGlobalMode(snapshot, value as PermissionMode);
+        back();
       },
-      onCancel: () => modeBack(),
+      onCancel: back,
     });
   }
 
-  function persistProjectMode(snapshot: PermissionConfigSnapshot, mode: PermissionMode): void {
+  function persistGlobalMode(snapshot: PermissionConfigSnapshot, mode: PermissionMode): void {
     if (!modes.includes(mode)) return;
     const draft = copyPermissionDraft(snapshot);
     draft.permissionMode = mode;
@@ -263,7 +260,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
       reportError(error);
       return;
     }
-    modeSaved('project', mode);
+    modeSaved(mode);
   }
 
   function openJudgeStatus(back = reopenRoot): void {
@@ -358,22 +355,14 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
     }
     let snapshot = isGlobal ? global : project;
     let errorText = '';
-    const effectiveMode = () => project.permissionMode ?? global.permissionMode ?? 'ask';
+    const effectiveMode = () => global.permissionMode ?? 'ask';
     const modeSummary = () =>
-      `当前会话模式: ${agent.permission.mode}\n${!isDeterministic() ? '通用启动默认（是否采用由插件决定）' : '本项目启动模式'}: ${effectiveMode()}\n${project.permissionMode === undefined ? `本项目继承全局 / 内置默认 ${global.permissionMode ?? 'ask'}` : `全局默认 ${global.permissionMode ?? 'ask'} 被本项目 ${project.permissionMode} 覆盖`}`;
+      `全局权限模式: ${effectiveMode()}\n当前会话模式: ${agent.permission.mode}`;
     const summary = () =>
-      `${modeSummary()}\n作用范围: ${isGlobal ? '全局（所有项目，项目覆盖优先）' : '本项目'}\n文件: ${safeText(snapshot.path)}\n审批模型: ${judgeLabel(snapshot.judgeModel, scope)}\n${restartNotice}`;
+      `${modeSummary()}\n作用范围: ${isGlobal ? '全局规则与审批模型' : '本项目'}\n文件: ${safeText(snapshot.path)}\n审批模型: ${judgeLabel(snapshot.judgeModel, scope)}\n${restartNotice}`;
     const back = () => (isGlobal ? reopenRoot() : rootBack());
-    const commit = (next: PermissionConfigDraft, applyMode = false): boolean => {
+    const commit = (next: PermissionConfigDraft): boolean => {
       try {
-        // 模式应用依赖两层。选择期间继承层变化时，不把旧显示下的选择应用到新目标。
-        if (applyMode) {
-          assertPermissionConfigUnchanged(isGlobal ? project : global);
-          const mode = isGlobal
-            ? (project.permissionMode ?? next.permissionMode ?? 'ask')
-            : (next.permissionMode ?? global.permissionMode ?? 'ask');
-          agent.permission.validateMode?.(mode);
-        }
         if (JSON.stringify(next) === JSON.stringify(copyPermissionDraft(snapshot)))
           assertPermissionConfigUnchanged(snapshot);
         else snapshot = savePermissionConfig(snapshot, next);
@@ -385,8 +374,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
         return false;
       }
       errorText = '';
-      if (applyMode) modeSaved(scope, effectiveMode());
-      else notify(`${label}权限设置已保存，重启后生效。当前运行中的规则和审批模型不变。`);
+      notify(`${label}权限设置已保存，重启后生效。当前运行中的规则和审批模型不变。`);
       return true;
     };
     const renderScope = () =>
@@ -397,8 +385,8 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
         items: [
           {
             value: 'mode',
-            label: `模式 · ${modeLabel(snapshot.permissionMode, scope)}`,
-            description: `${modeSummary()}\n选择即自动保存，并应用本项目合并后的有效模式。已有审批仍需处理。`,
+            label: `全局权限模式 · ${effectiveMode()}`,
+            description: `${modeSummary()}\n选择即保存到全局配置，对所有项目生效。已有审批仍需处理。`,
           },
           {
             value: 'rules',
@@ -417,7 +405,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
                 {
                   value: 'global',
                   label: '全局设置（可选，影响其他项目）',
-                  description: `编辑 ${safeText(globalPath)}；本项目覆盖仍优先。选择即自动保存。`,
+                  description: `编辑 ${safeText(globalPath)}；可设置全局规则与审批模型。`,
                 },
                 {
                   value: 'inherited',
@@ -453,33 +441,7 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
           },
         ],
         onPick: (value) => {
-          if (value === 'mode')
-            showPicker({
-              title: `${title}权限模式`,
-              initialValue: snapshot.permissionMode ?? 'inherit',
-              context: '选择即保存并应用',
-              items: [
-                {
-                  value: 'inherit',
-                  label: isGlobal
-                    ? '使用内置默认（ask）'
-                    : `继承全局 / 内置（${global.permissionMode ?? 'ask'}）`,
-                  description: '移除本层覆盖，应用合并后的有效模式。',
-                },
-                ...modes.map((mode) => ({
-                  value: mode,
-                  label: mode,
-                  description: `${modeDescription(mode)}\n${guard()}\n自动保存并应用模式；已有审批仍需处理。`,
-                })),
-              ],
-              onPick: (mode) => {
-                const next = copyPermissionDraft(snapshot);
-                next.permissionMode = mode === 'inherit' ? undefined : (mode as PermissionMode);
-                commit(next, true);
-                renderScope();
-              },
-              onCancel: renderScope,
-            });
+          if (value === 'mode') reopenModes(() => openScope(scope));
           else if (value === 'rules') ruleKinds();
           else if (value === 'judge') editJudge();
           else if (value === 'global') openScope('global');
@@ -640,13 +602,12 @@ export function createPermissionSettings(options: PermissionSettingsOptions) {
       reopenRoot();
     },
     openModes: (onBack?: () => void) => {
-      modeBack = onBack ?? (() => {});
-      reopenModes();
+      reopenModes(onBack ?? (() => {}));
     },
     requestMode: (mode: PermissionMode) => {
       ++generation;
       try {
-        persistProjectMode(readPermissionConfig(paths.projectConfigPath, 'project'), mode);
+        persistGlobalMode(readGlobalPermissionConfig(globalPath), mode);
       } catch (error) {
         reportError(error);
       }

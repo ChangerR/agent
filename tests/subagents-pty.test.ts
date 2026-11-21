@@ -42,7 +42,7 @@ type Row = {
 it.skipIf(process.platform !== 'linux')(
   'Linux 真 PTY：两个后台 child、父输入、实时列表、补充取消、设置单选落盘',
   async () => {
-    const f = createPtyProject();
+    const f = createPtyProject('auto');
     const path = join(f.home, 'agents.jsonl');
     const rows = (): Row[] =>
       existsSync(path)
@@ -57,7 +57,6 @@ it.skipIf(process.platform !== 'linux')(
       JSON.stringify({
         provider: 'offline-agents',
         model: 'offline-current',
-        permissionMode: 'auto',
         pluginConfig: { 'agentlab.planning': { mode: 'off' } },
         capabilities: { reviewer: false },
         pluginEntries: ['./offline-agents.mjs'],

@@ -323,11 +323,11 @@ async function mountTui(config: Record<string, unknown> = {}, plugins: Plugin[] 
     originalStart.call(this);
   });
   const dir = await mkdtemp(join(tmpdir(), 'agentlab-ui-'));
-  await writeFile(
-    join(dir, 'agent.config.json'),
-    JSON.stringify({ provider: 'fake', permissionMode: 'auto', ...config }),
-  );
-  const agent = await createAgent(dir, { plugins });
+  await writeFile(join(dir, 'agent.config.json'), JSON.stringify({ provider: 'fake', ...config }));
+  const agent = await createAgent(dir, {
+    plugins,
+    config: { permissionMode: config.permissionMode === 'ask' ? 'ask' : 'auto' },
+  });
   const terminal = new MemoryTerminal();
   const session = startTui(agent, { terminal, onExit: vi.fn() });
   const screen = () => renderer.getScreenLines().map(stripTerminalSequences);
@@ -667,7 +667,7 @@ const backendApprovalActions = [
 describe('真实 TUI 离线交互', () => {
   it('权限默认打开本项目，模式一次选择即自动保存并应用，浏览取消不改文件', async () => {
     const ui = await mountTui();
-    const file = join(ui.agent.cwd, 'agent.config.json');
+    const file = ui.agent.paths.globalConfigPath;
     const before = await readFile(file, 'utf8');
     const down = () => ui.terminal.input?.('\x1b[B');
     const enter = () => ui.terminal.input?.('\r');
@@ -684,7 +684,7 @@ describe('真实 TUI 离线交互', () => {
       ui.send('/permissions');
       await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('本项目权限设置'));
       enter();
-      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('本项目权限模式'));
+      await vi.waitFor(() => expect(ui.screen().join('\n')).toContain('全局权限模式'));
       ui.terminal.input?.('\x1b');
       expect(await readFile(file, 'utf8')).toBe(before);
       enter();

@@ -27,11 +27,10 @@ const configPath = join(home, '.agentlab/config.json');
 const projectConfigPath = join(project, 'agent.config.json');
 const modelsPath = join(home, '.agentlab/models.json');
 const mcpPath = join(home, '.agentlab/mcp.json');
-await store(configPath, { cache: { enabled: false, ttl: '5m' } });
+await store(configPath, { permissionMode: 'auto', cache: { enabled: false, ttl: '5m' } });
 await store(projectConfigPath, {
   provider: 'acceptance',
   model: 'offline-model',
-  permissionMode: 'ask',
   capabilities: { reviewer: false },
   permissions: { ask: ['write_file'] },
   pluginEntries: ['./acceptance.mjs'],
@@ -788,7 +787,7 @@ try {
     const permission = page.getByRole('combobox', { name: '权限模式', exact: true });
     await permission.selectOption('ask');
     await expect(permission).toHaveValue('ask');
-    await expect.poll(async () => (await json(projectConfigPath)).permissionMode).toBe('ask');
+    await expect.poll(async () => (await json(configPath)).permissionMode).toBe('ask');
     await page.getByRole('textbox', { name: '输入任务', exact: true }).fill('WRITE_FIXTURE');
     await page.getByRole('button', { name: '发送任务', exact: true }).click();
     await expect(page.getByRole('region', { name: '工具审批', exact: true })).toBeVisible();

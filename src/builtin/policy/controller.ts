@@ -78,6 +78,10 @@ export class PermissionController {
   constructor(
     private options: {
       mode: PermissionMode;
+      globalMode?: {
+        read(): PermissionMode;
+        set(mode: PermissionMode, persisted: boolean): void;
+      };
       rules: SessionRules; // 项目级 + 全局级（已由 config 合并）
     },
   ) {}
@@ -87,7 +91,8 @@ export class PermissionController {
     return createHash('sha256')
       .update(
         JSON.stringify({
-          ...this.options,
+          rules: this.options.rules,
+          mode: this.mode,
           sessionRules: this.sessionRules,
           grants: this.grants.revision,
         }),
@@ -96,11 +101,12 @@ export class PermissionController {
   }
 
   get mode(): PermissionMode {
-    return this.options.mode;
+    return this.options.globalMode?.read() ?? this.options.mode;
   }
 
-  setMode(mode: PermissionMode): void {
-    this.options.mode = mode;
+  setMode(mode: PermissionMode, options?: { persisted: boolean }): void {
+    if (this.options.globalMode) this.options.globalMode.set(mode, options?.persisted ?? false);
+    else this.options.mode = mode;
   }
 
   /** 用户选择"本次会话始终允许/询问/拒绝"时调用 —— 会话级规则排在最前 */

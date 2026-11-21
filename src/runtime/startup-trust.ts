@@ -186,7 +186,7 @@ export function inspectStartupTrust(
       }
     }
   // 项目可通过单例选择或其他插件配置执行代码/改变端点，必须在 setup 之前批准。
-  for (const key of ['capabilities', 'disabledPlugins', 'permissionMode'] as const)
+  for (const key of ['capabilities', 'disabledPlugins'] as const)
     if (Object.hasOwn(layers.project, key) && !Object.hasOwn(layers.session, key))
       add(`config:${key}`, layers.project[key], `应用项目 ${key} 设置`);
   const pluginConfig = layers.project.pluginConfig as Record<string, unknown> | undefined;

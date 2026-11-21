@@ -8,7 +8,6 @@ import { resolveProjectRoot } from '../paths.js';
 import { estimateTokens } from '../context/tokens.js';
 import type { EventBus } from '../events.js';
 import type { AgentLoop, SessionSnapshot } from '../loop.js';
-import type { PermissionMode } from '../config.js';
 import type { PermissionController } from '../../sdk/capabilities.js';
 import type { SessionRules } from '../permission/contracts.js';
 import { emptyUsage, cloneUsage, type TokenUsage } from '../protocol/types.js';
@@ -29,8 +28,6 @@ import {
   type SessionListing,
   type SessionSummary,
 } from './types.js';
-
-const MODE_RANK: Record<PermissionMode, number> = { ask: 0, auto: 1, yolo: 2 };
 
 export interface SessionManagerOptions {
   store: SessionStore;
@@ -291,10 +288,6 @@ export class SessionManager {
       });
     }
 
-    const savedMode = file.permissionMode;
-    const currentMode = this.opts.permission.mode;
-    const restoreMode = MODE_RANK[savedMode] < MODE_RANK[currentMode];
-    if (restoreMode) this.opts.permission.validateMode?.(savedMode);
     if (this.opts.loop.running)
       throw new SessionError('busy', '恢复会话期间启动了新轮次，未修改当前会话。');
     options.signal?.throwIfAborted();
@@ -314,7 +307,6 @@ export class SessionManager {
       // 控制器也是插件边界：先恢复控制器，再提交已验证历史；失败恢复原快照。
       if (this.opts.restorePermissions !== false) {
         this.opts.permission.setSessionRules(rules);
-        if (restoreMode) this.opts.permission.setMode(savedMode);
       }
       loopAttempted = true;
       this.opts.loop.importSession({
@@ -331,13 +323,6 @@ export class SessionManager {
       } catch (rollback) {
         rollbackErrors.push(rollback);
       }
-      if (this.opts.restorePermissions !== false && this.opts.permission.mode !== currentMode) {
-        try {
-          this.opts.permission.setMode(currentMode);
-        } catch (rollback) {
-          rollbackErrors.push(rollback);
-        }
-      }
       if (loopAttempted) {
         try {
           this.opts.loop.importSession(previous);
@@ -351,12 +336,6 @@ export class SessionManager {
           '会话恢复失败，部分插件状态无法回滚；请关闭本会话后重新启动。',
         );
       throw error;
-    }
-    if (MODE_RANK[savedMode] > MODE_RANK[currentMode]) {
-      this.opts.events.emit({
-        type: 'notice',
-        text: `已保存的权限模式是 ${savedMode}，比当前的 ${currentMode} 更宽，已保持当前模式 ${currentMode}。`,
-      });
     }
     if (file.id !== resolved) {
       this.opts.events.emit({

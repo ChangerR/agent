@@ -130,7 +130,9 @@ it.skipIf(process.platform !== 'linux')(
             terminal.key('\x1b[B');
             terminal.key('\r');
             await terminal.wait(
-              () => fixture.readConfig().permissionMode === 'auto',
+              () =>
+                JSON.parse(readFileSync(join(fixture.home, '.agentlab/config.json'), 'utf8'))
+                  .permissionMode === 'auto',
               '一次选择未落盘',
             );
             const saved = readFileSync(configPath, 'utf8');
@@ -150,7 +152,7 @@ it.skipIf(process.platform !== 'linux')(
             expect(readFileSync(configPath, 'utf8')).toBe(saved);
           }
           expect(fixture.readConfig()).toMatchObject({
-            permissionMode: 'auto',
+            permissionMode: 'ask',
             preserveUnknown: true,
           });
           const successfulRequest = async () => {

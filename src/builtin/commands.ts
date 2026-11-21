@@ -130,9 +130,9 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
     manifest: { id: 'agentlab.permission-commands', version: '1.0.0', apiVersion: 1 },
     setup(ctx) {
       ctx.provide.command('mode', {
-        description: '选择权限模式，自动保存本项目并立即应用',
+        description: '选择全局权限模式，自动保存并立即应用',
         async handler(input, context) {
-          const snapshot = readPermissionConfig(paths.projectConfigPath, 'project');
+          const snapshot = readPermissionConfig(paths.globalConfigPath, 'global');
           const permission = services.permission();
           const currentMode = permission.mode;
           const sessionId = services.session().id;
@@ -140,7 +140,7 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
             args(input) ||
             (await pick(
               'mode',
-              '选择本项目权限模式 · 自动保存并应用',
+              '选择全局权限模式 · 自动保存并应用',
               ['ask', 'auto', 'yolo'].map((id) => ({ id, label: id })),
               context,
             ));
@@ -161,14 +161,14 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
           if (snapshot.permissionMode === mode) assertPermissionConfigUnchanged(snapshot);
           else savePermissionConfig(snapshot, next);
           try {
-            permission.setMode(mode);
+            permission.setMode(mode, { persisted: true });
           } catch {
             throw new Error(
               `权限配置已保存，但当前策略应用失败；当前模式为 ${permission.mode}。请重新选择或重启后核对。`,
             );
           }
           return text(
-            `权限模式: ${selected}；已保存本项目并应用到后续检查，已有审批仍需处理。通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。`,
+            `权限模式: ${selected}；已保存到全局配置并应用到后续检查，已有审批仍需处理。通用 permissionMode 默认已保存，插件重启时是否采用由该插件决定。`,
           );
         },
       });
@@ -206,8 +206,7 @@ export function permissionCommandsPlugin(services: BuiltinCommandServices, cwd =
       ctx.provide.settings('permissions', {
         title: '权限',
         order: 2,
-        description:
-          '默认编辑本项目，选择或 Enter 自动保存。模式立即应用；规则与审批模型重启后生效。全局范围可选。',
+        description: '权限模式保存到全局，立即应用。规则与审批模型可按项目或全局设置，重启后生效。',
         schema: { type: 'object' },
         applyMode: 'newSession',
         scopeTargets: [

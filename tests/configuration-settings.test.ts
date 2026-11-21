@@ -109,9 +109,10 @@ describe('schema 驱动的分层配置入口', () => {
       Object.keys(AgentConfigSchema.shape).sort(),
     );
     for (const { section } of sections) {
-      expect(await section.read!(signal(), 'project')).toEqual({});
-      expect(await section.read!(signal(), 'global')).toEqual({});
-      await section.draft!({}, signal(), 'project');
+      for (const { scope } of section.scopeTargets!) {
+        expect(await section.read!(signal(), scope)).toEqual({});
+        await section.draft!({}, signal(), scope);
+      }
     }
     expect(existsSync(join(cwd, 'agent.config.json'))).toBe(false);
     expect(existsSync(join(home, '.agentlab'))).toBe(false);

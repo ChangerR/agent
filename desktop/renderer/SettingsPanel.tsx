@@ -115,7 +115,7 @@ export function SettingsPanel({
     setDraft(value);
     markDirty(true);
   };
-  const submit = async () => {
+  const submit = async (value: unknown = draft) => {
     if (!editor || loading || pending) return;
     setPending(true);
     setError('');
@@ -123,7 +123,7 @@ export function SettingsPanel({
       await globalRequest({
         type: 'settings-commit',
         editorId: editor.id,
-        json: JSON.stringify(draft),
+        json: JSON.stringify(value),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : '提交失败，请重试。');
@@ -155,6 +155,7 @@ export function SettingsPanel({
           : '清除只修改草稿；提交后删除此节已知覆盖，保留未知字段。未勾选的字段不会被默认值回填。Esc 放弃未保存更改。';
   const formId = useId();
   const supportsQuickModel = !!getBridge().readModelSetup;
+  const globalMode = selected === 'configuration-permission-mode';
   const quickModel =
     selected === 'configuration-connection' && !advancedModel && supportsQuickModel;
   const chooseSection = (id: string) => {
@@ -185,6 +186,7 @@ export function SettingsPanel({
   )[selected];
   const commonIds = [
     'configuration-connection',
+    'configuration-permission-mode',
     'configuration-permissions',
     'configuration-mcp-servers',
   ];
@@ -381,6 +383,23 @@ export function SettingsPanel({
                   <p className="settings-loading" role="status">
                     正在读取设置…
                   </p>
+                ) : globalMode ? (
+                  <label className="configuration-field" data-field="permissionMode">
+                    权限模式
+                    <select
+                      aria-label="全局权限模式"
+                      disabled={pending}
+                      value={String(
+                        (editor.value as { permissionMode?: string })?.permissionMode ?? 'ask',
+                      )}
+                      onChange={(event) => void submit({ permissionMode: event.target.value })}
+                    >
+                      {['ask', 'auto', 'yolo'].map((mode) => (
+                        <option key={mode}>{mode}</option>
+                      ))}
+                    </select>
+                    <span className="field-hint">所有项目共用，选择后自动保存。</span>
+                  </label>
                 ) : descriptor.editable ? (
                   <>
                     <form
@@ -495,7 +514,7 @@ export function SettingsPanel({
                 )}
               </div>
             </div>
-            {descriptor.editable && !quickModel && (
+            {descriptor.editable && !quickModel && !globalMode && (
               <footer className="configuration-actions">
                 <div className="save-state" role="status">
                   <span className={dirty ? 'dirty-dot' : 'saved-dot'} />

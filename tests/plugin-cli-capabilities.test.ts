@@ -435,6 +435,7 @@ it('真实模式选择器显示约束，选择 yolo 一次保存并应用，无�
   );
   const ui = await mount([], cwd);
   try {
+    await ui.agent.dispatchCommand('/mode auto');
     ui.send('/mode');
     await vi.waitFor(() => expect(ui.screen()).toContain('auto · 当前'));
     expect(ui.screen()).toContain('writeRoots');
@@ -446,7 +447,7 @@ it('真实模式选择器显示约束，选择 yolo 一次保存并应用，无�
     expect(ui.agent.permission.mode).toBe('auto');
     ui.terminal.input?.('\r');
     expect(ui.agent.permission.mode).toBe('yolo');
-    expect(JSON.parse(await readFile(join(cwd, 'agent.config.json'), 'utf8')).permissionMode).toBe(
+    expect(JSON.parse(await readFile(ui.agent.paths.globalConfigPath, 'utf8')).permissionMode).toBe(
       'yolo',
     );
     await vi.waitFor(() => expect(ui.screen()).toContain('权限模式已保存'));

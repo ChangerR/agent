@@ -10,6 +10,7 @@ import {
   type PolicyInput,
   type ToolAnalysis,
 } from '../../sdk/index.js';
+import { readGlobalPermissionConfig, copyPermissionDraft, savePermissionConfig } from './config.js';
 import { PermissionController, parseRule, matchRule } from './controller.js';
 import { isPlanControl } from '../planning/identity.js';
 import { isSubagentControl } from '../subagents/identity.js';
@@ -45,6 +46,7 @@ export { windowsDedicatedFileCommand } from '../../tools/powershell.js';
 export interface DeterministicPolicyOptions {
   cwd: string;
   mode: PermissionMode;
+  globalMode?: ConstructorParameters<typeof PermissionController>[0]['globalMode'];
   rules: SessionRules;
   pluginEntries?: readonly string[];
   writeRoots?: readonly string[];
@@ -62,7 +64,11 @@ export function createDeterministicPolicy(options: DeterministicPolicyOptions): 
     (options.resourceRules ?? []).map((rule) => ResourceRuleSchema.parse(rule)),
   );
   const platform = options.platform ?? process.platform;
-  const controller = new PermissionController({ mode: options.mode, rules: options.rules });
+  const controller = new PermissionController({
+    mode: options.mode,
+    globalMode: options.globalMode,
+    rules: options.rules,
+  });
   controller.onRevokeGrant = options.revokeGrant;
   for (const grant of options.grants ?? []) controller.addGrant(grant);
   const analyzer = createDeterministicAnalyzer({
@@ -552,9 +558,22 @@ export function createDeterministicPolicyPlugin({
       const grantStore = new PluginConfigStore(resolveAgentPaths(cwd).projectConfigPath);
       const grantDrafts = new Map<string, ConfigSnapshot>();
       await validateWriteRoots(cwd, value.writeRoots, entries);
+      const globalPath = resolveAgentPaths(cwd).globalConfigPath;
       const policy = createDeterministicPolicy({
         cwd,
         mode: config.permissionMode,
+        globalMode: {
+          read: () => readGlobalPermissionConfig(globalPath).permissionMode ?? 'ask',
+          set(mode, persisted) {
+            const snapshot = readGlobalPermissionConfig(globalPath);
+            if ((snapshot.permissionMode ?? 'ask') === mode) return;
+            if (persisted) throw new Error('全局权限模式已变化，请重新选择。');
+            savePermissionConfig(snapshot, {
+              ...copyPermissionDraft(snapshot),
+              permissionMode: mode,
+            });
+          },
+        },
         rules: config.permissions,
         pluginEntries: entries,
         writeRoots: value.writeRoots,

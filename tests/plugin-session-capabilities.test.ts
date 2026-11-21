@@ -323,7 +323,7 @@ describe('可替换的 SessionStore 与独立版本 envelope', () => {
     expect(item.permission.getSessionRules()).toEqual({ allow: [], ask: [], deny: ['write_file'] });
     expect(item.session.id).toBe('memory-session');
   });
-  it('不可编辑控制器在模式预检失败时不改历史或规则', async () => {
+  it('恢复历史无需修改权限模式，即使控制器只读也可恢复', async () => {
     const item = setup();
     item.permission.setMode('auto');
     Object.assign(item.permission, {
@@ -332,8 +332,8 @@ describe('可替换的 SessionStore 与独立版本 envelope', () => {
       },
     });
     await item.store.save(file({ permissionMode: 'ask' }));
-    await expect(item.session.resume('import')).rejects.toThrow('read-only');
-    expect(item.loop.getMessages()).toEqual([]);
+    await item.session.resume('import');
+    expect(item.loop.getMessages()).toEqual(file().messages);
     expect(item.permission.mode).toBe('auto');
   });
   it('替代存储返回未配对历史或不兼容 endpoint，当前状态不改变', async () => {

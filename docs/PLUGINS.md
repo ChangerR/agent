@@ -96,7 +96,7 @@ SettingsSection 是可发现的元数据与 read/draft/commit API。`scopeTarget
 
 配置定义可用 `ownedFields` 明确声明插件管理的顶层字段，提交时须把同一定义传给 `store.commit`。解析结果中省略或为 `undefined` 的已声明字段会从该插件当前选定作用域的配置删除（例如删掉严格 reviewer 的 `provider` 后恢复继承）；schema 提供默认值的字段则保存其解析后的默认值。其他未知字段、其他插件命名空间和顶层未知配置保持不变。不声明 `ownedFields` 时沿用补丁合并，省略字段不删除。schema 只需实现 `parse`，宿主不会依赖 zod 的 `shape` 或其他实现细节；嵌套对象仍按顶层字段整体替换。
 
-权限只从顶层 `permissionMode`、`permissions` 读取；列表按 global 后 project 拼接，同 action 类别 session 优先，跨 action deny 与明确 ask 优先。`judgeModel`、`compactThreshold` 等顶层运行配置不在 pluginConfig 中提供别名。启动读取配置，不重写原文件。
+`permissionMode` 只读取全局配置，`permissions` 支持分层配置；列表按 global 后 project 拼接，同 action 类别 session 优先，跨 action deny 与明确 ask 优先。`judgeModel`、`compactThreshold` 等顶层运行配置不在 pluginConfig 中提供别名。启动读取配置，不重写原文件。
 
 `judgeModel` 三态保持：缺省继承；最终未指定或空字符串跟随当前主模型；非空固定模型。默认 permissionMode 仍是 ask。关闭 reviewer 要显式 `capabilities.reviewer=false`，不是把 judgeModel 清空。
 

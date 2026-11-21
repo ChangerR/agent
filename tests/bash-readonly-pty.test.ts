@@ -33,7 +33,7 @@ ctx.provide.telemetry('bash-events',{onEvent(event){if(['tool_result','permissio
 it.skipIf(process.platform !== 'linux')(
   '原样 pnpm dev、默认规划与 auto：原命令零审批，受控 reviewer 写入及拒绝生效',
   async () => {
-    const fixture = createPtyProject();
+    const fixture = createPtyProject('auto');
     const logPath = join(fixture.home, 'bash-events.jsonl');
     type Row = {
       kind: string;
@@ -62,7 +62,6 @@ it.skipIf(process.platform !== 'linux')(
         JSON.stringify({
           provider: 'offline-bash',
           model: 'controlled-pty',
-          permissionMode: 'auto',
           pluginEntries: ['./offline.mjs'],
         }),
       );

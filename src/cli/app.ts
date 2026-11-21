@@ -178,7 +178,7 @@ export function startTui(
   }
 
   let model = agent.config.model;
-  let mode: string = agent.config.permissionMode;
+  let mode: string = agent.permission.mode;
   let thinking: ThinkingLevel = agent.config.thinking;
   let usage: TokenUsage = emptyUsage();
   const usageIds = new Set<string>();
@@ -294,6 +294,7 @@ export function startTui(
   };
 
   const updateStatus = () => {
+    mode = agent.permission.mode;
     const elapsed = turns.running ? ` · ${Math.floor((Date.now() - startedAt) / 1000)}s` : '';
     const current = approvalPanel
       ? childApproval

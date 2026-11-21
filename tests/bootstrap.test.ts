@@ -7,7 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
-import { createAgent, loadSession, type Agent } from './helpers/trusted-agent.js';
+import {
+  createAgent,
+  loadSession,
+  setFixturePermissionMode,
+  type Agent,
+} from './helpers/trusted-agent.js';
 
 let tmp: string;
 let agent: Agent | undefined;
@@ -30,6 +35,7 @@ describe('createAgent', () => {
     const id = agent.session.id;
     agent.loop.setModel('final-model');
     agent.loop.setThinking('high');
+    setFixturePermissionMode('ask');
     agent.permission.setMode('auto');
     await agent.dispose();
     expect(await loadSession(tmp, id)).toMatchObject({

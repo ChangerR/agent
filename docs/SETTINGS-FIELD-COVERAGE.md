@@ -4,7 +4,7 @@
 
 所有配置写入都由原始 schema、领域校验及受控 CAS 后端最终校验；表中的边界是表单附加提示。newSession 表示退出重启或明确新建会话后采用；nextRequest 为原有即时设置协议，权限仍按后端规则检查。项目隔离与继承由后端验收覆盖，不在全局设置 UI 中重复测试。
 
-本清单：22 个可编辑入口，224 个字段/容器/分支节点。界面主题位于通用设置；当前模型、权限模式与思考等级使用聊天输入区控件。外部插件动态字段按其实际 schema/ownedFields 在运行时添加；未加载的未知命名空间保持原样，不提供任意文件写入口。
+本清单：23 个可编辑入口，224 个字段/容器/分支节点。界面主题位于通用设置；全局权限模式也可从聊天输入区切换，模型与思考等级使用聊天输入区控件。外部插件动态字段按其实际 schema/ownedFields 在运行时添加；未加载的未知命名空间保持原样，不提供任意文件写入口。
 
 | 页面 / 注册 ID                                                    | 字段                                                        | 控件                                          | 作用域           | 生效       | 附加约束                                       |
 | ----------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------- | ---------------- | ---------- | ---------------------------------------------- |
@@ -70,7 +70,7 @@
 | 上下文与缓存预算<br>`configuration-budgets`                       | `cache.staticTtl`                                           | 枚举下拉                                      | project / global | newSession | 5m, 1h                                         |
 | 上下文与缓存预算<br>`configuration-budgets`                       | `cache.ttlStrategy`                                         | 枚举下拉                                      | project / global | newSession | fixed, legacy-reactive                         |
 | 上下文与缓存预算<br>`configuration-budgets`                       | `cache.escalateAfterMs`                                     | 数值输入                                      | project / global | newSession | min 0                                          |
-| 权限与审批默认值<br>`configuration-permissions`                   | `permissionMode`                                            | 枚举下拉                                      | project / global | newSession | ask, auto, yolo                                |
+| 全局权限模式<br>`configuration-permission-mode`                   | `permissionMode`                                            | 枚举下拉                                      | global           | immediate  | ask, auto, yolo                                |
 | 权限与审批默认值<br>`configuration-permissions`                   | `permissions`                                               | 分组字段                                      | project / global | newSession |                                                |
 | 权限与审批默认值<br>`configuration-permissions`                   | `permissions.allow`                                         | 列表增删排序                                  | project / global | newSession |                                                |
 | 权限与审批默认值<br>`configuration-permissions`                   | `permissions.allow[]`                                       | 工具与目标规则构建器                          | project / global | newSession |                                                |

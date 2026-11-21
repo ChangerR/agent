@@ -263,14 +263,16 @@ it('隔离探针未通过时拒绝执行；通过时仅能修改副本且不能�
   }
 });
 
-it('设置页显式保存项目模式后启动不再次确认同一模式', async () => {
-  const cwd = await project(),
-    signal = new AbortController().signal;
+it('旧项目模式和 SDK 模式不产生覆盖或启动信任请求，项目设置不能写入模式', async () => {
+  const cwd = await project();
+  const signal = new AbortController().signal;
   const section = configurationSections(cwd).find(
-    (value) => value.id === 'configuration-permissions',
+    (value) => value.id === 'configuration-permission-mode',
   )!.section;
-  await section.read!(signal, 'project');
-  const draft = await section.draft!({ permissionMode: 'auto' }, signal, 'project');
-  await section.commit!(draft, signal, 'project');
-  expect(inspectStartupTrust(loadConfigWithSources(cwd)).entries).toEqual([]);
+  expect(() => section.read!(signal, 'project')).toThrow('作用域');
+  await writeFile(join(cwd, 'agent.config.json'), JSON.stringify({ permissionMode: 'yolo' }));
+  const loaded = loadConfigWithSources(cwd, { permissionMode: 'auto' });
+  expect(loaded.config.permissionMode).toBe('ask');
+  expect(loaded.sources.permissionMode.scope).toBe('default');
+  expect(inspectStartupTrust(loaded).entries).toEqual([]);
 });
